@@ -6,6 +6,7 @@ services:
     environment:
       RUST_LOG: "info"
       AVISOSERVER_CONFIG_FILE: "/etc/aviso/config.yaml"
+      AVISOSERVER_APPLICATION__BASE_URL: "http://localhost:${AVISO_SERVER_HOST_PORT:-8000}"
     volumes:
       - "./aviso-server.config.yaml:/etc/aviso/config.yaml:ro"
 
