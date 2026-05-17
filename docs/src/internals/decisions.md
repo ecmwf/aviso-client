@@ -97,7 +97,7 @@ The reason for owning the parser is structural. High-level SSE client crates (`e
 
 The parser is `publish = false` until a second consumer needs it (likely the `aviso-py` extension). The first external consumer revisits that.
 
-*Amendment*: this ADR originally named `sse-core` as the chosen third-party parser-only crate. The decision was revised before any client code shipped against it. The current text reflects the owned-parser approach.
+*Amendment, 2026-05-18*: this ADR originally named `sse-core` as the chosen third-party parser-only crate. The decision was revised before any client code shipped against it. The current text reflects the owned-parser approach.
 
 ---
 
