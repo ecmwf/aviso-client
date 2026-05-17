@@ -85,7 +85,7 @@ impl ConfigFile {
     /// Returns [`ClientError::Config`] when the YAML cannot be parsed, or when the file has zero
     /// or two of the `bearer`/`basic` sections.
     pub fn from_yaml_str(yaml: &str) -> crate::Result<Self> {
-        let doc: Doc = serde_yaml::from_str(yaml)
+        let doc: Doc = serde_norway::from_str(yaml)
             .map_err(|e| ClientError::Config(format!("parse YAML: {e}")))?;
         match (doc.bearer, doc.basic) {
             (Some(b), None) => {
