@@ -8,18 +8,32 @@
 //! without breaking exhaustive matches in downstream code.
 
 /// A dispatched SSE event with its final accumulated buffers.
+///
+/// These fields mirror the WHATWG parser's internal buffers, not the
+/// DOM-level [`MessageEvent`] interface that browsers ultimately
+/// expose. In particular: `event` stays empty (not defaulted to
+/// `"message"`) when no `event:` field appeared, and `id` stays
+/// `None` (not `""`) before the first `id:` field is parsed. The
+/// browser's defaulting is a layer-two concern and lives in the
+/// consumer that maps `finesse::Frame` to its own typed event model.
+///
+/// [`MessageEvent`]: https://html.spec.whatwg.org/multipage/comms.html#messageevent
 #[non_exhaustive]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Message {
     /// Event type buffer at dispatch. Empty when no `event:` field
-    /// appeared in this event.
+    /// appeared in this event. The browser-level default of
+    /// `"message"` is deliberately NOT applied here; see the type
+    /// doc comment.
     pub event: String,
     /// Data buffer at dispatch with the single trailing LF removed
     /// per spec.
     pub data: String,
     /// Last event ID buffer at dispatch. `None` until the first `id:`
     /// field is parsed; `Some("")` if an `id:` field with an empty
-    /// value explicitly cleared it.
+    /// value explicitly cleared it. The spec's initial empty-string
+    /// default is deliberately NOT applied here; see the type doc
+    /// comment.
     pub id: Option<String>,
 }
 
