@@ -4,7 +4,7 @@
 
 1. **Always propose a plan first.** No surprise patches. See [`AGENTS.md`](AGENTS.md) for the full rulebook.
 2. **One concern per change.** A PR is a bugfix, a feature, a refactor, or a test pass; not a mix.
-3. **Every commit on `main` must build and pass `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test --workspace`, `mdbook build docs`, and `cargo deny check`.**
+3. **Every commit on `main` must pass the full local check set in [Running the checks locally](#running-the-checks-locally) below, which mirrors what CI runs.**
 4. **Document features in `docs/` in the same change that introduces them.** Feature without docs is not done.
 5. **Never suppress lints/warnings/test failures** unless the suppression itself is the correct semantic choice.
 
@@ -24,10 +24,16 @@
 ```bash
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo build --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
-mdbook build docs
+git diff --exit-code Cargo.lock
 cargo deny check
+mdbook build docs
+mdbook test docs
+docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
+
+This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation).
 
 Python toolchain (once `python/aviso/` carries code):
 

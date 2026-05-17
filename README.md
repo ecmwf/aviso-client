@@ -15,12 +15,16 @@ Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF'
 ```bash
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo build --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
-mdbook build docs
+git diff --exit-code Cargo.lock
 cargo deny check
+mdbook build docs
+mdbook test docs
+docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
-All five commands are expected to be green on `main`. A fresh clone passes them without manual setup beyond `rustup` and `cargo install mdbook cargo-deny`.
+This is the full set CI runs (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and every command is expected to be green on `main`. A fresh clone passes it after installing `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation). The Python toolchain (`uv`, `ruff`, `ty`, `pytest`) is described in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation
 
