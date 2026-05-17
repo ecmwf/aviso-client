@@ -26,13 +26,14 @@ fn init_tracing() -> Result<()> {
         .with_writer(std::io::stderr)
         .json()
         .try_init()
-        .map_err(|e| anyhow::anyhow!("initialising tracing subscriber: {e}"))?;
+        .map_err(anyhow::Error::from_boxed)
+        .context("initialising tracing subscriber")?;
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    init_tracing().context("tracing init")?;
+    init_tracing()?;
     let _cli = Cli::parse();
 
     tracing::info!(
