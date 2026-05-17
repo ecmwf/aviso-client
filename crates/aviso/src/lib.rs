@@ -9,6 +9,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod auth;
+mod error;
+pub mod notification;
+
+pub use error::{ClientError, Result};
+pub use notification::{Notification, NotificationRequest, parse_cloudevent_id};
+
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///
 /// Exposed so the CLI and the Python extension can render a single, consistent
