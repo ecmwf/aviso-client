@@ -198,4 +198,25 @@ A user-supplied `from_date` is used only for the very first connection of a list
 
 ---
 
+## D18. Accept `CDLA-Permissive-2.0` license for trust-root data
+
+The Rust core uses `reqwest` with the `rustls-tls` feature (D5). Rustls's default trust-root source is the [`webpki-roots`](https://crates.io/crates/webpki-roots) crate, which ships Mozilla's Common CA Database as embedded data. Mozilla licenses that data under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), a permissive data license (free use and redistribution, no copyleft, no warranty). The license is not on the workspace `deny.toml` allowlist by default.
+
+**Decision**: add `CDLA-Permissive-2.0` to the `deny.toml` allowlist.
+
+**Rationale**:
+
+- The license is functionally similar to MIT/Apache-2.0 for data assets and is on the list of OSI-style permissive licenses.
+- Bundled CA roots are operationally robust: they work in distroless and slim container images without a separate `ca-certificates` mount.
+- Mozilla's CA programme is the de-facto trust root for the public web; using their curated bundle is the appropriate default for a generic HTTP client.
+
+**Alternatives considered**:
+
+- `rustls-tls-native-roots` (reads the system CA store via `rustls-native-certs`): smaller dep tree, no extra license, but fails in CA-less container images. Rejected for portability.
+- Vendor a CA bundle ourselves: creates a maintenance burden tracking upstream Mozilla updates and offers no real benefit over `webpki-roots`. Rejected.
+
+**Consequences**: any future workspace dependency that ships data under `CDLA-Permissive-2.0` is permitted without further review. New non-permissive or unusual licenses still require a fresh decision.
+
+---
+
 For the roadmap and follow-up tracking, see the planning documents in [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).
