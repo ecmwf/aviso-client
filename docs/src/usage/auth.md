@@ -99,7 +99,9 @@ let chain = Chain::new(providers);
 
 ## Refresh on 401
 
-The trait exposes a `refresh()` method that the client calls on a `401 Unauthorized` response (per [D8](../internals/decisions.md)). The shipped static-credential providers treat refresh as a no-op: a `401` against a static credential means the credential is wrong and refreshing changes nothing. `Chain` overrides refresh to fan out to every member and returns `Ok` if at least one member's refresh succeeded.
+The trait exposes a `refresh()` method that the client calls on a `401 Unauthorized` response (per [D8](../internals/decisions.md)). The shipped static-credential providers treat refresh as a no-op: a `401` against a static credential means the credential is wrong and refreshing changes nothing.
+
+`Chain::refresh` targets a single member: the first provider in the chain whose `authorization_header()` returns `Ok`. That is the provider whose token actually went out on the failing request, so it is the one that needs to rotate. Refreshing every member would let a static no-op provider mask a real refresh failure on a stateful provider (the no-op returns `Ok`, the fan-out reports overall success, the next retry still sends the same expired token); the targeted shape avoids that. If no member can produce a header at all, the chain's refresh is a no-op and the next `authorization_header()` call surfaces the underlying error.
 
 Providers that hold cached tokens (OAuth, OIDC, signed-URL) override `refresh()` to rotate their cached token. Because the trait is taken by shared reference (so the same provider can be cloned through `Arc<dyn AuthProvider>` across tasks), refresh implementations use interior mutability (`Mutex`, `RwLock`, `tokio::sync::RwLock`, or an atomic) to publish the new token. The next call to `authorization_header()` is expected to see it.
 
