@@ -52,6 +52,7 @@ impl AvisoClient {
     /// Same shape as [`AvisoClient::wipe_stream`]. A missing id returns
     /// [`ClientError::Http`] with `status = 404`.
     pub async fn delete_notification(&self, notification_id: &str) -> crate::Result<()> {
+        crate::client::validate_path_segment(notification_id)?;
         let url = self.endpoint(&format!("api/v1/admin/notification/{notification_id}"))?;
         let response = self
             .send_with_refresh(|http| http.delete(url.clone()))
@@ -111,6 +112,33 @@ mod tests {
 
         let client = client_for(&server, None);
         client.wipe_all().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_notification_rejects_path_traversal_attempt() {
+        let server = MockServer::start().await;
+        let client = client_for(&server, None);
+        let err = client.delete_notification("../wipe/all").await.unwrap_err();
+        assert!(
+            matches!(err, ClientError::Config(_)),
+            "expected Config validation error, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_notification_rejects_slash_in_id() {
+        let server = MockServer::start().await;
+        let client = client_for(&server, None);
+        let err = client.delete_notification("mars/42").await.unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn delete_notification_rejects_empty_id() {
+        let server = MockServer::start().await;
+        let client = client_for(&server, None);
+        let err = client.delete_notification("").await.unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
     }
 
     #[tokio::test]

@@ -79,6 +79,7 @@ impl AvisoClient {
     /// Same shape as [`AvisoClient::schema`]; a missing event type returns
     /// [`ClientError::Http`] with `status = 404` and the server-supplied body.
     pub async fn schema_for(&self, event_type: &str) -> crate::Result<SchemaResponse> {
+        crate::client::validate_path_segment(event_type)?;
         let path = format!("api/v1/schema/{event_type}");
         let url = self.endpoint(&path)?;
         let response = self.send_with_refresh(|http| http.get(url.clone())).await?;
@@ -178,6 +179,22 @@ mod tests {
 
         assert_eq!(response.event_type, "mars");
         assert!(response.schema.identifier.contains_key("class"));
+    }
+
+    #[tokio::test]
+    async fn schema_for_rejects_path_traversal_attempt() {
+        let server = MockServer::start().await;
+        let client = client_for(&server, None);
+        let err = client.schema_for("../admin/wipe").await.unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn schema_for_rejects_empty_event_type() {
+        let server = MockServer::start().await;
+        let client = client_for(&server, None);
+        let err = client.schema_for("").await.unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
     }
 
     #[tokio::test]

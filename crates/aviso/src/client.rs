@@ -138,6 +138,38 @@ pub(crate) async fn parse_json_response<T: serde::de::DeserializeOwned>(
     }
 }
 
+/// Validates a user-supplied path segment before it is spliced into a relative URL via
+/// [`format!`]. Rejects:
+///
+/// - empty input,
+/// - the path-traversal tokens `.` and `..` (which would normalize into a sibling endpoint after
+///   [`url::Url::join`] resolves the relative reference),
+/// - URL structural characters (`/`, `\`, `?`, `#`) that would change the request target,
+/// - any ASCII control character.
+///
+/// `@` and `%` are deliberately permitted because the server's notification ids use `@` literally
+/// and we want callers to pass already-encoded segments through verbatim.
+pub(crate) fn validate_path_segment(segment: &str) -> crate::Result<()> {
+    if segment.is_empty() {
+        return Err(ClientError::Config(
+            "dynamic path segment must not be empty".into(),
+        ));
+    }
+    if segment == "." || segment == ".." {
+        return Err(ClientError::Config(format!(
+            "dynamic path segment {segment:?} would traverse into a sibling endpoint"
+        )));
+    }
+    for c in segment.chars() {
+        if matches!(c, '/' | '\\' | '?' | '#') || c.is_control() {
+            return Err(ClientError::Config(format!(
+                "dynamic path segment {segment:?} contains forbidden character {c:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Like [`parse_json_response`] but for endpoints that return either `204 No Content` or a body
 /// the client does not need. Success drains the body so the connection can be pooled. Used by
 /// admin endpoints.
