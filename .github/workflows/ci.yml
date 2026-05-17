@@ -81,7 +81,12 @@ jobs:
           key: mdbook-${{ runner.os }}-v0.5.2
 
       - name: Install mdBook
-        run: cargo install mdbook --version 0.5.2 --locked
+        run: |
+          if mdbook --version 2>/dev/null | grep -qF "v0.5.2"; then
+            echo "mdbook v0.5.2 already installed (cache hit)"
+          else
+            cargo install mdbook --version 0.5.2 --locked
+          fi
 
       - name: Build docs
         run: mdbook build docs
