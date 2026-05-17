@@ -40,8 +40,12 @@ impl AuthProvider for Basic {
         let credentials = format!("{}:{}", self.user, self.pass);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
         let header = format!("Basic {encoded}");
-        HeaderValue::from_str(&header)
-            .map_err(|e| ClientError::Auth(format!("invalid Basic header value: {e}")))
+        let mut value = HeaderValue::from_str(&header)
+            .map_err(|e| ClientError::Auth(format!("invalid Basic header value: {e}")))?;
+        // Mark as sensitive so reqwest, hyper, and any downstream debug/log path redacts the
+        // header value (D8: "Token contents are never logged").
+        value.set_sensitive(true);
+        Ok(value)
     }
 }
 
@@ -59,6 +63,16 @@ mod tests {
         let header = basic.authorization_header().await.unwrap();
         // base64("alice:wonderland") = "YWxpY2U6d29uZGVybGFuZA=="
         assert_eq!(header, "Basic YWxpY2U6d29uZGVybGFuZA==");
+    }
+
+    #[tokio::test]
+    async fn header_is_marked_sensitive() {
+        let basic = Basic::new("alice", "wonderland");
+        let header = basic.authorization_header().await.unwrap();
+        assert!(
+            header.is_sensitive(),
+            "Basic header must be sensitive so downstream log paths redact it"
+        );
     }
 
     #[test]
