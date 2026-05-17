@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ClientError;
@@ -32,6 +32,26 @@ pub struct NotificationRequest {
     /// Optional free-form payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
+}
+
+/// Server response to a successful `POST /api/v1/notification`.
+///
+/// Mirrors `aviso-server`'s `NotificationResponse` body. The `request_id` matches the
+/// `X-Request-ID` header value the server set on the response; clients should log it so support
+/// requests can be correlated against server traces.
+///
+/// Marked `#[non_exhaustive]` because the server may grow the response shape (for example a
+/// sequence echo for in-stream visibility); downstream pattern matching stays compatible.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[non_exhaustive]
+pub struct NotifyResponse {
+    /// Server-supplied status string (typically `"success"`).
+    pub status: String,
+    /// `X-Request-ID`-equivalent value, echoed in the body for correlation.
+    pub request_id: String,
+    /// Server-supplied timestamp string. The format is RFC 3339 in current `aviso-server`
+    /// versions; the client keeps it as a string to avoid pulling in a date-time dependency.
+    pub processed_at: String,
 }
 
 impl NotificationRequest {

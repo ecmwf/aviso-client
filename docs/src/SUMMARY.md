@@ -7,13 +7,16 @@
 # Welcome
 
 - [Installation](./welcome/installation.md)
-- [Quick start]()
+- [Quick start](./welcome/quick-start.md)
 - [Key concepts](./welcome/key-concepts.md)
 
 ---
 
 # Usage
 
+- [Publishing notifications](./usage/notify.md)
+- [Discovering schemas](./usage/schema.md)
+- [Admin operations](./usage/admin.md)
 - [CLI quick start]()
 - [Python quick start]()
 
@@ -22,7 +25,7 @@
 # Configuration
 
 - [Overview]()
-- [Authentication]()
+- [Authentication](./usage/auth.md)
 
 ---
 
