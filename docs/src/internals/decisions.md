@@ -274,6 +274,6 @@ Each phase has explicit scope, out-of-scope, "done" definition, and documentatio
 - Troubleshooting expansion.
 - `mdbook test` of code blocks in CI.
 
-## Phase 9 (deferred) — C++ FFI surface
+## Phase 8 (deferred) — C++ FFI surface
 
 Only on user request. The Rust API is not constrained for it (D10); a future adapter crate translates.
