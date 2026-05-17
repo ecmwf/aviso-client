@@ -37,6 +37,15 @@ impl std::fmt::Debug for Basic {
 #[async_trait::async_trait]
 impl AuthProvider for Basic {
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
+        // RFC 7617 forbids a ':' in the user-id because it is the user/password separator. An
+        // invalid value would otherwise authenticate as the wrong account on the server side; we
+        // reject it here so the bug surfaces at the first request rather than as a confusing
+        // 401 mismatch.
+        if self.user.contains(':') {
+            return Err(ClientError::Auth(
+                "Basic username must not contain ':' per RFC 7617".into(),
+            ));
+        }
         let credentials = format!("{}:{}", self.user, self.pass);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
         let header = format!("Basic {encoded}");
@@ -73,6 +82,13 @@ mod tests {
             header.is_sensitive(),
             "Basic header must be sensitive so downstream log paths redact it"
         );
+    }
+
+    #[tokio::test]
+    async fn username_with_colon_is_rejected_per_rfc_7617() {
+        let basic = Basic::new("alice:bob", "pw");
+        let err = basic.authorization_header().await.unwrap_err();
+        assert!(matches!(err, crate::ClientError::Auth(_)), "got {err:?}");
     }
 
     #[test]
