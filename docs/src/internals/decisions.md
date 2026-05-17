@@ -123,7 +123,9 @@ On a 401, the provider may refresh credentials and the request is retried once i
 
 ## D9. CloudEvent envelope hidden
 
-Users see `Notification { sequence: u64, topic, event_id, event_type, time, payload: serde_json::Value, metadata }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+Users see `Notification { event_type, sequence: u64, identifier, payload: serde_json::Value, request_id }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+
+The struct is `#[non_exhaustive]` because envelope-derived fields land incrementally as the streaming surface ships: `event_id` (the raw `<event_type>@<sequence>` string, preserved for support correlation), `time` (CloudEvent emission time), `source` (CloudEvent source URI), and any extension attributes as `metadata` will be added when the SSE mapper lands. The non-streaming surface only needs `event_type`, `sequence`, `identifier`, and `payload`; `request_id` is the per-response HTTP correlation surface that exists everywhere outside the SSE stream.
 
 A malformed `id` (no `@`, non-numeric suffix, or `u64` overflow) is a **terminal protocol error**, not a reconnect trigger. If the server is emitting malformed ids deterministically, reconnecting would re-receive the same bad event and the client would livelock. The client logs one `ERROR` with `event.name = "client.sse.event.malformed"`, the raw id string (sanitised), the `request_id`, the topic, and the current resume key, then closes the stream with a typed `ClientError::MalformedEvent` for the user to decide what to do (typically: file a bug, optionally restart the watch with a fresh cursor).
 
