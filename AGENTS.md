@@ -64,6 +64,7 @@
 - Commit body explains the *why*. If the change is non-obvious, write prose, wrapped at ~72 chars. Cite issues in a trailer (`Refs #42`, `Closes #42`); record breaking-change notes in a `BREAKING CHANGE:` trailer.
 - Never amend or force-push branches that others may have pulled. On private branches, amend freely.
 - "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
+- Never co-author
 
 # Rust rules
 ## Style
