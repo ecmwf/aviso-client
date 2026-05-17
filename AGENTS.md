@@ -48,6 +48,18 @@
   3. move the reference into `plans/`.
 - The same rule applies to TODO-style status banners such as `> Status: Phase 0 — placeholder.` and to scaffold/preview markers in module docs and config comments.
 
+## Commit conventions
+- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit subject is `<type>(<scope>): <description>` — lowercase, imperative mood, ≤72 chars, no trailing period.
+- Recognised types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `meta`, `style`, `revert`. Pick the narrowest one that fits; do not invent new types without a reason in the body.
+- Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(plans): …`, `ci(deny): …`, `test(e2e): …`).
+- Breaking changes append `!` after the type/scope and explain in the body: `feat(api)!: rename AvisoClient::watch`. Add a `BREAKING CHANGE:` footer when downstream callers must act.
+- **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update — not a mix. If the subject would naturally use "and", split.
+- **Sensibly sized.** Aim for the smallest commit that still leaves the tree green. A 5-file commit that fixes one thing is better than a 40-file commit that does ten. Bootstrap-scale work splits across multiple commits — layout, build config, docs, CI, harness — each one buildable on its own.
+- **Every commit on `main` builds and passes all checks** — the entire acceptance set (`cargo fmt --check`, `cargo clippy --locked -D warnings`, `cargo test --locked`, `mdbook build`, `mdbook test`, `cargo deny check`). Don't merge a series where intermediate commits are broken.
+- Commit body explains the *why*. If the change is non-obvious, write prose, wrapped at ~72 chars. Cite issues in a trailer (`Refs #42`, `Closes #42`); record breaking-change notes in a `BREAKING CHANGE:` trailer.
+- Never amend or force-push branches that others may have pulled. On private branches, amend freely.
+- "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
+
 # Rust rules
 ## Style
 

@@ -17,8 +17,7 @@
 ## Branch & commit conventions
 
 - Branches: `<topic>/<slug>` — `feat/<slug>`, `fix/<slug>`, `refactor/<slug>`, `docs/<slug>`, `chore/<slug>`, `meta/<slug>`. Branches do not encode plan ids or dates; plans live under [`plans/`](plans/).
-- Commit subject: imperative, ≤72 chars, no period.
-- Commit body: the *why*. If the change is non-obvious, explain in prose. Cite issue numbers where applicable.
+- **Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).** The full ruleset lives in [`AGENTS.md`](AGENTS.md#commit-conventions); in short: `<type>(<scope>): <description>`, imperative, ≤72 chars, no period; one concern per commit, sensibly sized, every commit must build and pass the full check set; explain the *why* in the body.
 
 ## Running the checks locally
 
