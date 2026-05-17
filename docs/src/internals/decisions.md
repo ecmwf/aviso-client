@@ -123,7 +123,9 @@ On a 401, the provider may refresh credentials and the request is retried once i
 
 ## D9. CloudEvent envelope hidden
 
-Users see `Notification { sequence: u64, topic, event_id, event_type, time, payload: serde_json::Value, metadata }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+Users see `Notification { event_type, sequence: u64, identifier, payload: serde_json::Value, request_id }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+
+The struct is `#[non_exhaustive]` because envelope-derived fields land incrementally as the streaming surface ships: `event_id` (the raw `<event_type>@<sequence>` string, preserved for support correlation), `time` (CloudEvent emission time), `source` (CloudEvent source URI), and any extension attributes as `metadata` will be added when the SSE mapper lands. The non-streaming surface only needs `event_type`, `sequence`, `identifier`, and `payload`; `request_id` is the per-response HTTP correlation surface that exists everywhere outside the SSE stream.
 
 A malformed `id` (no `@`, non-numeric suffix, or `u64` overflow) is a **terminal protocol error**, not a reconnect trigger. If the server is emitting malformed ids deterministically, reconnecting would re-receive the same bad event and the client would livelock. The client logs one `ERROR` with `event.name = "client.sse.event.malformed"`, the raw id string (sanitised), the `request_id`, the topic, and the current resume key, then closes the stream with a typed `ClientError::MalformedEvent` for the user to decide what to do (typically: file a bug, optionally restart the watch with a fresh cursor).
 
@@ -195,6 +197,27 @@ A server-side idempotency-key contract would lift this restriction; it is an ope
 ## D17. `from_date` is bootstrap-only
 
 A user-supplied `from_date` is used only for the very first connection of a listener. After the first notification is committed, the cursor switches to sequence-based (`from_id = last_committed_sequence + 1`). Server time is authoritative; the client does not attempt clock-skew compensation.
+
+---
+
+## D18. Accept `CDLA-Permissive-2.0` license for trust-root data
+
+The Rust core uses `reqwest` with the `rustls-tls` feature (D5). Rustls's default trust-root source is the [`webpki-roots`](https://crates.io/crates/webpki-roots) crate, which ships Mozilla's Common CA Database as embedded data. Mozilla licenses that data under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), a permissive data license (free use and redistribution, no copyleft, no warranty). The license is not on the workspace `deny.toml` allowlist by default.
+
+**Decision**: add `CDLA-Permissive-2.0` to the `deny.toml` allowlist.
+
+**Rationale**:
+
+- The license is functionally similar to MIT/Apache-2.0 for data assets and is on the list of OSI-style permissive licenses.
+- Bundled CA roots are operationally robust: they work in distroless and slim container images without a separate `ca-certificates` mount.
+- Mozilla's CA programme is the de-facto trust root for the public web; using their curated bundle is the appropriate default for a generic HTTP client.
+
+**Alternatives considered**:
+
+- `rustls-tls-native-roots` (reads the system CA store via `rustls-native-certs`): smaller dep tree, no extra license, but fails in CA-less container images. Rejected for portability.
+- Vendor a CA bundle ourselves: creates a maintenance burden tracking upstream Mozilla updates and offers no real benefit over `webpki-roots`. Rejected.
+
+**Consequences**: any future workspace dependency that ships data under `CDLA-Permissive-2.0` is permitted without further review. New non-permissive or unusual licenses still require a fresh decision.
 
 ---
 
