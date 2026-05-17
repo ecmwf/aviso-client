@@ -47,11 +47,13 @@ struct Doc {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BearerSection {
     token: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BasicSection {
     username: String,
     password: String,
@@ -86,12 +88,26 @@ impl ConfigFile {
         let doc: Doc = serde_yaml::from_str(yaml)
             .map_err(|e| ClientError::Config(format!("parse YAML: {e}")))?;
         match (doc.bearer, doc.basic) {
-            (Some(b), None) => Ok(Self {
-                inner: ConfigSource::Bearer(Bearer::new(b.token)),
-            }),
-            (None, Some(b)) => Ok(Self {
-                inner: ConfigSource::Basic(Basic::new(b.username, b.password)),
-            }),
+            (Some(b), None) => {
+                if b.token.is_empty() {
+                    return Err(ClientError::Config(
+                        "bearer section has empty 'token'".into(),
+                    ));
+                }
+                Ok(Self {
+                    inner: ConfigSource::Bearer(Bearer::new(b.token)),
+                })
+            }
+            (None, Some(b)) => {
+                if b.username.is_empty() {
+                    return Err(ClientError::Config(
+                        "basic section has empty 'username'".into(),
+                    ));
+                }
+                Ok(Self {
+                    inner: ConfigSource::Basic(Basic::new(b.username, b.password)),
+                })
+            }
             (Some(_), Some(_)) => Err(ClientError::Config(
                 "has both 'bearer' and 'basic' sections; only one is allowed".into(),
             )),
@@ -161,6 +177,35 @@ mod tests {
     fn rejects_unknown_top_level_key_to_surface_typos() {
         // 'beare' instead of 'bearer' must not silently fall back to "neither section present".
         let yaml = "beare:\n  token: x\n";
+        let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_unknown_field_inside_bearer_section() {
+        // 'tokn' inside bearer (typo of 'token') must surface, not be silently dropped.
+        let yaml = "bearer:\n  tokn: x\n";
+        let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_unknown_field_inside_basic_section() {
+        let yaml = "basic:\n  usrname: alice\n  password: pw\n";
+        let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_empty_bearer_token() {
+        let yaml = "bearer:\n  token: \"\"\n";
+        let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_empty_basic_username() {
+        let yaml = "basic:\n  username: \"\"\n  password: pw\n";
         let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
         assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
     }
