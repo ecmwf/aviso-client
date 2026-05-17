@@ -1,11 +1,11 @@
 services:
   aviso-server:
-    build:
-      context: https://github.com/ecmwf/aviso-server.git#${AVISO_SERVER_SHA}
-      dockerfile: Dockerfile
-    image: aviso-server:e2e-${AVISO_SERVER_SHA}
+    image: eccr.ecmwf.int/aviso/aviso_server:0.5
     ports:
       - "127.0.0.1:${AVISO_SERVER_HOST_PORT:-8000}:8000"
     environment:
       RUST_LOG: "info"
+      AVISOSERVER_CONFIG_FILE: "/etc/aviso/config.yaml"
+    volumes:
+      - "./aviso-server.config.yaml:/etc/aviso/config.yaml:ro"
 
