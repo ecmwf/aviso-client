@@ -101,9 +101,16 @@ pub struct Notification {
 /// ```
 /// use aviso::parse_cloudevent_id;
 ///
+/// // Valid input: <event_type>@<sequence>.
 /// let (event_type, sequence) = parse_cloudevent_id("mars@42").unwrap();
 /// assert_eq!(event_type, "mars");
 /// assert_eq!(sequence, 42);
+///
+/// // Invalid input: no '@' separator, terminal MalformedEvent error.
+/// assert!(parse_cloudevent_id("mars").is_err());
+///
+/// // Invalid input: sequence overflows u64, terminal MalformedEvent error.
+/// assert!(parse_cloudevent_id("mars@18446744073709551616").is_err());
 /// ```
 ///
 /// # Errors
@@ -185,6 +192,14 @@ mod tests {
         let (et, seq) = parse_cloudevent_id(&id).unwrap();
         assert_eq!(et, "mars");
         assert_eq!(seq, u64::MAX);
+    }
+
+    #[test]
+    fn rejects_sequence_one_past_u64_max() {
+        // u64::MAX + 1 cannot be represented; the parse must surface as MalformedEvent rather
+        // than wrapping or panicking.
+        let err = parse_cloudevent_id("mars@18446744073709551616").unwrap_err();
+        assert!(matches!(err, ClientError::MalformedEvent(_)), "got {err:?}");
     }
 
     mod notification_request {
