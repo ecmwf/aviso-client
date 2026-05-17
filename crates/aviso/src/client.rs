@@ -23,16 +23,28 @@ use crate::auth::AuthProvider;
 /// Cheap to clone; cloned handles share the same underlying HTTP connection pool and auth
 /// provider behind reference counts. Marked `#[non_exhaustive]` so future fields (for example
 /// per-request middleware) can be added without breaking downstream pattern matches.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct AvisoClient {
-    #[allow(
-        dead_code,
-        reason = "the http field is consumed by sibling modules (notify, schema, admin) added in follow-up commits"
-    )]
     http: HttpClient,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
+}
+
+impl std::fmt::Debug for AvisoClient {
+    /// Custom `Debug` because the derived form prints `reqwest::Client` internals (proxy
+    /// configuration, default headers, ...) and `Url` userinfo verbatim. Both can leak secrets
+    /// in log output. The custom impl elides the HTTP client entirely and prints a sanitized
+    /// base URL with any userinfo stripped.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut sanitized = self.base_url.clone();
+        let _ = sanitized.set_username("");
+        let _ = sanitized.set_password(None);
+        f.debug_struct("AvisoClient")
+            .field("base_url", &sanitized.as_str())
+            .field("auth", &self.auth)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AvisoClient {
@@ -171,12 +183,13 @@ pub(crate) fn validate_path_segment(segment: &str) -> crate::Result<()> {
 }
 
 /// Like [`parse_json_response`] but for endpoints that return either `204 No Content` or a body
-/// the client does not need. Success drains the body so the connection can be pooled. Used by
-/// admin endpoints.
+/// the client does not need. Success drains the body so the connection can be pooled and any
+/// late transport failure during that drain (truncated read, broken connection mid-body) is
+/// surfaced rather than silently discarded.
 pub(crate) async fn parse_json_response_optional(response: reqwest::Response) -> crate::Result<()> {
     let status = response.status();
     if status.is_success() {
-        let _ = response.bytes().await;
+        let _body = response.bytes().await?;
         Ok(())
     } else {
         let request_id = response
@@ -384,6 +397,23 @@ mod tests {
         assert!(
             !formatted.contains("super-secret-jwt-do-not-leak"),
             "AvisoClient Debug must not leak the auth token: {formatted}"
+        );
+    }
+
+    #[test]
+    fn debug_strips_userinfo_from_base_url() {
+        let client = AvisoClient::builder()
+            .base_url("https://operator:hunter2@aviso.example.org")
+            .build()
+            .unwrap();
+        let formatted = format!("{client:?}");
+        assert!(
+            !formatted.contains("hunter2"),
+            "AvisoClient Debug must strip password from base_url: {formatted}"
+        );
+        assert!(
+            !formatted.contains("operator"),
+            "AvisoClient Debug must strip username from base_url: {formatted}"
         );
     }
 }
