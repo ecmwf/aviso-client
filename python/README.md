@@ -2,15 +2,15 @@
 
 Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server). The repo this package ships from is [`aviso-client`](https://github.com/ecmwf/aviso-client); the installable distribution and the importable module are both named `aviso`.
 
-> Status: package skeleton only. `maturin develop` is not yet usable because the `aviso-py` crate is currently an `rlib` rather than a `cdylib`.
+> Status: package skeleton only. The package is not yet installable. The `aviso-py` crate is currently a Rust `rlib` rather than a Python `cdylib`, so `maturin develop` and `pip install` do not produce a working module; both will start working once the PyO3 bindings land.
 
-## Install
+## Install (once bindings land)
 
 ```bash
 pip install aviso
 ```
 
-## Develop locally
+## Develop locally (once bindings land)
 
 ```bash
 uv sync
