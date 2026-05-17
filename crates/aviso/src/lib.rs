@@ -10,8 +10,10 @@
 #![forbid(unsafe_code)]
 
 mod error;
+pub mod notification;
 
 pub use error::{ClientError, Result};
+pub use notification::{Notification, NotificationRequest, parse_cloudevent_id};
 
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///
