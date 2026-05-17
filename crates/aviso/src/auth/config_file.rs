@@ -65,9 +65,8 @@ impl ConfigFile {
     /// or the file has zero or two of the `bearer`/`basic` sections (exactly one is required).
     pub fn from_path(path: impl AsRef<Path>) -> crate::Result<Self> {
         let path = path.as_ref();
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            ClientError::Config(format!("read auth file {}: {e}", path.display()))
-        })?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| ClientError::Config(format!("read auth file {}: {e}", path.display())))?;
         Self::from_yaml_str(&content).map_err(|e| match e {
             ClientError::Config(msg) => {
                 ClientError::Config(format!("auth file {}: {msg}", path.display()))

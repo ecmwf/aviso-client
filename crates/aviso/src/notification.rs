@@ -96,7 +96,10 @@ pub fn parse_cloudevent_id(id: &str) -> crate::Result<(String, u64)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, reason = "test code: panic-on-unwrap is the expected diagnostic")]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code: panic-on-unwrap is the expected diagnostic"
+)]
 mod tests {
     use super::{ClientError, parse_cloudevent_id};
 
