@@ -44,26 +44,18 @@ impl LineSplitter {
         let mut i = 0;
         while i < self.buf.len() {
             match self.buf[i] {
-                b'\n' => {
-                    let line = self.buf[..i].to_vec();
-                    self.buf.drain(..=i);
-                    return Some(line);
-                }
+                b'\n' => return Some(self.take_line(i, i + 1)),
                 b'\r' => {
                     if i + 1 < self.buf.len() {
-                        let line = self.buf[..i].to_vec();
                         let consumed = if self.buf[i + 1] == b'\n' {
                             i + 2
                         } else {
                             i + 1
                         };
-                        self.buf.drain(..consumed);
-                        return Some(line);
+                        return Some(self.take_line(i, consumed));
                     }
                     if self.closed {
-                        let line = self.buf[..i].to_vec();
-                        self.buf.drain(..=i);
-                        return Some(line);
+                        return Some(self.take_line(i, i + 1));
                     }
                     return None;
                 }
@@ -73,6 +65,12 @@ impl LineSplitter {
             }
         }
         None
+    }
+
+    fn take_line(&mut self, line_end: usize, drain_through: usize) -> Vec<u8> {
+        let line = self.buf[..line_end].to_vec();
+        self.buf.drain(..drain_through);
+        line
     }
 
     fn resolve_bom(&mut self) {
