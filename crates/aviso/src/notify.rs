@@ -293,4 +293,21 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ClientError::Transport(_)), "got {err:?}");
     }
+
+    #[tokio::test]
+    async fn malformed_success_body_surfaces_as_decode_variant() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/notification"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json {"))
+            .mount(&server)
+            .await;
+
+        let client = client_for(&server, None);
+        let err = client
+            .notify(&NotificationRequest::new("mars"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ClientError::Decode(_)), "got {err:?}");
+    }
 }
