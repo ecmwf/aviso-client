@@ -139,6 +139,17 @@ mod tests {
     }
 
     #[test]
+    fn two_empty_data_lines_yield_single_lf_message() {
+        // `data:\ndata:\n\n`: buffer goes "" -> "\n" -> "\n\n",
+        // strip one LF -> "\n". Tests the strip-one-LF rule from a
+        // second angle, with no leading non-empty content.
+        let mut d = Dispatcher::default();
+        d.process_field("data", "");
+        d.process_field("data", "");
+        assert_eq!(d.dispatch(), Some(msg("", "\n", None)));
+    }
+
+    #[test]
     fn event_resets_between_dispatches() {
         let mut d = Dispatcher::default();
         d.process_field("event", "first");

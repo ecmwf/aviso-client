@@ -8,21 +8,21 @@
 //! Those concerns belong to the consumer.
 //!
 //! ```
-//! use finesse::{Frame, Message, Parser};
+//! use finesse::{Frame, Parser};
 //!
 //! let mut parser = Parser::new();
 //! parser.feed(b"event: ping\ndata: hello\n\n");
 //! parser.end();
 //!
-//! assert_eq!(
-//!     parser.next_frame(),
-//!     Some(Frame::Message(Message {
-//!         event: "ping".into(),
-//!         data: "hello".into(),
-//!         id: None,
-//!     })),
-//! );
-//! assert_eq!(parser.next_frame(), None);
+//! match parser.next_frame() {
+//!     Some(Frame::Message(msg)) => {
+//!         assert_eq!(msg.event, "ping");
+//!         assert_eq!(msg.data, "hello");
+//!         assert_eq!(msg.id, None);
+//!     }
+//!     other => unreachable!("expected Message, got {other:?}"),
+//! }
+//! assert!(parser.next_frame().is_none());
 //! ```
 //!
 //! The crate is reusable in principle but, while it remains a private
@@ -267,6 +267,29 @@ mod tests {
         p.feed(b"data: a\r\ndata: b\r\n\r\n");
         p.end();
         assert_eq!(collect(p), vec![message("", "a\nb", None)]);
+    }
+
+    #[test]
+    fn event_only_block_emits_no_frame() {
+        // WHATWG: empty data buffer at dispatch suppresses the
+        // message and resets event-type and data buffers. The
+        // event-type buffer must not leak into the next event.
+        let mut p = Parser::new();
+        p.feed(b"event: heartbeat\n\ndata: real\n\n");
+        p.end();
+        assert_eq!(
+            collect(p),
+            vec![message("", "real", None)],
+            "heartbeat-only block must not produce a Message AND must not leak its event type"
+        );
+    }
+
+    #[test]
+    fn id_only_block_updates_last_id_without_emitting() {
+        let mut p = Parser::new();
+        p.feed(b"id: 42\n\ndata: next\n\n");
+        p.end();
+        assert_eq!(collect(p), vec![message("", "next", Some("42"))]);
     }
 
     #[test]
