@@ -1,0 +1,15 @@
+[package]
+name = "finesse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "WHATWG Server-Sent Events parser. Sync, push-based, no I/O."
+publish = false
+
+[lints]
+workspace = true

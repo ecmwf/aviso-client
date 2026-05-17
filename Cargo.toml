@@ -4,6 +4,7 @@ members = [
     "crates/aviso",
     "crates/aviso-cli",
     "crates/aviso-py",
+    "crates/finesse",
 ]
 
 [workspace.package]
