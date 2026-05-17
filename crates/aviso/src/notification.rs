@@ -16,7 +16,12 @@ use serde_json::Value;
 use crate::ClientError;
 
 /// A notification to publish via the server.
+///
+/// Marked `#[non_exhaustive]` so adding fields (for example, a future schema-version selector)
+/// is not a breaking change for downstream struct literals. Construct via field-shorthand or
+/// use a helper constructor.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct NotificationRequest {
     /// Event type, matching a schema configured on the server (for example `mars`).
     pub event_type: String,
