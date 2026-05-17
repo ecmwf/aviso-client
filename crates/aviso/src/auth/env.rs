@@ -41,11 +41,13 @@ impl Env {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Auth`] if no usable combination of variables is set.
+    /// Returns [`ClientError::Config`] if any of the credential env vars is set but its value is
+    /// not valid UTF-8 (`VarError::NotUnicode`). Returns [`ClientError::Auth`] if no usable
+    /// combination of variables is set.
     pub fn from_process_env() -> crate::Result<Self> {
-        let bearer = std::env::var(ENV_TOKEN).ok();
-        let user = std::env::var(ENV_USERNAME).ok();
-        let pass = std::env::var(ENV_PASSWORD).ok();
+        let bearer = read_env_var(ENV_TOKEN)?;
+        let user = read_env_var(ENV_USERNAME)?;
+        let pass = read_env_var(ENV_PASSWORD)?;
         Self::from_credentials(bearer.as_deref(), user.as_deref(), pass.as_deref())
     }
 
@@ -83,6 +85,20 @@ impl AuthProvider for Env {
             EnvSource::Bearer(b) => b.authorization_header().await,
             EnvSource::Basic(b) => b.authorization_header().await,
         }
+    }
+}
+
+/// Reads an env var, distinguishing absent (`Ok(None)`) from set-but-not-UTF-8
+/// (`Err(ClientError::Config)`). The previous `.ok()` shortcut conflated the two and silently
+/// fell back to "missing", which produced misleading auth errors when a user had a non-Unicode
+/// env value.
+fn read_env_var(name: &str) -> crate::Result<Option<String>> {
+    match std::env::var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(ClientError::Config(format!(
+            "env var {name} is set but its value is not valid UTF-8"
+        ))),
     }
 }
 
