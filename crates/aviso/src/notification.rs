@@ -18,8 +18,8 @@ use crate::ClientError;
 /// A notification to publish via the server.
 ///
 /// Marked `#[non_exhaustive]` so adding fields (for example, a future schema-version selector)
-/// is not a breaking change for downstream struct literals. Construct via field-shorthand or
-/// use a helper constructor.
+/// is not a breaking change. Downstream code constructs requests via [`Self::new`] and the
+/// `with_*` builder methods rather than struct literals.
 #[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
 pub struct NotificationRequest {
@@ -32,6 +32,33 @@ pub struct NotificationRequest {
     /// Optional free-form payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
+}
+
+impl NotificationRequest {
+    /// Builds a [`NotificationRequest`] with the required `event_type` and empty defaults for
+    /// the other fields. Use [`Self::with_identifier`] and [`Self::with_payload`] to fill in.
+    #[must_use]
+    pub fn new(event_type: impl Into<String>) -> Self {
+        Self {
+            event_type: event_type.into(),
+            identifier: BTreeMap::new(),
+            payload: None,
+        }
+    }
+
+    /// Replaces the identifier map. Builder-style consumes and returns `self`.
+    #[must_use]
+    pub fn with_identifier(mut self, identifier: BTreeMap<String, String>) -> Self {
+        self.identifier = identifier;
+        self
+    }
+
+    /// Sets the payload to `Some(value)`. Builder-style consumes and returns `self`.
+    #[must_use]
+    pub fn with_payload(mut self, payload: Value) -> Self {
+        self.payload = Some(payload);
+        self
+    }
 }
 
 /// A notification received from the server.
@@ -158,5 +185,62 @@ mod tests {
         let (et, seq) = parse_cloudevent_id(&id).unwrap();
         assert_eq!(et, "mars");
         assert_eq!(seq, u64::MAX);
+    }
+
+    mod notification_request {
+        use std::collections::BTreeMap;
+
+        use crate::NotificationRequest;
+
+        #[test]
+        fn new_creates_request_with_event_type_only() {
+            let req = NotificationRequest::new("mars");
+            assert_eq!(req.event_type, "mars");
+            assert!(req.identifier.is_empty());
+            assert!(req.payload.is_none());
+        }
+
+        #[test]
+        fn builder_methods_set_optional_fields() {
+            let mut id = BTreeMap::new();
+            id.insert("country".to_string(), "uk".to_string());
+            let req = NotificationRequest::new("mars")
+                .with_identifier(id.clone())
+                .with_payload(serde_json::json!({ "location": "south" }));
+            assert_eq!(req.event_type, "mars");
+            assert_eq!(req.identifier, id);
+            assert_eq!(
+                req.payload,
+                Some(serde_json::json!({ "location": "south" }))
+            );
+        }
+
+        #[test]
+        fn serializes_to_expected_wire_shape() {
+            let mut id = BTreeMap::new();
+            id.insert("country".to_string(), "uk".to_string());
+            let req = NotificationRequest::new("mars")
+                .with_identifier(id)
+                .with_payload(serde_json::json!({ "location": "south" }));
+            let json = serde_json::to_value(&req).unwrap();
+            assert_eq!(
+                json,
+                serde_json::json!({
+                    "event_type": "mars",
+                    "identifier": { "country": "uk" },
+                    "payload": { "location": "south" },
+                })
+            );
+        }
+
+        #[test]
+        fn omits_payload_field_when_none() {
+            let req = NotificationRequest::new("mars");
+            let json = serde_json::to_value(&req).unwrap();
+            assert!(
+                json.get("payload").is_none(),
+                "payload field must be omitted when None: {json}"
+            );
+        }
     }
 }
