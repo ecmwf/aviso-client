@@ -1,12 +1,12 @@
 # End-to-end tests
 
-E2E tests run against a real `aviso-server` instance pulled from ECMWF's container registry:
+E2E tests run against a real `aviso-server` instance pulled from ECMWF's container registry, pinned by manifest digest for reproducibility:
 
 ```text
-eccr.ecmwf.int/aviso/aviso_server:0.5
+eccr.ecmwf.int/aviso/aviso_server:0.5@sha256:68f2a8e57b386f85f30676b8c772d89d7d496fb26f5d46c1427dab844e978a04
 ```
 
-The tag is the version pin. The harness mounts [`aviso-server.config.yaml`](./aviso-server.config.yaml) into the container as the server's config file (via `AVISOSERVER_CONFIG_FILE`), so the test environment runs unauthenticated, in-memory-only, with short heartbeat and connection-lifetime settings tuned for fast tests.
+The tag (`0.5`) is a human-readable label; the digest is what Docker resolves and verifies. A re-published tag cannot silently change CI or local runs, because the digest will no longer match. The harness mounts [`aviso-server.config.yaml`](./aviso-server.config.yaml) into the container as the server's config file (via `AVISOSERVER_CONFIG_FILE`), so the test environment runs unauthenticated, in-memory-only, with short heartbeat and connection-lifetime settings tuned for fast tests.
 
 ## Run locally
 
@@ -30,9 +30,16 @@ AVISO_SERVER_HOST_PORT=8102 docker compose -p shard-2 up -d
 ## Update the pinned version
 
 1. Decide which `aviso-server` tag to pin to.
-2. Update the `image:` line in [`docker-compose.yml`](./docker-compose.yml).
-3. Run the e2e suite locally to confirm.
-4. Open a PR with the tag bump in its own commit.
+2. Fetch the current manifest-index digest for that tag:
+
+   ```bash
+   docker buildx imagetools inspect eccr.ecmwf.int/aviso/aviso_server:<TAG>
+   ```
+
+   Use the top-level `Digest:` value (the multi-arch OCI index digest), not a per-platform manifest digest. Pinning the index keeps the image portable across `linux/amd64` and `linux/arm64`.
+3. Update the `image:` line in [`docker-compose.yml`](./docker-compose.yml) and the reference block at the top of this file to `<TAG>@<DIGEST>`.
+4. Run the e2e suite locally to confirm.
+5. Open a PR with the bump in its own commit.
 
 ## Customising the test server
 

@@ -1,6 +1,6 @@
 services:
   aviso-server:
-    image: eccr.ecmwf.int/aviso/aviso_server:0.5
+    image: eccr.ecmwf.int/aviso/aviso_server:0.5@sha256:68f2a8e57b386f85f30676b8c772d89d7d496fb26f5d46c1427dab844e978a04
     ports:
       - "127.0.0.1:${AVISO_SERVER_HOST_PORT:-8000}:8000"
     environment:
