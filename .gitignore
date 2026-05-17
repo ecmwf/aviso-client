@@ -1,0 +1,22 @@
+.DS_Store
+.claude/*
+!.claude/commands/
+.weave/
+.sisyphus/
+.coverage
+*.dylib.dSYM/
+**/target
+**/pkg
+**/build/
+docs/book/
+# Python virtualenv, caches, and maturin-installed extension modules
+.venv/
+**/__pycache__/
+*.pyc
+**/uv.lock
+.worktrees/
+# IDE / editor cruft
+.idea/
+.vscode/
+*.swp
+*~
