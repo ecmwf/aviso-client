@@ -39,4 +39,27 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     /// Returns [`crate::ClientError::Auth`] when the auth source cannot produce a header (missing
     /// token, refresh failure, encoding error, and so on).
     async fn authorization_header(&self) -> crate::Result<HeaderValue>;
+
+    /// Refreshes credentials after a `401 Unauthorized` response per D8.
+    ///
+    /// The aviso client calls this method when an authenticated request comes back with
+    /// `401`, then retries the request once. The default implementation is a no-op, which is
+    /// correct for static-credential providers like [`Basic`] and [`Bearer`] where a `401` means
+    /// the credentials are simply wrong and refreshing them changes nothing.
+    ///
+    /// Implementations that hold cached tokens (OAuth, OIDC, signed-URL providers) override this
+    /// to rotate the cached token. Because the trait is taken by shared reference (so the same
+    /// provider can be cloned through `Arc<dyn AuthProvider>` across tasks), refresh
+    /// implementations must use interior mutability (`Mutex`, `RwLock`, `tokio::sync::RwLock`,
+    /// or an atomic) to publish the new token; the next call to
+    /// [`Self::authorization_header`] is expected to see it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::ClientError::Auth`] when refresh itself fails (network error talking to
+    /// the token endpoint, refusal by the identity provider, encoding error). The client surfaces
+    /// the error verbatim and does not retry the original request.
+    async fn refresh(&self) -> crate::Result<()> {
+        Ok(())
+    }
 }
