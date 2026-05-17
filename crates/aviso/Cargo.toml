@@ -1,5 +1,5 @@
 [package]
-name = "aviso-client-py"
+name = "aviso"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,13 +8,9 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "PyO3 bindings crate for aviso-client. Scaffold in Phase 0; bound in Phase 5."
-
-[lib]
-crate-type = ["rlib"]
+description = "Core client library for aviso-server, ECMWF's notification service."
+readme = "../../README.md"
 
 [lints]
 workspace = true
 
-[dependencies]
-aviso-client = { path = "../aviso-client", version = "=0.1.0" }

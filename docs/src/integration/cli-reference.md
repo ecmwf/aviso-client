@@ -1,3 +1,3 @@
 # CLI reference
 
-> Phase 0: scaffold only. `aviso-client --version` and `aviso-client --help` work; subcommands land in Phase 4.
+> Phase 0: scaffold only. `aviso --version` and `aviso --help` work; subcommands land in Phase 4.

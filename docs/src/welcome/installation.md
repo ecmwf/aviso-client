@@ -5,20 +5,20 @@
 ## CLI / Rust library
 
 ```bash
-cargo install aviso-client-cli  # Phase 4
+cargo install aviso-cli  # Phase 4 — installs the `aviso` binary
 ```
 
 To depend on the library:
 
 ```toml
 [dependencies]
-aviso-client = "0.1"  # Phase 1
+aviso = "0.1"  # Phase 1
 ```
 
 ## Python package
 
 ```bash
-pip install aviso-client  # Phase 5+
+pip install aviso  # Phase 5+
 ```
 
 ## From source
@@ -26,6 +26,6 @@ pip install aviso-client  # Phase 5+
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git
 cd aviso-client
-cargo build --release            # Rust
+cargo build --release              # Rust
 uv sync && uv run maturin develop  # Python (Phase 5+)
 ```

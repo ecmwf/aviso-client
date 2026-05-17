@@ -8,8 +8,8 @@ use clap::Parser;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "aviso-client",
-    version = aviso_client::VERSION,
+    name = "aviso",
+    version = aviso::VERSION,
     about = "Command-line client for aviso-server",
     long_about = "Phase 0 scaffold. Subcommands land in Phase 4."
 )]
@@ -40,8 +40,8 @@ fn main() -> Result<()> {
     let _cli = Cli::parse();
 
     tracing::info!(
-        service.name = "aviso-client-cli",
-        service.version = aviso_client::VERSION,
+        service.name = "aviso-cli",
+        service.version = aviso::VERSION,
         event.name = "cli.startup.scaffold",
         "Phase 0 scaffold; no subcommands wired yet"
     );

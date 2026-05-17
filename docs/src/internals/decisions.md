@@ -8,7 +8,9 @@ The phased roadmap follows the decision list.
 
 ## D1 — One Rust core, two consumers
 
-A single core library crate (`crates/aviso-client`) implements all behaviour. The Rust CLI (`crates/aviso-client-cli`) and the Python extension (`crates/aviso-client-py`, becoming a `cdylib` in Phase 5) are *peer consumers* and never depend on each other. The core never depends on actix, on PyO3, or on CLI machinery.
+A single core library crate (`crates/aviso`, published as `aviso`) implements all behaviour. The Rust CLI (`crates/aviso-cli`, producing the `aviso` binary) and the Python extension (`crates/aviso-py`, becoming a `cdylib` in Phase 5) are *peer consumers* and never depend on each other. The core never depends on actix, on PyO3, or on CLI machinery.
+
+The repository name (`aviso-client`) intentionally differs from the crate names: the repo is the *project*; the crates inside it live in the unprefixed `aviso` namespace because their consumers (Cargo, `cargo install`, `pip install`, `import`) read the crate/package name, not the repo path.
 
 Rationale: one code path, two surfaces. Adding a future C/C++ surface becomes a new adapter crate, not a redesign.
 
@@ -79,7 +81,7 @@ Two listeners with different filters get different stored cursors. Two listeners
 
 - `StateStore` is a small trait (`get`, `set`, `delete` by resume key).
 - `MemoryStore` ships in Phase 2 (used by the streaming API).
-- `JsonFileStore` ships in Phase 3: JSON under `$XDG_STATE_HOME/aviso-client/state.json`, atomic temp-write + `fsync` + atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
+- `JsonFileStore` ships in Phase 3: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write + `fsync` + atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
 
 SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users actually need shared durable state across processes or hosts.
 
@@ -101,7 +103,7 @@ SSE: a **parser-only** crate (`sse-core`, with `eventsource-stream` as fallback)
 
 ## D7 — No client-side schema validation
 
-The server is the single source of truth for validation. The client does not depend on `aviso-validators` and does not perform pre-flight validation. The `GET /api/v1/schema` endpoint is still exposed via the CLI for human discovery (`aviso-client schema list`/`get`), but no validation pipeline runs on the client side.
+The server is the single source of truth for validation. The client does not depend on `aviso-validators` and does not perform pre-flight validation. The `GET /api/v1/schema` endpoint is still exposed via the CLI for human discovery (`aviso schema list`/`get`), but no validation pipeline runs on the client side.
 
 On a validation failure from the server, the client surfaces the server's error verbatim, with the `X-Request-ID` for correlation.
 
@@ -135,7 +137,7 @@ A C/C++ surface is not implemented in v1. The public Rust API is **not** constra
 
 ## D11 — Triggers
 
-v1 ships two trigger kinds only: `echo` (stdout) and `log` (file). Both are implemented in Rust core (`crates/aviso-client/src/triggers/`). The CLI YAML loader and the Python wrapper both consume the same dispatcher.
+v1 ships two trigger kinds only: `echo` (stdout) and `log` (file). Both are implemented in Rust core (`crates/aviso/src/triggers/`). The CLI YAML loader and the Python wrapper both consume the same dispatcher.
 
 The dispatcher is **internal in v1**: an `enum Trigger { Echo(...), Log(...) }` plus a dispatcher function. There is no public `Trigger` trait until a third trigger kind appears. Required vs optional triggers, per-trigger timeout, bounded retry+backoff, and per-trigger `fail_fast` flag are part of the framework from day one.
 
@@ -147,7 +149,7 @@ Naming aligns with legacy `pyaviso` (`echo`, `log`) so existing operator habits 
 
 ## D12 — Logging per ECMWF Codex `Observability.md`
 
-- Libraries (`aviso-client`, `aviso-client-py`) never configure global logging. They emit `tracing` events with stable `event.name` strings: `client.sse.*`, `client.resume.*`, `client.schema.*`, `client.auth.*`, `client.trigger.*`, `client.notify.*`.
+- Libraries (`aviso`, `aviso-py`) never configure global logging. They emit `tracing` events with stable `event.name` strings: `client.sse.*`, `client.resume.*`, `client.schema.*`, `client.auth.*`, `client.trigger.*`, `client.notify.*`.
 - The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level/target. The current `tracing_subscriber::fmt().json()` output uses tracing's own field schema — strict OpenTelemetry alignment (resource attributes, severity numbers, OTel-shaped JSON) is a follow-up that lands when a real consumer requires it; see the Phase 0 carry-forward list in `TODO.md`.
 - The Python extension bridges Rust *log records* to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init. `pyo3-log` bridges the `log` crate, not `tracing` directly, so the chain is `tracing → tracing_log::LogTracer → log → pyo3-log → python logging`. An alternative is a custom `tracing_subscriber::Layer` that calls Python logging directly without the `log` hop; Phase 5 picks one based on whichever respects backpressure and the GIL better.
 - Single-boundary log discipline: lower layers *return* structured errors; the reconnect supervisor logs classification and final outcome. On give-up, one primary `ERROR` carries the full error chain.
@@ -169,6 +171,8 @@ No `prometheus`/`metrics` dependency ships in v1. The reserved namespace and lab
 - `aviso_client_reconnects_total{reason,outcome}`
 - `aviso_client_notifications_processed_total{outcome}`
 - `aviso_client_trigger_duration_seconds{trigger_kind,outcome}`
+
+The `aviso_client_` prefix (with underscore-separator and explicit `_client_` segment) is deliberate: it disambiguates from `aviso-server`'s `aviso_server_*` metrics when both are scraped into the same Prometheus instance. The Rust crate name (`aviso`) and the Prometheus metric prefix (`aviso_client_`) intentionally differ for this reason.
 
 Banned labels (ECMWF Codex high-cardinality rule): `request_id`, `resume_key`, raw URL, username, UUID, payload fields, full event identifiers (`<event_type>@<sequence>`).
 

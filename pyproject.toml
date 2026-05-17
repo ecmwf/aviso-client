@@ -1,17 +1,17 @@
 # Python package configuration for aviso-client.
 #
-# Phase 0 ships the package skeleton only. The aviso-client-py crate is an
-# `rlib` (not yet a Python extension); `maturin develop` is therefore not
-# usable until Phase 5 converts the crate to `cdylib` and adds the PyO3
-# binding code. Build-system metadata is wired now so the Phase 5 transition
-# is a code-only change, not a packaging redesign.
+# Phase 0 ships the package skeleton only. The aviso-py crate is an `rlib`
+# (not yet a Python extension); `maturin develop` is therefore not usable
+# until Phase 5 converts the crate to `cdylib` and adds the PyO3 binding
+# code. Build-system metadata is wired now so the Phase 5 transition is a
+# code-only change, not a packaging redesign.
 
 [build-system]
 requires = ["maturin>=1.7,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "aviso-client"
+name = "aviso"
 dynamic = ["version"]
 description = "Python client for aviso-server, a notification service for data-driven workflows."
 readme = "python/README.md"
@@ -39,9 +39,9 @@ Repository = "https://github.com/ecmwf/aviso-client"
 Issues = "https://github.com/ecmwf/aviso-client/issues"
 
 [tool.maturin]
-manifest-path = "crates/aviso-client-py/Cargo.toml"
+manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
-module-name = "aviso_client._native"
+module-name = "aviso._native"
 features = []
 
 [tool.ruff]

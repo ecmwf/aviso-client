@@ -30,7 +30,7 @@ mdbook build docs
 cargo deny check
 ```
 
-Python toolchain (once Phase 5 lands and `python/aviso_client/` carries code):
+Python toolchain (once Phase 5 lands and `python/aviso/` carries code):
 
 ```bash
 uv sync

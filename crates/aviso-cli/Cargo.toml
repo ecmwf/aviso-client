@@ -1,5 +1,5 @@
 [package]
-name = "aviso-client-cli"
+name = "aviso-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,14 +11,14 @@ documentation.workspace = true
 description = "Command-line client for aviso-server."
 
 [[bin]]
-name = "aviso-client"
+name = "aviso"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-aviso-client = { path = "../aviso-client", version = "=0.1.0" }
+aviso = { path = "../aviso", version = "=0.1.0" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

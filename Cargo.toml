@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/aviso-client",
-    "crates/aviso-client-cli",
-    "crates/aviso-client-py",
+    "crates/aviso",
+    "crates/aviso-cli",
+    "crates/aviso-py",
 ]
 
 [workspace.package]

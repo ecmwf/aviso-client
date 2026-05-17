@@ -9,7 +9,7 @@
 
 #![forbid(unsafe_code)]
 
-/// Version string of the `aviso-client` crate, sourced from Cargo metadata.
+/// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///
 /// Exposed so the CLI and the Python extension can render a single, consistent
 /// version line without re-reading `CARGO_PKG_VERSION` themselves.

@@ -24,25 +24,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "aviso-client"
+name = "aviso"
 version = "0.1.0"
 
 [[package]]
-name = "aviso-client-cli"
+name = "aviso-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aviso-client",
+ "aviso",
  "clap",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
-name = "aviso-client-py"
+name = "aviso-py"
 version = "0.1.0"
 dependencies = [
- "aviso-client",
+ "aviso",
 ]
 
 [[package]]

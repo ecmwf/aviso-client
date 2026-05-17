@@ -6,16 +6,16 @@
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │  Consumers                                                                     │
 │  ┌──────────────────────┐         ┌──────────────────────────────────────┐     │
-│  │ aviso-client-cli     │         │ aviso_client (Python package)        │     │
-│  │ (Rust binary)        │         │   ┌────────────────────────────────┐ │     │
-│  │                      │         │   │ aviso-client-py (cdylib via    │ │     │
-│  │                      │         │   │  PyO3 — Phase 5)               │ │     │
+│  │ aviso-cli            │         │ aviso (Python package)               │     │
+│  │ (Rust binary,        │         │   ┌────────────────────────────────┐ │     │
+│  │  installed as        │         │   │ aviso-py (cdylib via PyO3 —    │ │     │
+│  │  `aviso`)            │         │   │  Phase 5)                      │ │     │
 │  └──────────┬───────────┘         │   └─────────────────┬──────────────┘ │     │
 │             │                     └─────────────────────┼────────────────┘     │
 │             └──────────────┬──────────────────────────┬─┘                      │
 │                            ▼                          ▼                        │
 │                     ┌────────────────────────────────────────┐                 │
-│                     │  aviso-client (core Rust library)      │                 │
+│                     │  aviso  (core Rust library)            │                 │
 │                     │  • HTTP via reqwest + rustls           │                 │
 │                     │  • SSE parser via sse-core             │                 │
 │                     │  • Reconnect supervisor + state        │                 │
