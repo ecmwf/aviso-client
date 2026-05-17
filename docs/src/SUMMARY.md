@@ -15,6 +15,7 @@
 # Usage
 
 - [Publishing notifications](./usage/notify.md)
+- [Discovering schemas](./usage/schema.md)
 - [CLI quick start]()
 - [Python quick start]()
 
