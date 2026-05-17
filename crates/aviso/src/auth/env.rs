@@ -8,8 +8,9 @@ use reqwest::header::HeaderValue;
 use crate::ClientError;
 use crate::auth::{AuthProvider, Basic, Bearer};
 
-/// Environment variable holding a Bearer (JWT or opaque) token.
-pub const ENV_BEARER_TOKEN: &str = "AVISO_BEARER_TOKEN";
+/// Environment variable holding a Bearer (JWT or opaque) token. Matches the legacy `pyaviso`
+/// convention per D8.
+pub const ENV_TOKEN: &str = "AVISO_TOKEN";
 
 /// Environment variable holding the Basic-auth username.
 pub const ENV_USERNAME: &str = "AVISO_USERNAME";
@@ -21,7 +22,7 @@ pub const ENV_PASSWORD: &str = "AVISO_PASSWORD";
 ///
 /// Resolution order at construction:
 ///
-/// 1. If `AVISO_BEARER_TOKEN` is set and non-empty, use [`Bearer`].
+/// 1. If `AVISO_TOKEN` is set and non-empty, use [`Bearer`].
 /// 2. Else if `AVISO_USERNAME` and `AVISO_PASSWORD` are both set (username non-empty), use [`Basic`].
 /// 3. Else return [`ClientError::Auth`] describing what was missing.
 #[derive(Debug)]
@@ -42,7 +43,7 @@ impl Env {
     ///
     /// Returns [`ClientError::Auth`] if no usable combination of variables is set.
     pub fn from_process_env() -> crate::Result<Self> {
-        let bearer = std::env::var(ENV_BEARER_TOKEN).ok();
+        let bearer = std::env::var(ENV_TOKEN).ok();
         let user = std::env::var(ENV_USERNAME).ok();
         let pass = std::env::var(ENV_PASSWORD).ok();
         Self::from_credentials(bearer.as_deref(), user.as_deref(), pass.as_deref())
@@ -69,7 +70,7 @@ impl Env {
                 inner: EnvSource::Basic(Basic::new(u, p)),
             }),
             _ => Err(ClientError::Auth(format!(
-                "no credentials available: set {ENV_BEARER_TOKEN} or both {ENV_USERNAME} and {ENV_PASSWORD}"
+                "no credentials available: set {ENV_TOKEN} or both {ENV_USERNAME} and {ENV_PASSWORD}"
             ))),
         }
     }
