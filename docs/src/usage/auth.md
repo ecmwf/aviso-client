@@ -108,29 +108,48 @@ Providers that hold cached tokens (OAuth, OIDC, signed-URL) override `refresh()`
 ```rust,ignore
 use async_trait::async_trait;
 use reqwest::header::HeaderValue;
-use aviso::auth::AuthProvider;
+use tokio::sync::RwLock;
 
-#[derive(Debug)]
+use aviso::auth::AuthProvider;
+use aviso::ClientError;
+
 struct MyOauth {
-    token: tokio::sync::RwLock<String>,
+    cached_token: RwLock<String>,
+}
+
+// Manual Debug: never let the cached token through. Deriving would leak the token via
+// RwLock<String>'s Debug impl when the lock is currently available.
+impl std::fmt::Debug for MyOauth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MyOauth")
+            .field("cached_token", &"<redacted>")
+            .finish()
+    }
 }
 
 #[async_trait]
 impl AuthProvider for MyOauth {
     async fn authorization_header(&self) -> aviso::Result<HeaderValue> {
-        let token = self.token.read().await;
-        let mut value = HeaderValue::from_str(&format!("Bearer {token}"))?;
+        let token = self.cached_token.read().await;
+        let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|e| ClientError::Auth(format!("invalid Bearer header: {e}")))?;
         value.set_sensitive(true);
         Ok(value)
     }
 
     async fn refresh(&self) -> aviso::Result<()> {
-        let new = fetch_fresh_token_from_idp().await?;
-        *self.token.write().await = new;
+        let new_token = fetch_fresh_token_from_idp().await?;
+        *self.cached_token.write().await = new_token;
         Ok(())
     }
 }
+
 # async fn fetch_fresh_token_from_idp() -> aviso::Result<String> { Ok("new".into()) }
 ```
 
-The provider must mark the returned `HeaderValue` as sensitive so the downstream log path redacts it. The shipped providers do this; custom providers must too.
+Two non-obvious requirements custom providers must honour:
+
+- **Redact in `Debug`.** Deriving `Debug` over a `RwLock<String>` exposes the wrapped token whenever the lock is uncontended. Implement `Debug` by hand and substitute `"<redacted>"` for the secret, as the shipped `Basic` and `Bearer` do.
+- **Map header-construction errors into `ClientError::Auth`.** `HeaderValue::from_str` returns `InvalidHeaderValue`, which does not convert to `ClientError` automatically; the `?` operator would not compile without an explicit `map_err`. Auth is the right variant because a non-ASCII token is fundamentally an auth-configuration problem.
+
+Mark the returned `HeaderValue` as sensitive so the downstream log path redacts it. The shipped providers do this; custom providers must too.
