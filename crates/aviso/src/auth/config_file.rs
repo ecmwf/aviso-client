@@ -209,4 +209,65 @@ mod tests {
         let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
         assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
     }
+
+    mod from_path {
+        #![allow(
+            clippy::unwrap_used,
+            clippy::panic,
+            reason = "test code: panic on unexpected variant is the standard test diagnostic"
+        )]
+
+        use std::io::Write;
+
+        use super::{AuthProvider, ClientError, ConfigFile};
+
+        #[tokio::test]
+        async fn reads_and_parses_yaml_from_disk() {
+            let file = tempfile::Builder::new()
+                .prefix("aviso-auth-")
+                .suffix(".yaml")
+                .tempfile()
+                .unwrap();
+            writeln!(file.as_file(), "bearer:\n  token: opaque-jwt").unwrap();
+
+            let cfg = ConfigFile::from_path(file.path()).unwrap();
+            let header = cfg.authorization_header().await.unwrap();
+            assert_eq!(header, "Bearer opaque-jwt");
+        }
+
+        #[test]
+        fn missing_file_produces_config_error_with_path_context() {
+            let path = std::env::temp_dir().join("aviso-test-nonexistent-auth-file.yaml");
+            let _ = std::fs::remove_file(&path);
+
+            let err = ConfigFile::from_path(&path).unwrap_err();
+            match err {
+                ClientError::Config(msg) => assert!(
+                    msg.contains(&path.display().to_string()),
+                    "error must mention the offending path: {msg}"
+                ),
+                other => panic!("expected Config error, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn malformed_yaml_on_disk_produces_config_error_with_path_context() {
+            let file = tempfile::Builder::new()
+                .prefix("aviso-auth-bad-")
+                .suffix(".yaml")
+                .tempfile()
+                .unwrap();
+            writeln!(file.as_file(), "bearer: {{").unwrap();
+            let path_str = file.path().display().to_string();
+
+            let err = ConfigFile::from_path(file.path()).unwrap_err();
+            match err {
+                ClientError::Config(msg) => assert!(
+                    msg.contains(&path_str),
+                    "error must mention the offending path: {msg}"
+                ),
+                other => panic!("expected Config error, got {other:?}"),
+            }
+        }
+    }
 }
