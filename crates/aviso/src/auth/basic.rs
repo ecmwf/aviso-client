@@ -17,6 +17,7 @@ pub struct Basic {
 
 impl Basic {
     /// Builds a [`Basic`] provider from a username and password pair.
+    #[must_use]
     pub fn new(user: impl Into<String>, pass: impl Into<String>) -> Self {
         Self {
             user: user.into(),

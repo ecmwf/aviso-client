@@ -15,6 +15,7 @@ pub struct Bearer {
 
 impl Bearer {
     /// Builds a [`Bearer`] provider from a raw token string.
+    #[must_use]
     pub fn new(token: impl Into<String>) -> Self {
         Self {
             token: token.into(),
