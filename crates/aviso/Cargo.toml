@@ -14,3 +14,7 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[dependencies]
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+

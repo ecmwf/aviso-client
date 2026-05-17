@@ -23,6 +23,8 @@ documentation = "https://github.com/ecmwf/aviso-client"
 [workspace.dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2"] }
+thiserror = "2.0"
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
 
