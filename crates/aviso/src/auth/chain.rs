@@ -81,8 +81,8 @@ mod tests {
     async fn returns_first_successful_header() {
         let chain = Chain::new(vec![
             Arc::new(AlwaysFails("first-fail")),
-            Arc::new(Bearer::new("good-token")),
-            Arc::new(Basic::new("never", "used")),
+            Arc::new(Bearer::new("good-token").unwrap()),
+            Arc::new(Basic::new("never", "used").unwrap()),
         ]);
         let header = chain.authorization_header().await.unwrap();
         assert_eq!(header, "Bearer good-token");
