@@ -55,10 +55,6 @@ impl AvisoClient {
     }
 
     /// Internal accessor for the HTTP client; used by sibling modules that build requests.
-    #[allow(
-        dead_code,
-        reason = "consumed by sibling modules (notify, schema, admin) added in follow-up commits"
-    )]
     pub(crate) fn http(&self) -> &HttpClient {
         &self.http
     }
@@ -68,16 +64,76 @@ impl AvisoClient {
     /// The path must not start with `/`. An absolute path would otherwise wipe out any
     /// reverse-proxy prefix in the base URL: `Url::join("https://gw/aviso/", "/api/v1/x")` is
     /// `https://gw/api/v1/x`, not `https://gw/aviso/api/v1/x`.
-    #[allow(
-        dead_code,
-        reason = "consumed by sibling modules (notify, schema, admin) added in follow-up commits"
-    )]
     pub(crate) fn endpoint(&self, relative_path: &str) -> crate::Result<Url> {
         self.base_url.join(relative_path).map_err(|e| {
             ClientError::Config(format!(
                 "build endpoint url from base {} and path {relative_path:?}: {e}",
                 self.base_url
             ))
+        })
+    }
+
+    /// Attaches the configured `Authorization` header (if any) to a request builder.
+    pub(crate) async fn attach_auth(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> crate::Result<reqwest::RequestBuilder> {
+        if let Some(auth) = self.auth() {
+            let value = auth.authorization_header().await?;
+            Ok(builder.header(reqwest::header::AUTHORIZATION, value))
+        } else {
+            Ok(builder)
+        }
+    }
+
+    /// Sends a request with the shared `401 -> refresh -> retry once` contract per D8.
+    ///
+    /// The caller supplies a closure that builds a fresh `RequestBuilder` each time it is called.
+    /// The closure runs at most twice: once for the initial attempt, and again only if the first
+    /// response was `401` and an auth provider is configured to refresh. A second `401` is
+    /// returned to the caller without further retries.
+    pub(crate) async fn send_with_refresh<F>(
+        &self,
+        mut build: F,
+    ) -> crate::Result<reqwest::Response>
+    where
+        F: FnMut(&HttpClient) -> reqwest::RequestBuilder,
+    {
+        let first = self.attach_auth(build(self.http())).await?;
+        let response = first.send().await.map_err(ClientError::from)?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            if let Some(auth) = self.auth() {
+                drop(response);
+                auth.refresh().await?;
+                let retry = self.attach_auth(build(self.http())).await?;
+                return retry.send().await.map_err(ClientError::from);
+            }
+        }
+        Ok(response)
+    }
+}
+
+/// Parses a JSON response, returning `T` on success and [`ClientError::Http`] (with verbatim body
+/// and `X-Request-ID`) on any non-success status. Shared by notify/schema/admin.
+pub(crate) async fn parse_json_response<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> crate::Result<T> {
+    let status = response.status();
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .map(String::from);
+    let body = response.bytes().await?;
+    if status.is_success() {
+        let parsed: T = serde_json::from_slice(&body)?;
+        Ok(parsed)
+    } else {
+        let body_str = String::from_utf8_lossy(&body).into_owned();
+        Err(ClientError::Http {
+            status: status.as_u16(),
+            body: body_str,
+            request_id,
         })
     }
 }
