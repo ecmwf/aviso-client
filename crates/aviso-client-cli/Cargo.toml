@@ -14,18 +14,8 @@ description = "Command-line client for aviso-server."
 name = "aviso-client"
 path = "src/main.rs"
 
-[lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-todo = "deny"
-unimplemented = "deny"
-dbg_macro = "deny"
+[lints]
+workspace = true
 
 [dependencies]
 aviso-client = { path = "../aviso-client", version = "=0.1.0" }

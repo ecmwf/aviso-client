@@ -11,20 +11,6 @@ documentation.workspace = true
 description = "Core client library for aviso-server, ECMWF's notification service."
 readme = "../../README.md"
 
-[lints.rust]
-missing_docs = "warn"
-unsafe_op_in_unsafe_fn = "deny"
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-todo = "deny"
-unimplemented = "deny"
-dbg_macro = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
-
+[lints]
+workspace = true
 

@@ -38,13 +38,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --locked --workspace --all-targets
 
       - name: Test
-        run: cargo test --workspace --all-targets
+        run: cargo test --locked --workspace --all-targets
+
+      - name: Lockfile unchanged
+        run: git diff --exit-code Cargo.lock
 
   deny:
     name: cargo-deny
@@ -55,7 +58,6 @@ jobs:
         with:
           log-level: warn
           command: check
-          arguments: --all-features
 
   docs:
     name: mdBook

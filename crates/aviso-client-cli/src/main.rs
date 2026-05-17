@@ -1,3 +1,8 @@
+//! Command-line client for `aviso-server`.
+//!
+//! Phase 0 scaffold: the binary parses `--help` / `--version` and emits a
+//! single startup log line. Subcommands land in Phase 4.
+
 use anyhow::{Context, Result};
 use clap::Parser;
 
