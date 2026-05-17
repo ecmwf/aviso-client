@@ -13,7 +13,6 @@ docs/book/
 .venv/
 **/__pycache__/
 *.pyc
-**/uv.lock
 .worktrees/
 # IDE / editor cruft
 .idea/

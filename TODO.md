@@ -4,20 +4,17 @@
 > GitHub Issues + milestones. The phased roadmap lives in
 > [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md).
 
-## Active phase: Phase 0 — Bootstrap
+## Active phase: Phase 1 — Rust core (non-streaming)
 
-- [x] Workspace skeleton (three crates, all building)
-- [x] mdBook skeleton with `SUMMARY.md` mirroring the planned taxonomy
-- [x] `pyproject.toml` (maturin backend, scaffold only)
-- [x] LICENSE / README / CONTRIBUTING / TODO
-- [x] CI: `cargo check`, `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, `mdbook build`, `cargo deny check`
-- [x] `tests/e2e/` docker-compose pinned to aviso-server commit SHA
-- [x] First ADR set committed (decisions D1–D17 from plan v0.3)
+See [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md#phase-1--rust-core-non-streaming) for the scope and acceptance criteria.
 
-## Up next: Phase 1 — Rust core (non-streaming)
+## Carried forward from Phase 0
 
-See [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md#phase-1).
+- mdBook link checker (`mdbook-linkcheck` or equivalent) — anchor-link bug found by hand in Pass 5; add a guard so the next one is caught automatically.
+- Windows in the CI matrix — added in Phase 6 when wheels need it, unless Phase 1 surfaces platform-specific behaviour earlier.
+- ADR D12 OTel-alignment is *aspirational*: the current CLI emits `tracing_subscriber::fmt::json()` output which uses tracing's own field schema, not OTel's. A custom formatter is a Phase 1 follow-up if strict OTel-alignment is needed.
+- ECMWF per-file copyright header (ADR D13 was softened to license-only); revisit if ECMWF requires the boilerplate.
 
 ## Open questions
 
-None gating Phase 0. Server-side validator-version + replay-completeness signals are *not* required; the client ships in completeness-unknown mode by default (see ADR D7, D15).
+None gating Phase 1. Server-side validator-version and replay-completeness signals remain unrequired; the client ships in completeness-unknown mode (see ADR D7, D15).

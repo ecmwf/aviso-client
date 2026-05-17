@@ -2,7 +2,7 @@
 
 Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server).
 
-> Status: **Phase 0 — package skeleton only.** No public functionality yet.
+> Status: **Phase 0 — package skeleton only.** No public functionality yet. `maturin develop` is **not** usable until Phase 5 adds the PyO3 binding code and switches the `aviso-client-py` crate to `cdylib`.
 
 ## Install (Phase 5+)
 
@@ -10,7 +10,7 @@ Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server).
 pip install aviso-client
 ```
 
-## Develop locally
+## Develop locally (Phase 5+)
 
 ```bash
 uv sync

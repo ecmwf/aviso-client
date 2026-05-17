@@ -15,13 +15,14 @@ Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF'
 ## Build
 
 ```bash
-cargo check --workspace
-cargo test --workspace
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace --all-targets
 mdbook build docs
 cargo deny check
 ```
 
-All four commands are expected to be green on `main`. Phase 0's only acceptance criterion is that a fresh clone passes them without manual setup beyond `rustup` and `cargo install mdbook cargo-deny`.
+All five commands are expected to be green on `main`. Phase 0's only acceptance criterion is that a fresh clone passes them without manual setup beyond `rustup` and `cargo install mdbook cargo-deny`.
 
 ## Documentation
 
