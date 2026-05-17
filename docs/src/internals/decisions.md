@@ -46,10 +46,14 @@ enum ConnectionStatus {
 
 Transitions pass through a single reducer. `Replaying → Live` requires a server-emitted `replay_completed` event. Connection-level events mutate only `ConnectionStatus`. Checkpoint advancement happens only on `commit_notification_after_processing` and never on control frames.
 
-Reconnect classifier:
+Reconnect classifier — close-reason behaviour depends on the active operation:
 
-- `connection-closing.reason = max_duration_reached | end_of_stream` → immediate reconnect, no backoff.
-- `connection-closing.reason = server_shutdown` → short backoff (single-digit seconds).
+- `connection-closing.reason = max_duration_reached` → immediate reconnect, no backoff. Server-policy close; always routine.
+- `connection-closing.reason = server_shutdown` → short backoff (single-digit seconds), then reconnect.
+- `connection-closing.reason = end_of_stream`:
+  - In **watch** (live or historical-then-live): treat as graceful close, immediate reconnect with the next sequence.
+  - In **replay-only** AFTER a `replay_completed` control event: terminal; do not reconnect. The replay has finished naturally.
+  - In **replay-only** BEFORE `replay_completed`: connection dropped mid-replay; reconnect from `last_committed_sequence + 1` (or original `from_id`/`from_date` if no notification has been committed yet).
 - Transport error → jittered exponential backoff 250 ms → 30 s cap.
 - Heartbeat starvation: `max(3 × interval, interval + 30 s)` since the last *any* SSE event (heartbeat, notification, or control). Reset on every event.
 
@@ -117,7 +121,9 @@ On a 401, the provider may refresh credentials and the request is retried once i
 
 ## D9 — CloudEvent envelope hidden
 
-Users see `Notification { sequence: u64, topic, event_id, event_type, time, payload: serde_json::Value, metadata }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction. A `id` that fails to parse is surfaced as a `client.sse.event.malformed` ERROR and triggers a reconnect.
+Users see `Notification { sequence: u64, topic, event_id, event_type, time, payload: serde_json::Value, metadata }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+
+A malformed `id` (no `@`, non-numeric suffix, or `u64` overflow) is a **terminal protocol error**, not a reconnect trigger: if the server is emitting malformed ids deterministically, reconnecting would re-receive the same bad event and the client would livelock. The client logs one `ERROR` with `event.name = "client.sse.event.malformed"`, the raw id string (sanitised), the `request_id`, the topic, and the current resume key, then closes the stream with a typed `ClientError::MalformedEvent` for the user to decide what to do (typically: file a bug, optionally restart the watch with a fresh cursor).
 
 ---
 
@@ -142,17 +148,17 @@ Naming aligns with legacy `pyaviso` (`echo`, `log`) so existing operator habits 
 ## D12 — Logging per ECMWF Codex `Observability.md`
 
 - Libraries (`aviso-client`, `aviso-client-py`) never configure global logging. They emit `tracing` events with stable `event.name` strings: `client.sse.*`, `client.resume.*`, `client.schema.*`, `client.auth.*`, `client.trigger.*`, `client.notify.*`.
-- The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level/target.
-- The Python extension bridges Rust `tracing` to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init.
+- The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level/target. The current `tracing_subscriber::fmt().json()` output uses tracing's own field schema — strict OpenTelemetry alignment (resource attributes, severity numbers, OTel-shaped JSON) is a follow-up that lands when a real consumer requires it; see the Phase 0 carry-forward list in `TODO.md`.
+- The Python extension bridges Rust *log records* to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init. `pyo3-log` bridges the `log` crate, not `tracing` directly, so the chain is `tracing → tracing_log::LogTracer → log → pyo3-log → python logging`. An alternative is a custom `tracing_subscriber::Layer` that calls Python logging directly without the `log` hop; Phase 5 picks one based on whichever respects backpressure and the GIL better.
 - Single-boundary log discipline: lower layers *return* structured errors; the reconnect supervisor logs classification and final outcome. On give-up, one primary `ERROR` carries the full error chain.
 - Redaction at emission for known sensitive headers (`Authorization`, `Cookie`) and field names matching `password|token|secret|api_key`. URLs are sanitised (userinfo + sensitive query params removed). Request/response bodies are not logged by default; notification payloads are treated as sensitive unless explicitly enabled.
 - Every log line carries `request_id` when known and `resume_key` in a watch context.
 
 ---
 
-## D13 — License Apache-2.0 + ECMWF header
+## D13 — License Apache-2.0
 
-Same regime as `aviso-server`.
+The project is licensed under Apache-2.0 (`LICENSE.txt`) matching `aviso-server`. Per-file ECMWF copyright headers are **not** required in v0.1; they may be added in a single pass later if ECMWF software-publication policy requires the boilerplate. Until then the LICENSE file plus the SPDX expression in each `Cargo.toml` carries the licensing.
 
 ---
 
