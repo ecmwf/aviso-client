@@ -11,7 +11,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-authors = ["Samet Demir <samet.demir@ecmwf.int>"]
+authors = [
+    "Samet Demir <samet.demir@ecmwf.int>",
+    "James Hawkes <james.hawkes@ecmwf.int>",
+    "Tiago Quintino <tiago.quintino@ecmwf.int>",
+]
 repository = "https://github.com/ecmwf/aviso-client"
 homepage = "https://github.com/ecmwf/aviso-client"
 documentation = "https://github.com/ecmwf/aviso-client"

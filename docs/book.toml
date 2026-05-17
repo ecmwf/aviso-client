@@ -1,7 +1,11 @@
 [book]
 title = "aviso-client"
 description = "Client suite for aviso-server, ECMWF's notification service."
-authors = ["Samet Demir <samet.demir@ecmwf.int>"]
+authors = [
+    "Samet Demir <samet.demir@ecmwf.int>",
+    "James Hawkes <james.hawkes@ecmwf.int>",
+    "Tiago Quintino <tiago.quintino@ecmwf.int>",
+]
 language = "en"
 src = "src"
 
