@@ -11,12 +11,12 @@
 ## Planning & tracking
 
 - **GitHub Issues + milestones** are the durable source of truth for in-flight work.
-- **`TODO.md`** at the root is *optional and short*; use it for active local notes during a working session. It is not a substitute for an issue.
+- **`plans/`** holds the project's planning documents — overall plan, roadmap, follow-ups. Phase numbers and roadmap dates live there and nowhere else (see [`AGENTS.md`](AGENTS.md#time-bound-references)).
 - **`docs/src/internals/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
 
 ## Branch & commit conventions
 
-- Branches: `phase-N-<slug>` for plan-aligned work; `fix/<slug>`, `refactor/<slug>`, `docs/<slug>` for everything else.
+- Branches: `<topic>/<slug>` — `feat/<slug>`, `fix/<slug>`, `refactor/<slug>`, `docs/<slug>`, `chore/<slug>`, `meta/<slug>`. Branches do not encode plan ids or dates; plans live under [`plans/`](plans/).
 - Commit subject: imperative, ≤72 chars, no period.
 - Commit body: the *why*. If the change is non-obvious, explain in prose. Cite issue numbers where applicable.
 
@@ -30,7 +30,7 @@ mdbook build docs
 cargo deny check
 ```
 
-Python toolchain (once Phase 5 lands and `python/aviso/` carries code):
+Python toolchain (once `python/aviso/` carries code):
 
 ```bash
 uv sync

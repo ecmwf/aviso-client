@@ -1,10 +1,9 @@
-# Python package configuration for aviso-client.
+# Python package configuration for aviso.
 #
-# Phase 0 ships the package skeleton only. The aviso-py crate is an `rlib`
-# (not yet a Python extension); `maturin develop` is therefore not usable
-# until Phase 5 converts the crate to `cdylib` and adds the PyO3 binding
-# code. Build-system metadata is wired now so the Phase 5 transition is a
-# code-only change, not a packaging redesign.
+# The aviso-py crate is currently an `rlib`, so `maturin develop` is not
+# yet usable; it becomes usable once the crate is converted to `cdylib`
+# and PyO3 bindings are added. Build-system metadata is wired so that
+# transition is a code-only change, not a packaging redesign.
 
 [build-system]
 requires = ["maturin>=1.7,<2.0"]

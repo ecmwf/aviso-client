@@ -1,6 +1,6 @@
 # Rust examples
 
-Phase 7 will fill this in with at least:
+Examples planned for this directory:
 
 - Notify a single event.
 - Watch with reconnect-survival demonstration.

@@ -1,8 +1,9 @@
 //! `PyO3` bindings for [`aviso`].
 //!
-//! Phase 0 ships only the scaffold: an `rlib` re-exporting the core
-//! version. Phase 5 converts this crate to a `cdylib`, adds the `PyO3`
-//! dependency, and exposes the actual bindings.
+//! Currently an `rlib` re-exporting the core crate's version. The Python
+//! extension surface (a `cdylib` with the actual `PyO3` bindings) is added
+//! when the corresponding work lands; the rest of the package metadata is
+//! already wired so adding the bindings is a code-only change.
 
 #![forbid(unsafe_code)]
 

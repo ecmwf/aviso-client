@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "PyO3 bindings crate for aviso. Scaffold in Phase 0; bound in Phase 5."
+description = "PyO3 bindings crate for aviso, the aviso-server client library."
 
 [lib]
 crate-type = ["rlib"]

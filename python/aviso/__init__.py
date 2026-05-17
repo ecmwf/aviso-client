@@ -1,7 +1,8 @@
 """Python client for aviso-server, ECMWF's notification service.
 
-Phase 0 ships only the package skeleton. The async client, blocking wrapper,
-and triggers land in Phase 5; see ``docs/src/internals/decisions.md``.
+The public surface grows as features land in the underlying Rust core and
+PyO3 binding crate; the design rationale lives in
+``docs/src/internals/decisions.md`` and is referenced by stable ADR id.
 
 The package version is sourced from installed package metadata, which itself
 is sourced from ``Cargo.toml`` via maturin's ``dynamic = ["version"]``. There

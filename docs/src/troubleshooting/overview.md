@@ -1,6 +1,6 @@
 # Troubleshooting
 
-> Phase 0: placeholder. Filled in alongside features.
+This page collects diagnostics for problems users hit in real deployments. It grows alongside features.
 
 ## Reporting a problem
 

@@ -30,4 +30,4 @@ AVISO_SERVER_HOST_PORT=8102 docker compose -p shard-2 up --build -d
 
 ## CI
 
-Phase 0 CI validates this file with `docker compose config --quiet` so misconfigurations are caught early. The full e2e suite runs when Phase 1 lands real tests.
+CI validates this file with `docker compose config --quiet` so misconfigurations are caught early. The full e2e suite runs once real tests exist.

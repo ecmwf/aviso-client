@@ -6,12 +6,9 @@
 - a **Rust CLI binary** (`aviso`, produced by the `aviso-cli` crate) for scripted and interactive use;
 - a **Python package** (`aviso`, with PyO3 bindings in the `aviso-py` crate) that is the primary user-facing surface for most consumers.
 
-## Status
-
-Phase 0 — repository bootstrap. The workspace, build system, and documentation skeleton are in place; no user-facing functionality has been implemented yet. See [Architectural decisions](../internals/decisions.md) for the phased roadmap.
-
 ## Where to start
 
-- **Trying it out**: skip ahead to [Quick start](./quick-start.md). It will be empty until Phase 1.
 - **Understanding what aviso does**: read [Key concepts](./key-concepts.md).
+- **Looking at the design**: read [Architectural decisions](../internals/decisions.md).
+- **Tracking the plan**: see [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) at the repo root.
 - **Contributing**: read [Contributing](../internals/contributing.md) and [`AGENTS.md`](https://github.com/ecmwf/aviso-client/blob/main/AGENTS.md) at the repo root.

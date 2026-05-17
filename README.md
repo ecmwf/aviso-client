@@ -2,8 +2,6 @@
 
 Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows.
 
-> Status: **Phase 0 — repository bootstrap.** No public functionality yet.
-
 ## What's in the box
 
 - **`crates/aviso`** — Rust library crate (the core implementation; published as `aviso` on crates.io).
@@ -22,7 +20,7 @@ mdbook build docs
 cargo deny check
 ```
 
-All five commands are expected to be green on `main`. Phase 0's only acceptance criterion is that a fresh clone passes them without manual setup beyond `rustup` and `cargo install mdbook cargo-deny`.
+All five commands are expected to be green on `main`. A fresh clone passes them without manual setup beyond `rustup` and `cargo install mdbook cargo-deny`.
 
 ## Documentation
 
@@ -33,11 +31,11 @@ mdbook serve docs --open
 
 ## Project plan
 
-The phased roadmap lives in [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md). Each phase has explicit scope, out-of-scope, "done" criteria, and documentation expectations. Phase 0 (this PR) only delivers structure; Phase 1 onwards delivers behaviour.
+The current plan and roadmap live under [`plans/`](plans/). Architectural decisions (the *why* of each design choice) live in [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md) and are referenced from plans by their stable ADR id.
 
 ## Working in this repo
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The agent rulebook is [`AGENTS.md`](AGENTS.md). Active local notes live in [`TODO.md`](TODO.md); durable planning lives in GitHub Issues + milestones.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The agent rulebook is [`AGENTS.md`](AGENTS.md). Durable planning lives in GitHub Issues + milestones; planning documents live in [`plans/`](plans/).
 
 ## License
 

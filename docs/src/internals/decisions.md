@@ -2,13 +2,13 @@
 
 This document is the project's ADR (Architecture Decision Record) log. Every load-bearing decision lives here with the reasoning. New decisions are appended; existing ones are amended in place with a dated note. The decision IDs (D1, D2, …) are stable references used elsewhere in the docs and in commit messages.
 
-The phased roadmap follows the decision list.
+The roadmap and follow-up tracking live under [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) and reference ADRs by id.
 
 ---
 
 ## D1 — One Rust core, two consumers
 
-A single core library crate (`crates/aviso`, published as `aviso`) implements all behaviour. The Rust CLI (`crates/aviso-cli`, producing the `aviso` binary) and the Python extension (`crates/aviso-py`, becoming a `cdylib` in Phase 5) are *peer consumers* and never depend on each other. The core never depends on actix, on PyO3, or on CLI machinery.
+A single core library crate (`crates/aviso`, published as `aviso`) implements all behaviour. The Rust CLI (`crates/aviso-cli`, producing the `aviso` binary) and the Python extension (`crates/aviso-py`, the PyO3 binding crate; becomes a `cdylib` once bindings are added) are *peer consumers* and never depend on each other. The core never depends on actix, on PyO3, or on CLI machinery.
 
 The repository name (`aviso-client`) intentionally differs from the crate names: the repo is the *project*; the crates inside it live in the unprefixed `aviso` namespace because their consumers (Cargo, `cargo install`, `pip install`, `import`) read the crate/package name, not the repo path.
 
@@ -80,8 +80,8 @@ Two listeners with different filters get different stored cursors. Two listeners
 ## D4 — `StateStore` trait, `MemoryStore` and `JsonFileStore`
 
 - `StateStore` is a small trait (`get`, `set`, `delete` by resume key).
-- `MemoryStore` ships in Phase 2 (used by the streaming API).
-- `JsonFileStore` ships in Phase 3: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write + `fsync` + atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
+- `MemoryStore` is the in-process default used by the streaming API.
+- `JsonFileStore` provides on-disk persistence: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write + `fsync` + atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
 
 SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users actually need shared durable state across processes or hosts.
 
@@ -150,8 +150,8 @@ Naming aligns with legacy `pyaviso` (`echo`, `log`) so existing operator habits 
 ## D12 — Logging per ECMWF Codex `Observability.md`
 
 - Libraries (`aviso`, `aviso-py`) never configure global logging. They emit `tracing` events with stable `event.name` strings: `client.sse.*`, `client.resume.*`, `client.schema.*`, `client.auth.*`, `client.trigger.*`, `client.notify.*`.
-- The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level/target. The current `tracing_subscriber::fmt().json()` output uses tracing's own field schema — strict OpenTelemetry alignment (resource attributes, severity numbers, OTel-shaped JSON) is a follow-up that lands when a real consumer requires it; see the Phase 0 carry-forward list in `TODO.md`.
-- The Python extension bridges Rust *log records* to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init. `pyo3-log` bridges the `log` crate, not `tracing` directly, so the chain is `tracing → tracing_log::LogTracer → log → pyo3-log → python logging`. An alternative is a custom `tracing_subscriber::Layer` that calls Python logging directly without the `log` hop; Phase 5 picks one based on whichever respects backpressure and the GIL better.
+- The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level/target. The current `tracing_subscriber::fmt().json()` output uses tracing's own field schema — strict OpenTelemetry alignment (resource attributes, severity numbers, OTel-shaped JSON) is a follow-up that lands when a real consumer requires it; see the follow-ups list under [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).
+- The Python extension bridges Rust *log records* to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init. `pyo3-log` bridges the `log` crate, not `tracing` directly, so the chain is `tracing → tracing_log::LogTracer → log → pyo3-log → python logging`. An alternative is a custom `tracing_subscriber::Layer` that calls Python logging directly without the `log` hop; the binding work chooses based on whichever respects backpressure and the GIL better.
 - Single-boundary log discipline: lower layers *return* structured errors; the reconnect supervisor logs classification and final outcome. On give-up, one primary `ERROR` carries the full error chain.
 - Redaction at emission for known sensitive headers (`Authorization`, `Cookie`) and field names matching `password|token|secret|api_key`. URLs are sanitised (userinfo + sensitive query params removed). Request/response bodies are not logged by default; notification payloads are treated as sensitive unless explicitly enabled.
 - Every log line carries `request_id` when known and `resume_key` in a watch context.
@@ -198,92 +198,5 @@ A user-supplied `from_date` is used only for the very first connection of a list
 
 ---
 
-# Phased roadmap
+For the roadmap and follow-up tracking, see the planning documents in [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).
 
-Each phase has explicit scope, out-of-scope, "done" definition, and documentation expectations. "Done" requires CI green on every check, not just the new feature.
-
-## Phase 0 — Bootstrap *(this PR)*
-
-- Workspace skeleton (three crates, all building).
-- mdBook skeleton with `SUMMARY.md` mirroring the planned taxonomy.
-- `pyproject.toml` (maturin backend, scaffold only).
-- CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, `mdbook build docs`, `cargo deny check`.
-- `tests/e2e/` docker-compose pinned to a specific `aviso-server` commit SHA.
-- First ADR set (this document).
-
-**Out of scope**: any client behaviour.
-
-**Done when**: a fresh clone passes the five CI commands above.
-
-## Phase 1 — Rust core (non-streaming)
-
-- `AvisoClient`: `notify`, `schema`, `schema/{event_type}` pass-through, admin endpoints.
-- `AuthProvider` (async) + `BasicAuth`, `BearerToken`, `EnvAuth`, `ConfigFileAuth`, `Chain`.
-- `ClientError` (thiserror enum with `X-Request-ID` correlation surfaced).
-- `Notification` / `NotificationRequest` types; CloudEvent sequence extraction.
-- Conservative `notify()` retry policy (D16).
-- Server-version handshake hooks: gracefully degrade if the server does not report it.
-
-**Tested with**: `wiremock`. Property tests on CloudEvent id parsing.
-
-**Docs**: usage/rust-quickstart, configuration/auth.
-
-## Phase 2 — Streaming + checkpoint semantics
-
-- `sse-core` parser behind our own `SseEvent` enum.
-- Reconnect supervisor with classifier; single-boundary log discipline.
-- Watch state machine per D2/D15.
-- `StateStore` trait + `MemoryStore`.
-- `HistoryGap` typed error (D2).
-- Trigger dispatcher + `Echo` + `Log` (D11), wired into checkpoint policy.
-- Reserved metric names doc-only (D14).
-- **8-test PyO3 spike** to validate `__aiter__`/`__anext__` + cancellation + `aclose()` + dropped-iterator-no-leak + bounded-queue-backpressure + typed-exception + post-`aclose` `StopAsyncIteration` + multi-iterator shared runtime.
-
-**Tested with**: `wiremock` chunked-response harness, kill-every-200ms stress test, heartbeat-starvation, drop-during-replay, schema-fingerprint-change, replay-limit-mid-stream.
-
-**Docs**: resume/sse-and-reconnects, triggers/echo, triggers/log.
-
-**Public streaming API is *not* declared stable here.** That happens at the end of Phase 3.
-
-## Phase 3 — Resume persistence
-
-- `JsonFileStore` per D4.
-- Kill-and-restart + concurrent-process tests.
-- `client.resume.applied` INFO log on resume from stored state.
-
-**Done when**: the streaming API is stable; Phase 2 + Phase 3 tests all pass.
-
-## Phase 4 — Rust CLI
-
-- Subcommands: `notify`, `watch`, `replay`, `schema {list,get}`, `admin {wipe-stream,wipe-all,delete}`, `auth check`, `config dump --redact`.
-- YAML config + `AVISO_CLIENT_CONFIG_FILE` override + `AVISO_CLIENT_*` nested env vars.
-- `--yes` required for destructive admin commands.
-- `--ca-bundle <path>` for dev TLS; `--danger-accept-invalid-certs` loudly named with a WARN log.
-- Graceful shutdown via cancellation tokens.
-
-**Tested with**: `assert_cmd`.
-
-## Phase 5 — PyO3 extension
-
-- `AvisoClient` (async).
-- `AsyncWatchIter`: manually implemented `__aiter__`/`__anext__` over `tokio::sync::mpsc`; owns a `CancellationToken`.
-- `BlockingAvisoClient`: refuses if `asyncio.get_running_loop()` returns; context-manager required; `KeyboardInterrupt` cancels the Rust task.
-- Single tokio runtime shared per Python process.
-- `pyo3-log` bridge with `Caching::LoggersAndLevels`.
-- `pyo3-stub-gen` type stubs.
-
-**Ends with**: a single Linux wheel built in CI + import-smoke test.
-
-## Phase 6 — Wheel matrix
-
-- `cibuildwheel`: Linux x86_64/aarch64 (manylinux + musllinux), macOS universal2, Windows x86_64; `abi3` if possible.
-
-## Phase 7 — Docs polish + examples
-
-- Realistic end-to-end examples (MARS consumer, polygon spatial consumer, multi-listener daemon, respawn-survival demo).
-- Troubleshooting expansion.
-- `mdbook test` of code blocks in CI.
-
-## Phase 8 (deferred) — C++ FFI surface
-
-Only on user request. The Rust API is not constrained for it (D10); a future adapter crate translates.

@@ -7,34 +7,34 @@
 # Welcome
 
 - [Installation](./welcome/installation.md)
-- [Quick start](./welcome/quick-start.md)
+- [Quick start]()
 - [Key concepts](./welcome/key-concepts.md)
 
 ---
 
 # Usage
 
-- [CLI quick start](./usage/cli-quickstart.md)
-- [Python quick start](./usage/python-quickstart.md)
+- [CLI quick start]()
+- [Python quick start]()
 
 ---
 
 # Configuration
 
-- [Overview](./configuration/overview.md)
-- [Authentication](./configuration/auth.md)
+- [Overview]()
+- [Authentication]()
 
 ---
 
 # Triggers
 
-- [Overview](./triggers/overview.md)
+- [Overview]()
 
 ---
 
 # Resume & state
 
-- [Overview](./resume/overview.md)
+- [Overview]()
 
 ---
 
@@ -46,9 +46,9 @@
 
 # Integration
 
-- [Rust API](./integration/rust-api.md)
-- [Python API](./integration/python-api.md)
-- [CLI reference](./integration/cli-reference.md)
+- [Rust API]()
+- [Python API]()
+- [CLI reference]()
 
 ---
 

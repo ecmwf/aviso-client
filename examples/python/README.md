@@ -1,6 +1,6 @@
 # Python examples
 
-Phase 7 will fill this in with at least:
+Examples planned for this directory:
 
 - Async watch + echo trigger.
 - Async watch + log trigger.

@@ -1,9 +1,9 @@
 //! Core client library for [`aviso-server`], ECMWF's notification service for
 //! data-driven workflows.
 //!
-//! Phase 0 ships only the workspace scaffold. The public surface is empty by
-//! design; behaviour lands phase by phase, tracked in
-//! `docs/src/internals/decisions.md`.
+//! The public surface grows as features land; the design rationale for each
+//! choice lives in `docs/src/internals/decisions.md` and is referenced by
+//! stable ADR id.
 //!
 //! [`aviso-server`]: https://github.com/ecmwf/aviso-server
 

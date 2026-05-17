@@ -1,24 +1,24 @@
 # Installation
 
-> Phase 0: not installable yet. This page describes the planned story.
+This page describes how each surface of the suite is installed. Surfaces that have not yet shipped functionality are still installable as scaffold; consult [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) for what each surface currently implements.
 
 ## CLI / Rust library
 
 ```bash
-cargo install aviso-cli  # Phase 4 — installs the `aviso` binary
+cargo install aviso-cli              # installs the `aviso` binary
 ```
 
 To depend on the library:
 
 ```toml
 [dependencies]
-aviso = "0.1"  # Phase 1
+aviso = "0.1"
 ```
 
 ## Python package
 
 ```bash
-pip install aviso  # Phase 5+
+pip install aviso
 ```
 
 ## From source
@@ -26,6 +26,6 @@ pip install aviso  # Phase 5+
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git
 cd aviso-client
-cargo build --release              # Rust
-uv sync && uv run maturin develop  # Python (Phase 5+)
+cargo build --release                # Rust
+uv sync && uv run maturin develop    # Python
 ```
