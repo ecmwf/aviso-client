@@ -35,6 +35,15 @@ pub enum ClientError {
     #[error("auth: {0}")]
     Auth(String),
 
+    /// Failed to decode a response body as JSON.
+    #[error("decode: {0}")]
+    Decode(#[from] serde_json::Error),
+
+    /// `CloudEvent` envelope contained a malformed event id. Terminal per D9 to avoid reconnect
+    /// livelock on a poisoned server stream.
+    #[error("malformed CloudEvent id: {0}")]
+    MalformedEvent(String),
+
     /// Configuration-time error (invalid auth source, missing field, and so on).
     #[error("config: {0}")]
     Config(String),
