@@ -9,6 +9,10 @@
 
 #![forbid(unsafe_code)]
 
+mod error;
+
+pub use error::{ClientError, Result};
+
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///
 /// Exposed so the CLI and the Python extension can render a single, consistent
