@@ -29,6 +29,11 @@ use reqwest::header::HeaderValue;
 pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     /// Returns the value for the `Authorization` header on each outbound request.
     ///
+    /// Implementations carrying real credentials must mark the returned [`HeaderValue`] as
+    /// sensitive via [`HeaderValue::set_sensitive`] so downstream log and debug paths (in
+    /// `reqwest`, `hyper`, and elsewhere) redact the value per D8. The shipped providers
+    /// (`Basic`, `Bearer`, and the ones that wrap them) do this; custom providers must too.
+    ///
     /// # Errors
     ///
     /// Returns [`crate::ClientError::Auth`] when the auth source cannot produce a header (missing

@@ -34,8 +34,12 @@ impl std::fmt::Debug for Bearer {
 impl AuthProvider for Bearer {
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         let header = format!("Bearer {}", self.token);
-        HeaderValue::from_str(&header)
-            .map_err(|e| ClientError::Auth(format!("invalid Bearer header value: {e}")))
+        let mut value = HeaderValue::from_str(&header)
+            .map_err(|e| ClientError::Auth(format!("invalid Bearer header value: {e}")))?;
+        // Mark as sensitive so reqwest, hyper, and any downstream debug/log path redacts the
+        // header value (D8: "Token contents are never logged").
+        value.set_sensitive(true);
+        Ok(value)
     }
 }
 
@@ -52,6 +56,16 @@ mod tests {
         let bearer = Bearer::new("opaque-jwt-here");
         let header = bearer.authorization_header().await.unwrap();
         assert_eq!(header, "Bearer opaque-jwt-here");
+    }
+
+    #[tokio::test]
+    async fn header_is_marked_sensitive() {
+        let bearer = Bearer::new("opaque-jwt-here");
+        let header = bearer.authorization_header().await.unwrap();
+        assert!(
+            header.is_sensitive(),
+            "Bearer header must be sensitive so downstream log paths redact it"
+        );
     }
 
     #[test]
