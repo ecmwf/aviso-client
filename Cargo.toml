@@ -35,6 +35,7 @@ tokio = { version = "1.45", default-features = false, features = ["macros", "rt-
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
 url = "2.5"
+wiremock = "0.6"
 
 [workspace.lints.rust]
 missing_docs = "warn"
