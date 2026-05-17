@@ -38,6 +38,7 @@ enum ConfigSource {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Doc {
     #[serde(default)]
     bearer: Option<BearerSection>,
@@ -152,6 +153,14 @@ mod tests {
     #[test]
     fn rejects_malformed_yaml() {
         let yaml = "bearer: {\n";
+        let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
+        assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_unknown_top_level_key_to_surface_typos() {
+        // 'beare' instead of 'bearer' must not silently fall back to "neither section present".
+        let yaml = "beare:\n  token: x\n";
         let err = ConfigFile::from_yaml_str(yaml).unwrap_err();
         assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
     }
