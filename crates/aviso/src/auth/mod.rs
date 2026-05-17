@@ -1,16 +1,22 @@
 //! Authentication providers per D8.
 //!
 //! [`AuthProvider`] is the async trait the client invokes before each request to obtain the
-//! `Authorization` header value. Two providers ship in this module: [`Basic`] and [`Bearer`].
-//! Additional providers (env-var, config-file, chained composition) live in sibling modules.
+//! `Authorization` header value. Five providers ship: [`Basic`], [`Bearer`], [`Env`],
+//! [`ConfigFile`], and [`Chain`] (composition).
 //!
 //! Shipped providers redact secrets in their `Debug` output.
 
 mod basic;
 mod bearer;
+mod chain;
+mod config_file;
+mod env;
 
 pub use basic::Basic;
 pub use bearer::Bearer;
+pub use chain::Chain;
+pub use config_file::ConfigFile;
+pub use env::Env;
 
 use reqwest::header::HeaderValue;
 
