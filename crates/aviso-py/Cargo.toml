@@ -9,6 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 description = "PyO3 bindings crate for aviso, the aviso-server client library."
+readme = "README.md"
 
 [lib]
 crate-type = ["rlib"]

@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 description = "Core client library for aviso-server, ECMWF's notification service."
-readme = "../../README.md"
+readme = "README.md"
 
 [lints]
 workspace = true

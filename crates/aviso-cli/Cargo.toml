@@ -9,6 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 description = "Command-line client for aviso-server."
+readme = "README.md"
 
 [[bin]]
 name = "aviso"
