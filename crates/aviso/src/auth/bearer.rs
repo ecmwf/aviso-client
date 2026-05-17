@@ -58,7 +58,10 @@ mod tests {
     fn debug_redacts_the_token() {
         let bearer = Bearer::new("super-secret-jwt");
         let s = format!("{bearer:?}");
-        assert!(!s.contains("super-secret-jwt"), "token must be redacted: {s}");
+        assert!(
+            !s.contains("super-secret-jwt"),
+            "token must be redacted: {s}"
+        );
         assert!(s.contains("<redacted>"), "redaction marker missing: {s}");
     }
 }

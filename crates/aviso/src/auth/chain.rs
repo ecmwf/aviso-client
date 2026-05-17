@@ -36,8 +36,7 @@ impl AuthProvider for Chain {
                 Err(e) => last_err = Some(e),
             }
         }
-        Err(last_err
-            .unwrap_or_else(|| ClientError::Auth("empty AuthProvider chain".into())))
+        Err(last_err.unwrap_or_else(|| ClientError::Auth("empty AuthProvider chain".into())))
     }
 }
 
