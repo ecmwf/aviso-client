@@ -46,16 +46,21 @@
   1. describe the current state in terms of what exists today,
   2. mark the entry as a draft chapter (or delete the page) until it has real content, or
   3. move the reference into `plans/`.
-- The same rule applies to TODO-style status banners such as `> Status: Phase 0 — placeholder.` and to scaffold/preview markers in module docs and config comments.
+- The same rule applies to TODO-style status banners such as `> Status: Phase 0 placeholder.` and to scaffold/preview markers in module docs and config comments.
+
+## Writing style
+- **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
+- **Humanize user-facing prose.** Short sentences. Plain words. Avoid list-of-three flourishes (`X, Y, and Z`), reflexive intensifiers like `notably` or `importantly`, and the `X is the Y that does Z` pattern. If you cannot picture saying the sentence aloud to a colleague, rewrite it.
+- Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, planning docs under `plans/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
 
 ## Commit conventions
-- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit subject is `<type>(<scope>): <description>` — lowercase, imperative mood, ≤72 chars, no trailing period.
+- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit subject is `<type>(<scope>): <description>`, lowercase, imperative mood, ≤72 chars, no trailing period.
 - Recognised types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `meta`, `style`, `revert`. Pick the narrowest one that fits; do not invent new types without a reason in the body.
 - Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(plans): …`, `ci(deny): …`, `test(e2e): …`).
 - Breaking changes append `!` after the type/scope and explain in the body: `feat(api)!: rename AvisoClient::watch`. Add a `BREAKING CHANGE:` footer when downstream callers must act.
-- **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update — not a mix. If the subject would naturally use "and", split.
-- **Sensibly sized.** Aim for the smallest commit that still leaves the tree green. A 5-file commit that fixes one thing is better than a 40-file commit that does ten. Bootstrap-scale work splits across multiple commits — layout, build config, docs, CI, harness — each one buildable on its own.
-- **Every commit on `main` builds and passes all checks** — the entire acceptance set (`cargo fmt --check`, `cargo clippy --locked -D warnings`, `cargo test --locked`, `mdbook build`, `mdbook test`, `cargo deny check`). Don't merge a series where intermediate commits are broken.
+- **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update; not a mix. If the subject would naturally use "and", split.
+- **Sensibly sized.** Aim for the smallest commit that still leaves the tree green. A 5-file commit that fixes one thing is better than a 40-file commit that does ten. Bootstrap-scale work splits across multiple commits (layout, build config, docs, CI, harness), each one buildable on its own.
+- **Every commit on `main` builds and passes all checks.** The full acceptance set is `cargo fmt --check`, `cargo clippy --locked -D warnings`, `cargo test --locked`, `mdbook build`, `mdbook test`, `cargo deny check`. Don't merge a series where intermediate commits are broken.
 - Commit body explains the *why*. If the change is non-obvious, write prose, wrapped at ~72 chars. Cite issues in a trailer (`Refs #42`, `Closes #42`); record breaking-change notes in a `BREAKING CHANGE:` trailer.
 - Never amend or force-push branches that others may have pulled. On private branches, amend freely.
 - "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
@@ -79,7 +84,7 @@
 
 ## Errors
 
-- **NEVER `unwrap()` or `expect()` in non-test code.** Test code (`#[cfg(test)]`, `tests/`, doctests) may use them. The only allowed exception in `main` is a documented "fatal init" line at startup — and even there prefer `.context(...)?`.
+- **NEVER `unwrap()` or `expect()` in non-test code.** Test code (`#[cfg(test)]`, `tests/`, doctests) may use them. The only allowed exception in `main` is a documented "fatal init" line at startup, and even there prefer `.context(...)?`.
 - **NEVER swallow errors.** No `let _ = result;`, no `if let Err(_) = result {}` without action. If you genuinely don't care, write `.ok();` and add a `// reason: ...` comment.
 - **MUST use `?` for propagation.** No `match result { Err(e) => return Err(e), Ok(v) => v }`.
 - **Libraries: typed errors with `thiserror`.** No `Box<dyn Error>` in public library APIs. No `anyhow` in library crates.
@@ -167,7 +172,7 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 
 ## Async
 
-- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point — once.
+- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point, once.
 - **Use `asyncio.TaskGroup`** (3.11+) for structured concurrency. Bare `asyncio.create_task` without an `await` later is a leak.
 - **NEVER `time.sleep` in async code.** Use `asyncio.sleep`.
 - **Cancellation: re-raise `asyncio.CancelledError`**, don't swallow. Clean up in `finally`.
@@ -178,8 +183,8 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 - **`pyproject.toml` only.** No `setup.py`, no `requirements.txt` for new projects (committed lockfile via `uv` or `poetry` is fine).
 - **`uv` is the default** package manager for new projects. Lockfile committed.
 - **Pin a Python version** (`.python-version` file) so contributors and CI agree.
-- **Format with `ruff format`, lint with `ruff check`** — both clean in CI.
-- **Type check with `ty check`** — strict mode in CI.
+- **Format with `ruff format`, lint with `ruff check`.** Both clean in CI.
+- **Type check with `ty check`.** Strict mode in CI.
 
 ## Style
 
@@ -245,7 +250,7 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 
 ## Async
 
-- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point — once.
+- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point, once.
 - **Use `asyncio.TaskGroup`** (3.11+) for structured concurrency. Bare `asyncio.create_task` without an `await` later is a leak.
 - **NEVER `time.sleep` in async code.** Use `asyncio.sleep`.
 - **Cancellation: re-raise `asyncio.CancelledError`**, don't swallow. Clean up in `finally`.
@@ -256,8 +261,8 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 - **`pyproject.toml` only.** No `setup.py`, no `requirements.txt` for new projects (committed lockfile via `uv` or `poetry` is fine).
 - **`uv` is the default** package manager for new projects. Lockfile committed.
 - **Pin a Python version** (`.python-version` file) so contributors and CI agree.
-- **Format with `ruff format`, lint with `ruff check`** — both clean in CI.
-- **Type check with `ty check`** — strict mode in CI.
+- **Format with `ruff format`, lint with `ruff check`.** Both clean in CI.
+- **Type check with `ty check`.** Strict mode in CI.
 
 ## Style
 

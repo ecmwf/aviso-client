@@ -6,7 +6,7 @@ Plans survive context compaction and fresh sessions: an agent or contributor com
 
 ## Current plan
 
-- [`v0.3.md`](./v0.3.md) — overall plan for the aviso-client suite (server facts that drive design, architecture summary, phased roadmap, follow-ups, open questions).
+- [`v0.3.md`](./v0.3.md): overall plan for the aviso-client suite (server facts that drive design, architecture summary, roadmap, follow-ups, open questions).
 
 ## Conventions
 

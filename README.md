@@ -4,11 +4,11 @@ Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF'
 
 ## What's in the box
 
-- **`crates/aviso`** — Rust library crate (the core implementation; published as `aviso` on crates.io).
-- **`crates/aviso-cli`** — Rust binary crate producing the `aviso` command-line tool.
-- **`crates/aviso-py`** — PyO3 extension crate exposing the library to Python.
-- **`python/aviso/`** — Pure-Python helpers shipping alongside the extension; the installable distribution and the importable module are both named `aviso`.
-- **`docs/`** — mdBook user-facing documentation.
+- **`crates/aviso`**: Rust library crate (the core implementation; published as `aviso` on crates.io).
+- **`crates/aviso-cli`**: Rust binary crate producing the `aviso` command-line tool.
+- **`crates/aviso-py`**: PyO3 extension crate exposing the library to Python.
+- **`python/aviso/`**: pure-Python helpers shipping alongside the extension. The installable distribution and the importable module are both named `aviso`.
+- **`docs/`**: mdBook user-facing documentation.
 
 ## Build
 
