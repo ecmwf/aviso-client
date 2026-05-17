@@ -12,78 +12,33 @@
 //! - On ambiguous transport failure (request body sent but no response received): do not retry
 //!   per D16.
 
-use reqwest::StatusCode;
-use reqwest::header::AUTHORIZATION;
-use url::Url;
-
-use crate::{AvisoClient, ClientError, NotificationRequest, NotifyResponse};
+use crate::client::parse_json_response;
+use crate::{AvisoClient, NotificationRequest, NotifyResponse};
 
 impl AvisoClient {
     /// Publishes a notification to `POST /api/v1/notification`.
     ///
-    /// On a `401 Unauthorized` response, the configured [`AuthProvider`] (if any) is asked to
-    /// refresh and the request is retried once. A second `401` is returned to the caller as
-    /// [`ClientError::Http`]; the client never loops on auth failures.
+    /// On a `401 Unauthorized` response, the configured [`crate::auth::AuthProvider`] (if any)
+    /// is asked to refresh and the request is retried once. A second `401` is returned to the
+    /// caller as [`crate::ClientError::Http`]; the client never loops on auth failures.
     ///
     /// # Errors
     ///
-    /// - [`ClientError::Transport`] for network-level failures before the response begins (DNS,
-    ///   connect, TLS). Per D16, transport errors after the request body has been sent are not
-    ///   retried because the server may have processed the publish.
-    /// - [`ClientError::Http`] for any non-success status, carrying the verbatim body and
+    /// - [`crate::ClientError::Transport`] for network-level failures before the response begins
+    ///   (DNS, connect, TLS). Per D16, transport errors after the request body has been sent are
+    ///   not retried because the server may have processed the publish.
+    /// - [`crate::ClientError::Http`] for any non-success status, carrying the verbatim body and
     ///   `X-Request-ID` for support correlation.
-    /// - [`ClientError::Decode`] when the server returned `200`/`201` but the body did not
+    /// - [`crate::ClientError::Decode`] when the server returned `200`/`201` but the body did not
     ///   deserialize as [`NotifyResponse`].
-    /// - [`ClientError::Auth`] when the auth provider fails to produce a header or when
-    ///   [`AuthProvider::refresh`] itself fails.
+    /// - [`crate::ClientError::Auth`] when the auth provider fails to produce a header or when
+    ///   `AuthProvider::refresh` itself fails.
     pub async fn notify(&self, request: &NotificationRequest) -> crate::Result<NotifyResponse> {
         let url = self.endpoint("api/v1/notification")?;
-        let response = self.do_notify_request(&url, request).await?;
-
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(auth) = self.auth() {
-                drop(response);
-                auth.refresh().await?;
-                let retry = self.do_notify_request(&url, request).await?;
-                return parse_notify_response(retry).await;
-            }
-        }
-
-        parse_notify_response(response).await
-    }
-
-    async fn do_notify_request(
-        &self,
-        url: &Url,
-        request: &NotificationRequest,
-    ) -> crate::Result<reqwest::Response> {
-        let mut http_request = self.http().post(url.clone()).json(request);
-        if let Some(auth) = self.auth() {
-            let value = auth.authorization_header().await?;
-            http_request = http_request.header(AUTHORIZATION, value);
-        }
-        http_request.send().await.map_err(ClientError::from)
-    }
-}
-
-async fn parse_notify_response(response: reqwest::Response) -> crate::Result<NotifyResponse> {
-    let status = response.status();
-    let request_id = response
-        .headers()
-        .get("x-request-id")
-        .and_then(|h| h.to_str().ok())
-        .map(String::from);
-    let body = response.bytes().await?;
-    if status.is_success() {
-        let parsed: NotifyResponse = serde_json::from_slice(&body)?;
-        Ok(parsed)
-    } else {
-        let body_str = String::from_utf8_lossy(&body).into_owned();
-        Err(ClientError::Http {
-            status: status.as_u16(),
-            body: body_str,
-            request_id,
-        })
+        let response = self
+            .send_with_refresh(|http| http.post(url.clone()).json(request))
+            .await?;
+        parse_json_response(response).await
     }
 }
 
