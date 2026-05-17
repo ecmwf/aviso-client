@@ -14,6 +14,7 @@
 
 # Usage
 
+- [Publishing notifications](./usage/notify.md)
 - [CLI quick start]()
 - [Python quick start]()
 

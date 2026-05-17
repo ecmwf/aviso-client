@@ -13,10 +13,11 @@ pub mod auth;
 mod client;
 mod error;
 pub mod notification;
+mod notify;
 
 pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{ClientError, Result};
-pub use notification::{Notification, NotificationRequest, parse_cloudevent_id};
+pub use notification::{Notification, NotificationRequest, NotifyResponse, parse_cloudevent_id};
 
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///

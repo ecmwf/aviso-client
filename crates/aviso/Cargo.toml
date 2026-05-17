@@ -28,4 +28,5 @@ url = { workspace = true }
 proptest = "1.5"
 tempfile = { workspace = true }
 tokio = { workspace = true }
+wiremock = { workspace = true }
 
