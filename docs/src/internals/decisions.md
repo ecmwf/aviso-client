@@ -1,0 +1,201 @@
+# Architectural decisions
+
+This document is the project's ADR (Architecture Decision Record) log. Every load-bearing decision lives here with the reasoning. New decisions are appended; existing ones are amended in place with a dated note. The decision IDs (D1, D2, and so on) are stable references used elsewhere in the docs and in commit messages.
+
+The roadmap and follow-up tracking live under [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) and reference ADRs by id.
+
+---
+
+## D1. One Rust core, two consumers
+
+A single core library crate (`crates/aviso`, published as `aviso`) implements all behaviour. The Rust CLI (`crates/aviso-cli`, producing the `aviso` binary) and the Python extension (`crates/aviso-py`, the PyO3 binding crate; becomes a `cdylib` once bindings are added) are *peer consumers* and never depend on each other. The core never depends on actix, on PyO3, or on CLI machinery.
+
+The repository name (`aviso-client`) intentionally differs from the crate names: the repo is the *project*, while the crates inside it live in the unprefixed `aviso` namespace because their consumers (Cargo, `cargo install`, `pip install`, `import`) read the crate/package name, not the repo path.
+
+Rationale: one code path, two surfaces. Adding a future C/C++ surface becomes a new adapter crate, not a redesign.
+
+---
+
+## D2. Reconnect-as-norm, at-least-once, checkpointing
+
+`aviso-server` deliberately closes watch connections after `connection_max_duration_sec` (default 3600 s), signalled by a `connection-closing` SSE event with `reason: "max_duration_reached"`. Reconnects are normal operation.
+
+The client:
+
+1. tracks `last_committed_sequence` per resume key;
+2. advances it **only after all required triggers for a notification succeed** (at-least-once delivery);
+3. reconnects with `from_id = last_committed_sequence + 1`;
+4. never checkpoints on heartbeat, control, error, or `connection-closing` frames;
+5. emits one `INFO` log line `event.name = "client.resume.applied"` on successful resume from stored state.
+
+The watch state is modelled as the orthogonal product of two axes:
+
+```rust,ignore
+enum ReplayPhase {
+    Replaying { start: ResumeStart, replay_completed: bool },
+    Live,
+    GapDetected { reason: GapReason },
+    Closed { reason: CloseReason },
+}
+
+enum ConnectionStatus {
+    Connected,
+    Reconnecting,
+    BackoffWait(Duration),
+    RefreshingAuth,
+}
+```
+
+Transitions pass through a single reducer. The transition from `Replaying` to `Live` requires a server-emitted `replay_completed` event. Connection-level events mutate only `ConnectionStatus`. Checkpoint advancement happens only on `commit_notification_after_processing` and never on control frames.
+
+Reconnect classifier. Close-reason behaviour depends on the active operation:
+
+- `connection-closing.reason = max_duration_reached`: immediate reconnect, no backoff. Server-policy close; always routine.
+- `connection-closing.reason = server_shutdown`: short backoff (single-digit seconds), then reconnect.
+- `connection-closing.reason = end_of_stream`:
+  - In **watch** (live or historical-then-live): treat as graceful close, immediate reconnect with the next sequence.
+  - In **replay-only** AFTER a `replay_completed` control event: terminal; do not reconnect. The replay has finished naturally.
+  - In **replay-only** BEFORE `replay_completed`: connection dropped mid-replay; reconnect from `last_committed_sequence + 1` (or original `from_id`/`from_date` if no notification has been committed yet).
+- Transport error: jittered exponential backoff 250 ms to 30 s cap.
+- Heartbeat starvation: `max(3 × interval, interval + 30 s)` since the last SSE event of any kind (heartbeat, notification, or control). Reset on every event.
+
+Log levels: `max_duration_reached` reconnects at `DEBUG` (routine); first connect, resume-from-stored-state, and final give-up at `INFO`; transport errors and heartbeat starvation at `WARN` (rate-limited). Reconnect counts go in a counter, not in chatty logs.
+
+---
+
+## D3. Resume key
+
+The resume key is a stable hash of:
+
+- normalised server base URL (server identity),
+- event type,
+- the full canonical watch request body excluding `from_id` and `from_date`,
+- schema fingerprint at the time of first use,
+- resume-key format version.
+
+Two listeners with different filters get different stored cursors. Two listeners pointing at different servers can never share a cursor. The unhashed normalised fields are stored next to the hash for debugging.
+
+---
+
+## D4. `StateStore` trait, `MemoryStore` and `JsonFileStore`
+
+- `StateStore` is a small trait (`get`, `set`, `delete` by resume key).
+- `MemoryStore` is the in-process default used by the streaming API.
+- `JsonFileStore` provides on-disk persistence: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write plus `fsync` plus atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
+
+SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users actually need shared durable state across processes or hosts.
+
+---
+
+## D5. HTTP via `reqwest`, SSE via a parser-only crate
+
+HTTP: `reqwest` with `rustls-tls`. Matches `aviso-server`'s choice.
+
+SSE: a **parser-only** crate (`sse-core`, with `eventsource-stream` as fallback). The reconnect loop is *ours*, not the SSE crate's. The reason is structural: high-level SSE client crates (`eventsource-client`, `reqwest-eventsource`) drive reconnects using the WHATWG `Last-Event-ID` mechanism, which `aviso-server` does not honour. The server's resume contract is `from_id` or `from_date` in the POST body, which requires a re-POST on every reconnect. That is incompatible with the high-level crates' assumptions.
+
+---
+
+## D6. Runtime: tokio
+
+`tokio` matches `aviso-server`, matches the Rust async ecosystem we will touch, and is what `pyo3-async-runtimes` is built against.
+
+---
+
+## D7. No client-side schema validation
+
+The server is the single source of truth for validation. The client does not depend on `aviso-validators` and does not perform pre-flight validation. The `GET /api/v1/schema` endpoint is still exposed via the CLI for human discovery (`aviso schema list`/`get`), but no validation pipeline runs on the client side.
+
+On a validation failure from the server, the client surfaces the server's error verbatim, with the `X-Request-ID` for correlation.
+
+Rationale: eliminates an entire class of drift bugs; removes a dependency and a version-pin headache; respects the user-stated principle that validation belongs on one side only and the server already returns good errors.
+
+---
+
+## D8. `AuthProvider` trait and config sources
+
+`AuthProvider` is an **async** trait. v1 implementations: `BasicAuth`, `BearerToken`, `EnvAuth`, `ConfigFileAuth`, `Chain(...)`. Sources are composable, precedence is `explicit > env > file > defaults`.
+
+Environment variables: `AVISO_USERNAME`, `AVISO_PASSWORD`, `AVISO_TOKEN`, `AVISO_BASE_URL`, `AVISO_CLIENT_CONFIG_FILE`. The `AVISO_*` prefix matches the legacy `pyaviso` convention where semantics overlap; `AVISO_CLIENT_*` is reserved for nested config overrides specific to the new client.
+
+On a 401, the provider may refresh credentials and the request is retried once if it is safe to retry. Streaming reconnects use refreshed credentials. Token contents are never logged.
+
+---
+
+## D9. CloudEvent envelope hidden
+
+Users see `Notification { sequence: u64, topic, event_id, event_type, time, payload: serde_json::Value, metadata }`. The CloudEvent envelope is parsed internally. Sequence is extracted from the CloudEvent `id` field of the form `<event_type>@<sequence>`, with `rsplit_once('@')` so an event type containing `@` does not break extraction.
+
+A malformed `id` (no `@`, non-numeric suffix, or `u64` overflow) is a **terminal protocol error**, not a reconnect trigger. If the server is emitting malformed ids deterministically, reconnecting would re-receive the same bad event and the client would livelock. The client logs one `ERROR` with `event.name = "client.sse.event.malformed"`, the raw id string (sanitised), the `request_id`, the topic, and the current resume key, then closes the stream with a typed `ClientError::MalformedEvent` for the user to decide what to do (typically: file a bug, optionally restart the watch with a fresh cursor).
+
+---
+
+## D10. C++ surface deferred; Rust API is for Rust users
+
+A C/C++ surface is not implemented in v1. The public Rust API is **not** constrained for hypothetical FFI compatibility: closures, generics, and traits are fair game. Data models stay FFI-friendly where cheap. When the C++ surface is eventually built, it lives in a *separate adapter crate* (hand-written C ABI plus `cbindgen` as a header mirror, or `cxx` for a richer C++ bridge) and translates from the Rust API.
+
+---
+
+## D11. Triggers
+
+v1 ships two trigger kinds only: `echo` (stdout) and `log` (file). Both are implemented in Rust core (`crates/aviso/src/triggers/`). The CLI YAML loader and the Python wrapper both consume the same dispatcher.
+
+The dispatcher is **internal in v1**: an `enum Trigger { Echo(...), Log(...) }` plus a dispatcher function. There is no public `Trigger` trait until a third trigger kind appears. Required vs optional triggers, per-trigger timeout, bounded retry plus backoff, and a per-trigger `fail_fast` flag are part of the framework from day one.
+
+Checkpoint policy: a notification's `last_committed_sequence` advances **only** after all required triggers succeed. Optional triggers may fail without blocking the checkpoint, but must be marked optional explicitly. If required triggers exhaust their retries, the listener stops and the checkpoint stays where it was.
+
+Naming aligns with legacy `pyaviso` (`echo`, `log`) so existing operator habits transfer.
+
+---
+
+## D12. Logging per ECMWF Codex `Observability.md`
+
+- Libraries (`aviso`, `aviso-py`) never configure global logging. They emit `tracing` events with stable `event.name` strings: `client.sse.*`, `client.resume.*`, `client.schema.*`, `client.auth.*`, `client.trigger.*`, `client.notify.*`.
+- The CLI binary owns subscriber init: JSON to stderr by default, `AVISO_LOG` (full `EnvFilter` syntax) overrides level and target. The current `tracing_subscriber::fmt().json()` output uses tracing's own field schema. Strict OpenTelemetry alignment (resource attributes, severity numbers, OTel-shaped JSON) is a follow-up that lands when a real consumer requires it; see the follow-ups list under [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).
+- The Python extension bridges Rust *log records* to Python `logging` via `pyo3-log` with `Caching::LoggersAndLevels`, initialised once at module init. `pyo3-log` bridges the `log` crate, not `tracing` directly, so the chain is `tracing → tracing_log::LogTracer → log → pyo3-log → python logging`. An alternative is a custom `tracing_subscriber::Layer` that calls Python logging directly without the `log` hop; the binding work chooses based on whichever respects backpressure and the GIL better.
+- Single-boundary log discipline: lower layers *return* structured errors; the reconnect supervisor logs classification and final outcome. On give-up, one primary `ERROR` carries the full error chain.
+- Redaction at emission for known sensitive headers (`Authorization`, `Cookie`) and field names matching `password|token|secret|api_key`. URLs are sanitised (userinfo and sensitive query params removed). Request and response bodies are not logged by default; notification payloads are treated as sensitive unless explicitly enabled.
+- Every log line carries `request_id` when known and `resume_key` in a watch context.
+
+---
+
+## D13. License Apache-2.0
+
+The project is licensed under Apache-2.0 (`LICENSE.txt`) matching `aviso-server`. Per-file ECMWF copyright headers are **not** required in v0.1; they may be added in a single pass later if ECMWF software-publication policy requires the boilerplate. Until then the LICENSE file plus the SPDX expression in each `Cargo.toml` carries the licensing.
+
+---
+
+## D14. Metrics deferred to v1.1
+
+No `prometheus`/`metrics` dependency ships in v1. The reserved namespace and label policy are documented here so the v1.1 implementation is mechanical:
+
+- `aviso_client_reconnects_total{reason,outcome}`
+- `aviso_client_notifications_processed_total{outcome}`
+- `aviso_client_trigger_duration_seconds{trigger_kind,outcome}`
+
+The `aviso_client_` prefix (underscore-separator with an explicit `_client_` segment) is deliberate. It disambiguates from `aviso-server`'s `aviso_server_*` metrics when both are scraped into the same Prometheus instance. The Rust crate name (`aviso`) and the Prometheus metric prefix (`aviso_client_`) intentionally differ for this reason.
+
+Banned labels (ECMWF Codex high-cardinality rule): `request_id`, `resume_key`, raw URL, username, UUID, payload fields, full event identifiers (`<event_type>@<sequence>`).
+
+---
+
+## D15. Watch state machine: orthogonal product
+
+See D2. `ReplayPhase × ConnectionStatus`, single reducer, fields private. Tests must exercise invalid transition attempts through the public API and not by mutating fields.
+
+---
+
+## D16. `notify()` is not auto-retried on ambiguous transport failure
+
+A `POST /api/v1/notification` that fails with an ambiguous transport error after the request body has been sent may have been processed by the server. The client does not retry it. Failures before request-body transmission may be retried where `reqwest` can classify them safely.
+
+A server-side idempotency-key contract would lift this restriction; it is an open ask, not a current dependency.
+
+---
+
+## D17. `from_date` is bootstrap-only
+
+A user-supplied `from_date` is used only for the very first connection of a listener. After the first notification is committed, the cursor switches to sequence-based (`from_id = last_committed_sequence + 1`). Server time is authoritative; the client does not attempt clock-skew compensation.
+
+---
+
+For the roadmap and follow-up tracking, see the planning documents in [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).

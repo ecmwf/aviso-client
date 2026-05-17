@@ -1,0 +1,26 @@
+[package]
+name = "aviso-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Command-line client for aviso-server."
+readme = "README.md"
+
+[[bin]]
+name = "aviso"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+aviso = { path = "../aviso", version = "=0.1.0" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

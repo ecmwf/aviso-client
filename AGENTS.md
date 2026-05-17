@@ -39,6 +39,32 @@
 - Comments must be neutral and explain intent/invariants, not authorship or edit history.
 - For parser/format-sensitive code, include at least one valid and one invalid example in comments.
 
+## Time-bound references
+- Phase numbers (`Phase 0`, `Phase 5+`, …), roadmap dates, and "lands in Phase N" remarks MUST NOT appear in code, docstrings, configuration files, commit messages of merged work, or user-facing docs. They belong to `plans/` only.
+- The repo describes what currently is, not what phase produced it. Phase references in code and docs become stale artifacts the moment a phase ships and silently mislead readers who arrive months later.
+- If you find yourself writing "Phase N scaffold" or "comes in Phase M" anywhere outside `plans/`, the correct action is one of:
+  1. describe the current state in terms of what exists today,
+  2. mark the entry as a draft chapter (or delete the page) until it has real content, or
+  3. move the reference into `plans/`.
+- The same rule applies to TODO-style status banners such as `> Status: Phase 0 placeholder.` and to scaffold/preview markers in module docs and config comments.
+
+## Writing style
+- **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
+- **Humanize user-facing prose.** Short sentences. Plain words. Avoid list-of-three flourishes (`X, Y, and Z`), reflexive intensifiers like `notably` or `importantly`, and the `X is the Y that does Z` pattern. If you cannot picture saying the sentence aloud to a colleague, rewrite it.
+- Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, planning docs under `plans/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
+
+## Commit conventions
+- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit subject is `<type>(<scope>): <description>`, lowercase, imperative mood, ≤72 chars, no trailing period.
+- Recognised types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `meta`, `style`, `revert`. Pick the narrowest one that fits; do not invent new types without a reason in the body.
+- Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(plans): …`, `ci(deny): …`, `test(e2e): …`).
+- Breaking changes append `!` after the type/scope and explain in the body: `feat(api)!: rename AvisoClient::watch`. Add a `BREAKING CHANGE:` footer when downstream callers must act.
+- **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update; not a mix. If the subject would naturally use "and", split.
+- **Sensibly sized.** Aim for the smallest commit that still leaves the tree green. A 5-file commit that fixes one thing is better than a 40-file commit that does ten. Bootstrap-scale work splits across multiple commits (layout, build config, docs, CI, harness), each one buildable on its own.
+- **Every commit on `main` builds and passes all checks.** The full acceptance set is `cargo fmt --check`, `cargo clippy --locked -D warnings`, `cargo test --locked`, `mdbook build`, `mdbook test`, `cargo deny check`. Don't merge a series where intermediate commits are broken.
+- Commit body explains the *why*. If the change is non-obvious, write prose, wrapped at ~72 chars. Cite issues in a trailer (`Refs #42`, `Closes #42`); record breaking-change notes in a `BREAKING CHANGE:` trailer.
+- Never amend or force-push branches that others may have pulled. On private branches, amend freely.
+- "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
+
 # Rust rules
 ## Style
 
@@ -58,7 +84,7 @@
 
 ## Errors
 
-- **NEVER `unwrap()` or `expect()` in non-test code.** Test code (`#[cfg(test)]`, `tests/`, doctests) may use them. The only allowed exception in `main` is a documented "fatal init" line at startup — and even there prefer `.context(...)?`.
+- **NEVER `unwrap()` or `expect()` in non-test code.** Test code (`#[cfg(test)]`, `tests/`, doctests) may use them. The only allowed exception in `main` is a documented "fatal init" line at startup, and even there prefer `.context(...)?`.
 - **NEVER swallow errors.** No `let _ = result;`, no `if let Err(_) = result {}` without action. If you genuinely don't care, write `.ok();` and add a `// reason: ...` comment.
 - **MUST use `?` for propagation.** No `match result { Err(e) => return Err(e), Ok(v) => v }`.
 - **Libraries: typed errors with `thiserror`.** No `Box<dyn Error>` in public library APIs. No `anyhow` in library crates.
@@ -146,7 +172,7 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 
 ## Async
 
-- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point — once.
+- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point, once.
 - **Use `asyncio.TaskGroup`** (3.11+) for structured concurrency. Bare `asyncio.create_task` without an `await` later is a leak.
 - **NEVER `time.sleep` in async code.** Use `asyncio.sleep`.
 - **Cancellation: re-raise `asyncio.CancelledError`**, don't swallow. Clean up in `finally`.
@@ -157,8 +183,8 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 - **`pyproject.toml` only.** No `setup.py`, no `requirements.txt` for new projects (committed lockfile via `uv` or `poetry` is fine).
 - **`uv` is the default** package manager for new projects. Lockfile committed.
 - **Pin a Python version** (`.python-version` file) so contributors and CI agree.
-- **Format with `ruff format`, lint with `ruff check`** — both clean in CI.
-- **Type check with `ty check`** — strict mode in CI.
+- **Format with `ruff format`, lint with `ruff check`.** Both clean in CI.
+- **Type check with `ty check`.** Strict mode in CI.
 
 ## Style
 
@@ -169,79 +195,74 @@ Default tools, all from [Astral](https://astral.sh). Pick alternatives only with
 - **Tests in `tests/`, mirror source layout.** `pytest` only. Use `pytest.mark.parametrize` for tables.
 
 # C++ Rules
-## Toolchain (Astral stack)
+## Ownership and lifetime
 
-Default tools, all from [Astral](https://astral.sh). Pick alternatives only with a justified reason in the PR.
-
-| Concern        | Tool       | Notes |
-|----------------|------------|-------|
-| Package mgmt   | `uv`       | env, install, lock, run; replaces pip/pip-tools/poetry |
-| Lint           | `ruff check`  | replaces flake8, isort, pyupgrade, pylint subset |
-| Format         | `ruff format` | replaces black |
-| Type check     | `ty check`    | replaces mypy/pyright; fast, written in Rust |
-| Python version | `.python-version` (managed by `uv`) | one source of truth |
-
-## Typing
-
-- **MUST use type hints on every public function and method.** Internal helpers should too unless trivial.
-- **`ty check` must pass in strict mode.** CI fails otherwise. Treat `ty`'s warnings as errors in CI.
-- **NEVER `Any` without a comment** explaining why no narrower type works.
-- **`from __future__ import annotations`** at the top of every module.
-- **Prefer `Protocol` and `TypedDict`** over `dict[str, Any]` and ad-hoc duck typing.
-- **`Optional[X]` only when `None` is a real semantic state** ("absent" vs "empty"). Otherwise raise.
+- **NEVER raw `new` / `delete` outside a single factory** returning `std::unique_ptr<T>`. Inside that factory, use `std::make_unique` instead.
+- **`std::unique_ptr` by default. `std::shared_ptr` only when ownership is genuinely shared** and you've documented why. Cycles need `weak_ptr`.
+- **NEVER own with raw pointers.** Raw pointers may *observe* (non-owning), never own.
+- **RAII for every resource.** No manual `cleanup()` calls in client code; destructors do the work.
+- **Pass non-trivial types by `const&`** for read-only inputs; by value for trivially copyable types or when sinking.
+- **NEVER return raw pointers to internal storage.** Return `span`/`string_view` for views, by-value for owned, `unique_ptr` for transferred ownership.
 
 ## Errors
 
-- **NEVER bare `except:` or `except Exception:`** without re-raise. Catch the specific exception class.
-- **NEVER swallow exceptions silently.** If you intentionally ignore one, log it at `debug` and add a comment.
-- **Raise typed exceptions**, not `RuntimeError("everything's broken")`. Define a small hierarchy per package.
-- **NEVER catch and re-raise as a different type** without `raise NewError(...) from original`.
-- **`assert` is debug-only.** Don't use it for input validation; it's stripped under `python -O`.
+- **Exceptions for unrecoverable bugs (invariant violations) and library boundaries.** `std::expected<T, E>` (C++23) or `tl::expected` for recoverable, predictable failures.
+- **NEVER catch `(...)` and continue silently.** Log, rethrow, or terminate.
+- **`noexcept` on move constructors and move assignment.** STL containers degrade to copies otherwise.
+- **NEVER throw out of a destructor.** Mark destructors `noexcept` (the default) and assert/log if cleanup fails.
 
-## IO and resources
+## Const correctness
 
-- **MUST use `with` blocks** for any resource with `close()` (`open`, sockets, db connections, locks).
-- **`pathlib.Path`, never `os.path.join`** for new code.
-- **NEVER `print()` in libraries or long-running scripts.** Use `logging` or `structlog`.
-- **Logging config at the entry point only.** Libraries get a `logger = logging.getLogger(__name__)` and never `basicConfig`.
-- **Read text with explicit encoding**: `open(path, encoding="utf-8")`. Defaults differ across platforms.
+- **`const` everything that can be `const`**: parameters, locals, member functions, return types-that-are-views.
+- **`constexpr` where the compiler will let you.**
+- **Member functions are `const` by default.** Drop it only when state changes.
+- **`[[nodiscard]]`** on functions that return state, factories, and any "did it succeed?" return.
 
-## Data shapes
+## Headers and modules
 
-- **Prefer `@dataclass(frozen=True, slots=True)`** for records. Use `pydantic` only when parsing untrusted input.
-- **NEVER mutable default arguments.** `def f(x: list[int] = [])` is a bug. Use `None` and assign inside.
-- **`Enum` (or `StrEnum` in 3.11+) for fixed string sets**, not bare strings.
-- **f-strings only.** No `.format()`, no `%`.
-- **`match` statements over long `if/elif` chains** when the dispatch is structural.
+- **`#pragma once`** at the top of every header. No old-style include guards.
+- **NEVER `using namespace std;` (or any namespace) in a header.** In `.cpp` only inside function scope, and only sparingly.
+- **Include what you use.** No transitive includes assumed. Tools: `include-what-you-use`, `clang-tidy`'s `misc-include-cleaner`.
+- **Forward-declare in headers when full type isn't needed.**
+- **Modules (C++20)** are fine when toolchain supports them; otherwise stick with headers and don't fight the build system.
 
-## CLIs
+## Casts and conversions
 
-- **Use `typer` (default) or `click`.** Argparse only if you have a strong reason.
-- **Every CLI has `--version`, `--help`, and exits non-zero on error** (typer/click do this for free if you let them).
-- **Reserve exit codes**: `0` ok, `1` runtime error, `2` usage. Use codes >=64 for app-specific.
-- **Provide `--dry-run`** for any command that writes/deletes/sends.
-- **`if __name__ == "__main__":` calls a `main()` function**, not inline code.
+- **NEVER C-style casts.** Use `static_cast`, `dynamic_cast`, `const_cast`, `reinterpret_cast` — and justify each in a comment if it's the latter two.
+- **NEVER implicit narrowing.** Compile with `-Wconversion -Wsign-conversion -Werror`.
+- **`std::bit_cast` for type punning**, not `reinterpret_cast` or unions.
 
-## Async
+## Containers and algorithms
 
-- **NEVER mix sync and async carelessly.** `asyncio.run()` is the entry point — once.
-- **Use `asyncio.TaskGroup`** (3.11+) for structured concurrency. Bare `asyncio.create_task` without an `await` later is a leak.
-- **NEVER `time.sleep` in async code.** Use `asyncio.sleep`.
-- **Cancellation: re-raise `asyncio.CancelledError`**, don't swallow. Clean up in `finally`.
-- **Timeouts via `asyncio.timeout()`** (3.11+), not bespoke wall-clock checks.
+- **Prefer `std::array` / `std::vector` / `std::string`.** Don't roll your own.
+- **`std::span<const T>` for read-only views**, `std::string_view` for strings — pass these instead of pointer+length.
+- **Ranges (C++20)** for collection ops. Replace raw loops where it improves readability.
+- **NEVER `std::endl` in tight loops.** It flushes. Use `'\n'`.
 
-## Packaging and tooling
+## Concurrency
 
-- **`pyproject.toml` only.** No `setup.py`, no `requirements.txt` for new projects (committed lockfile via `uv` or `poetry` is fine).
-- **`uv` is the default** package manager for new projects. Lockfile committed.
-- **Pin a Python version** (`.python-version` file) so contributors and CI agree.
-- **Format with `ruff format`, lint with `ruff check`** — both clean in CI.
-- **Type check with `ty check`** — strict mode in CI.
+- **`std::jthread` over `std::thread`.** It joins on destruction and supports cooperative cancellation.
+- **Prefer message passing (`std::queue` + condition_variable, or a channel lib) over shared mutable state.**
+- **Sanitize with TSAN** any code touching threads or atomics.
+- **`std::atomic` ordering: default to `memory_order_seq_cst`** unless you've proven a weaker order is correct.
+
+## Build, warnings, sanitizers
+
+- **Compile with `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wnon-virtual-dtor -Werror`** in dev builds.
+- **CI runs three configs**: Debug, Release, and Debug+ASAN+UBSAN. Optionally a separate TSAN job for threaded code.
+- **NEVER disable a sanitizer in CI to make tests pass.** Fix the bug.
+- **CMake target-level settings only.** No `include_directories(...)` at directory scope; use `target_include_directories`.
 
 ## Style
 
-- **NEVER `import *`.**
-- **One public class/function per concept per module.** Files >500 lines get split.
-- **Public API explicit via `__all__`** in `__init__.py`.
-- **Docstrings on public functions/classes**: what, args, returns, raises.
-- **Tests in `tests/`, mirror source layout.** `pytest` only. Use `pytest.mark.parametrize` for tables.
+- **One class per public header** when reasonable. Helper types live near their owner.
+- **`auto` when the type is obvious or unutterable** (lambdas, iterators, `make_unique`); explicit type otherwise.
+- **`structured bindings`** for tuple/pair/struct returns: `auto [ok, value] = ...`.
+- **No abbreviations in identifiers.** `connection`, not `conn`. Exception: well-known acronyms.
+- **Files >500 lines, classes >250 lines: split.**
+
+## Tooling
+
+- **clang-format** committed (`.clang-format`), CI checks formatting.
+- **clang-tidy** with at least: `bugprone-*`, `cert-*`, `cppcoreguidelines-*`, `modernize-*`, `performance-*`, `readability-*`. CI runs it, treats violations as errors.
+- **CMake Presets** (`CMakePresets.json`) for dev/CI configurations — no copy-pasted shell incantations.
