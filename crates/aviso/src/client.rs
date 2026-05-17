@@ -114,7 +114,7 @@ impl AvisoClient {
 }
 
 /// Parses a JSON response, returning `T` on success and [`ClientError::Http`] (with verbatim body
-/// and `X-Request-ID`) on any non-success status. Shared by notify/schema/admin.
+/// and `X-Request-ID`) on any non-success status. Shared by notify/schema.
 pub(crate) async fn parse_json_response<T: serde::de::DeserializeOwned>(
     response: reqwest::Response,
 ) -> crate::Result<T> {
@@ -129,6 +129,30 @@ pub(crate) async fn parse_json_response<T: serde::de::DeserializeOwned>(
         let parsed: T = serde_json::from_slice(&body)?;
         Ok(parsed)
     } else {
+        let body_str = String::from_utf8_lossy(&body).into_owned();
+        Err(ClientError::Http {
+            status: status.as_u16(),
+            body: body_str,
+            request_id,
+        })
+    }
+}
+
+/// Like [`parse_json_response`] but for endpoints that return either `204 No Content` or a body
+/// the client does not need. Success drains the body so the connection can be pooled. Used by
+/// admin endpoints.
+pub(crate) async fn parse_json_response_optional(response: reqwest::Response) -> crate::Result<()> {
+    let status = response.status();
+    if status.is_success() {
+        let _ = response.bytes().await;
+        Ok(())
+    } else {
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|h| h.to_str().ok())
+            .map(String::from);
+        let body = response.bytes().await?;
         let body_str = String::from_utf8_lossy(&body).into_owned();
         Err(ClientError::Http {
             status: status.as_u16(),

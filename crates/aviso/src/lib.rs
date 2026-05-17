@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+mod admin;
 pub mod auth;
 mod client;
 mod error;
