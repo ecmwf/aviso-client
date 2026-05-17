@@ -7,7 +7,7 @@
 # Welcome
 
 - [Installation](./welcome/installation.md)
-- [Quick start]()
+- [Quick start](./welcome/quick-start.md)
 - [Key concepts](./welcome/key-concepts.md)
 
 ---

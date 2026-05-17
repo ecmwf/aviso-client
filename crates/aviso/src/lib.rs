@@ -10,9 +10,11 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+mod client;
 mod error;
 pub mod notification;
 
+pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{ClientError, Result};
 pub use notification::{Notification, NotificationRequest, parse_cloudevent_id};
 
