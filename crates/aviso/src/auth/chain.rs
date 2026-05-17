@@ -11,8 +11,24 @@ use crate::auth::AuthProvider;
 /// successful header is returned. If all members fail, the last error is propagated. An empty
 /// chain always errors.
 ///
-/// Typical use: `Chain::new(vec![Arc::new(Env::from_process_env()?), Arc::new(ConfigFile::from_path(p)?)])`
-/// to prefer environment-supplied credentials and fall back to a config file.
+/// `Chain` is a *runtime* fallback over already-constructed providers. It does not perform
+/// source discovery, because the shipped source providers ([`crate::auth::Env`],
+/// [`crate::auth::ConfigFile`]) fail at construction when their input is missing rather than at
+/// header-generation time. Build a chain explicitly from the sources you actually have:
+///
+/// ```ignore
+/// use std::sync::Arc;
+/// use aviso::auth::{AuthProvider, Chain, ConfigFile, Env};
+///
+/// let mut providers: Vec<Arc<dyn AuthProvider>> = Vec::new();
+/// if let Ok(env) = Env::from_process_env() {
+///     providers.push(Arc::new(env));
+/// }
+/// if let Ok(file) = ConfigFile::from_path("/etc/aviso/auth.yaml") {
+///     providers.push(Arc::new(file));
+/// }
+/// let _chain = Chain::new(providers);
+/// ```
 #[derive(Debug)]
 pub struct Chain {
     providers: Vec<Arc<dyn AuthProvider>>,
