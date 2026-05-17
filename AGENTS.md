@@ -39,6 +39,15 @@
 - Comments must be neutral and explain intent/invariants, not authorship or edit history.
 - For parser/format-sensitive code, include at least one valid and one invalid example in comments.
 
+## Time-bound references
+- Phase numbers (`Phase 0`, `Phase 5+`, …), roadmap dates, and "lands in Phase N" remarks MUST NOT appear in code, docstrings, configuration files, commit messages of merged work, or user-facing docs. They belong to `plans/` only.
+- The repo describes what currently is, not what phase produced it. Phase references in code and docs become stale artifacts the moment a phase ships and silently mislead readers who arrive months later.
+- If you find yourself writing "Phase N scaffold" or "comes in Phase M" anywhere outside `plans/`, the correct action is one of:
+  1. describe the current state in terms of what exists today,
+  2. mark the entry as a draft chapter (or delete the page) until it has real content, or
+  3. move the reference into `plans/`.
+- The same rule applies to TODO-style status banners such as `> Status: Phase 0 — placeholder.` and to scaffold/preview markers in module docs and config comments.
+
 # Rust rules
 ## Style
 
