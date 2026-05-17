@@ -48,6 +48,9 @@ jobs:
       - name: Test
         run: cargo test --locked --workspace --all-targets
 
+      - name: Doctests
+        run: cargo test --locked --workspace --doc
+
       - name: Lockfile unchanged
         run: git diff --exit-code Cargo.lock
 
