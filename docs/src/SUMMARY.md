@@ -25,7 +25,7 @@
 # Configuration
 
 - [Overview]()
-- [Authentication]()
+- [Authentication](./usage/auth.md)
 
 ---
 
