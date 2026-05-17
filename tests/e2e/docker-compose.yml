@@ -1,0 +1,17 @@
+services:
+  aviso-server:
+    build:
+      context: https://github.com/ecmwf/aviso-server.git#23fb4e949739588a1b1887754783773f112040a8
+      dockerfile: Dockerfile
+    image: aviso-server:e2e-23fb4e94
+    container_name: aviso-server-e2e
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      RUST_LOG: "info"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s

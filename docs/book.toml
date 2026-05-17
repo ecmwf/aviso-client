@@ -1,0 +1,16 @@
+[book]
+title = "aviso-client"
+description = "Client suite for aviso-server, ECMWF's notification service."
+authors = ["Samet Demir <samet.demir@ecmwf.int>"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/ecmwf/aviso-client"
+edit-url-template = "https://github.com/ecmwf/aviso-client/edit/main/docs/{path}"

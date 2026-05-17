@@ -1,0 +1,54 @@
+# Python package configuration for aviso-client.
+#
+# The package is built by maturin from the aviso-client-py PyO3 crate.
+# In Phase 0 the crate is a scaffold with no PyO3 bindings; the Python
+# extension is wired up in Phase 5. Until then `maturin develop` will
+# build an empty extension that the pure-Python package shadows.
+
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "aviso-client"
+version = "0.1.0"
+description = "Python client for aviso-server, a notification service for data-driven workflows."
+readme = "python/README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Samet Demir", email = "samet.demir@ecmwf.int" }]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/ecmwf/aviso-client"
+Repository = "https://github.com/ecmwf/aviso-client"
+Issues = "https://github.com/ecmwf/aviso-client/issues"
+
+[tool.maturin]
+manifest-path = "crates/aviso-client-py/Cargo.toml"
+python-source = "python"
+module-name = "aviso_client._native"
+features = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
