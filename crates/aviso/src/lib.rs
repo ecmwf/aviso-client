@@ -9,12 +9,18 @@
 
 #![forbid(unsafe_code)]
 
+mod admin;
 pub mod auth;
+mod client;
 mod error;
 pub mod notification;
+mod notify;
+pub mod schema;
 
+pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{ClientError, Result};
-pub use notification::{Notification, NotificationRequest, parse_cloudevent_id};
+pub use notification::{Notification, NotificationRequest, NotifyResponse, parse_cloudevent_id};
+pub use schema::{SchemaCatalog, SchemaResponse, StreamSchema};
 
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
 ///
