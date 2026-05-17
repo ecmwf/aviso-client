@@ -42,7 +42,7 @@ uv run pytest python/tests/
 
 ## End-to-end tests
 
-E2E tests run against a real `aviso-server` instance pinned to a specific commit. The pinned SHA lives in [`tests/e2e/.aviso-server-version`](tests/e2e/.aviso-server-version). Bring it up locally with `docker compose -f tests/e2e/docker-compose.yml up -d`.
+E2E tests run against a real `aviso-server` instance pinned to a specific commit. The pinned SHA lives in [`tests/e2e/.env`](tests/e2e/.env). Bring it up locally with `cd tests/e2e && docker compose up -d`.
 
 ## Code of conduct
 

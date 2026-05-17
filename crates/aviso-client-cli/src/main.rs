@@ -12,11 +12,13 @@ struct Cli {}
 
 fn init_tracing() -> Result<()> {
     use tracing_subscriber::EnvFilter;
+    use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::fmt;
 
-    let filter = EnvFilter::try_from_env("AVISO_LOG")
-        .or_else(|_| EnvFilter::try_new("info"))
-        .context("constructing tracing EnvFilter")?;
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .with_env_var("AVISO_LOG")
+        .from_env_lossy();
 
     fmt()
         .with_env_filter(filter)

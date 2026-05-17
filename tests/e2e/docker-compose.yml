@@ -1,9 +1,9 @@
 services:
   aviso-server:
     build:
-      context: https://github.com/ecmwf/aviso-server.git#23fb4e949739588a1b1887754783773f112040a8
+      context: https://github.com/ecmwf/aviso-server.git#${AVISO_SERVER_SHA}
       dockerfile: Dockerfile
-    image: aviso-server:e2e-23fb4e94
+    image: aviso-server:e2e-${AVISO_SERVER_SHA}
     container_name: aviso-server-e2e
     ports:
       - "127.0.0.1:8000:8000"
