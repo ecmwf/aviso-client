@@ -64,12 +64,12 @@ impl Env {
     ) -> crate::Result<Self> {
         if let Some(token) = bearer_token.filter(|t| !t.is_empty()) {
             return Ok(Self {
-                inner: EnvSource::Bearer(Bearer::new(token)),
+                inner: EnvSource::Bearer(Bearer::new(token)?),
             });
         }
         match (username, password) {
             (Some(u), Some(p)) if !u.is_empty() => Ok(Self {
-                inner: EnvSource::Basic(Basic::new(u, p)),
+                inner: EnvSource::Basic(Basic::new(u, p)?),
             }),
             _ => Err(ClientError::Auth(format!(
                 "no credentials available: set {ENV_TOKEN} or both {ENV_USERNAME} and {ENV_PASSWORD}"

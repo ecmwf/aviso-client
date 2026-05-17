@@ -88,26 +88,12 @@ impl ConfigFile {
         let doc: Doc = serde_norway::from_str(yaml)
             .map_err(|e| ClientError::Config(format!("parse YAML: {e}")))?;
         match (doc.bearer, doc.basic) {
-            (Some(b), None) => {
-                if b.token.is_empty() {
-                    return Err(ClientError::Config(
-                        "bearer section has empty 'token'".into(),
-                    ));
-                }
-                Ok(Self {
-                    inner: ConfigSource::Bearer(Bearer::new(b.token)),
-                })
-            }
-            (None, Some(b)) => {
-                if b.username.is_empty() {
-                    return Err(ClientError::Config(
-                        "basic section has empty 'username'".into(),
-                    ));
-                }
-                Ok(Self {
-                    inner: ConfigSource::Basic(Basic::new(b.username, b.password)),
-                })
-            }
+            (Some(b), None) => Ok(Self {
+                inner: ConfigSource::Bearer(Bearer::new(b.token)?),
+            }),
+            (None, Some(b)) => Ok(Self {
+                inner: ConfigSource::Basic(Basic::new(b.username, b.password)?),
+            }),
             (Some(_), Some(_)) => Err(ClientError::Config(
                 "has both 'bearer' and 'basic' sections; only one is allowed".into(),
             )),

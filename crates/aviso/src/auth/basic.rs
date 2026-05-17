@@ -17,12 +17,28 @@ pub struct Basic {
 
 impl Basic {
     /// Builds a [`Basic`] provider from a username and password pair.
-    #[must_use]
-    pub fn new(user: impl Into<String>, pass: impl Into<String>) -> Self {
-        Self {
-            user: user.into(),
-            pass: pass.into(),
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Config`] if `user` is empty or contains `:`. The colon ban comes
+    /// from RFC 7617 (the colon is the user/password separator and would silently shift bytes
+    /// between fields). An empty password is allowed because RFC 7617 permits it.
+    pub fn new(user: impl Into<String>, pass: impl Into<String>) -> crate::Result<Self> {
+        let user = user.into();
+        if user.is_empty() {
+            return Err(ClientError::Config(
+                "Basic username must not be empty".into(),
+            ));
         }
+        if user.contains(':') {
+            return Err(ClientError::Config(
+                "Basic username must not contain ':' per RFC 7617".into(),
+            ));
+        }
+        Ok(Self {
+            user,
+            pass: pass.into(),
+        })
     }
 }
 
@@ -38,15 +54,8 @@ impl std::fmt::Debug for Basic {
 #[async_trait::async_trait]
 impl AuthProvider for Basic {
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
-        // RFC 7617 forbids a ':' in the user-id because it is the user/password separator. An
-        // invalid value would otherwise authenticate as the wrong account on the server side; we
-        // reject it here so the bug surfaces at the first request rather than as a confusing
-        // 401 mismatch.
-        if self.user.contains(':') {
-            return Err(ClientError::Auth(
-                "Basic username must not contain ':' per RFC 7617".into(),
-            ));
-        }
+        // user is guaranteed non-empty and ':'-free by Basic::new; that invariant lets us format
+        // the credentials directly without re-validating on every request.
         let credentials = format!("{}:{}", self.user, self.pass);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
         let header = format!("Basic {encoded}");
@@ -69,7 +78,7 @@ mod tests {
 
     #[tokio::test]
     async fn header_encodes_user_and_password_in_base64() {
-        let basic = Basic::new("alice", "wonderland");
+        let basic = Basic::new("alice", "wonderland").unwrap();
         let header = basic.authorization_header().await.unwrap();
         // base64("alice:wonderland") = "YWxpY2U6d29uZGVybGFuZA=="
         assert_eq!(header, "Basic YWxpY2U6d29uZGVybGFuZA==");
@@ -77,7 +86,7 @@ mod tests {
 
     #[tokio::test]
     async fn header_is_marked_sensitive() {
-        let basic = Basic::new("alice", "wonderland");
+        let basic = Basic::new("alice", "wonderland").unwrap();
         let header = basic.authorization_header().await.unwrap();
         assert!(
             header.is_sensitive(),
@@ -85,16 +94,21 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn username_with_colon_is_rejected_per_rfc_7617() {
-        let basic = Basic::new("alice:bob", "pw");
-        let err = basic.authorization_header().await.unwrap_err();
-        assert!(matches!(err, crate::ClientError::Auth(_)), "got {err:?}");
+    #[test]
+    fn new_rejects_empty_username() {
+        let err = Basic::new("", "pw").unwrap_err();
+        assert!(matches!(err, crate::ClientError::Config(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn new_rejects_username_with_colon_per_rfc_7617() {
+        let err = Basic::new("alice:bob", "pw").unwrap_err();
+        assert!(matches!(err, crate::ClientError::Config(_)), "got {err:?}");
     }
 
     #[test]
     fn debug_redacts_the_password() {
-        let basic = Basic::new("alice", "wonderland");
+        let basic = Basic::new("alice", "wonderland").unwrap();
         let s = format!("{basic:?}");
         assert!(s.contains("alice"), "user should be visible: {s}");
         assert!(!s.contains("wonderland"), "password must be redacted: {s}");
