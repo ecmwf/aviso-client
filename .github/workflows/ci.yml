@@ -81,3 +81,14 @@ jobs:
 
       - name: Build docs
         run: mdbook build docs
+
+      - name: Test docs (Rust code blocks)
+        run: mdbook test docs
+
+  e2e-config:
+    name: e2e compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose
+        run: docker compose -f tests/e2e/docker-compose.yml --env-file tests/e2e/.env config --quiet

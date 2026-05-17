@@ -4,14 +4,8 @@ services:
       context: https://github.com/ecmwf/aviso-server.git#${AVISO_SERVER_SHA}
       dockerfile: Dockerfile
     image: aviso-server:e2e-${AVISO_SERVER_SHA}
-    container_name: aviso-server-e2e
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${AVISO_SERVER_HOST_PORT:-8000}:8000"
     environment:
       RUST_LOG: "info"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
+

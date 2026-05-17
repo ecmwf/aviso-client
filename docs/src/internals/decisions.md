@@ -28,7 +28,7 @@ The client:
 
 The watch state is modelled as the orthogonal product of two axes:
 
-```rust
+```rust,ignore
 enum ReplayPhase {
     Replaying { start: ResumeStart, replay_completed: bool },
     Live,
