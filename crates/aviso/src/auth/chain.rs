@@ -55,23 +55,20 @@ impl AuthProvider for Chain {
         Err(last_err.unwrap_or_else(|| ClientError::Auth("empty AuthProvider chain".into())))
     }
 
-    /// Fans the refresh call out to every member. Returns `Ok(())` if at least one member's
-    /// refresh succeeded (so the next `authorization_header` may see a fresh token from one of
-    /// the members), otherwise returns the last error.
+    /// Refreshes only the provider that currently produces the `Authorization` header (the
+    /// first member whose [`AuthProvider::authorization_header`] returns `Ok`). Refreshing every
+    /// member would let a static no-op provider mask a real refresh failure on a stateful
+    /// provider, so the call surfaces the targeted provider's outcome directly.
+    ///
+    /// If no member can produce a header at all, returns `Ok(())`: there is nothing to refresh,
+    /// and the next `authorization_header` call will surface the underlying error.
     async fn refresh(&self) -> crate::Result<()> {
-        let mut last_err: Option<ClientError> = None;
-        let mut any_ok = false;
         for provider in &self.providers {
-            match provider.refresh().await {
-                Ok(()) => any_ok = true,
-                Err(e) => last_err = Some(e),
+            if provider.authorization_header().await.is_ok() {
+                return provider.refresh().await;
             }
         }
-        if any_ok || self.providers.is_empty() {
-            Ok(())
-        } else {
-            Err(last_err.unwrap_or_else(|| ClientError::Auth("empty AuthProvider chain".into())))
-        }
+        Ok(())
     }
 }
 
@@ -117,6 +114,22 @@ mod tests {
         }
     }
 
+    /// Produces a header successfully but fails on refresh. Models a real stateful provider
+    /// (`OAuth`, `OIDC`) whose `IdP` went down.
+    #[derive(Debug)]
+    struct FailingRefresher;
+
+    #[async_trait::async_trait]
+    impl AuthProvider for FailingRefresher {
+        async fn authorization_header(&self) -> crate::Result<HeaderValue> {
+            Ok(HeaderValue::from_static("Bearer stale"))
+        }
+
+        async fn refresh(&self) -> crate::Result<()> {
+            Err(ClientError::Auth("idp down".into()))
+        }
+    }
+
     #[tokio::test]
     async fn returns_first_successful_header() {
         let chain = Chain::new(vec![
@@ -159,35 +172,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chain_refresh_fans_out_to_every_member() {
-        let a = Arc::new(RefreshCounter::default());
-        let b = Arc::new(RefreshCounter::default());
-        let chain = Chain::new(vec![a.clone(), b.clone()]);
+    async fn chain_refresh_targets_only_the_first_header_producer() {
+        // Both producers return Ok from authorization_header, but the chain refreshes only the
+        // first one because that is the provider whose token actually got used.
+        let first = Arc::new(RefreshCounter::default());
+        let second = Arc::new(RefreshCounter::default());
+        let chain = Chain::new(vec![first.clone(), second.clone()]);
         chain.refresh().await.unwrap();
-        assert_eq!(a.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(b.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(first.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            second.calls.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "later members must not be touched when an earlier one already produces the header"
+        );
     }
 
     #[tokio::test]
-    async fn chain_refresh_returns_ok_if_at_least_one_member_succeeds() {
+    async fn chain_refresh_skips_members_that_cannot_produce_a_header() {
+        // AlwaysFails has no header to refresh; the chain walks past it and refreshes the
+        // RefreshCounter.
+        let counter = Arc::new(RefreshCounter::default());
+        let chain = Chain::new(vec![Arc::new(AlwaysFails("nope")), counter.clone()]);
+        chain.refresh().await.unwrap();
+        assert_eq!(counter.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn chain_refresh_propagates_error_from_targeted_provider() {
+        // The header producer is FailingRefresher, whose refresh fails. The error surfaces
+        // instead of being masked by a later static no-op provider.
         let chain = Chain::new(vec![
-            Arc::new(AlwaysFails("nope")),
-            Arc::new(RefreshCounter::default()),
+            Arc::new(FailingRefresher),
+            Arc::new(Bearer::new("static").unwrap()),
         ]);
-        chain.refresh().await.unwrap();
+        let err = chain.refresh().await.unwrap_err();
+        assert!(
+            matches!(&err, ClientError::Auth(msg) if msg == "idp down"),
+            "expected the stateful provider's refresh error to surface, got {err:?}"
+        );
     }
 
     #[tokio::test]
-    async fn chain_refresh_returns_last_error_when_every_member_fails() {
+    async fn chain_refresh_is_ok_when_no_member_produces_a_header() {
+        // Every member fails authorization_header; there is nothing to refresh. The next
+        // authorization_header call will surface the real auth error.
         let chain = Chain::new(vec![
             Arc::new(AlwaysFails("first")),
             Arc::new(AlwaysFails("last")),
         ]);
-        let err = chain.refresh().await.unwrap_err();
-        assert!(
-            matches!(&err, ClientError::Auth(msg) if msg == "last (refresh)"),
-            "got {err:?}"
-        );
+        chain.refresh().await.unwrap();
     }
 
     #[tokio::test]
