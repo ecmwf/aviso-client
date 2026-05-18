@@ -81,8 +81,10 @@ impl JsonFileStore {
     /// [`StoreError::UnsupportedFileVersion`] or
     /// [`StoreError::UnsupportedKeyFormatVersion`] on incompatible
     /// versions, [`StoreError::InvalidResumeKey`] on a non-hex or
-    /// wrong-length resume key in the file, or
-    /// [`StoreError::Io`] on other I/O failures.
+    /// wrong-length resume key in the file, [`StoreError::Io`] on
+    /// other I/O failures, or [`StoreError::BackgroundTaskFailed`]
+    /// if the tokio blocking task that performs the file read
+    /// itself fails (panic or cancellation).
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let path: PathBuf = path.into();
         let read_path = path.clone();
