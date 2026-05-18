@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client as HttpClient;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use url::Url;
 
 use crate::ClientError;
@@ -21,6 +21,51 @@ use crate::auth::AuthProvider;
 use crate::watch::{
     CHANNEL_CAPACITY, NotificationStream, WatchRequest, WireWatchRequest, run_supervisor,
 };
+
+/// Cascading-cancellation handle shared by all clones of an [`AvisoClient`].
+///
+/// Each `AvisoClient` carries `Arc<DropGuard>`; every supervisor spawned by a
+/// `watch()` call holds a [`watch::Receiver<bool>`] derived from the same
+/// sender. When the last `Arc<DropGuard>` is dropped (the last `AvisoClient`
+/// clone goes away), [`DropGuard::drop`] fires `sender.send(true)`. Every
+/// supervisor's `watch::Receiver::changed()` await observes the value flip
+/// within one event-loop tick and the supervisor exits its loop.
+///
+/// `pub(crate)` because it is an implementation detail of the cancel cascade.
+/// The publicly visible behaviour is documented on [`AvisoClient`] itself.
+pub(crate) struct DropGuard {
+    sender: watch::Sender<bool>,
+}
+
+impl DropGuard {
+    /// Construct a fresh guard plus one receiver. Subsequent supervisors clone
+    /// the receiver via [`Self::subscribe`].
+    pub(crate) fn new() -> (Arc<Self>, watch::Receiver<bool>) {
+        let (sender, receiver) = watch::channel(false);
+        (Arc::new(Self { sender }), receiver)
+    }
+
+    /// Clone a new `watch::Receiver` from the shared sender.
+    #[allow(
+        dead_code,
+        reason = "consumed by the watch supervisor's parent-cancel select arms in a follow-up commit; lands before any production consumer so the cancel-cascade type and its tests can be reviewed in isolation"
+    )]
+    pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
+        self.sender.subscribe()
+    }
+}
+
+impl Drop for DropGuard {
+    fn drop(&mut self) {
+        // Best-effort: if every receiver has been dropped already (which the
+        // type system permits but normal flow should not produce, because the
+        // sender owner is `Arc::new(self)` and outlives any single receiver),
+        // the send call returns `Err` which we silently drop. The guarantee
+        // we care about is "the value flips to true while at least one
+        // receiver is still alive", and that holds.
+        let _ = self.sender.send(true);
+    }
+}
 
 /// Top-level handle to an `aviso-server`.
 ///
@@ -33,6 +78,14 @@ pub struct AvisoClient {
     http: HttpClient,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
+    /// Cascading cancellation token shared by all clones. When the last
+    /// clone drops, all child supervisors observe the value flip and exit.
+    /// See [`DropGuard`] for the mechanism.
+    #[allow(
+        dead_code,
+        reason = "field is read by the watch supervisor's spawn path in a follow-up commit; the `Clone` derive consumes it on every clone, but rustc does not count derive expansions as reads for dead-code analysis"
+    )]
+    parent_drop: Arc<DropGuard>,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -365,10 +418,12 @@ impl AvisoClientBuilder {
         let http = http_builder
             .build()
             .map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))?;
+        let (parent_drop, _initial_receiver) = DropGuard::new();
         Ok(AvisoClient {
             http,
             base_url,
             auth: self.auth,
+            parent_drop,
         })
     }
 }
@@ -376,10 +431,12 @@ impl AvisoClientBuilder {
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
-    reason = "test code: unwrap on constructor success is the expected diagnostic"
+    clippy::expect_used,
+    reason = "test code: unwrap and expect on constructor success and on assertion-shaped awaits are the expected diagnostics"
 )]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use super::AvisoClient;
     use crate::auth::Bearer;
@@ -510,5 +567,47 @@ mod tests {
             !formatted.contains("operator"),
             "AvisoClient Debug must strip username from base_url: {formatted}"
         );
+    }
+
+    #[tokio::test]
+    async fn drop_guard_fires_when_last_clone_drops() {
+        let client = AvisoClient::builder()
+            .base_url("http://localhost:8000")
+            .build()
+            .unwrap();
+        let mut receiver = client.parent_drop.subscribe();
+        assert!(!*receiver.borrow_and_update());
+        let clone = client.clone();
+        drop(client);
+        assert!(
+            !*receiver.borrow_and_update(),
+            "guard must NOT fire while another clone is alive"
+        );
+        drop(clone);
+        let observed = tokio::time::timeout(Duration::from_millis(100), receiver.changed())
+            .await
+            .expect("guard must fire within 100ms of last clone drop");
+        assert!(observed.is_ok());
+        assert!(*receiver.borrow_and_update());
+    }
+
+    #[tokio::test]
+    async fn drop_guard_broadcasts_to_multiple_subscribers() {
+        let client = AvisoClient::builder()
+            .base_url("http://localhost:8000")
+            .build()
+            .unwrap();
+        let mut a = client.parent_drop.subscribe();
+        let mut b = client.parent_drop.subscribe();
+        let mut c = client.parent_drop.subscribe();
+        drop(client);
+        for rx in [&mut a, &mut b, &mut c] {
+            let observed = tokio::time::timeout(Duration::from_millis(100), rx.changed()).await;
+            assert!(
+                observed.is_ok_and(|r| r.is_ok()),
+                "every subscriber must observe the drop"
+            );
+            assert!(*rx.borrow_and_update());
+        }
     }
 }
