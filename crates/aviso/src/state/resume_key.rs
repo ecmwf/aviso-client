@@ -4,19 +4,15 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::Url;
 
-/// Current hash-input format version baked into every [`ResumeKey`].
-/// Bumping invalidates existing keys without breaking the file layout.
+/// Hash-input format version baked into every [`ResumeKey`]. Bump
+/// when the hash inputs change in a way that would alter computed
+/// digests for existing logical inputs; bumping invalidates any
+/// keys stored under a previous version, surfacing as
+/// [`StoreError::UnsupportedKeyFormatVersion`] on the next file
+/// open.
 ///
-/// History:
-///
-/// - `1`: initial; NUL-byte separators between variable-length fields,
-///   IPv6 hosts unbracketed.
-/// - `2`: length-prefix framing for unambiguous concatenation; IPv6
-///   hosts bracketed via `url::Host` Display. Both changes fix
-///   theoretical collisions in version 1 (event-type or
-///   schema-fingerprint NUL bytes at field boundaries; IPv6 host
-///   plus port colliding with a literal `host:port` form).
-pub(crate) const KEY_FORMAT_VERSION: u32 = 2;
+/// [`StoreError::UnsupportedKeyFormatVersion`]: super::StoreError::UnsupportedKeyFormatVersion
+pub(crate) const KEY_FORMAT_VERSION: u32 = 1;
 
 /// A logical identifier for a watch subscription.
 ///
@@ -300,13 +296,12 @@ mod tests {
 
     #[test]
     fn event_type_with_nul_byte_does_not_collide_with_different_inputs() {
-        // The null-byte separator strategy requires inputs to not
-        // contain raw null bytes. event_type is the most exposed
-        // path because it goes straight into the hash unescaped.
-        // This fixture pins the property: an event_type with a NUL
-        // does not produce the same key as a different
-        // (event_type, filter) combination where the NUL lands at a
-        // boundary.
+        // Length-prefix framing makes raw NUL bytes inside any single
+        // field harmless: framing boundaries are determined by the
+        // length prefix, not by sentinel bytes inside the data. These
+        // adversarial inputs would have collided under a NUL-separator
+        // scheme; under length-prefix they cannot, and this test pins
+        // that property against future framing changes.
         let with_nul = ResumeKey::new(&url("https://a/"), "a\x00b", &json!({}), None).unwrap();
         let separate = ResumeKey::new(&url("https://a/"), "a", &json!({"_": "b"}), None).unwrap();
         assert_ne!(with_nul, separate);
