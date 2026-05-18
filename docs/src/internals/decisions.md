@@ -235,4 +235,50 @@ The Rust core uses `reqwest` with the `rustls-tls` feature (D5). Rustls's defaul
 
 ---
 
+## D19. Watch API: a single `Stream` plus a handler-shaped sugar over the same channel
+
+`AvisoClient::watch(request)` returns a `NotificationStream`, an async `Stream<Item = Result<Notification, ClientError>>` backed by a bounded `tokio::sync::mpsc::channel`. A second method `watch_with_handler(request, F)` wraps the stream in a per-notification callback loop. Both surfaces drain the exact same internal channel from the exact same supervisor task; the supervisor's reconnect, checkpoint, auth-refresh, heartbeat, and trigger behaviour is identical across both shapes.
+
+**Rationale**:
+
+- The Rust core has to bind cleanly into Python (PyO3, via `__aiter__` / `__anext__` over the same channel) and, at some future point, into a synchronous C/C++ adapter (via callback registration on the handler-shaped surface). A pure-stream-only API would force callback consumers to reimplement supervisor logic; a pure-callback-only API would deny native Rust users the idiomatic `Stream` shape.
+- One supervisor task per `watch()` call keeps behaviour predictable for cross-language reviewers: there is a single source of truth for what the supervisor does, and the two surfaces just expose different drain ergonomics on the same channel.
+- The bounded channel applies TCP backpressure end-to-end when the consumer falls behind. Capacity is fixed at 128 in the first iteration. A `WatchRequest::with_buffer` tuning knob is a future addition if a real consumer needs it.
+- `NotificationStream` deliberately does **not** implement `Clone`. Fan-out across multiple consumers of a single watch would require a broadcast channel (or a tee), which conflicts with single-cursor checkpoint advancement: a "broadcast then commit" semantic has no obvious right answer when readers commit at different rates. Single-consumer keeps the checkpoint contract unambiguous. A caller that needs fan-out builds it with `tokio::sync::broadcast` themselves, on top of `NotificationStream::recv()`.
+
+**Cancellation**: dropping the stream drops a `tokio::sync::oneshot::Sender`; the supervisor `select!`s on the matching `Receiver` and exits cooperatively. No `JoinHandle::abort`, no `tokio-util::CancellationToken` dependency, no buffered-but-undelivered notifications. The `select!` uses `biased` ordering so cancellation cannot be starved by a fast stream, and is wrapped around every supervisor await (auth header, HTTP send, chunk read, channel send) so a drop tears the supervisor down within one event-loop tick regardless of which await it was parked on.
+
+**Alternatives considered**:
+
+- Stream-only public API. Rejected because the future C/C++ adapter would have to reimplement the stream-poll-and-callback loop in the FFI layer; doing it once in Rust is the correct factoring.
+- Callback-only public API. Rejected because Rust users expect `Stream`, async-iterator integration with `tokio::select!`, and the ability to compose with the wider futures ecosystem.
+- An unbounded internal channel. Rejected because a slow consumer would grow memory without bound; the bounded design applies backpressure where the underlying transport can react.
+- A broadcast-channel-based `Clone`-able `NotificationStream`. Rejected because it conflicts with single-cursor checkpoint advancement; users who actually want fan-out can build it on top of the single-consumer primitive.
+
+---
+
+## D20. Multi-listener: an `AvisoClient` property, not a new primitive
+
+A single `AvisoClient` supports any number of concurrent `watch()` calls. Each call produces an independent supervisor task with its own HTTP connection, its own checkpoint slot (once the state-store integration lands), and its own trigger pipeline (once triggers land). `AvisoClient` is `Send + Sync + Clone`; cloning it shares the inner `reqwest::Client`'s connection pool and the optional `Arc<dyn AuthProvider>` through reference counts.
+
+**Rationale**:
+
+- Users who need to listen to multiple unrelated event types from one process spell that out as multiple `watch()` calls. The resume-key derivation (D3) guarantees per-listener isolation across distinct (event_type, filter, schema_fingerprint) tuples, so two listeners on the same client never alias their checkpoint slots in practice.
+- Adding a hypothetical `Listeners` collection primitive would just be a thin wrapper around "call `watch()` N times". The wrapper would not change semantics; it would only add a public type that has to be kept compatible across versions. Keeping the primitive small and letting callers compose is the right factoring for a library that has to bind into multiple languages.
+- Resource sharing happens at the layers where sharing is correct: `reqwest::Client` connection pool, `Arc<dyn AuthProvider>` for shared refresh state, `StateStore` for per-key write serialisation.
+- Resume-key collision across overlapping `watch()` calls on the same client is a misuse signal, not a hard error. The follow-up that wires the state store will emit a single `WARN` log when a collision is detected; the supervisor continues either way and the caller learns from the log.
+
+**Cancellation**: each supervisor is cancelled when its `NotificationStream` is dropped. A parent-level cascade where dropping the `AvisoClient` cancels every child supervisor is intentionally out of scope for the first iteration; the design supports adding it later (a `tokio_util::sync::CancellationToken` or equivalent owned by the client) because the supervisor task is constructed to own only clones of the bits it needs (`reqwest::Client`, `Url`, `Option<Arc<dyn AuthProvider>>`) rather than a cloned `AvisoClient` that would keep the parent alive through refcount.
+
+**Server-side capacity**: per-user and per-role connection or replay-rate limits are server's problem, enforceable at the proxy or `aviso-server` layer using existing JWT/Basic-auth identity. The client surfaces 429/503 via reconnect classification (eventual exponential backoff once the reconnect loop lands), 401 via auth refresh, 403/404/410 as a terminal `Fatal(ProtocolViolation(...))`. The client API does not change to accommodate server-side capacity policy.
+
+**Live role revocation**: takes effect on the next reconnect, up to the server's `connection_max_duration_sec` lag. Not modelled at the client level; a future `ServerCloseReason::PermissionRevoked` could close the gap if the server ever emits that variant.
+
+**Alternatives considered**:
+
+- A `Listeners` aggregate type that bundles a `Vec<NotificationStream>` and a single `recv_any()` method. Rejected for the reasons above: the primitive is already small enough that a generic wrapper offers no functional benefit and locks in a coupling between listeners that the channel-based design otherwise avoids.
+- A single `AvisoClient` that owns one supervisor regardless of how many `watch()` calls happen. Rejected because that would require multiplexing all events into one stream and erasing the per-watch checkpoint distinction.
+
+---
+
 For the roadmap and follow-up tracking, see the planning documents in [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).

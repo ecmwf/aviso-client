@@ -508,10 +508,7 @@ mod tests {
     #[test]
     fn gap_detected_emits_gap_outcome_and_enters_gap_phase() {
         let mut s = WatchState::watch(None);
-        let reason = GapReason::ReplayLimitReached {
-            oldest_available: 100,
-            requested: 1,
-        };
+        let reason = GapReason::ReplayLimitReached { max_allowed: 100 };
         let out = s.transition(WatchEvent::GapDetected(reason));
         assert_eq!(out, WatchOutcome::Gap { reason });
         assert_eq!(s.replay_phase(), &ReplayPhase::GapDetected { reason });
