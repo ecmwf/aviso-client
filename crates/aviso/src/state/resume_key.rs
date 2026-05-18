@@ -6,7 +6,17 @@ use url::Url;
 
 /// Current hash-input format version baked into every [`ResumeKey`].
 /// Bumping invalidates existing keys without breaking the file layout.
-pub(crate) const KEY_FORMAT_VERSION: u32 = 1;
+///
+/// History:
+///
+/// - `1`: initial; NUL-byte separators between variable-length fields,
+///   IPv6 hosts unbracketed.
+/// - `2`: length-prefix framing for unambiguous concatenation; IPv6
+///   hosts bracketed via `url::Host` Display. Both changes fix
+///   theoretical collisions in version 1 (event-type or
+///   schema-fingerprint NUL bytes at field boundaries; IPv6 host
+///   plus port colliding with a literal `host:port` form).
+pub(crate) const KEY_FORMAT_VERSION: u32 = 2;
 
 /// A logical identifier for a watch subscription.
 ///
@@ -31,17 +41,17 @@ impl ResumeKey {
     /// Other URL schemes are not rejected but are also not the
     /// intended workload; normalisation passes them through `url::Url`
     /// serialization plus the rules documented in the implementation
-    /// (lowercased scheme and host, default-port stripping, userinfo
+    /// (lowercased scheme and host, IPv6 host bracketing via
+    /// `url::Host` Display, default-port stripping, userinfo
     /// removal, path preservation).
     ///
-    /// The hash uses null-byte (`0x00`) separators between
-    /// variable-length fields. For the intended inputs (HTTP(S)
-    /// server URLs, JSON filter bodies, ASCII-ish event types and
-    /// schema fingerprints) collisions are not reachable in
-    /// practice: `url::Url` serialization percent-encodes any zero
-    /// bytes, and RFC 8785 JCS escapes them in string values. The
-    /// test module pins this invariant for the few fields that pass
-    /// through unescaped (`event_type` and `schema_fingerprint`).
+    /// The hash input uses length-prefix framing: each variable-length
+    /// field is preceded by its byte length as a little-endian `u64`,
+    /// and the optional schema fingerprint carries a one-byte tag
+    /// (`0` absent, `1` present) before its length-and-bytes. Two
+    /// distinct logical inputs cannot collide under this scheme,
+    /// regardless of which bytes (including NUL) appear inside any
+    /// field.
     ///
     /// Fallible because the filter is canonicalised via RFC 8785 JSON
     /// Canonicalization Scheme, which rejects inputs `serde_json::Value`
@@ -62,17 +72,10 @@ impl ResumeKey {
 
         let mut hasher = Sha256::new();
         hasher.update(KEY_FORMAT_VERSION.to_le_bytes());
-        hasher.update([0u8]);
-        hasher.update(normalize_base_url(base_url).as_bytes());
-        hasher.update([0u8]);
-        hasher.update(event_type.as_bytes());
-        hasher.update([0u8]);
-        hasher.update(&canonical_filter);
-        hasher.update([0u8]);
-        if let Some(fp) = schema_fingerprint {
-            hasher.update(b"fp:");
-            hasher.update(fp.as_bytes());
-        }
+        write_field(&mut hasher, normalize_base_url(base_url).as_bytes());
+        write_field(&mut hasher, event_type.as_bytes());
+        write_field(&mut hasher, &canonical_filter);
+        write_optional_field(&mut hasher, schema_fingerprint.map(str::as_bytes));
 
         Ok(Self {
             digest: hasher.finalize().into(),
@@ -125,14 +128,19 @@ pub enum ResumeKeyError {
 ///
 /// Rules:
 /// - Lowercase scheme.
-/// - Lowercase host.
+/// - Render host via [`url::Host`] Display so IPv6 literals are
+///   bracketed (e.g. `[::1]`), then lowercase. Bracketing prevents
+///   `https://[::1]:8443/` from collapsing into a form ambiguous
+///   with a (hypothetical) raw `host:port` literal.
 /// - Strip default port (`:80` for http, `:443` for https).
 /// - Strip userinfo (username/password embedded in URL).
 /// - Strip query and fragment (base URLs should have neither).
 /// - Preserve path; empty path becomes `/`.
 fn normalize_base_url(url: &Url) -> String {
     let scheme = url.scheme().to_ascii_lowercase();
-    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let host = url
+        .host()
+        .map_or_else(String::new, |h| h.to_string().to_ascii_lowercase());
     let port_part = match (url.port(), scheme.as_str()) {
         (Some(80), "http") | (Some(443), "https") | (None, _) => String::new(),
         (Some(p), _) => format!(":{p}"),
@@ -143,6 +151,28 @@ fn normalize_base_url(url: &Url) -> String {
         url.path()
     };
     format!("{scheme}://{host}{port_part}{path}")
+}
+
+/// Hash one variable-length field with a `u64` little-endian length
+/// prefix. Injective when called for a fixed schema of fields.
+fn write_field(hasher: &mut Sha256, bytes: &[u8]) {
+    let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    hasher.update(len.to_le_bytes());
+    hasher.update(bytes);
+}
+
+/// Hash an optional field: one tag byte (`0` absent, `1` present),
+/// then a length-prefix field when present.
+fn write_optional_field(hasher: &mut Sha256, bytes: Option<&[u8]>) {
+    match bytes {
+        Some(b) => {
+            hasher.update([1u8]);
+            write_field(hasher, b);
+        }
+        None => {
+            hasher.update([0u8]);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -334,6 +364,40 @@ mod tests {
             normalize_base_url(&url("https://aviso.example/path/")),
             "https://aviso.example/path/"
         );
+    }
+
+    #[test]
+    fn normalize_brackets_ipv6_host() {
+        // Regression fixture for the IPv6 collision bug:
+        // before bracketing, `https://[::1]:8443/` normalised to
+        // `https://::1:8443/`, ambiguous with a literal host:port
+        // form. Bracketing makes the host boundary explicit.
+        assert_eq!(
+            normalize_base_url(&url("https://[::1]:8443/")),
+            "https://[::1]:8443/"
+        );
+        assert_eq!(
+            normalize_base_url(&url("https://[2001:db8::1]/")),
+            "https://[2001:db8::1]/"
+        );
+    }
+
+    #[test]
+    fn ipv6_compressed_and_expanded_forms_produce_same_key() {
+        // The url crate canonicalises IPv6 to compressed form before
+        // we see the host. Two URLs that differ only in IPv6
+        // formatting must therefore produce the same key.
+        let compressed = ResumeKey::new(&url("https://[::1]/"), "mars", &json!({}), None).unwrap();
+        let expanded =
+            ResumeKey::new(&url("https://[0:0:0:0:0:0:0:1]/"), "mars", &json!({}), None).unwrap();
+        assert_eq!(compressed, expanded);
+    }
+
+    #[test]
+    fn distinct_ipv6_hosts_produce_distinct_keys() {
+        let a = ResumeKey::new(&url("https://[::1]:8443/"), "mars", &json!({}), None).unwrap();
+        let b = ResumeKey::new(&url("https://[::2]:8443/"), "mars", &json!({}), None).unwrap();
+        assert_ne!(a, b);
     }
 
     #[test]
