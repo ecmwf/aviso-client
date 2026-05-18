@@ -109,17 +109,20 @@ pub(crate) enum ConnectionOutcome {
     /// backoff.
     TransportError(reqwest::Error),
     /// The TCP connection closed cleanly (EOF) without a server-emitted
-    /// `connection-closing` frame. The outer supervisor fires
-    /// `WatchEvent::ConnectionLost { reason: UnexpectedEof }` and
+    /// `connection-closing` frame. The reducer has already been advanced
+    /// via `WatchEvent::ConnectionLost { reason: UnexpectedEof }` inside
+    /// `run_one_connection`; the outer supervisor reads this outcome and
     /// reconnects with exponential backoff. Long-lived watches survive
     /// NAT timeouts and half-open sockets via this path.
     UnexpectedEof,
     /// The heartbeat watchdog fired: no SSE event of any kind arrived
     /// within `max(3 * heartbeat_interval, heartbeat_interval + 30s)`.
-    /// The outer supervisor fires `WatchEvent::HeartbeatStarvation` and
-    /// reconnects with exponential backoff. Defends against silently-dead
-    /// connections (NAT idle timeout, server-side application hang behind
-    /// a healthy reverse proxy, half-open sockets after network change).
+    /// The reducer has already been advanced via
+    /// `WatchEvent::HeartbeatStarvation` inside `run_one_connection`;
+    /// the outer supervisor reads this outcome and reconnects with
+    /// exponential backoff. Defends against silently-dead connections
+    /// (NAT idle timeout, server-side application hang behind a healthy
+    /// reverse proxy, half-open sockets after network change).
     HeartbeatStarved,
     /// The wire delivered a frame the supervisor must surface as a
     /// typed error: malformed `CloudEvent` id, server `error` event,
