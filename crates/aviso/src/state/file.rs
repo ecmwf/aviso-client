@@ -38,11 +38,33 @@ const DIGEST_BYTE_LEN: usize = 32;
 /// Failed `put` and `delete` calls leave both disk and memory
 /// unchanged.
 ///
+/// # Linearizability scope: one open handle plus its clones
+///
+/// Linearizability holds across [`Clone`]s of a single
+/// `JsonFileStore` handle. Two independent [`open`](Self::open)
+/// calls to the same path return separate handles with independent
+/// in-memory state and independent write mutexes; they DO NOT
+/// coordinate, and concurrent writes against them can lose data
+/// (the last writer's snapshot may not include the earlier
+/// writer's commit). Always open the store once and share the
+/// handle via `Clone`; never call `open` twice on the same path in
+/// one process.
+///
 /// # Single-process only
 ///
-/// This store does not perform cross-process locking. Two processes
-/// writing to the same file race; the loser's writes can be lost.
-/// Multi-process safety is a follow-up on the roadmap.
+/// This store does not perform cross-process locking either. Two
+/// processes writing to the same file race; the loser's writes can
+/// be lost. Cross-process safety is a follow-up on the roadmap.
+///
+/// # Async cancellation
+///
+/// `put` and `delete` are NOT cancellation-safe. If the future
+/// returned by either method is dropped after the underlying
+/// `spawn_blocking` has started the disk write but before the
+/// in-memory install completes, the disk and in-memory state will
+/// diverge: disk reflects the new value, memory reflects the old
+/// one. Always drive `put`/`delete` to completion; do not race
+/// them against `select!` arms that may cancel them.
 ///
 /// # Not a polling store
 ///
@@ -390,6 +412,28 @@ mod tests {
                 .unwrap()
                 .last_committed_sequence,
             7
+        );
+    }
+
+    #[tokio::test]
+    async fn two_independent_opens_to_same_path_do_not_share_state() {
+        // Regression fixture for the type-doc warning under
+        // "Linearizability scope". Two calls to `open` on the same
+        // path produce independent in-memory state. Consumers must
+        // open once and `Clone`; opening twice can lose writes.
+        // Documented behaviour, not a bug. If we ever add a
+        // process-local registry to coordinate independent opens,
+        // this test inverts: each pair of opens shares state.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+
+        let a = JsonFileStore::open(&path).await.unwrap();
+        let b = JsonFileStore::open(&path).await.unwrap();
+
+        a.put(&key(0), Checkpoint::new(1, None)).await.unwrap();
+        assert!(
+            b.get(&key(0)).await.unwrap().is_none(),
+            "independent handle does not observe other handle's write through memory"
         );
     }
 
