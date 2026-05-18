@@ -16,6 +16,7 @@ mod error;
 pub mod notification;
 mod notify;
 pub mod schema;
+pub mod state;
 
 pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{ClientError, Result};
