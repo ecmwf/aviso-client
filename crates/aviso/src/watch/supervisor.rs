@@ -136,10 +136,17 @@ pub(crate) enum ConnectionOutcome {
 /// At the default 30 s interval the budget is 90 s; lower intervals
 /// produce smaller budgets but with a 30 s absolute floor so transient
 /// network slowness does not trip the watchdog.
+///
+/// Capped at `u32::MAX` seconds (about 136 years) so the supervisor's
+/// `Instant::now() + budget` cannot overflow on any platform regardless
+/// of the user-supplied `heartbeat_interval`. Effectively "no timeout"
+/// at the cap; a `heartbeat_interval` large enough to saturate is
+/// already a misconfiguration but the supervisor must not panic on it.
 fn heartbeat_starvation_budget(interval: std::time::Duration) -> std::time::Duration {
+    const ABSOLUTE_CAP: std::time::Duration = std::time::Duration::from_secs(u32::MAX as u64);
     let three_x = interval.saturating_mul(3);
     let plus_30 = interval.saturating_add(std::time::Duration::from_secs(30));
-    three_x.max(plus_30)
+    three_x.max(plus_30).min(ABSOLUTE_CAP)
 }
 
 /// Apply a [`WatchOutcome`] to the supervisor's `last_reconnect_policy`
@@ -280,9 +287,18 @@ pub(crate) async fn run_supervisor(
         // reconnect policy. The first iteration's `last_reconnect_policy`
         // is `None`, so the initial connect proceeds without delay.
         if let Some(policy) = last_reconnect_policy.take() {
+            // `retry_counter` counts failures-since-last-success; this is
+            // the first iteration AFTER a failure, so subtracting one
+            // gives `compute_backoff`'s 0-indexed retry-attempt semantic
+            // (attempt = 0 for the first retry, [0, 250ms] window;
+            // attempt = 1 for the second retry, [0, 500ms] window; etc.).
+            // `saturating_sub` makes the routine `ServerClosed` reset
+            // (`retry_counter = 0` + Immediate policy) also work since
+            // `compute_backoff(0, Immediate)` returns ZERO regardless.
+            let attempt = retry_counter.saturating_sub(1);
             let delay = retry_after_override
                 .take()
-                .unwrap_or_else(|| super::backoff::compute_backoff(retry_counter, policy));
+                .unwrap_or_else(|| super::backoff::compute_backoff(attempt, policy));
             if !delay.is_zero() {
                 let started = state.transition(WatchEvent::BackoffStarted(delay));
                 apply_outcome(&mut last_reconnect_policy, started);
@@ -1541,6 +1557,14 @@ mod tests {
             super::heartbeat_starvation_budget(Duration::ZERO),
             Duration::from_secs(30)
         );
+    }
+
+    #[test]
+    fn heartbeat_budget_absurd_interval_caps_at_136_years() {
+        let cap = Duration::from_secs(u64::from(u32::MAX));
+        assert_eq!(super::heartbeat_starvation_budget(Duration::MAX), cap);
+        let near_max = Duration::from_secs(u64::MAX / 2);
+        assert_eq!(super::heartbeat_starvation_budget(near_max), cap);
     }
 
     #[test]
