@@ -21,7 +21,7 @@ client
     .await?;
 ```
 
-Both surfaces drain the same internal `tokio::sync::mpsc` channel from the same supervisor task. Reconnect, checkpoint, auth-refresh, heartbeat, and trigger behaviour is identical regardless of which surface you pick. The right choice is purely an ergonomic one:
+Both surfaces drain the same internal `tokio::sync::mpsc` channel from the same supervisor task. The single-connection behaviour is identical regardless of which surface you pick. The right choice is purely an ergonomic one:
 
 - `watch()` for `tokio::select!` integration, composition with other futures, or any case where you want the raw `Stream`.
 - `watch_with_handler()` for write-only daemon loops that process notifications in isolation.
@@ -85,15 +85,16 @@ For `watch_with_handler`, returning `Err(_)` from the handler drops the stream a
 
 ## Errors
 
-`ClientError` variants you can see on a watch stream:
+`ClientError` variants you can see while running a watch:
 
-- `Http { status, body, request_id }` on the initial response if the server returned a non-success status. Only this variant comes from the call to `watch()` itself; everything else surfaces on the stream.
-- `Transport(_)` on mid-stream transport failure (TLS error, connection reset, and so on).
-- `Decode(_)` on a wire-shape JSON payload that does not deserialise. Terminal.
-- `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal per the same reasoning as the rest of the client: a poisoned stream would otherwise livelock the reconnect loop.
-- `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
-- `StreamProtocol { message, request_id }` for the server's `error` SSE event and for `connection-closing` frames whose `reason` is not one of the three documented values. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
-- `Config(_)` from `watch()` itself: no Tokio runtime is entered, or the resume position overflows `u64::MAX`.
+- `Config(_)` is returned from `watch()` itself when no Tokio runtime is entered or the resume position would overflow `u64::MAX`.
+- Every other variant surfaces inline on the stream as `Some(Err(_))`, followed by `None` on the next call. The supervisor task has already exited; there is nothing more to read.
+  - `Http { status, body, request_id }` on the initial response if the server returned a non-success status.
+  - `Transport(_)` on mid-stream transport failure (TLS error, connection reset, and so on).
+  - `StreamProtocol { message, request_id }` for the server's `error` SSE event, for `connection-closing` frames whose `reason` is not one of the three documented values, and for the wire ending without a `connection-closing` frame. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
+  - `Decode(_)` on a wire-shape JSON payload that does not deserialise. Terminal.
+  - `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal to avoid livelocking on a poisoned stream.
+  - `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
 
 ## Multiple listeners on one client
 
@@ -105,7 +106,7 @@ let cosmo_stream = client.watch(WatchRequest::watch("cosmo"))?;
 // Both streams are live independently.
 ```
 
-When the parent `AvisoClient` is dropped, all of its child supervisor tasks are cancelled (the follow-up resilience work wires this; the design supports it because supervisors own clones of the bits they need rather than a cloned `AvisoClient` that would keep the parent alive by refcount).
+Each supervisor's cancellation is wired to the stream it produced; dropping the stream cancels its supervisor. A `Drop` impl on `AvisoClient` itself that cascades cancellation across all child supervisors is a separate, future piece of work; the current design supports it because supervisors own clones of the bits they need rather than a cloned `AvisoClient` that would keep the parent alive by refcount.
 
 ## What this version does not do
 
