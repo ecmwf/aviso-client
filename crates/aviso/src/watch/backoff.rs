@@ -11,8 +11,9 @@
 //! - `ShortBackoff` returns a fixed five seconds (single-digit per D2;
 //!   used for `server_shutdown`).
 //! - `ExponentialBackoff` returns a uniformly distributed value in
-//!   `[0, min(BASE_DELAY_MS * 2^attempt, MAX_DELAY)]`, AWS-style full
-//!   jitter (transport errors and heartbeat starvation).
+//!   `[0, min(BASE_DELAY_MS * 2^attempt, MAX_DELAY))` (half-open;
+//!   modulo arithmetic gives an exclusive upper bound), AWS-style
+//!   full jitter (transport errors and heartbeat starvation).
 //!
 //! The jitter mixer is intentionally not cryptographic. Full-jitter
 //! does not require uniform randomness; the requirement is that a
