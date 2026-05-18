@@ -117,10 +117,15 @@ pub(crate) struct WireConnectionClosing {
 /// The discriminant is at `type`; known values are `replay_started`,
 /// `replay_completed`, `notification_replay_limit_reached`. Unknown values
 /// are ignored by the supervisor (a TRACE log; never fatal).
+///
+/// `max_allowed` is the server-side cap on a single replay; present only
+/// on the `notification_replay_limit_reached` variant.
 #[derive(Debug, Deserialize)]
 pub(crate) struct WireReplayControl {
     #[serde(rename = "type")]
     pub(crate) tag: String,
+    #[serde(default)]
+    pub(crate) max_allowed: Option<u64>,
 }
 
 /// `error` SSE event payload.

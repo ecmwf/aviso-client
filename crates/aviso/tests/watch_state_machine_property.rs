@@ -83,10 +83,7 @@ fn server_close_reason_strategy() -> impl Strategy<Value = ServerCloseReason> {
 
 fn gap_reason_strategy() -> impl Strategy<Value = GapReason> {
     prop_oneof![
-        (any::<u64>(), any::<u64>()).prop_map(|(o, r)| GapReason::ReplayLimitReached {
-            oldest_available: o,
-            requested: r
-        }),
+        any::<u64>().prop_map(|m| GapReason::ReplayLimitReached { max_allowed: m }),
         (any::<u64>(), any::<u64>()).prop_map(|(e, o)| GapReason::SequenceJump {
             expected: e,
             observed: o
