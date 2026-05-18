@@ -19,13 +19,13 @@ use std::time::Duration;
 
 use aviso::watch::{
     CloseReason, ConnectionLossReason, ConnectionStatus, FatalKind, GapReason, ReconnectPolicy,
-    ReplayPhase, ResumeStart, ServerCloseReason, WatchEvent, WatchMode, WatchOutcome, WatchState,
+    ReplayPhase, ResumeStart, ServerCloseReason, WatchEvent, WatchOutcome, WatchState,
 };
 
 /// Build a fresh `Watch`-mode state, drive it to `Connected`, return
 /// it. Useful for tests that start from a "live and connected" base.
 fn watch_live_connected() -> WatchState {
-    let mut s = WatchState::new(WatchMode::Watch, None);
+    let mut s = WatchState::watch(None);
     let _ = s.transition(WatchEvent::ConnectionEstablished);
     s
 }
@@ -33,7 +33,7 @@ fn watch_live_connected() -> WatchState {
 /// Build a fresh `ReplayOnly` state at sequence 1, drive it to
 /// `Connected`. The replay phase remains `Replaying { rc: false }`.
 fn replay_only_connected() -> WatchState {
-    let mut s = WatchState::new(WatchMode::ReplayOnly, Some(ResumeStart::Sequence(1)));
+    let mut s = WatchState::replay_only(ResumeStart::AfterSequence(1));
     let _ = s.transition(WatchEvent::ConnectionEstablished);
     s
 }
@@ -94,7 +94,7 @@ fn row_6a_end_of_stream_in_watch_mode_reconnects_immediately() {
 
 #[test]
 fn row_6a_end_of_stream_in_watch_mode_while_replaying_reconnects_immediately() {
-    let mut s = WatchState::new(WatchMode::Watch, Some(ResumeStart::Sequence(5)));
+    let mut s = WatchState::watch(Some(ResumeStart::AfterSequence(5)));
     let _ = s.transition(WatchEvent::ConnectionEstablished);
     let out = s.transition(WatchEvent::ServerClose {
         reason: ServerCloseReason::EndOfStream,
@@ -109,7 +109,7 @@ fn row_6a_end_of_stream_in_watch_mode_while_replaying_reconnects_immediately() {
     assert_eq!(
         s.replay_phase(),
         &ReplayPhase::Replaying {
-            start: ResumeStart::Sequence(5),
+            start: ResumeStart::AfterSequence(5),
             replay_completed: false,
         }
     );
@@ -366,7 +366,7 @@ fn gap_sequence_jump_is_surfaced_in_outcome() {
 
 #[test]
 fn replay_only_replay_completed_never_enters_live_phase() {
-    let mut s = WatchState::new(WatchMode::ReplayOnly, Some(ResumeStart::Sequence(1)));
+    let mut s = WatchState::replay_only(ResumeStart::AfterSequence(1));
     let _ = s.transition(WatchEvent::ConnectionEstablished);
     let _ = s.transition(WatchEvent::ReplayCompleted);
     assert_ne!(s.replay_phase(), &ReplayPhase::Live);
@@ -385,7 +385,7 @@ fn replay_only_replay_completed_never_enters_live_phase() {
 
 #[test]
 fn auth_refresh_round_trip_does_not_change_replay_phase() {
-    let mut s = WatchState::new(WatchMode::Watch, Some(ResumeStart::Sequence(1)));
+    let mut s = WatchState::watch(Some(ResumeStart::AfterSequence(1)));
     let _ = s.transition(WatchEvent::ConnectionEstablished);
     let phase_before = s.replay_phase().clone();
     let _ = s.transition(WatchEvent::AuthRejected);

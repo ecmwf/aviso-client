@@ -79,13 +79,13 @@
 //!
 //! ```
 //! use aviso::watch::{
-//!     ReconnectPolicy, ServerCloseReason, WatchEvent, WatchMode,
-//!     WatchOutcome, WatchState,
+//!     ReconnectPolicy, ServerCloseReason, WatchEvent, WatchOutcome,
+//!     WatchState,
 //! };
 //!
 //! // A live-only watch (no replay backlog) starts directly in
 //! // `Live` with `Reconnecting` while the transport opens.
-//! let mut state = WatchState::new(WatchMode::Watch, None);
+//! let mut state = WatchState::watch(None);
 //!
 //! // Supervisor establishes the transport.
 //! let _ = state.transition(WatchEvent::ConnectionEstablished);

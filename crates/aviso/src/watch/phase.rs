@@ -17,9 +17,12 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResumeStart {
-    /// Resume from a stored sequence; the supervisor sends
-    /// `from_id = sequence + 1` on the wire.
-    Sequence(u64),
+    /// Resume *after* the given sequence: the supervisor sends
+    /// `from_id = sequence + 1` on the wire. The variant name mirrors
+    /// the semantic ("we already have everything up to and including
+    /// `sequence`, give us the next event") and avoids ambiguity with
+    /// the wire-level `from_id` parameter.
+    AfterSequence(u64),
 
     /// Bootstrap from a user-supplied date string. The reducer stores
     /// it verbatim; the supervisor sends `from_date` on the wire and
