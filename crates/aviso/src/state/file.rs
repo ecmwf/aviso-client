@@ -245,8 +245,6 @@ fn load_from_disk(path: &Path) -> Result<HashMap<ResumeKey, Checkpoint>, StoreEr
     reason = "test code: unwrap and panic on unexpected variant are the standard test diagnostics"
 )]
 mod tests {
-    use std::path::PathBuf;
-
     use serde_json::json;
     use static_assertions::assert_impl_all;
     use tempfile::tempdir;
@@ -392,9 +390,14 @@ mod tests {
 
     #[tokio::test]
     async fn open_with_missing_parent_directory_errors() {
-        // Missing parent surfaces at `open` as Io NotFound.
-        let nonexistent: PathBuf = "/nonexistent/aviso-state-test-directory/state.json".into();
-        let result = JsonFileStore::open(&nonexistent).await;
+        // Construct a guaranteed-missing parent under a real tempdir
+        // so the test is portable (no hard-coded absolute paths) and
+        // deterministic (no risk of the path existing on someone's
+        // machine). The "missing" subdirectory is never created;
+        // `open` must see it as absent.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("missing").join("state.json");
+        let result = JsonFileStore::open(&path).await;
         match result {
             Err(StoreError::Io(e)) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
