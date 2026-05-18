@@ -761,22 +761,32 @@ async fn drain_frames(
                                     Checkpoint::new(prev.sequence, Some(prev.event_id.clone()));
                                 // CANCELLATION SAFETY: this `put` is
                                 // INTENTIONALLY NOT raced against cancel
-                                // arms. The supervisor's contract per the
-                                // resilience plan is "an in-progress
-                                // store write is allowed to complete so
-                                // the underlying file (or future durable
-                                // backend) is never left half-written".
-                                // Cancellation observability lives at the
-                                // surrounding chunk-read and send-or-
-                                // cancel select arms instead; cancellation
-                                // arriving BEFORE the put starts is
-                                // observed there and the put never runs.
-                                // The trade-off is bounded extra exit
-                                // latency (`fsync` for `JsonFileStore`,
-                                // typically tens of milliseconds on local
-                                // disk; user-supplied stores SHOULD keep
-                                // `put` similarly bounded so parent-drop
-                                // latency stays in the same range).
+                                // arms. The supervisor's contract is "an
+                                // in-progress store write is allowed to
+                                // complete so the underlying file (or
+                                // future durable backend) is never left
+                                // half-written". Cancellation that
+                                // arrives DURING the put extends exit
+                                // latency by the put's duration; the
+                                // next `send_or_cancel` then observes
+                                // the cancel and the supervisor exits.
+                                // Cancellation that arrives between the
+                                // preceding chunk-read and this put is
+                                // NOT observed here (there is no cancel
+                                // check between chunk decoding and this
+                                // put); the put runs anyway, which is
+                                // harmless because puts are idempotent
+                                // and the next process resumes from
+                                // exactly the same cursor. Cancellation
+                                // that arrived earlier was observed at
+                                // the preceding chunk-read select and
+                                // this code path is never reached.
+                                // The latency trade-off (typically tens
+                                // of milliseconds for `JsonFileStore`'s
+                                // `fsync` on local disk) is documented
+                                // on the `StateStore` trait so custom
+                                // implementations know to keep `put`
+                                // bounded.
                                 if let Err(e) = store.put(resume_key, checkpoint).await {
                                     return Err(ClientError::from(e));
                                 }
