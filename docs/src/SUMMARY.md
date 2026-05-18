@@ -35,6 +35,12 @@
 
 ---
 
+# Watch streams
+
+- [Overview](./watch/overview.md)
+
+---
+
 # Resume & state
 
 - [Overview](./resume/overview.md)
