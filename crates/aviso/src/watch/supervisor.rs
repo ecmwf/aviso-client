@@ -281,6 +281,16 @@ pub(crate) async fn run_supervisor(
     let mut pending_commit: Option<PendingCommit> = None;
     let mut refreshed_for_current_attempt: bool = false;
 
+    // Per-trigger mutable state held across notifications. Aligned with
+    // `request.triggers()` by index. The log trigger's `tokio::fs::File`
+    // handle lives here and is RAII-closed when this Vec is dropped on
+    // supervisor exit.
+    let mut trigger_states: Vec<crate::watch::trigger::TriggerState> = request
+        .triggers()
+        .iter()
+        .map(|_| crate::watch::trigger::TriggerState::new())
+        .collect();
+
     loop {
         if state.is_terminal() {
             break;
@@ -399,6 +409,7 @@ pub(crate) async fn run_supervisor(
             auth.as_ref(),
             heartbeat_interval,
             &mut retry_counter,
+            &mut trigger_states,
             &tx,
             &mut cancel,
             &mut parent_cancel,
@@ -540,7 +551,7 @@ pub(crate) async fn run_supervisor(
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
-    reason = "the supervisor's collaborators are intentionally passed by reference rather than bundled into a context struct, so each await point owns clear borrows; the function's length is the natural shape of a single-connection runner that maps every initial-response and chunk-loop branch to a `ConnectionOutcome`, and splitting it further obscures the mapping table"
+    reason = "the supervisor's collaborators are intentionally passed by reference rather than bundled into a context struct, so each await point owns clear borrows; the function's length is the natural shape of a single-connection runner that maps every initial-response and chunk-loop branch to a `ConnectionOutcome`, and splitting it further obscures the mapping table; threading triggers and trigger_states as additional references keeps the same shape and the cancel-safety analysis local to each await point"
 )]
 async fn run_one_connection(
     state: &mut WatchState,
@@ -556,6 +567,7 @@ async fn run_one_connection(
     auth: Option<&Arc<dyn AuthProvider>>,
     heartbeat_interval: std::time::Duration,
     retry_counter: &mut u32,
+    trigger_states: &mut [crate::watch::trigger::TriggerState],
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
     parent_cancel: &mut watch::Receiver<bool>,
@@ -706,6 +718,8 @@ async fn run_one_connection(
             pending_commit,
             state_store,
             resume_key,
+            request.triggers(),
+            trigger_states,
             tx,
             cancel,
             parent_cancel,
@@ -785,6 +799,8 @@ async fn drain_frames(
     pending_commit: &mut Option<PendingCommit>,
     state_store: Option<&Arc<dyn StateStore>>,
     resume_key: &ResumeKey,
+    triggers: &[crate::watch::Trigger],
+    trigger_states: &mut [crate::watch::trigger::TriggerState],
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
     parent_cancel: &mut watch::Receiver<bool>,
@@ -872,6 +888,37 @@ async fn drain_frames(
                                 }
                             }
                             *commit_cursor = Some(prev.sequence);
+                        }
+                        // Trigger pipeline runs BEFORE the channel send so a
+                        // required-trigger failure terminates the watch
+                        // without ever advancing `pending_commit` for this
+                        // notification; the cursor stays at the previous
+                        // value and restart re-delivers this N. The pipeline
+                        // itself is cancel-aware between triggers and
+                        // between retry backoffs but lets a single dispatch
+                        // attempt run to completion (same atomicity contract
+                        // as `state_store.put`).
+                        match crate::watch::trigger::dispatch_triggers(
+                            triggers,
+                            trigger_states,
+                            &notification,
+                            parent_cancel,
+                            cancel,
+                        )
+                        .await
+                        {
+                            Ok(()) => {}
+                            Err(crate::watch::trigger::DispatchOutcome::Cancelled) => {
+                                return Ok(DrainOutcome::StopRequested);
+                            }
+                            Err(crate::watch::trigger::DispatchOutcome::RequiredFailed {
+                                kind,
+                                source,
+                            }) => {
+                                let err = ClientError::TriggerFailed { kind, source };
+                                let _ = send_or_cancel(tx, Err(err), cancel, parent_cancel).await;
+                                return Ok(DrainOutcome::StopRequested);
+                            }
                         }
                         if send_or_cancel(tx, Ok(notification), cancel, parent_cancel)
                             .await
@@ -1166,13 +1213,38 @@ mod tests {
         tokio::task::JoinHandle<()>,
         tokio::sync::watch::Sender<bool>,
     ) {
-        let (tx, rx) = mpsc::channel(super::CHANNEL_CAPACITY);
+        start_supervisor_with_store(server, request, None)
+    }
+
+    /// Variant of [`start_supervisor`] that wires a state store for the
+    /// supervisor's commit-on-next-send cursor advancement. Returns the
+    /// same 4-tuple; the test recomputes the resume key from the server
+    /// URL and event type for `store.get(...)` queries.
+    #[allow(
+        clippy::type_complexity,
+        reason = "test helper's return tuple is unchanged from start_supervisor; only the state-store wiring differs"
+    )]
+    fn start_supervisor_with_store(
+        server: &MockServer,
+        request: WatchRequest,
+        store: Option<Arc<dyn StateStore>>,
+    ) -> (
+        mpsc::Receiver<Result<Notification, ClientError>>,
+        oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+        tokio::sync::watch::Sender<bool>,
+    ) {
+        let capacity = if store.is_some() {
+            1
+        } else {
+            super::CHANNEL_CAPACITY
+        };
+        let (tx, rx) = mpsc::channel(capacity);
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let base_url = url::Url::parse(&format!("{}/", server.uri())).unwrap();
         let http = reqwest::Client::builder().build().unwrap();
         let no_auth: Option<Arc<dyn AuthProvider>> = None;
         let heartbeat_interval = std::time::Duration::from_secs(30);
-        let no_store: Option<Arc<dyn StateStore>> = None;
         let resume_key = ResumeKey::new(&base_url, request.event_type(), &json!({}), None).unwrap();
         let (drop_sender, parent_cancel) = tokio::sync::watch::channel(false);
         let active_resume_keys = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
@@ -1185,7 +1257,7 @@ mod tests {
             base_url,
             no_auth,
             heartbeat_interval,
-            no_store,
+            store,
             resume_key,
             tx,
             cancel_rx,
@@ -1780,5 +1852,67 @@ mod tests {
         .await
         .expect("send_or_cancel must observe parent-drop within 200ms");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn prev_notification_is_committed_before_current_triggers_run() {
+        use crate::state::MemoryStore;
+        use crate::watch::Trigger;
+        use tokio::time::timeout;
+
+        let server = MockServer::start().await;
+        let body = format!(
+            "{}{}",
+            sse_chunk("live-notification", cloud_event("mars", 1)),
+            sse_chunk("live-notification", cloud_event("mars", 2)),
+        );
+        Mock::given(method("POST"))
+            .and(path("/api/v1/watch"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+
+        let store: Arc<dyn StateStore> = Arc::new(MemoryStore::new());
+        let (trigger, _counter) = Trigger::test_fail_on_call(2, 0, true);
+        let request = WatchRequest::watch("mars").with_triggers(vec![trigger]);
+        let (mut rx, _cancel, handle, _drop) =
+            start_supervisor_with_store(&server, request, Some(store.clone()));
+
+        let first = timeout(Duration::from_secs(5), rx.recv()).await;
+        let first = first
+            .expect("first notification arrives within 5s")
+            .expect("channel still open")
+            .expect("first notification is Ok");
+        assert_eq!(first.sequence, 1);
+
+        let second = timeout(Duration::from_secs(5), rx.recv()).await;
+        let second = second
+            .expect("trigger failure arrives within 5s")
+            .expect("channel still open");
+        match second {
+            Err(ClientError::TriggerFailed { .. }) => {}
+            other => panic!("expected TriggerFailed on second item, got {other:?}"),
+        }
+        let none = timeout(Duration::from_secs(2), rx.recv()).await;
+        let none = none.expect("channel closes within 2s after terminal error");
+        assert!(none.is_none());
+
+        timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("supervisor exits within 2s")
+            .expect("supervisor task must not panic");
+
+        let base_url = url::Url::parse(&format!("{}/", server.uri())).unwrap();
+        let resume_key = ResumeKey::new(&base_url, "mars", &json!({}), None).unwrap();
+        let checkpoint = store.get(&resume_key).await.unwrap();
+        let cp = checkpoint.expect("checkpoint for N=1 should be persisted");
+        assert_eq!(
+            cp.last_committed_sequence, 1,
+            "N=1 must have been committed before N=2 triggers ran"
+        );
     }
 }
