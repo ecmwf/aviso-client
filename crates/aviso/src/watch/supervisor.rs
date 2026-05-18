@@ -37,7 +37,17 @@ use super::{
     ServerCloseReason, WatchEvent, WatchMode, WatchOutcome, WatchRequest, WatchState,
 };
 use crate::auth::AuthProvider;
+use crate::state::{Checkpoint, ResumeKey, StateStore};
 use crate::{ClientError, Notification, parse_cloudevent_id};
+
+/// A notification already sent on the channel whose sequence and event id
+/// will be persisted on the NEXT successful send. Promoted to
+/// `commit_cursor` (and persisted to the state store) inside `drain_frames`
+/// before each new notification leaves the supervisor.
+pub(crate) struct PendingCommit {
+    pub(crate) sequence: u64,
+    pub(crate) event_id: String,
+}
 
 /// Outcome of one HTTP connection attempt.
 ///
@@ -156,30 +166,71 @@ pub(crate) const CHANNEL_CAPACITY: usize = 128;
     clippy::too_many_lines,
     reason = "the outer reconnect loop is intentionally one function: each iteration's classification (close, http, transport, eof, heartbeat, fatal, cancel) and the wire-request rebuild belong together for readability; splitting them into helpers obscures the per-iteration state-mutation order"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the supervisor's collaborators are intentionally passed by value rather than bundled into a context struct, so each await point owns clear borrows; the supervisor is the only spawn caller's surface"
+)]
 pub(crate) async fn run_supervisor(
     request: WatchRequest,
     http: reqwest::Client,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
     heartbeat_interval: std::time::Duration,
+    state_store: Option<Arc<dyn StateStore>>,
+    resume_key: ResumeKey,
     tx: mpsc::Sender<Result<Notification, ClientError>>,
     mut cancel: oneshot::Receiver<()>,
 ) {
-    let mut state = match initial_state(&request) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = send_or_cancel(&tx, Err(e), &mut cancel).await;
+    // Resolve initial cursor. User-supplied `request.from()` wins; if
+    // absent and a state store is configured, query the store and resume
+    // from its checkpoint. A store I/O failure surfaces as the first
+    // stream item via `Err(ClientError::StateStore(_))`. The store read
+    // is cancel-safe per `tokio::select!`.
+    let initial_cursor: Option<ResumeStart> = match (request.from(), state_store.as_ref()) {
+        (Some(_), _) => request.from().cloned(),
+        (None, Some(store)) => {
+            let get_result = tokio::select! {
+                biased;
+                _ = &mut cancel => return,
+                r = store.get(&resume_key) => r,
+            };
+            match get_result {
+                Ok(Some(cp)) => Some(ResumeStart::AfterSequence(cp.last_committed_sequence)),
+                Ok(None) => None,
+                Err(e) => {
+                    let _ = send_or_cancel(&tx, Err(ClientError::from(e)), &mut cancel).await;
+                    return;
+                }
+            }
+        }
+        (None, None) => None,
+    };
+
+    // Build the reducer state from the resolved cursor (overriding the
+    // request's `from()` view when the store provided one).
+    let mut state = match (request.mode(), initial_cursor.clone()) {
+        (WatchMode::Watch, from) => WatchState::watch(from),
+        (WatchMode::ReplayOnly, Some(from)) => WatchState::replay_only(from),
+        (WatchMode::ReplayOnly, None) => {
+            let _ = send_or_cancel(
+                &tx,
+                Err(ClientError::Config(
+                    "replay-only watch requires a resume position".into(),
+                )),
+                &mut cancel,
+            )
+            .await;
             return;
         }
     };
     let mut last_reconnect_policy: Option<ReconnectPolicy> = None;
     let mut retry_counter: u32 = 0;
     let mut retry_after_override: Option<std::time::Duration> = None;
-    let initial_cursor: Option<ResumeStart> = request.from().cloned();
     let mut commit_cursor: Option<u64> = initial_cursor.as_ref().and_then(|r| match r {
         ResumeStart::AfterSequence(n) => Some(*n),
         ResumeStart::Date(_) => None,
     });
+    let mut pending_commit: Option<PendingCommit> = None;
     let mut refreshed_for_current_attempt: bool = false;
 
     loop {
@@ -268,6 +319,9 @@ pub(crate) async fn run_supervisor(
             &request,
             wire_from.as_ref(),
             &mut commit_cursor,
+            &mut pending_commit,
+            state_store.as_ref(),
+            &resume_key,
             &http,
             &base_url,
             auth.as_ref(),
@@ -379,16 +433,6 @@ pub(crate) async fn run_supervisor(
     }
 }
 
-fn initial_state(request: &WatchRequest) -> Result<WatchState, ClientError> {
-    match (request.mode(), request.from().cloned()) {
-        (WatchMode::Watch, from) => Ok(WatchState::watch(from)),
-        (WatchMode::ReplayOnly, Some(from)) => Ok(WatchState::replay_only(from)),
-        (WatchMode::ReplayOnly, None) => Err(ClientError::Config(
-            "replay-only watch requires a resume position".into(),
-        )),
-    }
-}
-
 /// Drain the single HTTP connection that backs this watch.
 ///
 /// Returns `Ok(())` for clean closes (consumer drop, server-driven close
@@ -406,6 +450,9 @@ async fn run_one_connection(
     request: &WatchRequest,
     wire_from: Option<&ResumeStart>,
     commit_cursor: &mut Option<u64>,
+    pending_commit: &mut Option<PendingCommit>,
+    state_store: Option<&Arc<dyn StateStore>>,
+    resume_key: &ResumeKey,
     http: &reqwest::Client,
     base_url: &Url,
     auth: Option<&Arc<dyn AuthProvider>>,
@@ -431,9 +478,6 @@ async fn run_one_connection(
         Ok(b) => b,
         Err(e) => return ConnectionOutcome::Fatal(e),
     };
-    // commit_cursor is threaded through but not yet updated; the
-    // state-store integration commit advances it on each send.
-    let _ = &commit_cursor;
 
     let auth_header = match auth {
         Some(provider) => {
@@ -534,6 +578,10 @@ async fn run_one_connection(
             state,
             last_reconnect_policy,
             &mut gap_guard,
+            commit_cursor,
+            pending_commit,
+            state_store,
+            resume_key,
             tx,
             cancel,
         )
@@ -598,6 +646,10 @@ async fn drain_frames(
     state: &mut WatchState,
     last_reconnect_policy: &mut Option<ReconnectPolicy>,
     gap_guard: &mut GapGuard,
+    commit_cursor: &mut Option<u64>,
+    pending_commit: &mut Option<PendingCommit>,
+    state_store: Option<&Arc<dyn StateStore>>,
+    resume_key: &ResumeKey,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
 ) -> Result<DrainOutcome, ClientError> {
@@ -635,15 +687,35 @@ async fn drain_frames(
                 match gap_guard.observe(sequence) {
                     Ok(()) => {
                         let notification = Notification {
-                            event_type,
+                            event_type: event_type.clone(),
                             sequence,
                             identifier: wire.data.identifier,
                             payload: wire.data.payload,
                             request_id: None,
                         };
+                        // Commit-on-next-send: persist the *previous* notification
+                        // before sending the current one, so pulling N implies the
+                        // previous send (item N-1) is durable. Always advance the
+                        // in-memory `commit_cursor` to keep reconnect-from-current
+                        // working without a store. If a store is configured and
+                        // its `put` fails, surface a terminal error.
+                        if let Some(prev) = pending_commit.as_ref() {
+                            if let Some(store) = state_store {
+                                let checkpoint =
+                                    Checkpoint::new(prev.sequence, Some(prev.event_id.clone()));
+                                if let Err(e) = store.put(resume_key, checkpoint).await {
+                                    return Err(ClientError::from(e));
+                                }
+                            }
+                            *commit_cursor = Some(prev.sequence);
+                        }
                         if send_or_cancel(tx, Ok(notification), cancel).await.is_err() {
                             return Ok(DrainOutcome::StopRequested);
                         }
+                        *pending_commit = Some(PendingCommit {
+                            sequence,
+                            event_id: format!("{event_type}@{sequence}"),
+                        });
                     }
                     Err(reason) => {
                         apply_outcome(
@@ -837,8 +909,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        AuthProvider, ClientError, GapGuard, GapReason, Notification, ResumeStart, WatchRequest,
-        run_supervisor, send_or_cancel,
+        AuthProvider, ClientError, GapGuard, GapReason, Notification, ResumeKey, ResumeStart,
+        StateStore, WatchRequest, run_supervisor, send_or_cancel,
     };
     use std::sync::Arc;
 
@@ -898,12 +970,16 @@ mod tests {
         let http = reqwest::Client::builder().build().unwrap();
         let no_auth: Option<Arc<dyn AuthProvider>> = None;
         let heartbeat_interval = std::time::Duration::from_secs(30);
+        let no_store: Option<Arc<dyn StateStore>> = None;
+        let resume_key = ResumeKey::new(&base_url, request.event_type(), &json!({}), None).unwrap();
         let handle = tokio::spawn(run_supervisor(
             request,
             http,
             base_url,
             no_auth,
             heartbeat_interval,
+            no_store,
+            resume_key,
             tx,
             cancel_rx,
         ));

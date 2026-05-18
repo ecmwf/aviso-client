@@ -18,6 +18,7 @@ use url::Url;
 
 use crate::ClientError;
 use crate::auth::AuthProvider;
+use crate::state::{ResumeKey, StateStore};
 use crate::watch::{
     CHANNEL_CAPACITY, NotificationStream, WatchRequest, WireWatchRequest, run_supervisor,
 };
@@ -90,6 +91,9 @@ pub struct AvisoClient {
     /// [`AvisoClientBuilder::heartbeat_interval`] for the default and the
     /// budget formula.
     heartbeat_interval: Duration,
+    /// Optional state store for persistent resume across process restarts.
+    /// See [`AvisoClientBuilder::state_store`].
+    state_store: Option<Arc<dyn StateStore>>,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -183,18 +187,22 @@ impl AvisoClient {
             ClientError::Config("AvisoClient::watch requires a Tokio runtime".into())
         })?;
         let _ = WireWatchRequest::from_public(&request)?;
+        let resume_key = compute_resume_key(&self.base_url, &request)?;
         let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let http = self.http.clone();
         let base_url = self.base_url.clone();
         let auth = self.auth.clone();
         let heartbeat_interval = self.heartbeat_interval;
+        let state_store = self.state_store.clone();
         handle.spawn(run_supervisor(
             request,
             http,
             base_url,
             auth,
             heartbeat_interval,
+            state_store,
+            resume_key,
             tx,
             cancel_rx,
         ));
@@ -369,7 +377,7 @@ pub(crate) async fn parse_json_response_optional(response: reqwest::Response) ->
 }
 
 /// Builder for [`AvisoClient`].
-#[derive(Debug, Default)]
+#[derive(Default)]
 #[must_use]
 pub struct AvisoClientBuilder {
     base_url: Option<String>,
@@ -377,6 +385,20 @@ pub struct AvisoClientBuilder {
     timeout: Option<Duration>,
     user_agent: Option<String>,
     heartbeat_interval: Option<Duration>,
+    state_store: Option<Arc<dyn StateStore>>,
+}
+
+impl std::fmt::Debug for AvisoClientBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AvisoClientBuilder")
+            .field("base_url", &self.base_url)
+            .field("auth", &self.auth)
+            .field("timeout", &self.timeout)
+            .field("user_agent", &self.user_agent)
+            .field("heartbeat_interval", &self.heartbeat_interval)
+            .field("state_store", &self.state_store.as_ref().map(|_| "<set>"))
+            .finish()
+    }
 }
 
 impl AvisoClientBuilder {
@@ -424,6 +446,28 @@ impl AvisoClientBuilder {
         self
     }
 
+    /// Wires a persistent state store for resume across process restarts.
+    ///
+    /// When set, `AvisoClient::watch()` consults the store at watch
+    /// start: if the [`WatchRequest`] has no explicit `from`, the
+    /// supervisor reads the stored checkpoint and resumes from
+    /// `last_committed_sequence + 1`. An explicit user-supplied `from`
+    /// always wins (no second-guessing). After each successful
+    /// notification send the supervisor persists the *previous*
+    /// notification's sequence (commit-on-next-send semantics): pulling
+    /// item N+1 implies item N is durable.
+    ///
+    /// The store can be the in-process [`crate::state::MemoryStore`], the
+    /// on-disk [`crate::state::JsonFileStore`], or a user-supplied
+    /// implementation of the [`StateStore`] trait. The watch supervisor
+    /// terminates the stream with `ClientError::StateStore` on any
+    /// persistence failure; at-least-once delivery requires a working
+    /// store, and silent failure would violate the contract.
+    pub fn state_store(mut self, store: Arc<dyn StateStore>) -> Self {
+        self.state_store = Some(store);
+        self
+    }
+
     /// Builds the client.
     ///
     /// # Errors
@@ -460,6 +504,7 @@ impl AvisoClientBuilder {
             auth: self.auth,
             parent_drop,
             heartbeat_interval,
+            state_store: self.state_store,
         })
     }
 }
@@ -468,6 +513,22 @@ impl AvisoClientBuilder {
 /// `aviso-server` configuration. The watchdog budget at this default is
 /// `max(3 * 30s, 30s + 30s) = 90s`.
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Compute the resume key for a watch request against this client's
+/// base URL. Surface filter-canonicalisation failures as
+/// `ClientError::Config` since they indicate a malformed `WatchRequest`,
+/// not a runtime persistence failure.
+fn compute_resume_key(base_url: &Url, request: &WatchRequest) -> crate::Result<ResumeKey> {
+    let filter_value = serde_json::Value::Object(
+        request
+            .filter()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    );
+    ResumeKey::new(base_url, request.event_type(), &filter_value, None)
+        .map_err(|e| ClientError::Config(format!("compute resume key for watch request: {e}")))
+}
 
 #[cfg(test)]
 #[allow(

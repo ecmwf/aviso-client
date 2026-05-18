@@ -20,7 +20,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use aviso::auth::AuthProvider;
-use aviso::watch::WatchRequest;
+use aviso::state::MemoryStore;
+use aviso::watch::{ResumeStart, WatchRequest};
 use aviso::{AvisoClient, ClientError};
 use futures_core::Stream;
 use reqwest::header::HeaderValue;
@@ -453,6 +454,140 @@ async fn heartbeat_starvation_triggers_reconnect() {
     assert_eq!(second.sequence, 2);
 
     drop(stream);
+}
+
+#[tokio::test]
+async fn state_store_checkpoint_round_trip() {
+    use aviso::state::{Checkpoint, ResumeKey, StateStore};
+    use serde_json::Value;
+    use std::sync::Arc;
+
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 1)),
+        sse_chunk("live-notification", &cloud_event("mars", 2)),
+        sse_chunk("live-notification", &cloud_event("mars", 3)),
+        max_duration_chunk(),
+    );
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let store: Arc<dyn StateStore> = Arc::new(MemoryStore::new());
+    let client = AvisoClient::builder()
+        .base_url(server.uri())
+        .state_store(store.clone())
+        .build()
+        .unwrap();
+
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+
+    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("first item")
+        .expect("stream open")
+        .expect("no error");
+    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("second item")
+        .expect("stream open")
+        .expect("no error");
+    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("third item")
+        .expect("stream open")
+        .expect("no error");
+
+    drop(stream);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let base_url = url::Url::parse(&server.uri()).unwrap();
+    let resume_key = ResumeKey::new(&base_url, "mars", &Value::Object(serde_json::Map::default()), None)
+        .expect("resume key");
+    let checkpoint: Option<Checkpoint> = store.get(&resume_key).await.expect("store get");
+    let checkpoint = checkpoint.expect("checkpoint must be set after three sends");
+    assert!(
+        checkpoint.last_committed_sequence >= 2,
+        "after sending three items the commit cursor must be at least 2 (the second item, \
+         committed before the third send); got {}",
+        checkpoint.last_committed_sequence
+    );
+}
+
+#[tokio::test]
+async fn user_supplied_from_wins_over_stored_checkpoint() {
+    use aviso::state::{Checkpoint, ResumeKey, StateStore};
+    use serde_json::Value;
+    use std::sync::Arc;
+
+    let server = MockServer::start().await;
+    let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let captured_clone = captured.clone();
+
+    let body = sse_chunk("live-notification", &cloud_event("mars", 6));
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(move |req: &Request| {
+            let body_str = String::from_utf8_lossy(&req.body).into_owned();
+            *captured_clone.lock().unwrap() = Some(body_str);
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body.clone())
+        })
+        .mount(&server)
+        .await;
+
+    let store: Arc<dyn StateStore> = Arc::new(MemoryStore::new());
+    let base_url = url::Url::parse(&server.uri()).unwrap();
+    let resume_key = ResumeKey::new(&base_url, "mars", &Value::Object(serde_json::Map::default()), None)
+        .expect("resume key");
+    store
+        .put(
+            &resume_key,
+            Checkpoint::new(99, Some("mars@99".to_string())),
+        )
+        .await
+        .expect("preload checkpoint");
+
+    let client = AvisoClient::builder()
+        .base_url(server.uri())
+        .state_store(store.clone())
+        .build()
+        .unwrap();
+
+    let mut stream = client
+        .watch(WatchRequest::watch_from(
+            "mars",
+            ResumeStart::AfterSequence(5),
+        ))
+        .unwrap();
+
+    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("notification should arrive")
+        .expect("stream must not close")
+        .expect("no terminal error");
+
+    drop(stream);
+
+    let recorded = captured.lock().unwrap().clone().expect("body recorded");
+    let body_json: serde_json::Value = serde_json::from_str(&recorded).expect("body is JSON");
+    let from_id = body_json
+        .get("from_id")
+        .and_then(|v| v.as_str())
+        .expect("from_id present");
+    assert_eq!(
+        from_id, "6",
+        "user-supplied AfterSequence(5) must serialise as from_id=6, ignoring the stored \
+         checkpoint at sequence 99"
+    );
 }
 
 #[tokio::test]
