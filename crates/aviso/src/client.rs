@@ -47,10 +47,6 @@ impl DropGuard {
     }
 
     /// Clone a new `watch::Receiver` from the shared sender.
-    #[allow(
-        dead_code,
-        reason = "consumed by the watch supervisor's parent-cancel select arms in a follow-up commit; lands before any production consumer so the cancel-cascade type and its tests can be reviewed in isolation"
-    )]
     pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
         self.sender.subscribe()
     }
@@ -82,10 +78,6 @@ pub struct AvisoClient {
     /// Cascading cancellation token shared by all clones. When the last
     /// clone drops, all child supervisors observe the value flip and exit.
     /// See [`DropGuard`] for the mechanism.
-    #[allow(
-        dead_code,
-        reason = "field is read by the watch supervisor's spawn path in a follow-up commit; the `Clone` derive consumes it on every clone, but rustc does not count derive expansions as reads for dead-code analysis"
-    )]
     parent_drop: Arc<DropGuard>,
     /// Expected SSE heartbeat cadence; see
     /// [`AvisoClientBuilder::heartbeat_interval`] for the default and the
@@ -190,6 +182,7 @@ impl AvisoClient {
         let resume_key = compute_resume_key(&self.base_url, &request)?;
         let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (cancel_tx, cancel_rx) = oneshot::channel();
+        let parent_cancel = self.parent_drop.subscribe();
         let http = self.http.clone();
         let base_url = self.base_url.clone();
         let auth = self.auth.clone();
@@ -205,6 +198,7 @@ impl AvisoClient {
             resume_key,
             tx,
             cancel_rx,
+            parent_cancel,
         ));
         Ok(NotificationStream::new(rx, cancel_tx))
     }

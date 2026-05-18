@@ -25,7 +25,7 @@
 use std::sync::Arc;
 
 use reqwest::header::AUTHORIZATION;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use url::Url;
 
 use super::wire::{
@@ -180,6 +180,7 @@ pub(crate) async fn run_supervisor(
     resume_key: ResumeKey,
     tx: mpsc::Sender<Result<Notification, ClientError>>,
     mut cancel: oneshot::Receiver<()>,
+    mut parent_cancel: watch::Receiver<bool>,
 ) {
     // Resolve initial cursor. User-supplied `request.from()` wins; if
     // absent and a state store is configured, query the store and resume
@@ -191,6 +192,7 @@ pub(crate) async fn run_supervisor(
         (None, Some(store)) => {
             let get_result = tokio::select! {
                 biased;
+                _ = parent_cancel.changed() => return,
                 _ = &mut cancel => return,
                 r = store.get(&resume_key) => r,
             };
@@ -250,6 +252,7 @@ pub(crate) async fn run_supervisor(
                 apply_outcome(&mut last_reconnect_policy, started);
                 let woke_for_cancel = tokio::select! {
                     biased;
+                    _ = parent_cancel.changed() => true,
                     _ = &mut cancel => true,
                     () = tokio::time::sleep(delay) => false,
                 };
@@ -285,6 +288,7 @@ pub(crate) async fn run_supervisor(
             };
             let refresh_result = tokio::select! {
                 biased;
+                _ = parent_cancel.changed() => break,
                 _ = &mut cancel => break,
                 r = auth_provider.refresh() => r,
             };
@@ -328,6 +332,7 @@ pub(crate) async fn run_supervisor(
             heartbeat_interval,
             &tx,
             &mut cancel,
+            &mut parent_cancel,
         )
         .await;
 
@@ -459,6 +464,7 @@ async fn run_one_connection(
     heartbeat_interval: std::time::Duration,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
+    parent_cancel: &mut watch::Receiver<bool>,
 ) -> ConnectionOutcome {
     let budget = heartbeat_starvation_budget(heartbeat_interval);
     let endpoint = match request.mode() {
@@ -483,6 +489,7 @@ async fn run_one_connection(
         Some(provider) => {
             let result = tokio::select! {
                 biased;
+                _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
                 _ = &mut *cancel => return ConnectionOutcome::Cancelled,
                 v = provider.authorization_header() => v,
             };
@@ -501,6 +508,7 @@ async fn run_one_connection(
 
     let send_result = tokio::select! {
         biased;
+        _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
         _ = &mut *cancel => return ConnectionOutcome::Cancelled,
         r = builder.send() => r,
     };
@@ -520,6 +528,7 @@ async fn run_one_connection(
             super::retry_after::parse_retry_after(response.headers().get("retry-after"));
         let body_result = tokio::select! {
             biased;
+            _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
             _ = &mut *cancel => return ConnectionOutcome::Cancelled,
             b = response.bytes() => b,
         };
@@ -547,6 +556,11 @@ async fn run_one_connection(
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         let timed = tokio::select! {
             biased;
+            _ = parent_cancel.changed() => {
+                let stop = state.transition(WatchEvent::Stop);
+                apply_outcome(last_reconnect_policy, stop);
+                return ConnectionOutcome::Cancelled;
+            }
             _ = &mut *cancel => {
                 let stop = state.transition(WatchEvent::Stop);
                 apply_outcome(last_reconnect_policy, stop);
@@ -972,6 +986,8 @@ mod tests {
         let heartbeat_interval = std::time::Duration::from_secs(30);
         let no_store: Option<Arc<dyn StateStore>> = None;
         let resume_key = ResumeKey::new(&base_url, request.event_type(), &json!({}), None).unwrap();
+        let (drop_sender, parent_cancel) = tokio::sync::watch::channel(false);
+        std::mem::forget(drop_sender);
         let handle = tokio::spawn(run_supervisor(
             request,
             http,
@@ -982,6 +998,7 @@ mod tests {
             resume_key,
             tx,
             cancel_rx,
+            parent_cancel,
         ));
         (rx, cancel_tx, handle)
     }
