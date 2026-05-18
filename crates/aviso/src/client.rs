@@ -9,7 +9,8 @@
 //! and preserves any path prefix the operator picks (for example a reverse proxy that mounts
 //! `aviso-server` under `/aviso`).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::Client as HttpClient;
@@ -86,6 +87,13 @@ pub struct AvisoClient {
     /// Optional state store for persistent resume across process restarts.
     /// See [`AvisoClientBuilder::state_store`].
     state_store: Option<Arc<dyn StateStore>>,
+    /// Per-client refcount of currently-active watch supervisors keyed by
+    /// resume key. `AvisoClient::watch()` increments the counter; the
+    /// supervisor decrements on every exit path. When the prior count is
+    /// greater than zero on increment, the client emits a `WARN` log
+    /// signalling that two or more concurrent watches share the same
+    /// checkpoint slot and will interleave commits.
+    active_resume_keys: Arc<Mutex<HashMap<ResumeKey, usize>>>,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -188,6 +196,15 @@ impl AvisoClient {
         let auth = self.auth.clone();
         let heartbeat_interval = self.heartbeat_interval;
         let state_store = self.state_store.clone();
+        let active_resume_keys = self.active_resume_keys.clone();
+        // Increment the active-resume-key refcount before spawning, and
+        // emit a WARN log if the key was already in use. Refcount
+        // semantics preserve the invariant that collisions are reported
+        // for every overlapping watch, not just the first pair: a
+        // single watch warns 0 times; a second concurrent same-key
+        // watch warns once; if one of those exits while another remains
+        // active, a third same-key watch must still warn.
+        increment_active_key(&active_resume_keys, &resume_key, request.event_type());
         handle.spawn(run_supervisor(
             request,
             http,
@@ -199,6 +216,7 @@ impl AvisoClient {
             tx,
             cancel_rx,
             parent_cancel,
+            active_resume_keys,
         ));
         Ok(NotificationStream::new(rx, cancel_tx))
     }
@@ -499,6 +517,7 @@ impl AvisoClientBuilder {
             parent_drop,
             heartbeat_interval,
             state_store: self.state_store,
+            active_resume_keys: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 }
@@ -507,6 +526,62 @@ impl AvisoClientBuilder {
 /// `aviso-server` configuration. The watchdog budget at this default is
 /// `max(3 * 30s, 30s + 30s) = 90s`.
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Increment the active-resume-key refcount for `key`, emit a WARN if
+/// the prior count was greater than zero. Mutex poisoning is handled by
+/// recovering the inner guard and logging a poison-specific WARN; the
+/// refcount itself is best-effort observability, so missing one warn
+/// during a poison event is acceptable (and the supervisor still
+/// decrements on exit).
+fn increment_active_key(
+    active: &Arc<Mutex<HashMap<ResumeKey, usize>>>,
+    key: &ResumeKey,
+    event_type: &str,
+) {
+    let (mut guard, poisoned) = match active.lock() {
+        Ok(g) => (g, false),
+        Err(poison) => {
+            tracing::warn!(
+                event.name = "client.resume.collision.poisoned",
+                "resume-key collision tracker mutex is poisoned; refcount continues but \
+                 collision WARN is suppressed for this call"
+            );
+            (poison.into_inner(), true)
+        }
+    };
+    let prior = *guard.get(key).unwrap_or(&0);
+    guard.insert(key.clone(), prior + 1);
+    drop(guard);
+    if prior > 0 && !poisoned {
+        tracing::warn!(
+            event.name = "client.resume.collision",
+            resume_key = %key.as_hex(),
+            event_type = event_type,
+            "multiple concurrent watch() calls share the same resume key; checkpoint \
+             advancement is racy and the affected watches will interleave commits"
+        );
+    }
+}
+
+/// Decrement the active-resume-key refcount for `key`. Called by every
+/// supervisor exit path so the tracker stays accurate. Poison handling
+/// recovers the inner guard; the entry is removed when the count
+/// returns to zero.
+pub(crate) fn decrement_active_key(
+    active: &Arc<Mutex<HashMap<ResumeKey, usize>>>,
+    key: &ResumeKey,
+) {
+    let mut guard = match active.lock() {
+        Ok(g) => g,
+        Err(poison) => poison.into_inner(),
+    };
+    if let Some(count) = guard.get_mut(key) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            guard.remove(key);
+        }
+    }
+}
 
 /// Compute the resume key for a watch request against this client's
 /// base URL. Surface filter-canonicalisation failures as
@@ -531,7 +606,8 @@ fn compute_resume_key(base_url: &Url, request: &WatchRequest) -> crate::Result<R
     reason = "test code: unwrap and expect on constructor success and on assertion-shaped awaits are the expected diagnostics"
 )]
 mod tests {
-    use std::sync::Arc;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use super::AvisoClient;
@@ -685,6 +761,46 @@ mod tests {
             .expect("guard must fire within 100ms of last clone drop");
         assert!(observed.is_ok());
         assert!(*receiver.borrow_and_update());
+    }
+
+    #[tokio::test]
+    async fn resume_key_collision_refcount_semantics() {
+        let active = Arc::new(Mutex::new(HashMap::new()));
+        let key = crate::state::ResumeKey::new(
+            &url::Url::parse("http://example.com/").unwrap(),
+            "mars",
+            &serde_json::Value::Object(serde_json::Map::default()),
+            None,
+        )
+        .unwrap();
+
+        let count_at = |a: &Arc<Mutex<HashMap<_, _>>>, k: &crate::state::ResumeKey| -> usize {
+            *a.lock().unwrap().get(k).unwrap_or(&0)
+        };
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 1);
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 2);
+
+        super::decrement_active_key(&active, &key);
+        assert_eq!(count_at(&active, &key), 1);
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 2);
+
+        super::decrement_active_key(&active, &key);
+        super::decrement_active_key(&active, &key);
+        assert_eq!(count_at(&active, &key), 0);
+        assert!(
+            !active.lock().unwrap().contains_key(&key),
+            "entry must be removed at zero refcount"
+        );
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 1);
+        super::decrement_active_key(&active, &key);
     }
 
     #[tokio::test]
