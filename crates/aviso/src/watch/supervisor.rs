@@ -1,26 +1,34 @@
-//! Watch supervisor: opens one HTTP POST against the watch or replay
+//! Watch supervisor: opens HTTP POSTs against the watch or replay
 //! endpoint, parses the SSE response, decodes `CloudEvent`s, drives the
 //! [`WatchState`] reducer, and forwards [`Notification`]s on a bounded
-//! channel until the connection closes cleanly or a fatal condition
-//! terminates it.
+//! channel.
 //!
-//! Resilience (reconnect loop, auth refresh, heartbeat watchdog, HTTP
-//! non-200 status mapping into reducer events, `StateStore` checkpoint
-//! advancement) is intentionally out of scope here; a follow-up commit
-//! adds it on top of this happy-path data path. The single-connection
-//! exit conditions in this file are:
+//! [`run_supervisor`] is the outer reconnect loop driven by the watch
+//! state machine's [`ReconnectPolicy`]. It carries `last_reconnect_policy`,
+//! `retry_counter`, `retry_after_override`, `commit_cursor`,
+//! `pending_commit`, and `refreshed_for_current_attempt` across iterations
+//! so the per-iteration `run_one_connection` runner stays stateless on the
+//! resilience axis. The outer loop terminates only on:
 //!
-//! - The server emits a `connection-closing` event (any reason); the
-//!   reducer transitions to `Reconnecting` and this supervisor exits.
-//! - The server emits an `error` event or an unknown
-//!   `connection-closing.reason`; the consumer sees
-//!   [`ClientError::StreamProtocol`].
-//! - A `CloudEvent` id is malformed; the consumer sees
-//!   [`ClientError::MalformedEvent`].
-//! - A sequence gap is detected; the consumer sees
-//!   [`ClientError::HistoryGap`] and the stream terminates.
-//! - The consumer drops the stream; the supervisor observes cancellation
-//!   and exits cleanly.
+//! - A reducer terminal state (`Fatal`, `Stop`, or natural end of
+//!   replay-only after `replay_completed` and `end_of_stream`).
+//! - A non-retryable HTTP status (`403`, `404`, `410`, other 4xx besides
+//!   `401`/`429`, and any status outside the 2xx success class that the
+//!   classifier does not retry).
+//! - A second 401 within a single attempt cycle, surfaced as
+//!   [`ClientError::Auth`] per D8.
+//! - A persistent `StateStore` failure, surfaced as
+//!   [`ClientError::StateStore`].
+//! - A wire-level fatal (server `error` event, malformed `CloudEvent` id,
+//!   unknown `connection-closing.reason`, gap detected).
+//! - Cancellation: per-stream drop (the `NotificationStream` was dropped)
+//!   or parent drop (the last `AvisoClient` clone was dropped).
+//!
+//! All other failure modes (transport errors, EOF without close frame,
+//! heartbeat starvation, 429/503 with or without `Retry-After`, other
+//! 5xx, and 401 in the first-cycle path) reconnect with exponential
+//! backoff (or the `Retry-After` override) and do not surface to the
+//! consumer.
 
 use std::sync::Arc;
 
@@ -220,7 +228,13 @@ pub(crate) async fn run_supervisor(
                 Ok(Some(cp)) => Some(ResumeStart::AfterSequence(cp.last_committed_sequence)),
                 Ok(None) => None,
                 Err(e) => {
-                    let _ = send_or_cancel(&tx, Err(ClientError::from(e)), &mut cancel).await;
+                    let _ = send_or_cancel(
+                        &tx,
+                        Err(ClientError::from(e)),
+                        &mut cancel,
+                        &mut parent_cancel,
+                    )
+                    .await;
                     return;
                 }
             }
@@ -240,6 +254,7 @@ pub(crate) async fn run_supervisor(
                     "replay-only watch requires a resume position".into(),
                 )),
                 &mut cancel,
+                &mut parent_cancel,
             )
             .await;
             return;
@@ -302,6 +317,7 @@ pub(crate) async fn run_supervisor(
                         "auth refresh requested but no auth provider is configured".into(),
                     )),
                     &mut cancel,
+                    &mut parent_cancel,
                 )
                 .await;
                 break;
@@ -323,7 +339,7 @@ pub(crate) async fn run_supervisor(
                     let outcome =
                         state.transition(WatchEvent::AuthRefreshCompleted { success: false });
                     apply_outcome(&mut last_reconnect_policy, outcome);
-                    let _ = send_or_cancel(&tx, Err(e), &mut cancel).await;
+                    let _ = send_or_cancel(&tx, Err(e), &mut cancel, &mut parent_cancel).await;
                     break;
                 }
             }
@@ -382,6 +398,7 @@ pub(crate) async fn run_supervisor(
                             "authentication rejected after refresh".into(),
                         )),
                         &mut cancel,
+                        &mut parent_cancel,
                     )
                     .await;
                     break;
@@ -399,6 +416,7 @@ pub(crate) async fn run_supervisor(
                             request_id,
                         }),
                         &mut cancel,
+                        &mut parent_cancel,
                     )
                     .await;
                     break;
@@ -433,6 +451,7 @@ pub(crate) async fn run_supervisor(
                             request_id,
                         }),
                         &mut cancel,
+                        &mut parent_cancel,
                     )
                     .await;
                     break;
@@ -451,7 +470,7 @@ pub(crate) async fn run_supervisor(
                 refreshed_for_current_attempt = false;
             }
             ConnectionOutcome::Fatal(err) => {
-                let _ = send_or_cancel(&tx, Err(err), &mut cancel).await;
+                let _ = send_or_cancel(&tx, Err(err), &mut cancel, &mut parent_cancel).await;
                 break;
             }
         }
@@ -618,6 +637,7 @@ async fn run_one_connection(
             resume_key,
             tx,
             cancel,
+            parent_cancel,
         )
         .await
         {
@@ -686,6 +706,7 @@ async fn drain_frames(
     resume_key: &ResumeKey,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
+    parent_cancel: &mut watch::Receiver<bool>,
 ) -> Result<DrainOutcome, ClientError> {
     while let Some(frame) = parser.next_frame() {
         let finesse::Frame::Message(msg) = frame else {
@@ -743,7 +764,10 @@ async fn drain_frames(
                             }
                             *commit_cursor = Some(prev.sequence);
                         }
-                        if send_or_cancel(tx, Ok(notification), cancel).await.is_err() {
+                        if send_or_cancel(tx, Ok(notification), cancel, parent_cancel)
+                            .await
+                            .is_err()
+                        {
                             return Ok(DrainOutcome::StopRequested);
                         }
                         *pending_commit = Some(PendingCommit {
@@ -756,8 +780,13 @@ async fn drain_frames(
                             last_reconnect_policy,
                             state.transition(WatchEvent::GapDetected(reason)),
                         );
-                        let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
-                            .await;
+                        let _ = send_or_cancel(
+                            tx,
+                            Err(ClientError::HistoryGap { reason }),
+                            cancel,
+                            parent_cancel,
+                        )
+                        .await;
                         return Ok(DrainOutcome::StopRequested);
                     }
                 }
@@ -804,8 +833,13 @@ async fn drain_frames(
                             last_reconnect_policy,
                             state.transition(WatchEvent::GapDetected(reason)),
                         );
-                        let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
-                            .await;
+                        let _ = send_or_cancel(
+                            tx,
+                            Err(ClientError::HistoryGap { reason }),
+                            cancel,
+                            parent_cancel,
+                        )
+                        .await;
                         return Ok(DrainOutcome::StopRequested);
                     }
                     _other => {}
@@ -836,10 +870,11 @@ async fn drain_frames(
                     state.transition(WatchEvent::ServerClose { reason }),
                 );
                 // Every recognised `connection-closing` reason ends this
-                // watch session in the single-connection supervisor. The
-                // reducer's `Reconnect` outcome is intentionally ignored
-                // here; the reconnect loop driven by `ReconnectPolicy` is
-                // a separate, follow-up piece of code.
+                // connection. The outer reconnect loop reads the reducer's
+                // post-transition state to decide whether to reconnect; in
+                // watch mode the routine close reasons all reconnect, in
+                // replay-only mode `end_of_stream` after `replay_completed`
+                // terminates naturally.
                 return Ok(DrainOutcome::ServerClosed);
             }
             "error" => {
@@ -870,19 +905,26 @@ async fn drain_frames(
     Ok(DrainOutcome::Continue)
 }
 
-/// Send `msg` on `tx`, racing with cancellation.
+/// Send `msg` on `tx`, racing with both cancellation sources.
 ///
-/// Returns `Ok(())` on successful send. Returns `Err(())` when either the
-/// consumer dropped the receiver (`mpsc::SendError`) or the cancellation
-/// oneshot fired; both cases mean "stop draining and exit cleanly". The
-/// caller treats both as the same outcome.
+/// Returns `Ok(())` on successful send. Returns `Err(())` when any of these
+/// fires first: the consumer dropped the receiver (`mpsc::SendError`), the
+/// per-stream cancellation oneshot fired, or the parent-drop watch channel
+/// flipped. All three cases mean "stop draining and exit cleanly".
+///
+/// Racing the parent-drop arm here matters when the channel is full: if a
+/// supervisor is parked on `tx.send().await` because a slow consumer let
+/// the bounded mpsc fill, dropping the parent `AvisoClient` must still
+/// terminate the supervisor within one event-loop tick.
 async fn send_or_cancel(
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     msg: Result<Notification, ClientError>,
     cancel: &mut oneshot::Receiver<()>,
+    parent_cancel: &mut watch::Receiver<bool>,
 ) -> Result<(), ()> {
     tokio::select! {
         biased;
+        _ = parent_cancel.changed() => Err(()),
         _ = &mut *cancel => Err(()),
         result = tx.send(msg) => result.map_err(|_| ()),
     }
@@ -1524,10 +1566,12 @@ mod tests {
         let (tx, _rx) = mpsc::channel(1);
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         drop(cancel_tx);
+        let (_parent_tx, mut parent_rx) = tokio::sync::watch::channel(false);
         let result = send_or_cancel(
             &tx,
             Err(ClientError::Config("dummy".into())),
             &mut cancel_rx,
+            &mut parent_rx,
         )
         .await;
         assert!(result.is_err());
@@ -1538,12 +1582,44 @@ mod tests {
         let (tx, rx) = mpsc::channel(1);
         drop(rx);
         let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+        let (_parent_tx, mut parent_rx) = tokio::sync::watch::channel(false);
         let result = send_or_cancel(
             &tx,
             Err(ClientError::Config("dummy".into())),
             &mut cancel_rx,
+            &mut parent_rx,
         )
         .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn send_or_cancel_returns_err_when_parent_cancel_fires() {
+        let (tx, _rx) = mpsc::channel::<Result<Notification, ClientError>>(1);
+        // Fill the channel so the next send parks.
+        tx.send(Err(ClientError::Config("pad".into())))
+            .await
+            .unwrap();
+        let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+        let (parent_tx, mut parent_rx) = tokio::sync::watch::channel(false);
+        // tx has capacity 0 with a receiver alive but never reading; tx.send
+        // would park forever. Firing parent_tx must unblock send_or_cancel
+        // via its new arm. The test races the send against a parallel drop.
+        let driver = async {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            drop(parent_tx);
+        };
+        let send = send_or_cancel(
+            &tx,
+            Err(ClientError::Config("dummy".into())),
+            &mut cancel_rx,
+            &mut parent_rx,
+        );
+        let (result, ()) = tokio::time::timeout(Duration::from_millis(200), async {
+            tokio::join!(send, driver)
+        })
+        .await
+        .expect("send_or_cancel must observe parent-drop within 200ms");
         assert!(result.is_err());
     }
 }

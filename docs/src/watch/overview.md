@@ -67,7 +67,7 @@ The constructor selects the right server endpoint internally (`watch`/`watch_fro
 - The first `Err(_)` is terminal. The stream yields `None` on the next call. The supervisor task has already exited; there is nothing more to read.
 - `None` without an error means the stream ended cleanly: the server closed the connection, the consumer dropped the stream, or a replay-only session ran to completion.
 
-The stream is single-consumer: it deliberately does NOT implement `Clone`. If you need a single watch to feed multiple consumers, wrap it in a `tokio::sync::broadcast` channel yourself. The single-consumer contract is a deliberate design choice; it keeps checkpoint advancement (when the state-store integration lands) unambiguous.
+The stream is single-consumer: it deliberately does NOT implement `Clone`. If you need a single watch to feed multiple consumers, wrap it in a `tokio::sync::broadcast` channel yourself. The single-consumer contract is a deliberate design choice; it keeps checkpoint advancement (with the state-store integration in place) unambiguous.
 
 ## Backpressure and channel capacity
 
@@ -87,14 +87,19 @@ For `watch_with_handler`, returning `Err(_)` from the handler drops the stream a
 
 `ClientError` variants you can see while running a watch:
 
-- `Config(_)` is returned from `watch()` itself when no Tokio runtime is entered or the resume position would overflow `u64::MAX`.
-- Every other variant surfaces inline on the stream as `Some(Err(_))`, followed by `None` on the next call. The supervisor task has already exited; there is nothing more to read.
-  - `Http { status, body, request_id }` on the initial response if the server returned a non-success status.
-  - `Transport(_)` on mid-stream transport failure (TLS error, connection reset, and so on).
-  - `StreamProtocol { message, request_id }` for the server's `error` SSE event, for `connection-closing` frames whose `reason` is not one of the three documented values, and for the wire ending without a `connection-closing` frame. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
-  - `Decode(_)` on a wire-shape JSON payload that does not deserialise. Terminal.
-  - `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal to avoid livelocking on a poisoned stream.
-  - `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
+- `Config(_)` is returned synchronously from `watch()` itself when no Tokio runtime is entered, when the resume position would overflow `u64::MAX`, or when the resume-key derivation rejects the filter shape.
+
+The resilience layer absorbs every retryable failure mode internally. The supervisor reconnects with exponential backoff on transport errors, on TCP EOF without a `connection-closing` frame, on heartbeat starvation, and on `429`/`503` HTTP statuses (honouring `Retry-After` when present, capped at five minutes). None of these surface as stream items; you will not see a transient `Transport(_)` or a 503 as a terminal error.
+
+The remaining error variants are terminal: they surface as `Some(Err(_))` followed by `None`, and the supervisor has exited:
+
+- `Http { status, body, request_id }` for `403`, `404`, `410`, and any other non-2xx-non-retryable status, with the verbatim server response preserved.
+- `Auth(_)` when an `AuthProvider::refresh()` call returns an error, or when a second 401 arrives within the same attempt cycle (signalling the refreshed credential was also rejected).
+- `StreamProtocol { message, request_id }` for the server's `error` SSE event and for `connection-closing` frames whose `reason` is not one of the three documented values. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
+- `StateStore(_)` when a configured `StateStore` fails during `get` or `put`. Continuing without a working store would silently violate at-least-once delivery, so this is terminal.
+- `Decode(_)` on a wire-shape JSON payload that does not deserialise.
+- `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal to avoid livelocking on a poisoned stream.
+- `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
 
 ## Multiple listeners on one client
 
