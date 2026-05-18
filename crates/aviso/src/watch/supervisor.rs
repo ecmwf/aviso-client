@@ -37,6 +37,7 @@ use super::{
     ServerCloseReason, WatchEvent, WatchMode, WatchOutcome, WatchRequest, WatchState,
 };
 use crate::auth::AuthProvider;
+use crate::client::decrement_active_key;
 use crate::state::{Checkpoint, ResumeKey, StateStore};
 use crate::{ClientError, Notification, parse_cloudevent_id};
 
@@ -47,6 +48,20 @@ use crate::{ClientError, Notification, parse_cloudevent_id};
 pub(crate) struct PendingCommit {
     pub(crate) sequence: u64,
     pub(crate) event_id: String,
+}
+
+/// RAII guard that decrements the per-client `active_resume_keys`
+/// refcount on supervisor exit, regardless of which exit path the
+/// supervisor took (clean close, fatal error, cancellation, panic).
+struct ActiveKeyGuard {
+    active: Arc<std::sync::Mutex<std::collections::HashMap<ResumeKey, usize>>>,
+    key: ResumeKey,
+}
+
+impl Drop for ActiveKeyGuard {
+    fn drop(&mut self) {
+        decrement_active_key(&self.active, &self.key);
+    }
 }
 
 /// Outcome of one HTTP connection attempt.
@@ -181,7 +196,12 @@ pub(crate) async fn run_supervisor(
     tx: mpsc::Sender<Result<Notification, ClientError>>,
     mut cancel: oneshot::Receiver<()>,
     mut parent_cancel: watch::Receiver<bool>,
+    active_resume_keys: Arc<std::sync::Mutex<std::collections::HashMap<ResumeKey, usize>>>,
 ) {
+    let _decrement_on_exit = ActiveKeyGuard {
+        active: active_resume_keys.clone(),
+        key: resume_key.clone(),
+    };
     // Resolve initial cursor. User-supplied `request.from()` wins; if
     // absent and a state store is configured, query the store and resume
     // from its checkpoint. A store I/O failure surfaces as the first
@@ -988,6 +1008,10 @@ mod tests {
         let resume_key = ResumeKey::new(&base_url, request.event_type(), &json!({}), None).unwrap();
         let (drop_sender, parent_cancel) = tokio::sync::watch::channel(false);
         std::mem::forget(drop_sender);
+        let active_resume_keys = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+            ResumeKey,
+            usize,
+        >::new()));
         let handle = tokio::spawn(run_supervisor(
             request,
             http,
@@ -999,6 +1023,7 @@ mod tests {
             tx,
             cancel_rx,
             parent_cancel,
+            active_resume_keys,
         ));
         (rx, cancel_tx, handle)
     }
