@@ -73,17 +73,25 @@ The resume key is a stable hash of:
 - schema fingerprint at the time of first use,
 - resume-key format version.
 
-Two listeners with different filters get different stored cursors. Two listeners pointing at different servers can never share a cursor. The unhashed normalised fields are stored next to the hash for debugging.
+Two listeners with different filters get different stored cursors. Two listeners pointing at different servers can never share a cursor. The hash is the only key stored on disk; unhashed components are not persisted because the trade-off (file size grows with every subscription, debugging value is marginal once `tracing` logs already include the resume key hex) does not pay off.
+
+*Amendment, 2026-05-18*: the original text said "the unhashed normalised fields are stored next to the hash for debugging". They are not. The file format stores hex digest keys only. Operators recover the unhashed components from the same `tracing` events that emit the key in the first place.
 
 ---
 
 ## D4. `StateStore` trait, `MemoryStore` and `JsonFileStore`
 
-- `StateStore` is a small trait (`get`, `set`, `delete` by resume key).
-- `MemoryStore` is the in-process default used by the streaming API.
-- `JsonFileStore` provides on-disk persistence: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write plus `fsync` plus atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
+- `StateStore` is a small async trait (`get`, `put`, `delete` by resume key).
+- `MemoryStore` is the in-process implementation, appropriate for tests, short-lived consumers, and any path that does not need to survive process restarts.
+- `JsonFileStore` provides on-disk persistence in two scoping levels:
+  - Single-process correctness ships first: a JSON file with atomic temp-write plus `fsync` of the file plus atomic rename plus `fsync` of the parent directory (Windows uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH | MOVEFILE_REPLACE_EXISTING`). A `kill -9` mid-write cannot corrupt the existing file. The store is linearizable: a successful `put` is durable-before-visible, a failed `put` leaves both in-memory and on-disk state unchanged. The CLI is to default to `~/.config/aviso/state.json` once it wires `StateStore`; the wiring is a follow-up.
+  - Multi-process correctness lands as a follow-up: advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported. The single-process implementation above is sufficient for the common one-binary-per-state-file pattern; the multi-process work hardens shared-state daemon clusters.
 
-SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users actually need shared durable state across processes or hosts.
+The `StateStore` trait is the extension point. Future backends can plug in by implementing the trait; none are planned in this codebase.
+
+*Amendment, 2026-05-18*: the original scope bundled the multi-process correctness work with the file store from day one. Pulled the single-process implementation forward so the CLI binary can resume across restarts without waiting for the cross-process work to settle. The multi-process correctness story above is unchanged in substance, only deferred.
+
+*Amendment, 2026-05-18*: the second of the three trait methods was renamed from `set` to `put`. `put` matches REST-idiomatic key-value semantics ("put a value at a key") and aligns with the persistent-store crates the codebase is likeliest to grow into (`sled`, `rocksdb`). Existing call sites do not yet exist outside the new state module, so the rename is mechanical.
 
 ---
 
