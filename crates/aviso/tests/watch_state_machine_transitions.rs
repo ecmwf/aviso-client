@@ -315,8 +315,8 @@ fn row_17_fatal_protocol_violation_carries_description() {
 }
 
 // ---------------------------------------------------------------------------
-// Row 13: HeartbeatStarvation in its own right (commit 2 only exercises it
-// inside the terminal-sticky test).
+// Row 13: HeartbeatStarvation as its own assertion (the unit tests in
+// `watch::state` cover it only as part of the terminal-sticky drill).
 // ---------------------------------------------------------------------------
 
 #[test]
