@@ -35,6 +35,78 @@
 //!   to do next (continue, reconnect with a [`ReconnectPolicy`], refresh
 //!   auth, surface a gap, or stop).
 //!
+//! # Transition summary
+//!
+//! The full transition table (one row per event x precondition pair)
+//! lives in the commit message that introduced
+//! `crates/aviso/src/watch/state.rs`. The summary below is the
+//! reader-friendly view; the row numbers in `state.rs`'s match arms
+//! refer to the same table.
+//!
+//! - `ConnectionEstablished`: `connection_status` -> `Connected`.
+//! - `ConnectionLost { .. }` or `HeartbeatStarvation`: reconnect with
+//!   [`ReconnectPolicy::ExponentialBackoff`].
+//! - `ServerClose { reason }`: dispatches on the reason.
+//!   `MaxDurationReached` reconnects immediately;
+//!   `ServerShutdown` applies a short backoff;
+//!   `EndOfStream` in [`WatchMode::Watch`] reconnects immediately;
+//!   `EndOfStream` in [`WatchMode::ReplayOnly`] terminates iff
+//!   `replay_completed` was already true, otherwise reconnects.
+//! - `BackoffStarted(d)` records the duration in
+//!   [`ConnectionStatus::BackoffWait`]; `BackoffElapsed` returns the
+//!   reducer to `Reconnecting` only if currently waiting.
+//! - `AuthRejected`: `connection_status` -> `RefreshingAuth`; outcome
+//!   [`WatchOutcome::RefreshAuth`].
+//!   `AuthRefreshCompleted { success: true }`: `connection_status` ->
+//!   `Reconnecting`.
+//!   `AuthRefreshCompleted { success: false }`: terminate with
+//!   [`FatalKind::AuthenticationRejectedAfterRefresh`].
+//! - `HeartbeatReceived`, `NotificationReceived { .. }`: pure
+//!   observations, no state change.
+//! - `ReplayCompleted`: in [`WatchMode::Watch`] from `Replaying` moves
+//!   to `Live`. In [`WatchMode::ReplayOnly`] from `Replaying { rc:
+//!   false }` flips `replay_completed` to true. Idempotent in every
+//!   other non-terminal phase.
+//! - `GapDetected(reason)`: phase -> `GapDetected { reason }`; outcome
+//!   [`WatchOutcome::Gap`] (dedicated, not folded into `Continue`).
+//! - `Fatal(kind)`: phase -> `Closed { Fatal { kind } }`; outcome
+//!   `Stop`.
+//! - `Stop`: phase -> `Closed { UserRequested }`; outcome `Stop`.
+//! - `Closed` is sticky: every subsequent event is a no-op returning
+//!   `Continue`.
+//!
+//! # Usage
+//!
+//! ```
+//! use aviso::watch::{
+//!     ReconnectPolicy, ServerCloseReason, WatchEvent, WatchMode,
+//!     WatchOutcome, WatchState,
+//! };
+//!
+//! // A live-only watch (no replay backlog) starts directly in
+//! // `Live` with `Reconnecting` while the transport opens.
+//! let mut state = WatchState::new(WatchMode::Watch, None);
+//!
+//! // Supervisor establishes the transport.
+//! let _ = state.transition(WatchEvent::ConnectionEstablished);
+//!
+//! // Server hits its `connection_max_duration_sec`. Routine close;
+//! // reconnect immediately, no backoff.
+//! let outcome = state.transition(WatchEvent::ServerClose {
+//!     reason: ServerCloseReason::MaxDurationReached,
+//! });
+//! assert_eq!(
+//!     outcome,
+//!     WatchOutcome::Reconnect {
+//!         policy: ReconnectPolicy::Immediate,
+//!     }
+//! );
+//!
+//! // User asks the watch to stop.
+//! let _ = state.transition(WatchEvent::Stop);
+//! assert!(state.is_terminal());
+//! ```
+//!
 //! # Cross-references
 //!
 //! - D2 (`docs/src/internals/decisions.md`): reconnect-as-norm,
