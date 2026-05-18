@@ -510,12 +510,33 @@ pub(crate) async fn run_supervisor(
     }
 }
 
-/// Drain the single HTTP connection that backs this watch.
+/// Drive one HTTP connection: open the request, classify the initial
+/// response, decode chunks, feed them through the SSE parser plus
+/// [`drain_frames`], and return a [`ConnectionOutcome`] the outer
+/// supervisor loop dispatches on.
 ///
-/// Returns `Ok(())` for clean closes (consumer drop, server-driven close
-/// like `end_of_stream`, terminal reducer state reached without an error
-/// to surface) and `Err(_)` for everything that should reach the consumer
-/// as a typed `ClientError` item on the stream.
+/// Returns:
+/// - `ServerClosed` when the wire delivered a recognised
+///   `connection-closing` frame; the reducer has transitioned via
+///   `WatchEvent::ServerClose` and the outer loop reads the resulting
+///   state to decide whether to reconnect or terminate.
+/// - `HttpStatus { status, body, request_id, retry_after }` when the
+///   initial response was not exactly `200 OK`. The reducer is NOT
+///   advanced here; the outer loop classifies the status.
+/// - `TransportError(_)` on a reqwest-level error (TLS, connect,
+///   mid-stream read).
+/// - `UnexpectedEof` when the response body ended without a
+///   `connection-closing` frame; the reducer has transitioned via
+///   `WatchEvent::ConnectionLost { reason: UnexpectedEof }`.
+/// - `HeartbeatStarved` when the per-chunk `timeout(budget, ...)`
+///   fired; the reducer has transitioned via
+///   `WatchEvent::HeartbeatStarvation`.
+/// - `Fatal(ClientError)` for terminal wire-level conditions surfaced
+///   by [`drain_frames`] (malformed `CloudEvent` id, server `error`
+///   event, unknown `connection-closing.reason`, decode failure,
+///   gap detected, state-store failure).
+/// - `Cancelled` when per-stream drop or parent drop fired during any
+///   await.
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -735,11 +756,21 @@ enum DrainOutcome {
 /// Drain every frame currently queued in the SSE parser and feed it
 /// through the supervisor's mapping table.
 ///
-/// Returns `Err(_)` only for conditions the consumer must see as a
-/// terminal error: a malformed `CloudEvent` id, a server `error` event,
-/// an unknown `connection-closing.reason`, or a JSON decode failure.
-/// Routine frame handling returns `Ok(())` and the caller decides
-/// whether to keep draining the wire.
+/// Returns `Ok(DrainOutcome)`:
+/// - `Continue`: routine frame handling; caller keeps reading from the
+///   wire.
+/// - `ServerClosed`: a `connection-closing` frame was processed; the
+///   reducer's `WatchEvent::ServerClose` transition has run and the
+///   caller should stop reading from this connection.
+/// - `StopRequested`: per-stream or parent-drop cancellation observed
+///   during a `send_or_cancel`, or the consumer dropped the receiver;
+///   the caller should exit without surfacing anything.
+///
+/// Returns `Err(ClientError)` only for terminal wire-level conditions
+/// that the consumer must see as a typed error item on the stream: a
+/// malformed `CloudEvent` id, a server `error` event, an unknown
+/// `connection-closing.reason`, a JSON decode failure, or a
+/// state-store persistence failure.
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
