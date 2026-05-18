@@ -188,7 +188,28 @@ impl AvisoClient {
         })?;
         let _ = WireWatchRequest::from_public(&request)?;
         let resume_key = compute_resume_key(&self.base_url, &request)?;
-        let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+        // Channel capacity controls whether the user-facing
+        // "pulling item N+1 implies item N is durable" contract holds.
+        // The supervisor commits item N to the store BEFORE attempting
+        // to send item N+1; with a capacity > 1, item N could land on
+        // disk while item N is still buffered ahead of the consumer,
+        // breaking the at-least-once contract on a crash between
+        // commit and consumer-pull.
+        //
+        // When a state store is configured we therefore force capacity
+        // to 1: the supervisor's send of N+1 then blocks (TCP
+        // backpressure propagates upstream) until the consumer has
+        // pulled item N, so the durability claim is preserved.
+        //
+        // Without a state store there is no durability claim to
+        // preserve, and the larger buffer absorbs short consumer
+        // pauses without throttling the wire.
+        let capacity = if self.state_store.is_some() {
+            1
+        } else {
+            CHANNEL_CAPACITY
+        };
+        let (tx, rx) = mpsc::channel(capacity);
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let parent_cancel = self.parent_drop.subscribe();
         let http = self.http.clone();

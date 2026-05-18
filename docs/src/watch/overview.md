@@ -171,7 +171,7 @@ The "refresh-then-retry-once" cycle resets after any non-401 outcome (a successf
 `AvisoClientBuilder::state_store(Arc<dyn StateStore>)` wires a persistent store (`MemoryStore`, `JsonFileStore`, or a custom implementation) into the client. When set:
 
 1. At watch start, if `WatchRequest::from()` is `None`, the supervisor reads the stored checkpoint and resumes from `last_committed_sequence + 1` on the wire.
-2. After each successful notification send, the supervisor persists the PREVIOUS notification's sequence and event id before the next send leaves the channel. Pulling item N+1 implies item N is durable.
+2. After each successful notification send, the supervisor persists the PREVIOUS notification's sequence and event id before the next send leaves the channel. The user-facing contract is "pulling item N+1 implies item N is durable", and the client enforces this by forcing the internal channel capacity to 1 when a `StateStore` is configured. With capacity 1, the supervisor's send of item N+1 blocks (TCP backpressure propagates upstream) until the consumer has pulled item N; the supervisor's commit of N therefore happens before the consumer can ever pull N+1. Without a `StateStore`, capacity stays at the default 128 and there is no durability claim to enforce.
 3. A user-supplied `from` always wins. The stored checkpoint is consulted only when the request has no explicit resume position.
 
 ```rust,ignore
