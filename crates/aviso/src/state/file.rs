@@ -182,16 +182,25 @@ fn load_from_disk(path: &Path) -> Result<HashMap<ResumeKey, Checkpoint>, StoreEr
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File absent. Validate the parent directory exists so a
-            // missing-directory configuration error surfaces at `open`
-            // rather than at the first `put` (which would otherwise
-            // produce an opaque atomic-write failure later).
+            // File absent. Validate the parent so a misconfigured path
+            // surfaces here rather than as an opaque atomic-write
+            // failure on the first `put`. Distinguish missing parent
+            // from a parent that exists but is not a directory; the
+            // two are different operator errors.
             if let Some(parent) = path.parent() {
-                if !parent.as_os_str().is_empty() && !parent.is_dir() {
-                    return Err(StoreError::Io(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("parent directory does not exist: {}", parent.display()),
-                    )));
+                if !parent.as_os_str().is_empty() {
+                    if !parent.exists() {
+                        return Err(StoreError::Io(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("parent directory does not exist: {}", parent.display()),
+                        )));
+                    }
+                    if !parent.is_dir() {
+                        return Err(StoreError::Io(std::io::Error::new(
+                            std::io::ErrorKind::NotADirectory,
+                            format!("parent path is not a directory: {}", parent.display()),
+                        )));
+                    }
                 }
             }
             return Ok(HashMap::new());
@@ -383,9 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn open_with_missing_parent_directory_errors() {
-        // The type doc promises the parent directory must exist.
-        // `open` enforces it: a missing parent surfaces here rather
-        // than at the first `put`.
+        // Missing parent surfaces at `open` as Io NotFound.
         let nonexistent: PathBuf = "/nonexistent/aviso-state-test-directory/state.json".into();
         let result = JsonFileStore::open(&nonexistent).await;
         match result {
@@ -393,6 +400,25 @@ mod tests {
                 assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
             }
             other => panic!("expected Io NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn open_with_parent_that_is_a_file_errors_distinctly() {
+        // Parent path exists but is a regular file, not a directory.
+        // Distinct from the missing-directory case: a different
+        // operator mistake deserves a different ErrorKind so callers
+        // can surface a different message.
+        let dir = tempdir().unwrap();
+        let regular_file = dir.path().join("not_a_dir");
+        std::fs::write(&regular_file, b"this is a file, not a dir").unwrap();
+        let state_path = regular_file.join("state.json");
+        let result = JsonFileStore::open(&state_path).await;
+        match result {
+            Err(StoreError::Io(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::NotADirectory);
+            }
+            other => panic!("expected Io NotADirectory, got {other:?}"),
         }
     }
 
