@@ -609,10 +609,16 @@ async fn run_one_connection(
 
     let mut parser = finesse::Parser::new();
     let mut gap_guard = GapGuard::starting_from(wire_from);
-    let mut deadline = tokio::time::Instant::now() + budget;
 
     loop {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        // The heartbeat budget measures time waiting for the next wire
+        // chunk, not the supervisor's total iteration time. Wrapping
+        // each `response.chunk().await` in a fresh `timeout(budget, ...)`
+        // means time spent in `drain_frames` (state-store `put`, channel
+        // backpressure inside `send_or_cancel`, parser work) does NOT
+        // consume the budget. Otherwise a slow consumer that filled the
+        // bounded channel could provoke a false `HeartbeatStarved`
+        // reconnect even with a healthy server.
         let timed = tokio::select! {
             biased;
             _ = parent_cancel.changed() => {
@@ -625,7 +631,7 @@ async fn run_one_connection(
                 apply_outcome(last_reconnect_policy, stop);
                 return ConnectionOutcome::Cancelled;
             }
-            r = tokio::time::timeout(remaining, response.chunk()) => r,
+            r = tokio::time::timeout(budget, response.chunk()) => r,
         };
         let chunk = match timed {
             Ok(c) => c,
@@ -637,12 +643,7 @@ async fn run_one_connection(
         };
         let eof = matches!(chunk, Ok(None));
         match chunk {
-            Ok(Some(bytes)) => {
-                if !bytes.is_empty() {
-                    deadline = tokio::time::Instant::now() + budget;
-                }
-                parser.feed(&bytes);
-            }
+            Ok(Some(bytes)) => parser.feed(&bytes),
             Ok(None) => parser.end(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
         }
@@ -1193,7 +1194,9 @@ mod tests {
         // In watch mode end_of_stream reconnects; drop the cancel to break
         // the reconnect loop and let the supervisor exit.
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1228,7 +1231,9 @@ mod tests {
             "the connection_established marker must not emit a notification"
         );
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1261,7 +1266,9 @@ mod tests {
         assert_eq!(first.event_type, "mars");
         assert_eq!(first.sequence, 5);
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1348,7 +1355,9 @@ mod tests {
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1465,7 +1474,9 @@ mod tests {
             Ok(other) => panic!("unexpected receive: {other:?}"),
         }
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1502,7 +1513,9 @@ mod tests {
             panic!("EOF must not surface as a terminal error, got: {e:?}");
         }
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[tokio::test]
@@ -1527,7 +1540,9 @@ mod tests {
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         drop(cancel_tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        let join_result = join_result.expect("supervisor must exit within 2s of cancel-drop");
+        join_result.expect("supervisor task must not panic");
     }
 
     #[test]

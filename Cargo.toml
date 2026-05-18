@@ -41,7 +41,7 @@ sha2 = "0.11"
 static_assertions = "1.1"
 tempfile = "3.10"
 thiserror = "2.0"
-tokio = { version = "1.45", default-features = false, features = ["macros", "rt-multi-thread", "sync", "time", "test-util"] }
+tokio = { version = "1.45", default-features = false, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
 url = "2.5"
