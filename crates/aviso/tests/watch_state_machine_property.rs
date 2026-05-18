@@ -2,8 +2,11 @@
 //!
 //! Generates random sequences of [`WatchEvent`]s and asserts the
 //! reducer's spec-correctness invariants for every step. Invariants
-//! and their numbering match the PR-E1 branch plan v2 (which in turn
-//! traces back to ADR D2 and the oracle review of the plan).
+//! trace back to ADR D2 (reconnect-as-norm, reconnect classifier,
+//! at-least-once delivery) and the oracle review that hardened the
+//! reducer surface before implementation. The invariant numbering
+//! is local to this file and reused in the commit message that
+//! introduced it.
 //!
 //! The invariants checked here are:
 //!
