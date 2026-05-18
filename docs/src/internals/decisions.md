@@ -73,7 +73,9 @@ The resume key is a stable hash of:
 - schema fingerprint at the time of first use,
 - resume-key format version.
 
-Two listeners with different filters get different stored cursors. Two listeners pointing at different servers can never share a cursor. The unhashed normalised fields are stored next to the hash for debugging.
+Two listeners with different filters get different stored cursors. Two listeners pointing at different servers can never share a cursor. The hash is the only key stored on disk; unhashed components are not persisted because the trade-off (file size grows with every subscription, debugging value is marginal once `tracing` logs already include the resume key hex) does not pay off.
+
+*Amendment, 2026-05-18*: the original text said "the unhashed normalised fields are stored next to the hash for debugging". They are not. The file format stores hex digest keys only. Operators recover the unhashed components from the same `tracing` events that emit the key in the first place.
 
 ---
 
