@@ -6,6 +6,7 @@
 //! responses, and on stream-protocol errors when the SSE payload carried a
 //! `request_id` field, so callers can quote it when reporting issues.
 
+use crate::state::StoreError;
 use crate::watch::GapReason;
 
 /// Result alias using [`ClientError`] as the error type.
@@ -81,6 +82,21 @@ pub enum ClientError {
     /// Configuration-time error (invalid auth source, missing field, and so on).
     #[error("config: {0}")]
     Config(String),
+
+    /// Persistent state-store operation failed during a watch session.
+    ///
+    /// Surfaced when [`crate::state::StateStore::get`] or
+    /// [`crate::state::StateStore::put`] returns an error while the watch
+    /// supervisor is consulting or updating the durable resume cursor.
+    /// The supervisor cannot continue at-least-once delivery without a
+    /// working store, so this error is terminal: the stream yields `None`
+    /// after it.
+    ///
+    /// The `#[from]` impl preserves the underlying error chain
+    /// (`StoreError::Io`, `StoreError::Decode`, and so on) so callers can
+    /// classify the root cause via `source()` if they need to.
+    #[error("state store: {0}")]
+    StateStore(#[from] StoreError),
 }
 
 impl ClientError {
@@ -176,5 +192,29 @@ mod tests {
         let rendered = err.to_string();
         assert!(rendered.contains("boom"), "got: {rendered}");
         assert!(rendered.contains("r-1"), "got: {rendered}");
+    }
+
+    #[test]
+    fn state_store_from_io_error_preserves_chain() {
+        use crate::state::StoreError;
+        use std::error::Error as _;
+        let io = std::io::Error::other("disk full");
+        let store_err: StoreError = io.into();
+        let client_err: ClientError = store_err.into();
+        let rendered = client_err.to_string();
+        assert!(rendered.starts_with("state store:"), "got: {rendered}");
+        let source = client_err.source();
+        assert!(
+            source.is_some(),
+            "ClientError::StateStore must expose its inner StoreError via source()"
+        );
+    }
+
+    #[test]
+    fn state_store_variant_has_no_request_id() {
+        use crate::state::StoreError;
+        let store_err: StoreError = std::io::Error::other("boom").into();
+        let err: ClientError = store_err.into();
+        assert_eq!(err.request_id(), None);
     }
 }
