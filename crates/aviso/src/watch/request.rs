@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{ResumeStart, WatchMode};
+use super::{ResumeStart, Trigger, WatchMode};
 
 /// Subscription parameters for a single watch session.
 ///
@@ -56,6 +56,7 @@ pub struct WatchRequest {
     filter: BTreeMap<String, serde_json::Value>,
     from: Option<ResumeStart>,
     mode: WatchMode,
+    triggers: Vec<Trigger>,
 }
 
 impl WatchRequest {
@@ -71,6 +72,7 @@ impl WatchRequest {
             filter: BTreeMap::new(),
             from: None,
             mode: WatchMode::Watch,
+            triggers: Vec::new(),
         }
     }
 
@@ -88,6 +90,7 @@ impl WatchRequest {
             filter: BTreeMap::new(),
             from: Some(from),
             mode: WatchMode::Watch,
+            triggers: Vec::new(),
         }
     }
 
@@ -109,6 +112,7 @@ impl WatchRequest {
             filter: BTreeMap::new(),
             from: Some(from),
             mode: WatchMode::ReplayOnly,
+            triggers: Vec::new(),
         }
     }
 
@@ -151,6 +155,31 @@ impl WatchRequest {
     #[must_use]
     pub fn mode(&self) -> WatchMode {
         self.mode
+    }
+
+    /// Attach a list of triggers to this watch.
+    ///
+    /// Triggers run in declaration order BEFORE each notification is sent on
+    /// the consumer channel. A required trigger that fails after all retries
+    /// terminates the watch with `ClientError::TriggerFailed`; an optional
+    /// trigger logs a `WARN` event and the watch continues.
+    ///
+    /// Calling this method replaces any previously attached trigger list;
+    /// callers that want to accumulate should build a single `Vec<Trigger>`
+    /// and pass it once.
+    ///
+    /// See [`Trigger`] for builder details and [`Self::triggers`] for the
+    /// matching accessor.
+    #[must_use]
+    pub fn with_triggers(mut self, triggers: Vec<Trigger>) -> Self {
+        self.triggers = triggers;
+        self
+    }
+
+    /// Borrow the configured triggers. Empty slice when none are attached.
+    #[must_use]
+    pub fn triggers(&self) -> &[Trigger] {
+        &self.triggers
     }
 }
 
@@ -236,5 +265,45 @@ mod tests {
         assert_eq!(cloned.mode(), req.mode());
         assert_eq!(cloned.from(), req.from());
         assert_eq!(cloned.filter(), req.filter());
+        assert_eq!(cloned.triggers().len(), req.triggers().len());
+    }
+
+    #[test]
+    fn watch_constructor_starts_with_empty_trigger_list() {
+        let req = WatchRequest::watch("mars");
+        assert!(req.triggers().is_empty());
+    }
+
+    #[test]
+    fn watch_from_constructor_starts_with_empty_trigger_list() {
+        let req = WatchRequest::watch_from("mars", ResumeStart::AfterSequence(1));
+        assert!(req.triggers().is_empty());
+    }
+
+    #[test]
+    fn replay_only_constructor_starts_with_empty_trigger_list() {
+        let req = WatchRequest::replay_only("mars", ResumeStart::AfterSequence(1));
+        assert!(req.triggers().is_empty());
+    }
+
+    #[test]
+    fn with_triggers_replaces_the_trigger_list() {
+        use crate::watch::Trigger;
+        let first = vec![Trigger::echo()];
+        let second = vec![Trigger::echo(), Trigger::log("/tmp/r.log")];
+        let req = WatchRequest::watch("mars")
+            .with_triggers(first)
+            .with_triggers(second.clone());
+        assert_eq!(req.triggers().len(), second.len());
+    }
+
+    #[test]
+    fn clone_preserves_attached_triggers() {
+        use crate::watch::Trigger;
+        let req = WatchRequest::watch("mars")
+            .with_triggers(vec![Trigger::log("/tmp/clone.log").required(false)]);
+        let cloned = req.clone();
+        assert_eq!(cloned.triggers().len(), 1);
+        assert!(!cloned.triggers()[0].required);
     }
 }
