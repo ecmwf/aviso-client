@@ -132,6 +132,16 @@ pub(crate) enum ConnectionOutcome {
     Cancelled,
 }
 
+/// Heartbeat-starvation budget per D2: `max(3 * interval, interval + 30s)`.
+/// At the default 30 s interval the budget is 90 s; lower intervals
+/// produce smaller budgets but with a 30 s absolute floor so transient
+/// network slowness does not trip the watchdog.
+fn heartbeat_starvation_budget(interval: std::time::Duration) -> std::time::Duration {
+    let three_x = interval.saturating_mul(3);
+    let plus_30 = interval.saturating_add(std::time::Duration::from_secs(30));
+    three_x.max(plus_30)
+}
+
 /// Apply a [`WatchOutcome`] to the supervisor's `last_reconnect_policy`
 /// cache.
 ///
@@ -145,20 +155,6 @@ pub(crate) enum ConnectionOutcome {
 /// reducer) sidesteps the overlapping-borrow problem at call sites:
 /// `let outcome = state.transition(...); apply_outcome(&mut policy, outcome);`
 /// keeps the two `state` borrows separate.
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"
-)]
-/// Heartbeat-starvation budget per D2: `max(3 * interval, interval + 30s)`.
-/// At the default 30 s interval the budget is 90 s; lower intervals
-/// produce smaller budgets but with a 30 s absolute floor so transient
-/// network slowness does not trip the watchdog.
-fn heartbeat_starvation_budget(interval: std::time::Duration) -> std::time::Duration {
-    let three_x = interval.saturating_mul(3);
-    let plus_30 = interval.saturating_add(std::time::Duration::from_secs(30));
-    three_x.max(plus_30)
-}
-
 #[allow(
     clippy::needless_pass_by_value,
     reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"

@@ -158,9 +158,8 @@ async fn retry_after_honoured_on_503() {
     // First POST returns 503 with `Retry-After: 1`; second POST returns a
     // 200 stream with one notification. The test asserts the wall-clock
     // delta between the two POSTs is at least the retry-after value.
-    use std::sync::Mutex;
     let server = MockServer::start().await;
-    let attempt = std::sync::Arc::new(Mutex::new(0u32));
+    let attempt = Arc::new(Mutex::new(0u32));
 
     let body = format!(
         "{}{}",
@@ -591,27 +590,63 @@ async fn paced_sse_server_with_capture(
             let captured_for_this = captured.clone();
             index += 1;
             tokio::spawn(async move {
+                // Read until the full HTTP request body has arrived. First
+                // drain bytes until the header terminator "\r\n\r\n", then
+                // parse `Content-Length` and read exactly that many more
+                // bytes from the wire (TCP does not guarantee the body
+                // arrives in the same read() that delivered the headers,
+                // so an early break on "\r\n\r\n" can capture a partial
+                // body and produce intermittent JSON-parse failures).
                 let mut request_buf = Vec::with_capacity(4096);
                 let mut chunk = [0u8; 1024];
+                let header_end: usize;
                 loop {
                     match tokio::io::AsyncReadExt::read(&mut socket, &mut chunk).await {
-                        Ok(0) | Err(_) => break,
+                        Ok(0) | Err(_) => return,
                         Ok(n) => {
                             request_buf.extend_from_slice(&chunk[..n]);
-                            if request_buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            if let Some(idx) = request_buf.windows(4).position(|w| w == b"\r\n\r\n")
+                            {
+                                header_end = idx + 4;
                                 break;
                             }
                         }
                     }
                 }
-                let raw = String::from_utf8_lossy(&request_buf).into_owned();
-                if let Some(idx) = raw.find("\r\n\r\n") {
-                    let body_str = raw[idx + 4..].to_string();
+                let headers_str = String::from_utf8_lossy(&request_buf[..header_end]).into_owned();
+                let content_length: usize = headers_str
+                    .lines()
+                    .find_map(|line| {
+                        let mut parts = line.splitn(2, ':');
+                        let name = parts.next()?.trim();
+                        let value = parts.next()?.trim();
+                        if name.eq_ignore_ascii_case("content-length") {
+                            value.parse().ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0);
+                let already_read_body = request_buf.len() - header_end;
+                let remaining_to_read = content_length.saturating_sub(already_read_body);
+                if remaining_to_read > 0 {
+                    let mut body_extra = vec![0u8; remaining_to_read];
+                    if tokio::io::AsyncReadExt::read_exact(&mut socket, &mut body_extra)
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    request_buf.extend_from_slice(&body_extra);
+                }
+                let body_str = String::from_utf8_lossy(&request_buf[header_end..]).into_owned();
+                {
                     let mut g = captured_for_this.lock().unwrap();
                     if g.is_none() {
                         *g = Some(body_str);
                     }
                 }
+
                 let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: \
                      chunked\r\n\r\n";
                 let _ = socket.write_all(header.as_bytes()).await;
