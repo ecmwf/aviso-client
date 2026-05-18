@@ -62,9 +62,9 @@ impl AvisoClient {
     ///
     /// # Errors
     ///
-    /// Same shape as [`AvisoClient::notify`]: [`ClientError::Transport`] on network failure,
-    /// [`ClientError::Http`] on non-success status, [`ClientError::Decode`] if the server body
-    /// drifts from [`SchemaCatalog`], [`ClientError::Auth`] if the auth provider cannot produce
+    /// Same shape as [`AvisoClient::notify`]: [`crate::ClientError::Transport`] on network failure,
+    /// [`crate::ClientError::Http`] on non-success status, [`crate::ClientError::Decode`] if the server body
+    /// drifts from [`SchemaCatalog`], [`crate::ClientError::Auth`] if the auth provider cannot produce
     /// a header.
     pub async fn schema(&self) -> crate::Result<SchemaCatalog> {
         let url = self.endpoint("api/v1/schema")?;
@@ -77,7 +77,7 @@ impl AvisoClient {
     /// # Errors
     ///
     /// Same shape as [`AvisoClient::schema`]; a missing event type returns
-    /// [`ClientError::Http`] with `status = 404` and the server-supplied body.
+    /// [`crate::ClientError::Http`] with `status = 404` and the server-supplied body.
     pub async fn schema_for(&self, event_type: &str) -> crate::Result<SchemaResponse> {
         crate::client::validate_path_segment(event_type)?;
         let path = format!("api/v1/schema/{event_type}");
