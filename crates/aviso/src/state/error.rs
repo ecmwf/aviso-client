@@ -18,12 +18,16 @@ pub enum StoreError {
     #[error("could not parse state file: {0}")]
     Decode(#[source] serde_json::Error),
 
-    /// File format version found on disk is newer than this client supports.
-    #[error("state file format version {found} is newer than supported version {supported}")]
+    /// File format version found on disk does not match the version
+    /// this client reads and writes. Without a migration path, both
+    /// newer (the client cannot interpret) and older (the file may
+    /// have a different layout the current code does not understand)
+    /// are rejected loudly rather than risk silent misinterpretation.
+    #[error("state file format version {found} does not match supported version {supported}")]
     UnsupportedFileVersion {
         /// Version field read from the file.
         found: u32,
-        /// Highest version this client supports.
+        /// Version this client reads and writes.
         supported: u32,
     },
 

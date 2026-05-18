@@ -210,7 +210,7 @@ fn load_from_disk(path: &Path) -> Result<HashMap<ResumeKey, Checkpoint>, StoreEr
         Err(e) => return Err(StoreError::Io(e)),
     };
     let file: FileFormat = serde_json::from_slice(&bytes).map_err(StoreError::Decode)?;
-    if file.version > FILE_FORMAT_VERSION {
+    if file.version != FILE_FORMAT_VERSION {
         return Err(StoreError::UnsupportedFileVersion {
             found: file.version,
             supported: FILE_FORMAT_VERSION,
@@ -343,6 +343,27 @@ mod tests {
         match result {
             Err(StoreError::UnsupportedFileVersion { found, supported }) => {
                 assert_eq!(found, FILE_FORMAT_VERSION + 1);
+                assert_eq!(supported, FILE_FORMAT_VERSION);
+            }
+            other => panic!("expected UnsupportedFileVersion, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn older_file_version_also_returns_unsupported_file_version() {
+        // A file claiming version 0 would have an unknown layout (we
+        // have never written that version). Without a migration path,
+        // silently accepting it risks misinterpreting the contents.
+        // The gate rejects on `!=` rather than `>`, so older versions
+        // surface as `UnsupportedFileVersion` too.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let older = r#"{"version":0,"key_format_version":1,"checkpoints":{}}"#;
+        std::fs::write(&path, older).unwrap();
+        let result = JsonFileStore::open(&path).await;
+        match result {
+            Err(StoreError::UnsupportedFileVersion { found, supported }) => {
+                assert_eq!(found, 0);
                 assert_eq!(supported, FILE_FORMAT_VERSION);
             }
             other => panic!("expected UnsupportedFileVersion, got {other:?}"),
