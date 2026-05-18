@@ -87,13 +87,13 @@ For `watch_with_handler`, returning `Err(_)` from the handler drops the stream a
 
 `ClientError` variants you can see while running a watch:
 
-- `Config(_)` is returned synchronously from `watch()` itself when no Tokio runtime is entered, when the resume position would overflow `u64::MAX`, or when the resume-key derivation rejects the filter shape.
+- `Config(_)` is returned synchronously from `watch()` itself when no Tokio runtime is entered, when a user-supplied resume position (`WatchRequest::watch_from(..., ResumeStart::AfterSequence(n))`) overflows `u64::MAX`, or when the resume-key derivation rejects the filter shape. A `u64::MAX` overflow originating from a STORED checkpoint (loaded asynchronously by the supervisor from a configured `StateStore`) cannot surface synchronously; it appears instead as the first stream item, also as `Err(Config(_))`, and indicates invalid or corrupted stored state that the operator must repair (typically by deleting the affected entry).
 
 The resilience layer absorbs every retryable failure mode internally. The supervisor reconnects with exponential backoff on transport errors, on TCP EOF without a `connection-closing` frame, on heartbeat starvation, and on `429`/`503` HTTP statuses (honouring `Retry-After` when present, capped at five minutes). None of these surface as stream items; you will not see a transient `Transport(_)` or a 503 as a terminal error.
 
 The remaining error variants are terminal: they surface as `Some(Err(_))` followed by `None`, and the supervisor has exited:
 
-- `Http { status, body, request_id }` for `403`, `404`, `410`, and any other non-2xx-non-retryable status, with the verbatim server response preserved.
+- `Http { status, body, request_id }` for `403`, `404`, `410`, and any other non-2xx-non-retryable status, with the verbatim server response preserved. A `401` ALSO lands here when no `AuthProvider` is configured on the client (the supervisor has no refresh cycle available, so it surfaces the 401 directly rather than retrying); when an auth provider IS configured, the supervisor instead runs the refresh-then-retry-once cycle and only surfaces a 401 as `Auth(_)` (see next bullet) after the refreshed credential is also rejected.
 - `Auth(_)` when an `AuthProvider::refresh()` call returns an error, or when a second 401 arrives within the same attempt cycle (signalling the refreshed credential was also rejected).
 - `StreamProtocol { message, request_id }` for the server's `error` SSE event and for `connection-closing` frames whose `reason` is not one of the three documented values. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
 - `StateStore(_)` when a configured `StateStore` fails during `get` or `put`. Continuing without a working store would silently violate at-least-once delivery, so this is terminal.
