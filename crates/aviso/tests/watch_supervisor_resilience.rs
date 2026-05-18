@@ -509,8 +509,13 @@ async fn state_store_checkpoint_round_trip() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let base_url = url::Url::parse(&server.uri()).unwrap();
-    let resume_key = ResumeKey::new(&base_url, "mars", &Value::Object(serde_json::Map::default()), None)
-        .expect("resume key");
+    let resume_key = ResumeKey::new(
+        &base_url,
+        "mars",
+        &Value::Object(serde_json::Map::default()),
+        None,
+    )
+    .expect("resume key");
     let checkpoint: Option<Checkpoint> = store.get(&resume_key).await.expect("store get");
     let checkpoint = checkpoint.expect("checkpoint must be set after three sends");
     assert!(
@@ -546,8 +551,13 @@ async fn user_supplied_from_wins_over_stored_checkpoint() {
 
     let store: Arc<dyn StateStore> = Arc::new(MemoryStore::new());
     let base_url = url::Url::parse(&server.uri()).unwrap();
-    let resume_key = ResumeKey::new(&base_url, "mars", &Value::Object(serde_json::Map::default()), None)
-        .expect("resume key");
+    let resume_key = ResumeKey::new(
+        &base_url,
+        "mars",
+        &Value::Object(serde_json::Map::default()),
+        None,
+    )
+    .expect("resume key");
     store
         .put(
             &resume_key,
@@ -588,6 +598,48 @@ async fn user_supplied_from_wins_over_stored_checkpoint() {
         "user-supplied AfterSequence(5) must serialise as from_id=6, ignoring the stored \
          checkpoint at sequence 99"
     );
+}
+
+#[tokio::test]
+async fn parent_drop_cancels_children() {
+    let server = MockServer::start().await;
+    let mut body = String::new();
+    for n in 1..=5 {
+        body.push_str(&sse_chunk("live-notification", &cloud_event("mars", n)));
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let mut stream_a = client.watch(WatchRequest::watch("mars")).unwrap();
+    let mut stream_b = client.watch(WatchRequest::watch("cosmo")).unwrap();
+
+    let _first_a = timeout(Duration::from_secs(5), next_item(&mut stream_a))
+        .await
+        .expect("stream A first notification")
+        .expect("stream A open")
+        .expect("no error on stream A");
+
+    drop(client);
+
+    let end_a = timeout(Duration::from_secs(2), async {
+        while next_item(&mut stream_a).await.is_some() {}
+    })
+    .await;
+    assert!(end_a.is_ok(), "stream A must close after AvisoClient drop");
+
+    let end_b = timeout(Duration::from_secs(2), async {
+        while next_item(&mut stream_b).await.is_some() {}
+    })
+    .await;
+    assert!(end_b.is_ok(), "stream B must close after AvisoClient drop");
 }
 
 #[tokio::test]
