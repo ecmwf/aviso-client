@@ -1,10 +1,10 @@
 //! Integration tests for `AvisoClient::watch()` resilience behaviour:
 //! reconnect on routine server close, `Retry-After` honouring on 503,
-//! and EOF-without-close reclassification as routine transport loss.
+//! EOF-without-close reclassification as routine transport loss, auth
+//! refresh on 401, and heartbeat-starvation reconnect.
 //!
-//! Auth refresh, heartbeat watchdog, state-store-backed checkpoints, and
-//! the parent-drop cancel cascade ship in follow-up commits and have
-//! dedicated tests there.
+//! State-store-backed checkpoints and the parent-drop cancel cascade
+//! ship in follow-up commits and have dedicated tests there.
 
 #![allow(
     clippy::unwrap_used,
@@ -25,6 +25,8 @@ use aviso::{AvisoClient, ClientError};
 use futures_core::Stream;
 use reqwest::header::HeaderValue;
 use serde_json::{Value, json};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 use tokio::time::timeout;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -365,6 +367,92 @@ async fn auth_refresh_followed_by_second_401_terminates() {
         "expected exactly two POSTs (initial 401 + post-refresh 401); got {}",
         received.len()
     );
+}
+
+/// Start a tokio `TcpListener` that accepts HTTP connections, reads (and
+/// discards) the request, writes a 200 SSE response with the configured
+/// per-connection body, and then holds the connection open without
+/// further writes until the client closes it. The handler indexes per
+/// accepted connection so the test can serve different bodies on the
+/// first vs second POST.
+async fn paced_sse_server(bodies: Vec<String>) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{addr}");
+    let handle = tokio::spawn(async move {
+        let mut index = 0;
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let body = bodies.get(index).cloned().unwrap_or_default();
+            index += 1;
+            tokio::spawn(async move {
+                let mut request_buf = [0u8; 4096];
+                let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut request_buf).await;
+                let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: \
+                     chunked\r\n\r\n";
+                let _ = socket.write_all(header.as_bytes()).await;
+                // Write the body as a single HTTP chunked frame, then hold
+                // the connection open without writing the terminating
+                // zero-length chunk so the consumer's `response.chunk()`
+                // blocks (as a real long-lived SSE stream would).
+                let chunk = format!("{:X}\r\n{}\r\n", body.len(), body);
+                let _ = socket.write_all(chunk.as_bytes()).await;
+                let _ = socket.flush().await;
+                // Hold the connection open. The supervisor's heartbeat
+                // watchdog or per-stream cancel breaks the loop.
+                let mut sink = [0u8; 256];
+                loop {
+                    match tokio::io::AsyncReadExt::read(&mut socket, &mut sink).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            });
+        }
+    });
+    (url, handle)
+}
+
+#[tokio::test]
+async fn heartbeat_starvation_triggers_reconnect() {
+    // Real time for the initial connect and first read so HTTP I/O
+    // actually delivers bytes; then pause + advance to drive the
+    // 90-second heartbeat watchdog deterministically without waiting in
+    // wall-clock time. Auto-advance via `start_paused = true` would fire
+    // the budget before the supervisor ever connects, so we pause only
+    // after the first item arrives.
+    let bodies = vec![
+        sse_chunk("live-notification", &cloud_event("mars", 1)),
+        sse_chunk("live-notification", &cloud_event("mars", 2)),
+    ];
+    let (url, _server_handle) = paced_sse_server(bodies).await;
+
+    let client = AvisoClient::builder().base_url(&url).build().unwrap();
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+
+    let first = timeout(Duration::from_secs(10), next_item(&mut stream))
+        .await
+        .expect("first notification must arrive in wall-clock time")
+        .expect("stream must not close")
+        .expect("no terminal error");
+    assert_eq!(first.sequence, 1);
+
+    // Now pause and advance past the 90-second budget. The supervisor's
+    // `tokio::time::timeout(budget, response.chunk())` arms its timer in
+    // virtual time; advancing fires it. The supervisor reconnects, and
+    // the reconnect's HTTP I/O proceeds in real time (paused mode only
+    // affects timers, not the I/O reactor).
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(95)).await;
+    tokio::time::resume();
+
+    let second = timeout(Duration::from_secs(10), next_item(&mut stream))
+        .await
+        .expect("second notification must arrive after reconnect")
+        .expect("stream must not close")
+        .expect("no terminal error");
+    assert_eq!(second.sequence, 2);
+
+    drop(stream);
 }
 
 #[tokio::test]

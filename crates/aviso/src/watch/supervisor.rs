@@ -81,6 +81,13 @@ pub(crate) enum ConnectionOutcome {
     /// reconnects with exponential backoff. Long-lived watches survive
     /// NAT timeouts and half-open sockets via this path.
     UnexpectedEof,
+    /// The heartbeat watchdog fired: no SSE event of any kind arrived
+    /// within `max(3 * heartbeat_interval, heartbeat_interval + 30s)`.
+    /// The outer supervisor fires `WatchEvent::HeartbeatStarvation` and
+    /// reconnects with exponential backoff. Defends against silently-dead
+    /// connections (NAT idle timeout, server-side application hang behind
+    /// a healthy reverse proxy, half-open sockets after network change).
+    HeartbeatStarved,
     /// The wire delivered a frame the supervisor must surface as a
     /// typed error: malformed `CloudEvent` id, server `error` event,
     /// unknown `connection-closing` reason, or gap detected. The
@@ -105,6 +112,20 @@ pub(crate) enum ConnectionOutcome {
 /// reducer) sidesteps the overlapping-borrow problem at call sites:
 /// `let outcome = state.transition(...); apply_outcome(&mut policy, outcome);`
 /// keeps the two `state` borrows separate.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"
+)]
+/// Heartbeat-starvation budget per D2: `max(3 * interval, interval + 30s)`.
+/// At the default 30 s interval the budget is 90 s; lower intervals
+/// produce smaller budgets but with a 30 s absolute floor so transient
+/// network slowness does not trip the watchdog.
+fn heartbeat_starvation_budget(interval: std::time::Duration) -> std::time::Duration {
+    let three_x = interval.saturating_mul(3);
+    let plus_30 = interval.saturating_add(std::time::Duration::from_secs(30));
+    three_x.max(plus_30)
+}
+
 #[allow(
     clippy::needless_pass_by_value,
     reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"
@@ -140,6 +161,7 @@ pub(crate) async fn run_supervisor(
     http: reqwest::Client,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
+    heartbeat_interval: std::time::Duration,
     tx: mpsc::Sender<Result<Notification, ClientError>>,
     mut cancel: oneshot::Receiver<()>,
 ) {
@@ -249,6 +271,7 @@ pub(crate) async fn run_supervisor(
             &http,
             &base_url,
             auth.as_ref(),
+            heartbeat_interval,
             &tx,
             &mut cancel,
         )
@@ -344,7 +367,7 @@ pub(crate) async fn run_supervisor(
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
-            ConnectionOutcome::UnexpectedEof => {
+            ConnectionOutcome::UnexpectedEof | ConnectionOutcome::HeartbeatStarved => {
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
@@ -386,9 +409,11 @@ async fn run_one_connection(
     http: &reqwest::Client,
     base_url: &Url,
     auth: Option<&Arc<dyn AuthProvider>>,
+    heartbeat_interval: std::time::Duration,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
 ) -> ConnectionOutcome {
+    let budget = heartbeat_starvation_budget(heartbeat_interval);
     let endpoint = match request.mode() {
         WatchMode::Watch => "api/v1/watch",
         WatchMode::ReplayOnly => "api/v1/replay",
@@ -472,20 +497,35 @@ async fn run_one_connection(
 
     let mut parser = finesse::Parser::new();
     let mut gap_guard = GapGuard::starting_from(wire_from);
+    let mut deadline = tokio::time::Instant::now() + budget;
 
     loop {
-        let chunk = tokio::select! {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let timed = tokio::select! {
             biased;
             _ = &mut *cancel => {
                 let stop = state.transition(WatchEvent::Stop);
                 apply_outcome(last_reconnect_policy, stop);
                 return ConnectionOutcome::Cancelled;
             }
-            c = response.chunk() => c,
+            r = tokio::time::timeout(remaining, response.chunk()) => r,
+        };
+        let chunk = match timed {
+            Ok(c) => c,
+            Err(_elapsed) => {
+                let starved = state.transition(WatchEvent::HeartbeatStarvation);
+                apply_outcome(last_reconnect_policy, starved);
+                return ConnectionOutcome::HeartbeatStarved;
+            }
         };
         let eof = matches!(chunk, Ok(None));
         match chunk {
-            Ok(Some(bytes)) => parser.feed(&bytes),
+            Ok(Some(bytes)) => {
+                if !bytes.is_empty() {
+                    deadline = tokio::time::Instant::now() + budget;
+                }
+                parser.feed(&bytes);
+            }
             Ok(None) => parser.end(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
         }
@@ -857,8 +897,15 @@ mod tests {
         let base_url = url::Url::parse(&format!("{}/", server.uri())).unwrap();
         let http = reqwest::Client::builder().build().unwrap();
         let no_auth: Option<Arc<dyn AuthProvider>> = None;
+        let heartbeat_interval = std::time::Duration::from_secs(30);
         let handle = tokio::spawn(run_supervisor(
-            request, http, base_url, no_auth, tx, cancel_rx,
+            request,
+            http,
+            base_url,
+            no_auth,
+            heartbeat_interval,
+            tx,
+            cancel_rx,
         ));
         (rx, cancel_tx, handle)
     }
@@ -1273,6 +1320,38 @@ mod tests {
         assert_eq!(first.sequence, 1);
         drop(cancel_tx);
         let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+    }
+
+    #[test]
+    fn heartbeat_budget_30s_interval_returns_90s() {
+        assert_eq!(
+            super::heartbeat_starvation_budget(Duration::from_secs(30)),
+            Duration::from_secs(90)
+        );
+    }
+
+    #[test]
+    fn heartbeat_budget_10s_interval_returns_40s_via_plus_30() {
+        assert_eq!(
+            super::heartbeat_starvation_budget(Duration::from_secs(10)),
+            Duration::from_secs(40)
+        );
+    }
+
+    #[test]
+    fn heartbeat_budget_1s_interval_returns_31s_via_plus_30() {
+        assert_eq!(
+            super::heartbeat_starvation_budget(Duration::from_secs(1)),
+            Duration::from_secs(31)
+        );
+    }
+
+    #[test]
+    fn heartbeat_budget_zero_interval_returns_30s_floor() {
+        assert_eq!(
+            super::heartbeat_starvation_budget(Duration::ZERO),
+            Duration::from_secs(30)
+        );
     }
 
     #[test]

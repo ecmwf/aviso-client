@@ -86,6 +86,10 @@ pub struct AvisoClient {
         reason = "field is read by the watch supervisor's spawn path in a follow-up commit; the `Clone` derive consumes it on every clone, but rustc does not count derive expansions as reads for dead-code analysis"
     )]
     parent_drop: Arc<DropGuard>,
+    /// Expected SSE heartbeat cadence; see
+    /// [`AvisoClientBuilder::heartbeat_interval`] for the default and the
+    /// budget formula.
+    heartbeat_interval: Duration,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -184,7 +188,16 @@ impl AvisoClient {
         let http = self.http.clone();
         let base_url = self.base_url.clone();
         let auth = self.auth.clone();
-        handle.spawn(run_supervisor(request, http, base_url, auth, tx, cancel_rx));
+        let heartbeat_interval = self.heartbeat_interval;
+        handle.spawn(run_supervisor(
+            request,
+            http,
+            base_url,
+            auth,
+            heartbeat_interval,
+            tx,
+            cancel_rx,
+        ));
         Ok(NotificationStream::new(rx, cancel_tx))
     }
 
@@ -363,6 +376,7 @@ pub struct AvisoClientBuilder {
     auth: Option<Arc<dyn AuthProvider>>,
     timeout: Option<Duration>,
     user_agent: Option<String>,
+    heartbeat_interval: Option<Duration>,
 }
 
 impl AvisoClientBuilder {
@@ -389,6 +403,24 @@ impl AvisoClientBuilder {
     /// Sets the `User-Agent` header. Optional; defaults to `"aviso/<crate-version>"`.
     pub fn user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
+        self
+    }
+
+    /// Sets the expected SSE heartbeat cadence on the watch endpoint.
+    ///
+    /// The watch supervisor uses this to compute its heartbeat-starvation
+    /// budget per D2: a stream is declared silent (and reconnected with
+    /// exponential backoff) if no SSE event of any kind arrives within
+    /// `max(3 * interval, interval + 30s)`. Defaults to 30 seconds, which
+    /// matches the default `aviso-server` configuration.
+    ///
+    /// Set this to match a non-default server-side heartbeat configuration.
+    /// Setting it too low will false-positive on healthy quiet streams;
+    /// setting it too high delays detection of silently-dead connections
+    /// (NAT timeout, half-open socket after sleep, intermediate-proxy
+    /// restart).
+    pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
+        self.heartbeat_interval = Some(interval);
         self
     }
 
@@ -419,14 +451,23 @@ impl AvisoClientBuilder {
             .build()
             .map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))?;
         let (parent_drop, _initial_receiver) = DropGuard::new();
+        let heartbeat_interval = self
+            .heartbeat_interval
+            .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL);
         Ok(AvisoClient {
             http,
             base_url,
             auth: self.auth,
             parent_drop,
+            heartbeat_interval,
         })
     }
 }
+
+/// Default expected SSE heartbeat cadence, matching the default
+/// `aviso-server` configuration. The watchdog budget at this default is
+/// `max(3 * 30s, 30s + 30s) = 90s`.
+const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 #[cfg(test)]
 #[allow(
