@@ -153,13 +153,13 @@ A C/C++ surface is not implemented in v1. The public Rust API is **not** constra
 
 ## D11. Triggers
 
-v1 ships two trigger kinds only: `echo` (stdout) and `log` (file). Both are implemented in Rust core (`crates/aviso/src/triggers/`). The CLI YAML loader and the Python wrapper both consume the same dispatcher.
+v1 ships two trigger kinds only: `echo` (stdout) and `log` (file). Both are implemented in Rust core under `crates/aviso/src/watch/trigger.rs` as a sibling module to the other watch internals. The CLI YAML loader and the Python wrapper will both consume the same dispatcher.
 
-The dispatcher is **internal in v1**: an `enum Trigger { Echo(...), Log(...) }` plus a dispatcher function. There is no public `Trigger` trait until a third trigger kind appears. Required vs optional triggers, per-trigger timeout, bounded retry plus backoff, and a per-trigger `fail_fast` flag are part of the framework from day one.
+The dispatcher is **internal in v1**: a crate-private `enum TriggerKind { Echo, Log { path } }` plus a `dispatch_triggers` function inside the trigger module. There is no public `Trigger` trait until a third trigger kind appears; the public surface is the builder-style `Trigger` struct (with `echo()` and `log(path)` constructors plus `.retries(u32)` and `.required(bool)` setters), the public `TriggerKindLabel` and `TriggerError` types that appear on `ClientError::TriggerFailed`, and `WatchRequest::with_triggers(Vec<Trigger>)`.
 
-Checkpoint policy: a notification's `last_committed_sequence` advances **only** after all required triggers succeed. Optional triggers may fail without blocking the checkpoint, but must be marked optional explicitly. If required triggers exhaust their retries, the listener stops and the checkpoint stays where it was.
+Per-trigger tunables in v1: `retries: u32` (default `0`) with the supervisor's standard exponential backoff schedule, and `required: bool` (default `true`). A `timeout` field and a `fail_fast` field are **deferred** to a future trigger kind (likely Webhook); the timeout is deferred because `tokio::time::timeout` cannot interrupt the v1 dispatchers cleanly (sync stdout writes have no preemption point; async tokio file writes would corrupt NDJSON if cancelled mid-write), and `fail_fast` is deferred because Echo and Log have no retryable-vs-non-retryable error distinction (every conceivable error is permanent). Both become meaningful when an HTTP-bound trigger (Webhook) lands. See `plans/v0.3.md` §5 Resolved "trigger design / Per-trigger config" for the full disposition.
 
-Naming aligns with legacy `pyaviso` (`echo`, `log`) so existing operator habits transfer.
+Checkpoint policy: a notification's `last_committed_sequence` advances **only** after all required triggers succeed. The mechanism is the supervisor's existing commit-on-next-send (the previous notification is committed just before the current one is sent on the channel; the trigger pipeline runs between commit-of-prev and send-of-current). Optional triggers may fail without blocking the checkpoint; their failures log a `WARN` event with stable name `client.trigger.failed`. If required triggers exhaust their retries the supervisor surfaces `ClientError::TriggerFailed`, the stream terminates, and the checkpoint stays where it was so restart re-delivers the notification whose trigger failed.
 
 ---
 
