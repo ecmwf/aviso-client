@@ -118,12 +118,14 @@
 //!   bookkeeping; the supervisor advances its own checkpoint state in
 //!   response to [`WatchEvent::NotificationReceived`].
 
+mod backoff;
 mod connection;
 mod event;
 mod mode;
 mod outcome;
 mod phase;
 mod request;
+mod retry_after;
 mod state;
 mod stream;
 mod supervisor;
