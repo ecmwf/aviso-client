@@ -157,9 +157,14 @@ async fn reconnect_after_max_duration_reached() {
 async fn retry_after_honoured_on_503() {
     // First POST returns 503 with `Retry-After: 1`; second POST returns a
     // 200 stream with one notification. The test asserts the wall-clock
-    // delta between the two POSTs is at least the retry-after value.
+    // delta between the two POSTs (captured inside the mock responder)
+    // is at least the retry-after value. Measuring time-to-first-item
+    // from the test task would be flaky because the supervisor's first
+    // POST runs concurrently and may have already started or completed
+    // before the test could record `Instant::now()`.
     let server = MockServer::start().await;
     let attempt = Arc::new(Mutex::new(0u32));
+    let post_times: Arc<Mutex<Vec<Instant>>> = Arc::new(Mutex::new(Vec::new()));
 
     let body = format!(
         "{}{}",
@@ -169,9 +174,11 @@ async fn retry_after_honoured_on_503() {
 
     let body_clone = body.clone();
     let attempt_clone = attempt.clone();
+    let post_times_clone = post_times.clone();
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
         .respond_with(move |_: &Request| {
+            post_times_clone.lock().unwrap().push(Instant::now());
             let mut a = attempt_clone.lock().unwrap();
             *a += 1;
             if *a == 1 {
@@ -190,24 +197,23 @@ async fn retry_after_honoured_on_503() {
     let client = client_for(&server);
     let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
 
-    let start = Instant::now();
     let item = timeout(Duration::from_secs(10), next_item(&mut stream))
         .await
         .expect("notification should arrive within 10s")
         .expect("stream must not close before first item")
         .expect("no terminal error should surface");
-    let elapsed = start.elapsed();
     assert_eq!(item.sequence, 1);
-    assert!(
-        elapsed >= Duration::from_secs(1),
-        "wall-clock between POSTs must be at least the Retry-After value (1s); got {elapsed:?}"
-    );
 
-    let received = server.received_requests().await.unwrap();
+    let times = post_times.lock().unwrap().clone();
     assert!(
-        received.len() >= 2,
+        times.len() >= 2,
         "expected at least two POSTs; got {}",
-        received.len()
+        times.len()
+    );
+    let delta = times[1].saturating_duration_since(times[0]);
+    assert!(
+        delta >= Duration::from_secs(1),
+        "wall-clock between POSTs must be at least the Retry-After value (1s); got {delta:?}"
     );
 
     drop(stream);

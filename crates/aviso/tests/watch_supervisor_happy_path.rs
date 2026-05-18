@@ -294,7 +294,6 @@ async fn watch_with_handler_observes_first_four_items_in_replay_then_live() {
     let client = client_for(&server);
     let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
     let observed_clone = observed.clone();
-    let sentinel = ClientError::Config("test-stop".into());
     let result = timeout(
         Duration::from_secs(5),
         client.watch_with_handler(
@@ -315,7 +314,6 @@ async fn watch_with_handler_observes_first_four_items_in_replay_then_live() {
     )
     .await
     .expect("handler loop should finish promptly");
-    let _ = sentinel;
     match result {
         Err(ClientError::Config(msg)) => assert_eq!(msg, "test-stop"),
         other => panic!("expected the sentinel Config error, got {other:?}"),
