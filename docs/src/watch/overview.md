@@ -98,25 +98,105 @@ For `watch_with_handler`, returning `Err(_)` from the handler drops the stream a
 
 ## Multiple listeners on one client
 
-`AvisoClient` is `Send + Sync + Clone`. A single client supports any number of concurrent `watch()` calls; each runs its own supervisor task and its own HTTP connection. Resource sharing happens cleanly at the right layers: the reqwest connection pool is shared, the auth provider is shared via `Arc`, and (in a future follow-up) per-resume-key writes to the state store are serialised internally.
+`AvisoClient` is `Send + Sync + Clone`. A single client supports any number of concurrent `watch()` calls; each runs its own supervisor task and its own HTTP connection. Resource sharing happens cleanly at the right layers: the reqwest connection pool is shared, the auth provider is shared via `Arc`, and per-resume-key writes to the state store (when configured) are serialised inside the `StateStore` implementation.
 
 ```rust,ignore
 let mars_stream = client.watch(WatchRequest::watch("mars"))?;
 let cosmo_stream = client.watch(WatchRequest::watch("cosmo"))?;
-// Both streams are live independently.
 ```
 
-Each supervisor's cancellation is wired to the stream it produced; dropping the stream cancels its supervisor. A `Drop` impl on `AvisoClient` itself that cascades cancellation across all child supervisors is a separate, future piece of work; the current design supports it because supervisors own clones of the bits they need rather than a cloned `AvisoClient` that would keep the parent alive by refcount.
+Two cancellation paths exist:
 
-## What this version does not do
+- **Per-stream**: dropping a `NotificationStream` cancels its supervisor cooperatively via the oneshot mechanism documented above.
+- **Parent-cascade**: dropping the LAST `AvisoClient` clone (the underlying `Arc<DropGuard>` reference) fires a `tokio::sync::watch` flip that every child supervisor observes. Both streams in the snippet above terminate within one event-loop tick of the client drop (or after a state-store `put` in progress completes, per the cancel-safety contract).
 
-- **Reconnect.** When the server's `connection_max_duration_sec` elapses, the supervisor exits the single connection cleanly. A reconnect loop driven by the watch state machine's `ReconnectPolicy` is the next major piece of work.
-- **Heartbeat watchdog.** Heartbeat events are received and acknowledged, but a long silence from the server does not yet trigger a reconnect.
-- **Auth refresh on `401`.** A 401 on the initial response surfaces as `ClientError::Http`; the supervisor does not yet drive `AuthProvider::refresh` and retry.
-- **Checkpoint advancement to a `StateStore`.** The supervisor does not yet persist `last_committed_sequence` between sessions. Until that lands, callers pass an explicit `ResumeStart` per `watch()` call.
+If two concurrent `watch()` calls on the same client compute the same resume key (same base URL + same event type + same filter), the client emits one `WARN` tracing event with `event.name = "client.resume.collision"` carrying the hex digest and the event type. Checkpoint advancement is racy in that case; the warning is the diagnostic, not an error. The supervisor continues; the caller decides whether to deduplicate the watches.
 
-Together with these in the next iteration, a watch session survives an arbitrary number of routine server-driven reconnects transparently.
+## Reconnect-as-norm
+
+`aviso-server` deliberately closes connections after `connection_max_duration_sec` (default 3600 s). The supervisor reconnects automatically; a watch outlives an arbitrary number of routine server-driven reconnects without ever surfacing a terminal error.
+
+The reconnect classifier (per ADR D2):
+
+- `connection-closing { reason: max_duration_reached }`: immediate reconnect, no backoff. The routine path.
+- `connection-closing { reason: server_shutdown }`: short backoff (~5 s) then reconnect.
+- `connection-closing { reason: end_of_stream }` in `WatchMode::Watch`: immediate reconnect.
+- `connection-closing { reason: end_of_stream }` in `WatchMode::ReplayOnly` after the server has emitted `replay_completed`: terminal. The replay finished naturally; the stream closes cleanly with `None`.
+- TCP EOF without a `connection-closing` frame: reconnect with exponential backoff (NAT timeouts, half-open sockets after laptop sleep, intermediate-proxy restarts).
+- Mid-stream transport error (TLS, peer reset, read error): reconnect with exponential backoff.
+
+Backoff: AWS-style full jitter, base 250 ms doubling per attempt, capped at 30 s. Random source is in-process (no `rand` dependency) and not cryptographic; the goal is to spread a fleet's retries across a window so a server-side outage does not cause a thundering herd on recovery.
+
+## Heartbeat watchdog
+
+The supervisor wraps each chunk read in `tokio::time::timeout`. If no SSE event of any kind (heartbeat, notification, or control) arrives within `max(3 * heartbeat_interval, heartbeat_interval + 30s)`, the supervisor declares the connection silently dead and reconnects with exponential backoff.
+
+The default `heartbeat_interval` is 30 s, matching the default `aviso-server` configuration. Override via the builder when targeting a server with a non-default heartbeat cadence:
+
+```rust,ignore
+use std::time::Duration;
+
+let client = AvisoClient::builder()
+    .base_url("https://aviso.example.org")
+    .heartbeat_interval(Duration::from_secs(10))
+    .build()?;
+```
+
+The watchdog catches failure modes that TCP keepalive does not:
+
+- NAT idle timeout (typical: 30 min to a few hours on consumer routers, 1 hour on many corporate firewalls).
+- Half-open sockets after network change (laptop sleep, WiFi roam, VPN reconnect).
+- Server-side application hang behind a healthy reverse proxy (the proxy's TCP stack ACKs keepalive probes; the upstream is gone).
+
+The 30 s absolute floor in the budget formula prevents the watchdog from tripping during transient network slowness.
+
+## Auth refresh
+
+`AvisoClientBuilder::auth(Arc<dyn AuthProvider>)` configures an auth provider. On a 401 response, the supervisor:
+
+1. Fires `WatchEvent::AuthRejected` and the reducer transitions to `RefreshingAuth`.
+2. Calls `auth.refresh().await`. The refresh is in a `tokio::select!` with both cancel arms, so a stream drop during refresh observes cancellation promptly.
+3. On `Ok(())`: reconnect with the refreshed credential. If the server returns 401 again within the same attempt cycle (no successful intervening response), the watch terminates with `ClientError::Auth("authentication rejected after refresh")`.
+4. On `Err(_)`: surface the auth provider's error and terminate.
+
+The "refresh-then-retry-once" cycle resets after any non-401 outcome (a successful connection, a routine server close, a transport error, a heartbeat-starved reconnect). Long-lived watches that span token-rotation events naturally refresh many times across their lifetime; only consecutive 401s within a single attempt cycle terminate.
+
+## State-store-backed resume
+
+`AvisoClientBuilder::state_store(Arc<dyn StateStore>)` wires a persistent store (`MemoryStore`, `JsonFileStore`, or a custom implementation) into the client. When set:
+
+1. At watch start, if `WatchRequest::from()` is `None`, the supervisor reads the stored checkpoint and resumes from `last_committed_sequence + 1` on the wire.
+2. After each successful notification send, the supervisor persists the PREVIOUS notification's sequence and event id before the next send leaves the channel. Pulling item N+1 implies item N is durable.
+3. A user-supplied `from` always wins. The stored checkpoint is consulted only when the request has no explicit resume position.
+
+```rust,ignore
+use std::sync::Arc;
+use aviso::state::{JsonFileStore, StateStore};
+
+let store: Arc<dyn StateStore> = Arc::new(JsonFileStore::open("~/.config/aviso/state.json")?);
+let client = AvisoClient::builder()
+    .base_url("https://aviso.example.org")
+    .state_store(store)
+    .build()?;
+```
+
+A failure to persist the checkpoint terminates the watch with `ClientError::StateStore(_)`. Continuing without a working store would silently violate at-least-once delivery; the user must see the failure to fix the underlying problem (disk full, file corrupted, permissions).
+
+## Operator ingress recipe
+
+For deployments behind a Kubernetes ingress, the watch endpoint needs three annotations to keep the long-lived SSE stream healthy. Verified working with the `nginx.org` ingress controller:
+
+```yaml
+annotations:
+  nginx.org/proxy-buffering: "false"
+  nginx.org/proxy-read-timeout: 3600s
+  nginx.org/proxy-send-timeout: 3600s
+```
+
+The buffering knob is mandatory: without it nginx buffers the SSE response body until "complete" and the client receives nothing until the connection closes. The two timeouts must meet or exceed the server's `connection_max_duration_sec` so nginx does not impose an earlier cutoff than the server.
+
+Operators using a different ingress controller (HAProxy, Traefik, Envoy, AWS ALB) should look up the equivalent of these three knobs; the heartbeat watchdog defends against silent failures across any ingress, but minimising routine reconnects keeps the operational picture cleaner.
 
 ## Architectural references
 
-- `docs/src/internals/decisions.md` D2 (reconnect-as-norm, state machine sketch), D9 (CloudEvent envelope hidden, malformed id terminal), D15 (state machine as `ReplayPhase x ConnectionStatus`), D17 (`from_date` bootstrap-only), D19 (watch API shape and single-consumer mpsc), D20 (multi-listener as `AvisoClient` property).
+- `docs/src/internals/decisions.md` D2 (reconnect-as-norm, state machine sketch, reconnect classifier), D3 (resume key derivation), D4 (`StateStore` trait), D8 (`AuthProvider` and refresh-on-401), D9 (CloudEvent envelope hidden, malformed id terminal), D15 (state machine as `ReplayPhase x ConnectionStatus`), D17 (`from_date` bootstrap-only), D19 (watch API shape and single-consumer mpsc), D20 (multi-listener as `AvisoClient` property).
