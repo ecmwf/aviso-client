@@ -155,8 +155,13 @@ fn normalize_base_url(url: &Url) -> String {
 
 /// Hash one variable-length field with a `u64` little-endian length
 /// prefix. Injective when called for a fixed schema of fields.
+///
+/// The `usize -> u64` cast is lossless on every Rust-supported target
+/// (`usize` is at most 64 bits today). If Rust ever targets a wider
+/// pointer size this becomes a narrowing cast and the injectivity
+/// argument needs revisiting.
 fn write_field(hasher: &mut Sha256, bytes: &[u8]) {
-    let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    let len = bytes.len() as u64;
     hasher.update(len.to_le_bytes());
     hasher.update(bytes);
 }
