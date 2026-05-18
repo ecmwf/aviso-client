@@ -33,11 +33,88 @@ use super::wire::{
     WireReplayControl, WireWatchRequest,
 };
 use super::{
-    ConnectionLossReason, FatalKind, GapReason, ResumeStart, ServerCloseReason, WatchEvent,
-    WatchMode, WatchRequest, WatchState,
+    ConnectionLossReason, FatalKind, GapReason, ReconnectPolicy, ResumeStart, ServerCloseReason,
+    WatchEvent, WatchMode, WatchOutcome, WatchRequest, WatchState,
 };
 use crate::auth::AuthProvider;
 use crate::{ClientError, Notification, parse_cloudevent_id};
+
+/// Outcome of one HTTP connection attempt.
+///
+/// Returned by [`run_one_connection`] and consumed by [`run_supervisor`].
+/// The split between the inner connection-runner and the outer supervisor
+/// is what lets the supervisor own retry counters, the last reconnect
+/// policy, the auth refresh flag, and the commit cursor across iterations
+/// without polluting the inner runner's signature with mutable state it
+/// does not own.
+pub(crate) enum ConnectionOutcome {
+    /// The server emitted a `connection-closing` frame with a known
+    /// reason. The reducer has already been advanced via
+    /// `WatchEvent::ServerClose` inside [`drain_frames`]; the outer
+    /// supervisor reads `state.is_terminal()` and the captured
+    /// `last_reconnect_policy` to decide whether to reconnect.
+    ServerClosed,
+    /// HTTP status was non-200 on the initial response. Carries the
+    /// full response context so the supervisor can either log it
+    /// (retryable statuses), surface it (terminal statuses), or extract
+    /// `Retry-After` (429 / 503). The reducer is NOT advanced inside
+    /// [`run_one_connection`] for this outcome; the supervisor fires
+    /// the appropriate `WatchEvent` based on classification.
+    HttpStatus {
+        /// HTTP status code from the response.
+        status: u16,
+        /// Verbatim response body (may be empty).
+        body: String,
+        /// Server-supplied `X-Request-ID`, when present.
+        request_id: Option<String>,
+        /// Parsed `Retry-After` header value, capped at 5 minutes.
+        retry_after: Option<std::time::Duration>,
+    },
+    /// reqwest reported a transport error (TLS, connect, mid-stream
+    /// read). The outer supervisor fires `WatchEvent::ConnectionLost`
+    /// and reconnects with exponential backoff in a follow-up commit;
+    /// today it is surfaced as a terminal `ClientError::Transport`.
+    TransportError(reqwest::Error),
+    /// The wire delivered a frame the supervisor must surface as a
+    /// typed error: malformed `CloudEvent` id, server `error` event,
+    /// unknown `connection-closing` reason, gap detected, EOF without
+    /// a close frame (until a follow-up commit reclassifies EOF as
+    /// `UnexpectedEof`). The reducer has already transitioned. The
+    /// outer supervisor sends the error and exits.
+    Fatal(ClientError),
+    /// Cancellation observed (per-stream drop). The outer supervisor
+    /// exits without surfacing anything.
+    Cancelled,
+}
+
+/// Apply a [`WatchOutcome`] to the supervisor's `last_reconnect_policy`
+/// cache.
+///
+/// The reducer returns the outcome by value; this helper extracts the
+/// reconnect policy (when present) and stores it for the outer loop's
+/// next backoff calculation. Other outcome variants are read separately
+/// by the loop via `state.connection_status()` and
+/// `state.is_terminal()`.
+///
+/// Taking `WatchOutcome` by value (not by mutable reference to the
+/// reducer) sidesteps the overlapping-borrow problem at call sites:
+/// `let outcome = state.transition(...); apply_outcome(&mut policy, outcome);`
+/// keeps the two `state` borrows separate.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"
+)]
+fn apply_outcome(last_reconnect_policy: &mut Option<ReconnectPolicy>, outcome: WatchOutcome) {
+    match outcome {
+        WatchOutcome::Reconnect { policy } => {
+            *last_reconnect_policy = Some(policy);
+        }
+        WatchOutcome::Continue
+        | WatchOutcome::RefreshAuth
+        | WatchOutcome::Gap { .. }
+        | WatchOutcome::Stop { .. } => {}
+    }
+}
 
 /// Internal channel capacity for the supervisor's notification mpsc. See
 /// the [`super::NotificationStream`] doc comment for the backpressure
@@ -64,9 +141,11 @@ pub(crate) async fn run_supervisor(
             return;
         }
     };
+    let mut last_reconnect_policy: Option<ReconnectPolicy> = None;
 
-    match run_one_connection(
+    let outcome = run_one_connection(
         &mut state,
+        &mut last_reconnect_policy,
         &request,
         &http,
         &base_url,
@@ -74,13 +153,39 @@ pub(crate) async fn run_supervisor(
         &tx,
         &mut cancel,
     )
-    .await
-    {
-        Ok(()) => {}
-        Err(terminal_err) => {
-            let _ = send_or_cancel(&tx, Err(terminal_err), &mut cancel).await;
+    .await;
+
+    match outcome {
+        ConnectionOutcome::ServerClosed | ConnectionOutcome::Cancelled => {}
+        ConnectionOutcome::HttpStatus {
+            status,
+            body,
+            request_id,
+            retry_after: _retry_after,
+        } => {
+            let _ = send_or_cancel(
+                &tx,
+                Err(ClientError::Http {
+                    status,
+                    body,
+                    request_id,
+                }),
+                &mut cancel,
+            )
+            .await;
+        }
+        ConnectionOutcome::TransportError(e) => {
+            let _ = send_or_cancel(&tx, Err(ClientError::Transport(e)), &mut cancel).await;
+        }
+        ConnectionOutcome::Fatal(err) => {
+            let _ = send_or_cancel(&tx, Err(err), &mut cancel).await;
         }
     }
+    // `last_reconnect_policy` is consumed by the outer reconnect loop
+    // that lands in a follow-up commit; for now it is captured but
+    // unused. The capture path itself is exercised by reducer-based
+    // unit tests so the cache is verified to fill correctly.
+    let _ = last_reconnect_policy;
 }
 
 fn initial_state(request: &WatchRequest) -> Result<WatchState, ClientError> {
@@ -101,34 +206,48 @@ fn initial_state(request: &WatchRequest) -> Result<WatchState, ClientError> {
 /// as a typed `ClientError` item on the stream.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the supervisor's collaborators are intentionally passed by reference rather than bundled into a context struct, so each await point owns clear borrows"
+    clippy::too_many_lines,
+    reason = "the supervisor's collaborators are intentionally passed by reference rather than bundled into a context struct, so each await point owns clear borrows; the function's length is the natural shape of a single-connection runner that maps every initial-response and chunk-loop branch to a `ConnectionOutcome`, and splitting it further obscures the mapping table"
 )]
 async fn run_one_connection(
     state: &mut WatchState,
+    last_reconnect_policy: &mut Option<ReconnectPolicy>,
     request: &WatchRequest,
     http: &reqwest::Client,
     base_url: &Url,
     auth: Option<&Arc<dyn AuthProvider>>,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
-) -> Result<(), ClientError> {
+) -> ConnectionOutcome {
     let endpoint = match request.mode() {
         WatchMode::Watch => "api/v1/watch",
         WatchMode::ReplayOnly => "api/v1/replay",
     };
-    let url = base_url.join(endpoint).map_err(|e| {
-        ClientError::Config(format!(
-            "build watch endpoint url from base {base_url} and path {endpoint:?}: {e}"
-        ))
-    })?;
-    let body = WireWatchRequest::from_public(request)?;
+    let url = match base_url.join(endpoint) {
+        Ok(u) => u,
+        Err(e) => {
+            return ConnectionOutcome::Fatal(ClientError::Config(format!(
+                "build watch endpoint url from base {base_url} and path {endpoint:?}: {e}"
+            )));
+        }
+    };
+    let body = match WireWatchRequest::from_public(request) {
+        Ok(b) => b,
+        Err(e) => return ConnectionOutcome::Fatal(e),
+    };
 
     let auth_header = match auth {
-        Some(provider) => Some(tokio::select! {
-            biased;
-            _ = &mut *cancel => return Ok(()),
-            v = provider.authorization_header() => v?,
-        }),
+        Some(provider) => {
+            let result = tokio::select! {
+                biased;
+                _ = &mut *cancel => return ConnectionOutcome::Cancelled,
+                v = provider.authorization_header() => v,
+            };
+            match result {
+                Ok(v) => Some(v),
+                Err(e) => return ConnectionOutcome::Fatal(e),
+            }
+        }
         None => None,
     };
 
@@ -137,10 +256,14 @@ async fn run_one_connection(
         builder = builder.header(AUTHORIZATION, value);
     }
 
-    let mut response = tokio::select! {
+    let send_result = tokio::select! {
         biased;
-        _ = &mut *cancel => return Ok(()),
-        r = builder.send() => r?,
+        _ = &mut *cancel => return ConnectionOutcome::Cancelled,
+        r = builder.send() => r,
+    };
+    let mut response = match send_result {
+        Ok(r) => r,
+        Err(e) => return ConnectionOutcome::TransportError(e),
     };
 
     if !response.status().is_success() {
@@ -150,20 +273,28 @@ async fn run_one_connection(
             .get("x-request-id")
             .and_then(|h| h.to_str().ok())
             .map(String::from);
-        let body_bytes = tokio::select! {
+        let retry_after =
+            super::retry_after::parse_retry_after(response.headers().get("retry-after"));
+        let body_result = tokio::select! {
             biased;
-            _ = &mut *cancel => return Ok(()),
-            b = response.bytes() => b?,
+            _ = &mut *cancel => return ConnectionOutcome::Cancelled,
+            b = response.bytes() => b,
+        };
+        let body_bytes = match body_result {
+            Ok(b) => b,
+            Err(e) => return ConnectionOutcome::TransportError(e),
         };
         let body = String::from_utf8_lossy(&body_bytes).into_owned();
-        return Err(ClientError::Http {
+        return ConnectionOutcome::HttpStatus {
             status,
             body,
             request_id,
-        });
+            retry_after,
+        };
     }
 
-    let _ = state.transition(WatchEvent::ConnectionEstablished);
+    let connected = state.transition(WatchEvent::ConnectionEstablished);
+    apply_outcome(last_reconnect_policy, connected);
 
     let mut parser = finesse::Parser::new();
     let mut gap_guard = GapGuard::starting_from(request.from());
@@ -172,8 +303,9 @@ async fn run_one_connection(
         let chunk = tokio::select! {
             biased;
             _ = &mut *cancel => {
-                let _ = state.transition(WatchEvent::Stop);
-                return Ok(());
+                let stop = state.transition(WatchEvent::Stop);
+                apply_outcome(last_reconnect_policy, stop);
+                return ConnectionOutcome::Cancelled;
             }
             c = response.chunk() => c,
         };
@@ -181,26 +313,36 @@ async fn run_one_connection(
         match chunk {
             Ok(Some(bytes)) => parser.feed(&bytes),
             Ok(None) => parser.end(),
-            Err(transport_e) => return Err(ClientError::Transport(transport_e)),
+            Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
         }
-        match drain_frames(&mut parser, state, &mut gap_guard, tx, cancel).await? {
-            DrainOutcome::Continue => {}
-            DrainOutcome::ServerClosed | DrainOutcome::StopRequested => return Ok(()),
+        match drain_frames(
+            &mut parser,
+            state,
+            last_reconnect_policy,
+            &mut gap_guard,
+            tx,
+            cancel,
+        )
+        .await
+        {
+            Ok(DrainOutcome::Continue) => {}
+            Ok(DrainOutcome::ServerClosed) => return ConnectionOutcome::ServerClosed,
+            Ok(DrainOutcome::StopRequested) => return ConnectionOutcome::Cancelled,
+            Err(terminal_err) => return ConnectionOutcome::Fatal(terminal_err),
         }
         if state.is_terminal() {
-            return Ok(());
+            return ConnectionOutcome::ServerClosed;
         }
         if eof {
-            // The wire ended without a `connection-closing` frame. That is
-            // a transport-level abnormality; surface it as a typed error so
-            // a consumer can tell "the server told me it was done" (clean
-            // close, returns None) apart from "the connection went dark"
-            // (this error). The reducer is told too so the state machine
-            // captures the loss reason for any downstream observability.
-            let _ = state.transition(WatchEvent::ConnectionLost {
+            // The wire ended without a `connection-closing` frame. The
+            // current contract surfaces this as a terminal `StreamProtocol`;
+            // the reclassification to `UnexpectedEof` plus reconnect lands
+            // in a follow-up commit.
+            let lost = state.transition(WatchEvent::ConnectionLost {
                 reason: ConnectionLossReason::UnexpectedEof,
             });
-            return Err(ClientError::StreamProtocol {
+            apply_outcome(last_reconnect_policy, lost);
+            return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
                 message: "stream ended without a connection-closing frame".to_string(),
                 request_id: None,
             });
@@ -235,12 +377,14 @@ enum DrainOutcome {
 /// Routine frame handling returns `Ok(())` and the caller decides
 /// whether to keep draining the wire.
 #[allow(
+    clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "the SSE-event-type dispatch is a flat match over six wire variants; splitting each branch into its own helper trades readability for line count, and reviewers want to see the full mapping table in one place"
 )]
 async fn drain_frames(
     parser: &mut finesse::Parser,
     state: &mut WatchState,
+    last_reconnect_policy: &mut Option<ReconnectPolicy>,
     gap_guard: &mut GapGuard,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
@@ -255,18 +399,27 @@ async fn drain_frames(
                 let top_type = raw.get("type").and_then(|v| v.as_str());
                 if top_type == Some("connection_established") {
                     let _: WireConnectionEstablished = serde_json::from_value(raw)?;
-                    let _ = state.transition(WatchEvent::ConnectionEstablished);
+                    apply_outcome(
+                        last_reconnect_policy,
+                        state.transition(WatchEvent::ConnectionEstablished),
+                    );
                     continue;
                 }
                 let wire: WireCloudEvent = serde_json::from_value(raw)?;
                 let (event_type, sequence) = match parse_cloudevent_id(&wire.id) {
                     Ok(v) => v,
                     Err(e) => {
-                        let _ = state.transition(WatchEvent::Fatal(FatalKind::MalformedEvent));
+                        apply_outcome(
+                            last_reconnect_policy,
+                            state.transition(WatchEvent::Fatal(FatalKind::MalformedEvent)),
+                        );
                         return Err(e);
                     }
                 };
-                let _ = state.transition(WatchEvent::NotificationReceived { sequence });
+                apply_outcome(
+                    last_reconnect_policy,
+                    state.transition(WatchEvent::NotificationReceived { sequence }),
+                );
                 match gap_guard.observe(sequence) {
                     Ok(()) => {
                         let notification = Notification {
@@ -281,7 +434,10 @@ async fn drain_frames(
                         }
                     }
                     Err(reason) => {
-                        let _ = state.transition(WatchEvent::GapDetected(reason));
+                        apply_outcome(
+                            last_reconnect_policy,
+                            state.transition(WatchEvent::GapDetected(reason)),
+                        );
                         let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
                             .await;
                         return Ok(DrainOutcome::StopRequested);
@@ -289,13 +445,19 @@ async fn drain_frames(
                 }
             }
             "heartbeat" => {
-                let _ = state.transition(WatchEvent::HeartbeatReceived);
+                apply_outcome(
+                    last_reconnect_policy,
+                    state.transition(WatchEvent::HeartbeatReceived),
+                );
             }
             "replay-control" => {
                 let wire: WireReplayControl = serde_json::from_str(&msg.data)?;
                 match wire.tag.as_str() {
                     "replay_completed" => {
-                        let _ = state.transition(WatchEvent::ReplayCompleted);
+                        apply_outcome(
+                            last_reconnect_policy,
+                            state.transition(WatchEvent::ReplayCompleted),
+                        );
                     }
                     "notification_replay_limit_reached" => {
                         let Some(max_allowed) = wire.max_allowed else {
@@ -308,16 +470,22 @@ async fn drain_frames(
                             let message =
                                 "replay-control: notification_replay_limit_reached missing max_allowed"
                                     .to_string();
-                            let _ = state.transition(WatchEvent::Fatal(
-                                FatalKind::ProtocolViolation(message.clone()),
-                            ));
+                            apply_outcome(
+                                last_reconnect_policy,
+                                state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                                    message.clone(),
+                                ))),
+                            );
                             return Err(ClientError::StreamProtocol {
                                 message,
                                 request_id: None,
                             });
                         };
                         let reason = GapReason::ReplayLimitReached { max_allowed };
-                        let _ = state.transition(WatchEvent::GapDetected(reason));
+                        apply_outcome(
+                            last_reconnect_policy,
+                            state.transition(WatchEvent::GapDetected(reason)),
+                        );
                         let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
                             .await;
                         return Ok(DrainOutcome::StopRequested);
@@ -333,16 +501,22 @@ async fn drain_frames(
                     "end_of_stream" => ServerCloseReason::EndOfStream,
                     other => {
                         let message = format!("unknown connection-closing reason: {other}");
-                        let _ = state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
-                            message.clone(),
-                        )));
+                        apply_outcome(
+                            last_reconnect_policy,
+                            state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                                message.clone(),
+                            ))),
+                        );
                         return Err(ClientError::StreamProtocol {
                             message,
                             request_id: wire.request_id,
                         });
                     }
                 };
-                let _ = state.transition(WatchEvent::ServerClose { reason });
+                apply_outcome(
+                    last_reconnect_policy,
+                    state.transition(WatchEvent::ServerClose { reason }),
+                );
                 // Every recognised `connection-closing` reason ends this
                 // watch session in the single-connection supervisor. The
                 // reducer's `Reconnect` outcome is intentionally ignored
@@ -357,9 +531,12 @@ async fn drain_frames(
                     .clone()
                     .or_else(|| wire.error.clone())
                     .unwrap_or_else(|| "server error event".to_string());
-                let _ = state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
-                    message.clone(),
-                )));
+                apply_outcome(
+                    last_reconnect_policy,
+                    state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                        message.clone(),
+                    ))),
+                );
                 return Err(ClientError::StreamProtocol {
                     message,
                     request_id: wire.request_id,
