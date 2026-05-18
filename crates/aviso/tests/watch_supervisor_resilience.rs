@@ -247,7 +247,7 @@ impl SwappingAuth {
 impl AuthProvider for SwappingAuth {
     async fn authorization_header(&self) -> aviso::Result<HeaderValue> {
         let guard = self.token.lock().unwrap();
-        HeaderValue::from_str(&format!("Bearer {}", *guard))
+        HeaderValue::from_str(&format!("Bearer {}", guard.as_str()))
             .map_err(|e| ClientError::Auth(format!("header build: {e}")))
     }
 

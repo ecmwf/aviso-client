@@ -1141,6 +1141,22 @@ mod tests {
         })
     }
 
+    /// Test helper that spawns a `run_supervisor` task against a `MockServer`.
+    ///
+    /// Returns the consumer-side mpsc receiver, the per-stream cancel
+    /// sender, the supervisor `JoinHandle`, and the parent-drop `watch`
+    /// sender. The fourth value is the load-bearing test fixture for the
+    /// parent-cancel cascade: as long as the test holds it, the
+    /// supervisor's `parent_cancel.changed()` arm stays parked. Tests
+    /// that want to trigger the cascade drop it explicitly; tests that
+    /// do not, simply bind it to a name and let RAII drop it at scope
+    /// end (after the supervisor `JoinHandle` has already completed,
+    /// so the dangling sender drop never fires the cascade against an
+    /// already-exited supervisor).
+    #[allow(
+        clippy::type_complexity,
+        reason = "test helper's return tuple aggregates the four channels the supervisor needs (notification receiver, per-stream cancel, JoinHandle, parent-drop sender); each component is named at the call site via destructuring so the complexity does not propagate"
+    )]
     fn start_supervisor(
         server: &MockServer,
         request: WatchRequest,
@@ -1148,6 +1164,7 @@ mod tests {
         mpsc::Receiver<Result<Notification, ClientError>>,
         oneshot::Sender<()>,
         tokio::task::JoinHandle<()>,
+        tokio::sync::watch::Sender<bool>,
     ) {
         let (tx, rx) = mpsc::channel(super::CHANNEL_CAPACITY);
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -1158,7 +1175,6 @@ mod tests {
         let no_store: Option<Arc<dyn StateStore>> = None;
         let resume_key = ResumeKey::new(&base_url, request.event_type(), &json!({}), None).unwrap();
         let (drop_sender, parent_cancel) = tokio::sync::watch::channel(false);
-        std::mem::forget(drop_sender);
         let active_resume_keys = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
             ResumeKey,
             usize,
@@ -1176,7 +1192,7 @@ mod tests {
             parent_cancel,
             active_resume_keys,
         ));
-        (rx, cancel_tx, handle)
+        (rx, cancel_tx, handle, drop_sender)
     }
 
     #[tokio::test]
@@ -1208,7 +1224,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
 
         let first = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
@@ -1247,7 +1264,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.event_type, "mars");
         assert_eq!(first.sequence, 7);
@@ -1284,7 +1302,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(
             first.sequence, 1,
@@ -1321,7 +1340,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.event_type, "mars");
         assert_eq!(first.sequence, 5);
@@ -1350,7 +1370,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, _cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let item = rx.recv().await.unwrap();
         match item {
             Err(ClientError::StreamProtocol {
@@ -1382,7 +1403,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, _cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let item = rx.recv().await.unwrap();
         assert!(
             matches!(item, Err(ClientError::StreamProtocol { .. })),
@@ -1411,7 +1433,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         drop(cancel_tx);
@@ -1439,7 +1462,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, _cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let item = rx.recv().await.unwrap();
         match item {
             Err(ClientError::HistoryGap {
@@ -1476,7 +1500,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, _cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let item = rx.recv().await.unwrap();
         match item {
             Err(ClientError::StreamProtocol { message, .. }) => {
@@ -1514,7 +1539,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         // Sequence 99 (after the close frame) must not arrive. We give the
@@ -1557,7 +1583,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         // After the first notification the server EOFs; the supervisor
@@ -1596,7 +1623,8 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle, _parent_drop) =
+            start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
         drop(cancel_tx);
