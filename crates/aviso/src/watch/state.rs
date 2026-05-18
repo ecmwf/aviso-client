@@ -26,6 +26,12 @@ use super::{
 /// track checkpoint state (see D17); the supervisor handles cursor
 /// bookkeeping in response to [`WatchEvent::NotificationReceived`] and
 /// trigger completion.
+///
+/// All fields are private (D15); use [`Self::watch`] / [`Self::replay_only`]
+/// to construct and the accessor methods to read. The struct is also
+/// `#[non_exhaustive]` so a future public field cannot become a
+/// breaking change for downstream callers.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatchState {
     replay_phase: ReplayPhase,
