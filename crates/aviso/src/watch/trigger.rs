@@ -484,6 +484,13 @@ async fn dispatch_log(
     let mut buf = serde_json::to_vec(notification)?;
     buf.push(b'\n');
     handle.write_all(&buf).await?;
+    // tokio::fs::File buffers writes internally; flush so the kernel
+    // sees the bytes immediately. Tailers and downstream NDJSON readers
+    // benefit from prompt visibility, and the test suite relies on this
+    // to read the file back synchronously. This is NOT an fsync; OS
+    // pagecache durability is still asynchronous (the at-least-once
+    // invariant covers crash replay, so no fsync per Q8).
+    handle.flush().await?;
     Ok(())
 }
 
