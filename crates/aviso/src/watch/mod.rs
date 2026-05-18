@@ -53,9 +53,11 @@ mod event;
 mod mode;
 mod outcome;
 mod phase;
+mod state;
 
 pub use connection::{ConnectionLossReason, ConnectionStatus};
 pub use event::{ServerCloseReason, WatchEvent};
 pub use mode::WatchMode;
 pub use outcome::{ReconnectPolicy, WatchOutcome};
 pub use phase::{CloseReason, FatalKind, GapReason, ReplayPhase, ResumeStart};
+pub use state::WatchState;
