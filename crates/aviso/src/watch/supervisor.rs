@@ -167,7 +167,7 @@ fn heartbeat_starvation_budget(interval: std::time::Duration) -> std::time::Dura
 /// keeps the two `state` borrows separate.
 #[allow(
     clippy::needless_pass_by_value,
-    reason = "WatchOutcome is taken by value to match the reducer's by-value return type; the alternative `&outcome` doubles the awkwardness at every call site without any runtime difference (WatchOutcome carries only Copy and small-owned fields)"
+    reason = "WatchOutcome is taken by value because the reducer already returns it by value; threading `&outcome` through the call sites only adds an extra borrow without avoiding any clone (the only ProtocolViolation String inside Fatal arrives already owned from the reducer and would be moved here too). The two-statement pattern `let outcome = state.transition(...); apply_outcome(&mut policy, outcome);` keeps the borrow of `state` separate from the borrow of `last_reconnect_policy`, which is the actual reason the helper exists."
 )]
 fn apply_outcome(last_reconnect_policy: &mut Option<ReconnectPolicy>, outcome: WatchOutcome) {
     match outcome {
@@ -386,6 +386,7 @@ pub(crate) async fn run_supervisor(
             &base_url,
             auth.as_ref(),
             heartbeat_interval,
+            &mut retry_counter,
             &tx,
             &mut cancel,
             &mut parent_cancel,
@@ -521,6 +522,7 @@ async fn run_one_connection(
     base_url: &Url,
     auth: Option<&Arc<dyn AuthProvider>>,
     heartbeat_interval: std::time::Duration,
+    retry_counter: &mut u32,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
     parent_cancel: &mut watch::Receiver<bool>,
@@ -606,6 +608,14 @@ async fn run_one_connection(
 
     let connected = state.transition(WatchEvent::ConnectionEstablished);
     apply_outcome(last_reconnect_policy, connected);
+    // Reset the retry counter as soon as the HTTP handshake succeeds.
+    // Subsequent mid-stream failures (UnexpectedEof, HeartbeatStarved,
+    // mid-stream TransportError) start a fresh failures-since-last-
+    // success streak rather than inflating onto whatever streak led to
+    // the just-completed connect. `ServerClosed` separately resets too,
+    // but that path only covers server-emitted close frames; this
+    // resets even when the session ends ungracefully later.
+    *retry_counter = 0;
 
     let mut parser = finesse::Parser::new();
     let mut gap_guard = GapGuard::starting_from(wire_from);
