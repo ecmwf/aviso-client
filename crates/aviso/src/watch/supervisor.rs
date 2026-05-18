@@ -298,7 +298,24 @@ async fn drain_frames(
                         let _ = state.transition(WatchEvent::ReplayCompleted);
                     }
                     "notification_replay_limit_reached" => {
-                        let max_allowed = wire.max_allowed.unwrap_or(0);
+                        let Some(max_allowed) = wire.max_allowed else {
+                            // The server's payload for this control event is
+                            // documented to carry `max_allowed`. Silently
+                            // defaulting a missing value would publish a
+                            // misleading `ReplayLimitReached { max_allowed: 0 }`
+                            // and hide a server protocol regression; surface a
+                            // typed protocol error instead.
+                            let message =
+                                "replay-control: notification_replay_limit_reached missing max_allowed"
+                                    .to_string();
+                            let _ = state.transition(WatchEvent::Fatal(
+                                FatalKind::ProtocolViolation(message.clone()),
+                            ));
+                            return Err(ClientError::StreamProtocol {
+                                message,
+                                request_id: None,
+                            });
+                        };
                         let reason = GapReason::ReplayLimitReached { max_allowed };
                         let _ = state.transition(WatchEvent::GapDetected(reason));
                         let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
@@ -759,6 +776,44 @@ mod tests {
                 assert_eq!(max_allowed, 1000);
             }
             other => panic!("expected HistoryGap{{ReplayLimitReached}}, got {other:?}"),
+        }
+        assert!(rx.recv().await.is_none());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replay_limit_reached_without_max_allowed_surfaces_stream_protocol_error() {
+        // Defending against a server protocol regression: if the
+        // `notification_replay_limit_reached` payload ever drops the
+        // `max_allowed` field, the client must surface a typed protocol
+        // error instead of silently emitting a misleading
+        // `ReplayLimitReached { max_allowed: 0 }`.
+        let server = MockServer::start().await;
+        let limit = json!({
+            "type": "notification_replay_limit_reached",
+            "topic": "mars",
+            "timestamp": "2026-05-17T12:00:00Z"
+        });
+        let body = sse_chunk("replay-control", limit);
+        Mock::given(method("POST"))
+            .and(path("/api/v1/watch"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let item = rx.recv().await.unwrap();
+        match item {
+            Err(ClientError::StreamProtocol { message, .. }) => {
+                assert!(
+                    message.contains("max_allowed"),
+                    "message should name the missing field: {message}"
+                );
+            }
+            other => panic!("expected StreamProtocol, got {other:?}"),
         }
         assert!(rx.recv().await.is_none());
         handle.await.unwrap();
