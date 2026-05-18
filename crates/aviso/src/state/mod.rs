@@ -1,9 +1,12 @@
 //! Persistence for watch resume state.
 //!
-//! [`StateStore`] is an async trait `AvisoClient` consumes to persist
-//! and retrieve [`Checkpoint`]s keyed by [`ResumeKey`]. Implementations
-//! are `Send + Sync` and serialise concurrent writes internally so the
-//! in-memory and (where applicable) on-disk states stay consistent.
+//! [`StateStore`] is an async trait for persisting and retrieving
+//! [`Checkpoint`]s keyed by [`ResumeKey`]. The aviso watch
+//! supervisor will consume it once the supervisor lands (a
+//! follow-up PR); today the trait stands alone with two
+//! implementations. Implementations are `Send + Sync` and serialise
+//! concurrent writes internally so the in-memory and (where
+//! applicable) on-disk states stay consistent.
 //!
 //! A successful [`StateStore::put`] is committed-before-visible: a
 //! subsequent [`StateStore::get`] returns the value just written. For
