@@ -9,22 +9,29 @@
 //! subsequent [`StateStore::get`] returns the value just written. A
 //! failed `put` leaves all state unchanged.
 //!
-//! [`MemoryStore`] is the in-process implementation that ships in this
-//! commit. A file-backed implementation lands in a follow-up commit on
-//! the same branch.
+//! Two implementations are provided:
+//!
+//! - [`MemoryStore`]: in-process. State dies with the program. Good
+//!   for tests and short-lived consumers.
+//! - [`JsonFileStore`]: backed by a JSON file with crash-safe atomic
+//!   writes via the `atomicwrites` crate. Single-process; multi-process
+//!   correctness is a follow-up.
 //!
 //! Resume keys are derived from a base URL, an event type, the watch
 //! filter body, and an optional schema fingerprint (D3 in the ADR log).
 //! The hash deliberately excludes any server-side resume position; the
 //! same logical subscription always computes the same key.
 
+mod atomic_write;
 mod checkpoint;
 mod error;
+mod file;
 mod memory;
 mod resume_key;
 
 pub use checkpoint::Checkpoint;
 pub use error::StoreError;
+pub use file::JsonFileStore;
 pub use memory::MemoryStore;
 pub use resume_key::{ResumeKey, ResumeKeyError};
 

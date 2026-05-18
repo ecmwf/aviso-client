@@ -64,6 +64,15 @@ impl ResumeKey {
         })
     }
 
+    /// Construct a `ResumeKey` from a raw digest and format version.
+    /// Used by the file store when loading from disk.
+    pub(crate) fn from_parts(digest: [u8; 32], key_format_version: u32) -> Self {
+        Self {
+            digest,
+            key_format_version,
+        }
+    }
+
     /// The 32-byte SHA-256 digest.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -236,6 +245,13 @@ mod tests {
     fn key_format_version_is_current() {
         let k = ResumeKey::new(&url("https://a/"), "mars", &json!({}), None).unwrap();
         assert_eq!(k.key_format_version(), KEY_FORMAT_VERSION);
+    }
+
+    #[test]
+    fn from_parts_with_different_format_versions_are_not_equal() {
+        let a = ResumeKey::from_parts([0u8; 32], 1);
+        let b = ResumeKey::from_parts([0u8; 32], 2);
+        assert_ne!(a, b, "same digest, different format version must differ");
     }
 
     #[test]
