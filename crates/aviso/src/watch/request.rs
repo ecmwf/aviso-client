@@ -2,7 +2,7 @@
 //!
 //! A `WatchRequest` names the event type to subscribe to, an optional filter
 //! over the event identifier, an optional resume position, and the session
-//! mode. The supervisor that consumes it (in a follow-up commit) selects the
+//! mode. The supervisor backing [`crate::AvisoClient::watch`] selects the
 //! HTTP endpoint from [`WatchMode`] and serialises the rest as the
 //! server-side request body.
 //!

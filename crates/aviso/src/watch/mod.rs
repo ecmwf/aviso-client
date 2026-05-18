@@ -9,10 +9,10 @@
 //! HTTP/SSE transport, the auth provider, and the [`crate::state`]
 //! store.
 //!
-//! Only the types and the reducer live in this module; there is no
-//! `AvisoClient::watch()` method. The public surface is accessible
-//! as `aviso::watch::*`. Higher-level watch APIs (Stream-based or
-//! callback-based) build on top of this reducer.
+//! The public surface is accessible as `aviso::watch::*`. The
+//! [`crate::AvisoClient::watch`] method returns a [`NotificationStream`]
+//! whose supervisor task drives this reducer; the same supervisor also
+//! backs [`crate::AvisoClient::watch_with_handler`].
 //!
 //! # Concepts
 //!
