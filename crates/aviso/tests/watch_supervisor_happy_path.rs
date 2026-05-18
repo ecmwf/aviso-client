@@ -244,6 +244,70 @@ fn watch_returns_config_error_when_no_tokio_runtime() {
 }
 
 #[tokio::test]
+async fn watch_with_handler_drains_to_completion_and_reports_handler_error() {
+    let server = MockServer::start().await;
+    let (rc_event, rc_data) = replay_completed();
+    let (eos_event, eos_data) = end_of_stream();
+    let body = format!(
+        "{}{}{}{}{}{}",
+        sse_chunk("replay", &cloud_event("mars", 10)),
+        sse_chunk("replay", &cloud_event("mars", 11)),
+        sse_chunk(rc_event, &rc_data),
+        sse_chunk("live-notification", &cloud_event("mars", 12)),
+        sse_chunk("live-notification", &cloud_event("mars", 13)),
+        sse_chunk(eos_event, &eos_data),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
+    let observed_clone = observed.clone();
+    timeout(
+        Duration::from_secs(5),
+        client.watch_with_handler(
+            WatchRequest::watch_from("mars", ResumeStart::AfterSequence(9)),
+            move |notification| {
+                let observed = observed_clone.clone();
+                async move {
+                    observed.lock().unwrap().push(notification.sequence);
+                    Ok(())
+                }
+            },
+        ),
+    )
+    .await
+    .expect("handler loop should finish promptly")
+    .expect("watch_with_handler should return Ok when the stream ends cleanly");
+
+    assert_eq!(observed.lock().unwrap().clone(), vec![10, 11, 12, 13]);
+}
+
+#[tokio::test]
+async fn watch_with_handler_propagates_handler_error_and_cancels_supervisor() {
+    let server = MockServer::start().await;
+    // The wire has plenty of notifications; the handler returns Err after
+    // the first item, which must propagate as the method's return value
+    // AND tear the supervisor down (no test-runtime hang).
+    let mut body = String::new();
+    for n in 1..=10 {
+        body.push_str(&sse_chunk("live-notification", &cloud_event("mars", n)));
+    }
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let err = timeout(
+        Duration::from_secs(5),
+        client.watch_with_handler(WatchRequest::watch("mars"), |_n| async {
+            Err(ClientError::Config("handler refused".into()))
+        }),
+    )
+    .await
+    .expect("propagation should complete promptly")
+    .unwrap_err();
+    assert!(matches!(err, ClientError::Config(_)), "got {err:?}");
+}
+
+#[tokio::test]
 async fn watch_returns_http_error_for_non_success_status() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
