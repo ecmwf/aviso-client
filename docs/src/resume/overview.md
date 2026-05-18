@@ -97,7 +97,7 @@ The parent directory must exist; `open` does not create it. The file itself is c
 
 ## Choosing a path
 
-The library exposes the trait so consumers pick any path or any backend. The CLI binary picks `~/.config/aviso/state.json` by default (the literal tilde is expanded by the CLI before the path reaches `JsonFileStore::open`, since `Path`/`PathBuf` do not perform that expansion). That is documented separately as part of the CLI surface.
+The library exposes the trait so any consumer can choose any path or backend today. The aviso CLI binary will default to `~/.config/aviso/state.json` once it wires `StateStore` (a follow-up; the CLI does not yet consume the state module). When that wiring lands, the CLI is responsible for expanding the literal tilde itself before the path reaches `JsonFileStore::open`, since `Path`/`PathBuf` do not perform that expansion.
 
 ## Architectural references
 
