@@ -240,6 +240,23 @@ impl WatchState {
     }
 
     fn handle_replay_completed(&mut self) -> WatchOutcome {
+        // The match is exhaustive over `(WatchMode, &ReplayPhase)`.
+        // Both enums are `#[non_exhaustive]` for downstream callers but
+        // exhaustive matching is allowed within the defining crate; a
+        // future enum variant therefore breaks compilation here.
+        //
+        // The two real transitions (Rows 15a, 15b) are spelled out
+        // first. Every other combination shares a no-op arm because
+        // their behaviour is identical:
+        //   - Rows 15c and 15d are idempotent by spec (ReplayOnly +
+        //     Replaying{rc=true}, Watch + Live or GapDetected,
+        //     ReplayOnly + GapDetected).
+        //   - `ReplayPhase::Closed` is filtered by the terminal-sticky
+        //     early return at the top of `transition`; unreachable
+        //     here in practice.
+        //   - `(WatchMode::ReplayOnly, ReplayPhase::Live)` is forbidden
+        //     by the `replay_only` constructor; unreachable by
+        //     construction.
         match (self.mode, &self.replay_phase) {
             // Row 15a: Watch + Replaying -> Live.
             (WatchMode::Watch, ReplayPhase::Replaying { .. }) => {
@@ -259,8 +276,20 @@ impl WatchState {
                     replay_completed: true,
                 };
             }
-            // Rows 15c and 15d: idempotent in all other non-terminal phases.
-            _ => {}
+            (
+                WatchMode::Watch,
+                ReplayPhase::Live | ReplayPhase::GapDetected { .. } | ReplayPhase::Closed { .. },
+            )
+            | (
+                WatchMode::ReplayOnly,
+                ReplayPhase::Replaying {
+                    replay_completed: true,
+                    ..
+                }
+                | ReplayPhase::Live
+                | ReplayPhase::GapDetected { .. }
+                | ReplayPhase::Closed { .. },
+            ) => {}
         }
         WatchOutcome::Continue
     }
