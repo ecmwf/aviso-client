@@ -104,8 +104,31 @@ where
     out
 }
 
+async fn take_n<S>(mut stream: S, n: usize) -> (Vec<Result<aviso::Notification, ClientError>>, S)
+where
+    S: Stream<Item = Result<aviso::Notification, ClientError>> + Unpin,
+{
+    let mut out = Vec::with_capacity(n);
+    while out.len() < n {
+        let item = std::future::poll_fn(|cx| {
+            let pinned = std::pin::Pin::new(&mut stream);
+            <S as Stream>::poll_next(pinned, cx)
+        })
+        .await;
+        match item {
+            Some(v) => out.push(v),
+            None => break,
+        }
+    }
+    (out, stream)
+}
+
 #[tokio::test]
 async fn watch_happy_path_replay_then_live() {
+    // Watch mode: replay items then live items. With the resilience layer
+    // in place, end_of_stream triggers a reconnect rather than closing
+    // the stream, so the test takes the expected first four items and
+    // drops the stream to break the (now-infinite) reconnect loop.
     let server = MockServer::start().await;
     let (rc_event, rc_data) = replay_completed();
     let (eos_event, eos_data) = end_of_stream();
@@ -127,19 +150,24 @@ async fn watch_happy_path_replay_then_live() {
             ResumeStart::AfterSequence(9),
         ))
         .unwrap();
-    let items = timeout(Duration::from_secs(5), collect_stream(stream))
+    let (items, stream) = timeout(Duration::from_secs(5), take_n(stream, 4))
         .await
-        .expect("stream should drain promptly");
+        .expect("first four items should arrive promptly");
 
     let sequences: Vec<u64> = items
         .iter()
         .map(|item| item.as_ref().expect("all items should be Ok").sequence)
         .collect();
     assert_eq!(sequences, vec![10, 11, 12, 13]);
+    drop(stream);
 }
 
 #[tokio::test]
-async fn watch_clean_close_on_end_of_stream_yields_no_error() {
+async fn watch_first_notification_arrives_in_watch_mode() {
+    // Watch mode: server emits one notification then end_of_stream. The
+    // notification surfaces; end_of_stream triggers a reconnect rather
+    // than closing the stream. The test asserts on the first item and
+    // drops the stream.
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();
     let body = format!(
@@ -151,12 +179,12 @@ async fn watch_clean_close_on_end_of_stream_yields_no_error() {
 
     let client = client_for(&server);
     let stream = client.watch(WatchRequest::watch("mars")).unwrap();
-    let items = timeout(Duration::from_secs(5), collect_stream(stream))
+    let (items, stream) = timeout(Duration::from_secs(5), take_n(stream, 1))
         .await
-        .expect("stream should drain promptly");
-
-    assert_eq!(items.len(), 1, "exactly one Ok(_), then None");
+        .expect("first item should arrive promptly");
+    assert_eq!(items.len(), 1);
     assert!(items[0].is_ok(), "got {:?}", items[0]);
+    drop(stream);
 }
 
 #[tokio::test]
@@ -244,7 +272,11 @@ fn watch_returns_config_error_when_no_tokio_runtime() {
 }
 
 #[tokio::test]
-async fn watch_with_handler_drains_to_completion_and_reports_handler_error() {
+async fn watch_with_handler_observes_first_four_items_in_replay_then_live() {
+    // Watch mode: replay then live. end_of_stream reconnects under the
+    // resilience layer; the handler runs forever in that case. The test
+    // gives up the handler after the fourth item by returning `Err(_)`,
+    // which cancels the supervisor cleanly.
     let server = MockServer::start().await;
     let (rc_event, rc_data) = replay_completed();
     let (eos_event, eos_data) = end_of_stream();
@@ -262,23 +294,32 @@ async fn watch_with_handler_drains_to_completion_and_reports_handler_error() {
     let client = client_for(&server);
     let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
     let observed_clone = observed.clone();
-    timeout(
+    let sentinel = ClientError::Config("test-stop".into());
+    let result = timeout(
         Duration::from_secs(5),
         client.watch_with_handler(
             WatchRequest::watch_from("mars", ResumeStart::AfterSequence(9)),
             move |notification| {
                 let observed = observed_clone.clone();
                 async move {
-                    observed.lock().unwrap().push(notification.sequence);
-                    Ok(())
+                    let mut guard = observed.lock().unwrap();
+                    guard.push(notification.sequence);
+                    if guard.len() >= 4 {
+                        Err(ClientError::Config("test-stop".into()))
+                    } else {
+                        Ok(())
+                    }
                 }
             },
         ),
     )
     .await
-    .expect("handler loop should finish promptly")
-    .expect("watch_with_handler should return Ok when the stream ends cleanly");
-
+    .expect("handler loop should finish promptly");
+    let _ = sentinel;
+    match result {
+        Err(ClientError::Config(msg)) => assert_eq!(msg, "test-stop"),
+        other => panic!("expected the sentinel Config error, got {other:?}"),
+    }
     assert_eq!(observed.lock().unwrap().clone(), vec![10, 11, 12, 13]);
 }
 
@@ -308,14 +349,17 @@ async fn watch_with_handler_propagates_handler_error_and_cancels_supervisor() {
 }
 
 #[tokio::test]
-async fn watch_returns_http_error_for_non_success_status() {
+async fn watch_returns_http_error_for_terminal_non_success_status() {
+    // 404 is terminal under the resilience layer's classification (other
+    // 4xx). 503 is retryable and reconnects, so it is exercised by the
+    // dedicated retry-after integration test instead.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
         .respond_with(
-            ResponseTemplate::new(503)
-                .insert_header("x-request-id", "req-busy")
-                .set_body_string("server busy"),
+            ResponseTemplate::new(404)
+                .insert_header("x-request-id", "req-gone")
+                .set_body_string("not found"),
         )
         .mount(&server)
         .await;
@@ -333,10 +377,10 @@ async fn watch_returns_http_error_for_non_success_status() {
             body,
             request_id,
         }) => {
-            assert_eq!(*status, 503);
-            assert_eq!(body, "server busy");
-            assert_eq!(request_id.as_deref(), Some("req-busy"));
+            assert_eq!(*status, 404);
+            assert_eq!(body, "not found");
+            assert_eq!(request_id.as_deref(), Some("req-gone"));
         }
-        other => panic!("expected Http(503), got {other:?}"),
+        other => panic!("expected Http(404), got {other:?}"),
     }
 }
