@@ -176,11 +176,16 @@ fn apply_outcome(last_reconnect_policy: &mut Option<ReconnectPolicy>, outcome: W
 /// contract this constant participates in.
 pub(crate) const CHANNEL_CAPACITY: usize = 128;
 
-/// Drive a single watch session to completion. Owns its inputs by value;
-/// the spawn caller in [`crate::client::AvisoClient::watch`] passes cloned
-/// or `Arc`-shared handles so the task is `'static` without forcing the
-/// supervisor to keep an [`crate::AvisoClient`] alive (which would defeat
-/// parent-cancellation work in the follow-up resilience commit).
+/// Drive a watch session through any number of reconnect cycles. Owns its
+/// inputs by value; the spawn caller in
+/// [`crate::client::AvisoClient::watch`] passes cloned or `Arc`-shared
+/// handles so the task is `'static` without forcing the supervisor to
+/// keep an [`crate::AvisoClient`] alive. Holding only the bits it needs
+/// (rather than a cloned `AvisoClient`) is what lets parent-drop
+/// cancellation work: the supervisor watches a `watch::Receiver<bool>`
+/// subscribed from the client's `Arc<DropGuard>`, and when the last
+/// client clone drops, the guard's `Drop` flips the channel and every
+/// supervisor's `select!` arms observe the cancellation.
 #[allow(
     clippy::too_many_lines,
     reason = "the outer reconnect loop is intentionally one function: each iteration's classification (close, http, transport, eof, heartbeat, fatal, cancel) and the wire-request rebuild belong together for readability; splitting them into helpers obscures the per-iteration state-mutation order"
@@ -754,6 +759,24 @@ async fn drain_frames(
                             if let Some(store) = state_store {
                                 let checkpoint =
                                     Checkpoint::new(prev.sequence, Some(prev.event_id.clone()));
+                                // CANCELLATION SAFETY: this `put` is
+                                // INTENTIONALLY NOT raced against cancel
+                                // arms. The supervisor's contract per the
+                                // resilience plan is "an in-progress
+                                // store write is allowed to complete so
+                                // the underlying file (or future durable
+                                // backend) is never left half-written".
+                                // Cancellation observability lives at the
+                                // surrounding chunk-read and send-or-
+                                // cancel select arms instead; cancellation
+                                // arriving BEFORE the put starts is
+                                // observed there and the put never runs.
+                                // The trade-off is bounded extra exit
+                                // latency (`fsync` for `JsonFileStore`,
+                                // typically tens of milliseconds on local
+                                // disk; user-supplied stores SHOULD keep
+                                // `put` similarly bounded so parent-drop
+                                // latency stays in the same range).
                                 if let Err(e) = store.put(resume_key, checkpoint).await {
                                     return Err(ClientError::from(e));
                                 }
