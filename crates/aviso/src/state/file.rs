@@ -181,7 +181,21 @@ impl StateStore for JsonFileStore {
 fn load_from_disk(path: &Path) -> Result<HashMap<ResumeKey, Checkpoint>, StoreError> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File absent. Validate the parent directory exists so a
+            // missing-directory configuration error surfaces at `open`
+            // rather than at the first `put` (which would otherwise
+            // produce an opaque atomic-write failure later).
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() && !parent.is_dir() {
+                    return Err(StoreError::Io(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("parent directory does not exist: {}", parent.display()),
+                    )));
+                }
+            }
+            return Ok(HashMap::new());
+        }
         Err(e) => return Err(StoreError::Io(e)),
     };
     let file: FileFormat = serde_json::from_slice(&bytes).map_err(StoreError::Decode)?;
@@ -368,17 +382,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn open_with_missing_parent_directory_errors() {
+        // The type doc promises the parent directory must exist.
+        // `open` enforces it: a missing parent surfaces here rather
+        // than at the first `put`.
+        let nonexistent: PathBuf = "/nonexistent/aviso-state-test-directory/state.json".into();
+        let result = JsonFileStore::open(&nonexistent).await;
+        match result {
+            Err(StoreError::Io(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+            }
+            other => panic!("expected Io NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn failed_write_leaves_in_memory_state_unchanged() {
-        // Parent directory does not exist; atomic_write will fail on
-        // temp-file creation. open() succeeds (file is treated as
-        // missing). put() must fail AND must not poison in-memory.
-        let nonexistent: PathBuf = "/nonexistent/aviso-state-test/state.json".into();
-        let store = JsonFileStore::open(&nonexistent).await.unwrap();
-        let result = store.put(&key(0), Checkpoint::new(1, None)).await;
-        assert!(result.is_err(), "put on bad path must fail");
+        // Open succeeds in a real temp directory; first put commits
+        // to disk and memory. Yank the parent directory; the second
+        // put fails because the atomic-write target no longer has a
+        // directory to land in. The in-memory state must still
+        // reflect the first (successful) put, not the second
+        // (failed) one. This is the linearizability property.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let store = JsonFileStore::open(&path).await.unwrap();
+        store.put(&key(0), Checkpoint::new(0, None)).await.unwrap();
+        drop(dir); // tempdir cleans itself, taking the parent dir.
+        let result = store.put(&key(1), Checkpoint::new(1, None)).await;
+        assert!(result.is_err(), "put after yanked parent dir must fail");
+        assert_eq!(
+            store
+                .get(&key(0))
+                .await
+                .unwrap()
+                .unwrap()
+                .last_committed_sequence,
+            0,
+            "first put's in-memory state must survive"
+        );
         assert!(
-            store.get(&key(0)).await.unwrap().is_none(),
-            "in-memory state must remain unchanged after a failed put"
+            store.get(&key(1)).await.unwrap().is_none(),
+            "failed second put must not appear in memory"
         );
     }
 
