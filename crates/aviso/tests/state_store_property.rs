@@ -13,7 +13,7 @@
 )]
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use aviso::state::{Checkpoint, JsonFileStore, MemoryStore, ResumeKey, StateStore};
@@ -72,15 +72,18 @@ fn key(n: u8) -> ResumeKey {
 
 async fn apply_and_verify<S: StateStore>(store: &S, ops: Vec<Op>) {
     let mut model: HashMap<u8, u64> = HashMap::new();
+    let mut touched: HashSet<u8> = HashSet::new();
     for op in ops {
         match op {
             Op::Put(k, v) => {
                 store.put(&key(k), Checkpoint::new(v, None)).await.unwrap();
                 model.insert(k, v);
+                touched.insert(k);
             }
             Op::Delete(k) => {
                 store.delete(&key(k)).await.unwrap();
                 model.remove(&k);
+                touched.insert(k);
             }
         }
     }
@@ -88,9 +91,12 @@ async fn apply_and_verify<S: StateStore>(store: &S, ops: Vec<Op>) {
         let got = store.get(&key(*k)).await.unwrap().unwrap();
         assert_eq!(got.last_committed_sequence, *expected);
     }
-    for k in 0..=u8::MAX {
-        if !model.contains_key(&k) {
-            assert!(store.get(&key(k)).await.unwrap().is_none());
+    // Check absence only for keys actually touched (put-then-deleted).
+    // Keys never touched trivially return None for any correct store;
+    // iterating the full u8 range every case was wasted work.
+    for k in &touched {
+        if !model.contains_key(k) {
+            assert!(store.get(&key(*k)).await.unwrap().is_none());
         }
     }
 }
