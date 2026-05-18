@@ -12,6 +12,7 @@
     reason = "test code: unwrap and panic on unexpected variant are the standard test diagnostics"
 )]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -20,8 +21,27 @@ use proptest::collection::vec;
 use proptest::prelude::*;
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use url::Url;
+
+thread_local! {
+    /// Lazy per-thread tokio runtime so proptest cases reuse one
+    /// `current_thread` runtime instead of building a fresh one for
+    /// every generated case. Without this, `with_cases(64)` across
+    /// two test functions builds 128 runtimes per `cargo test` run,
+    /// which is wall-clock time spent on setup rather than on
+    /// exercising store behaviour.
+    static RT: RefCell<Option<Runtime>> = const { RefCell::new(None) };
+}
+
+fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+    RT.with(|cell| {
+        if cell.borrow().is_none() {
+            *cell.borrow_mut() = Some(Builder::new_current_thread().enable_all().build().unwrap());
+        }
+        cell.borrow().as_ref().unwrap().block_on(fut)
+    })
+}
 
 #[derive(Debug, Clone)]
 enum Op {
@@ -80,8 +100,7 @@ proptest! {
 
     #[test]
     fn memory_store_matches_reference_model(ops in op_sequence()) {
-        let rt = Builder::new_current_thread().enable_all().build().unwrap();
-        rt.block_on(async {
+        block_on(async {
             let store = MemoryStore::new();
             apply_and_verify(&store, ops).await;
         });
@@ -89,8 +108,7 @@ proptest! {
 
     #[test]
     fn file_store_matches_reference_model(ops in op_sequence()) {
-        let rt = Builder::new_current_thread().enable_all().build().unwrap();
-        rt.block_on(async {
+        block_on(async {
             let dir = TempDir::new().unwrap();
             let path: PathBuf = dir.path().join("state.json");
             let store = JsonFileStore::open(&path).await.unwrap();
