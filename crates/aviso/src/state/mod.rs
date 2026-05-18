@@ -48,6 +48,40 @@ use async_trait::async_trait;
 /// Implementations are `Send + Sync` and serialise concurrent writes
 /// internally. See the [module docs](self) for the linearizable-
 /// semantics contract.
+///
+/// # Cancel-safety expectation for watch supervisor consumers
+///
+/// The watch supervisor in [`crate::AvisoClient::watch`] consumes this
+/// trait with an asymmetric cancel-safety contract:
+///
+/// - [`Self::get`] MAY be cancelled (the future MAY be dropped
+///   mid-flight). The supervisor races the initial cursor-load `get`
+///   against per-stream drop and parent drop via `tokio::select!`, so
+///   a long-running `get` that overlaps a drop terminates promptly.
+///   Implementations must be safe to drop mid-`await`: dropping the
+///   future must not corrupt internal state, leak resources beyond
+///   what `Drop` cleans up, or break invariants for the next `get` or
+///   `put` against the same key. Pure I/O-bound implementations
+///   (memory map, file read, network round trip) usually satisfy this
+///   trivially; implementations that hold a partially-completed
+///   internal transaction across the `await` boundary must release it
+///   on drop.
+///
+/// - [`Self::put`] is NOT cancelled. The supervisor lets in-progress
+///   puts run to completion so the underlying durable state is never
+///   left half-written. Implementations may rely on atomic completion
+///   within their own `await` lifetime. The trade-off is bounded extra
+///   exit latency proportional to the `put` duration on parent drop.
+///
+/// Implementations SHOULD keep both methods bounded in wall-clock time
+/// (the shipped [`JsonFileStore`] is dominated by `fsync`, typically
+/// tens of milliseconds on local disk). A custom store that performs
+/// an unbounded network call from within `put` will extend
+/// `AvisoClient::Drop` latency by that amount; if that is
+/// unacceptable, the implementation may internally apply its own
+/// timeout and return [`StoreError`] on expiry. The supervisor will
+/// surface that timeout as [`crate::ClientError::StateStore`] and
+/// terminate the watch.
 #[async_trait]
 pub trait StateStore: Send + Sync {
     /// Return the checkpoint stored at `key`, if any.

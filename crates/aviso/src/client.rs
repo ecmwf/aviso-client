@@ -9,18 +9,61 @@
 //! and preserves any path prefix the operator picks (for example a reverse proxy that mounts
 //! `aviso-server` under `/aviso`).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::Client as HttpClient;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use url::Url;
 
 use crate::ClientError;
 use crate::auth::AuthProvider;
+use crate::state::{ResumeKey, StateStore};
 use crate::watch::{
     CHANNEL_CAPACITY, NotificationStream, WatchRequest, WireWatchRequest, run_supervisor,
 };
+
+/// Cascading-cancellation handle shared by all clones of an [`AvisoClient`].
+///
+/// Each `AvisoClient` carries `Arc<DropGuard>`; every supervisor spawned by a
+/// `watch()` call holds a [`watch::Receiver<bool>`] derived from the same
+/// sender. When the last `Arc<DropGuard>` is dropped (the last `AvisoClient`
+/// clone goes away), [`DropGuard::drop`] fires `sender.send(true)`. Every
+/// supervisor's `watch::Receiver::changed()` await observes the value flip
+/// within one event-loop tick and the supervisor exits its loop.
+///
+/// `pub(crate)` because it is an implementation detail of the cancel cascade.
+/// The publicly visible behaviour is documented on [`AvisoClient`] itself.
+pub(crate) struct DropGuard {
+    sender: watch::Sender<bool>,
+}
+
+impl DropGuard {
+    /// Construct a fresh guard plus one receiver. Subsequent supervisors clone
+    /// the receiver via [`Self::subscribe`].
+    pub(crate) fn new() -> (Arc<Self>, watch::Receiver<bool>) {
+        let (sender, receiver) = watch::channel(false);
+        (Arc::new(Self { sender }), receiver)
+    }
+
+    /// Clone a new `watch::Receiver` from the shared sender.
+    pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
+        self.sender.subscribe()
+    }
+}
+
+impl Drop for DropGuard {
+    fn drop(&mut self) {
+        // Best-effort: if every receiver has been dropped already (which the
+        // type system permits but normal flow should not produce, because the
+        // sender owner is `Arc::new(self)` and outlives any single receiver),
+        // the send call returns `Err` which we silently drop. The guarantee
+        // we care about is "the value flips to true while at least one
+        // receiver is still alive", and that holds.
+        let _ = self.sender.send(true);
+    }
+}
 
 /// Top-level handle to an `aviso-server`.
 ///
@@ -33,6 +76,24 @@ pub struct AvisoClient {
     http: HttpClient,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
+    /// Cascading cancellation token shared by all clones. When the last
+    /// clone drops, all child supervisors observe the value flip and exit.
+    /// See [`DropGuard`] for the mechanism.
+    parent_drop: Arc<DropGuard>,
+    /// Expected SSE heartbeat cadence; see
+    /// [`AvisoClientBuilder::heartbeat_interval`] for the default and the
+    /// budget formula.
+    heartbeat_interval: Duration,
+    /// Optional state store for persistent resume across process restarts.
+    /// See [`AvisoClientBuilder::state_store`].
+    state_store: Option<Arc<dyn StateStore>>,
+    /// Per-client refcount of currently-active watch supervisors keyed by
+    /// resume key. `AvisoClient::watch()` increments the counter; the
+    /// supervisor decrements on every exit path. When the prior count is
+    /// greater than zero on increment, the client emits a `WARN` log
+    /// signalling that two or more concurrent watches share the same
+    /// checkpoint slot and will interleave commits.
+    active_resume_keys: Arc<Mutex<HashMap<ResumeKey, usize>>>,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -126,12 +187,58 @@ impl AvisoClient {
             ClientError::Config("AvisoClient::watch requires a Tokio runtime".into())
         })?;
         let _ = WireWatchRequest::from_public(&request)?;
-        let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let resume_key = compute_resume_key(&self.base_url, &request)?;
+        // Channel capacity controls whether the user-facing
+        // "pulling item N+1 implies item N is durable" contract holds.
+        // The supervisor commits item N to the store BEFORE attempting
+        // to send item N+1; with a capacity > 1, item N could land on
+        // disk while item N is still buffered ahead of the consumer,
+        // breaking the at-least-once contract on a crash between
+        // commit and consumer-pull.
+        //
+        // When a state store is configured we therefore force capacity
+        // to 1: the supervisor's send of N+1 then blocks (TCP
+        // backpressure propagates upstream) until the consumer has
+        // pulled item N, so the durability claim is preserved.
+        //
+        // Without a state store there is no durability claim to
+        // preserve, and the larger buffer absorbs short consumer
+        // pauses without throttling the wire.
+        let capacity = if self.state_store.is_some() {
+            1
+        } else {
+            CHANNEL_CAPACITY
+        };
+        let (tx, rx) = mpsc::channel(capacity);
         let (cancel_tx, cancel_rx) = oneshot::channel();
+        let parent_cancel = self.parent_drop.subscribe();
         let http = self.http.clone();
         let base_url = self.base_url.clone();
         let auth = self.auth.clone();
-        handle.spawn(run_supervisor(request, http, base_url, auth, tx, cancel_rx));
+        let heartbeat_interval = self.heartbeat_interval;
+        let state_store = self.state_store.clone();
+        let active_resume_keys = self.active_resume_keys.clone();
+        // Increment the active-resume-key refcount before spawning, and
+        // emit a WARN log if the key was already in use. Refcount
+        // semantics preserve the invariant that collisions are reported
+        // for every overlapping watch, not just the first pair: a
+        // single watch warns 0 times; a second concurrent same-key
+        // watch warns once; if one of those exits while another remains
+        // active, a third same-key watch must still warn.
+        increment_active_key(&active_resume_keys, &resume_key, request.event_type());
+        handle.spawn(run_supervisor(
+            request,
+            http,
+            base_url,
+            auth,
+            heartbeat_interval,
+            state_store,
+            resume_key,
+            tx,
+            cancel_rx,
+            parent_cancel,
+            active_resume_keys,
+        ));
         Ok(NotificationStream::new(rx, cancel_tx))
     }
 
@@ -303,13 +410,28 @@ pub(crate) async fn parse_json_response_optional(response: reqwest::Response) ->
 }
 
 /// Builder for [`AvisoClient`].
-#[derive(Debug, Default)]
+#[derive(Default)]
 #[must_use]
 pub struct AvisoClientBuilder {
     base_url: Option<String>,
     auth: Option<Arc<dyn AuthProvider>>,
     timeout: Option<Duration>,
     user_agent: Option<String>,
+    heartbeat_interval: Option<Duration>,
+    state_store: Option<Arc<dyn StateStore>>,
+}
+
+impl std::fmt::Debug for AvisoClientBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AvisoClientBuilder")
+            .field("base_url", &self.base_url)
+            .field("auth", &self.auth)
+            .field("timeout", &self.timeout)
+            .field("user_agent", &self.user_agent)
+            .field("heartbeat_interval", &self.heartbeat_interval)
+            .field("state_store", &self.state_store.as_ref().map(|_| "<set>"))
+            .finish()
+    }
 }
 
 impl AvisoClientBuilder {
@@ -339,6 +461,46 @@ impl AvisoClientBuilder {
         self
     }
 
+    /// Sets the expected SSE heartbeat cadence on the watch endpoint.
+    ///
+    /// The watch supervisor uses this to compute its heartbeat-starvation
+    /// budget per D2: a stream is declared silent (and reconnected with
+    /// exponential backoff) if no SSE event of any kind arrives within
+    /// `max(3 * interval, interval + 30s)`. Defaults to 30 seconds, which
+    /// matches the default `aviso-server` configuration.
+    ///
+    /// Set this to match a non-default server-side heartbeat configuration.
+    /// Setting it too low will false-positive on healthy quiet streams;
+    /// setting it too high delays detection of silently-dead connections
+    /// (NAT timeout, half-open socket after sleep, intermediate-proxy
+    /// restart).
+    pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
+        self.heartbeat_interval = Some(interval);
+        self
+    }
+
+    /// Wires a persistent state store for resume across process restarts.
+    ///
+    /// When set, `AvisoClient::watch()` consults the store at watch
+    /// start: if the [`WatchRequest`] has no explicit `from`, the
+    /// supervisor reads the stored checkpoint and resumes from
+    /// `last_committed_sequence + 1`. An explicit user-supplied `from`
+    /// always wins (no second-guessing). After each successful
+    /// notification send the supervisor persists the *previous*
+    /// notification's sequence (commit-on-next-send semantics): pulling
+    /// item N+1 implies item N is durable.
+    ///
+    /// The store can be the in-process [`crate::state::MemoryStore`], the
+    /// on-disk [`crate::state::JsonFileStore`], or a user-supplied
+    /// implementation of the [`StateStore`] trait. The watch supervisor
+    /// terminates the stream with `ClientError::StateStore` on any
+    /// persistence failure; at-least-once delivery requires a working
+    /// store, and silent failure would violate the contract.
+    pub fn state_store(mut self, store: Arc<dyn StateStore>) -> Self {
+        self.state_store = Some(store);
+        self
+    }
+
     /// Builds the client.
     ///
     /// # Errors
@@ -365,21 +527,109 @@ impl AvisoClientBuilder {
         let http = http_builder
             .build()
             .map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))?;
+        let (parent_drop, _initial_receiver) = DropGuard::new();
+        let heartbeat_interval = self
+            .heartbeat_interval
+            .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL);
         Ok(AvisoClient {
             http,
             base_url,
             auth: self.auth,
+            parent_drop,
+            heartbeat_interval,
+            state_store: self.state_store,
+            active_resume_keys: Arc::new(Mutex::new(HashMap::new())),
         })
     }
+}
+
+/// Default expected SSE heartbeat cadence, matching the default
+/// `aviso-server` configuration. The watchdog budget at this default is
+/// `max(3 * 30s, 30s + 30s) = 90s`.
+const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Increment the active-resume-key refcount for `key`, emit a WARN if
+/// the prior count was greater than zero. Mutex poisoning is handled by
+/// recovering the inner guard and logging a poison-specific WARN; the
+/// refcount itself is best-effort observability, so missing one warn
+/// during a poison event is acceptable (and the supervisor still
+/// decrements on exit).
+fn increment_active_key(
+    active: &Arc<Mutex<HashMap<ResumeKey, usize>>>,
+    key: &ResumeKey,
+    event_type: &str,
+) {
+    let (mut guard, poisoned) = match active.lock() {
+        Ok(g) => (g, false),
+        Err(poison) => {
+            tracing::warn!(
+                event.name = "client.resume.collision.poisoned",
+                "resume-key collision tracker mutex is poisoned; refcount continues but \
+                 collision WARN is suppressed for this call"
+            );
+            (poison.into_inner(), true)
+        }
+    };
+    let prior = *guard.get(key).unwrap_or(&0);
+    guard.insert(key.clone(), prior + 1);
+    drop(guard);
+    if prior > 0 && !poisoned {
+        tracing::warn!(
+            event.name = "client.resume.collision",
+            resume_key = %key.as_hex(),
+            event_type = event_type,
+            "multiple concurrent watch() calls share the same resume key; checkpoint \
+             advancement is racy and the affected watches will interleave commits"
+        );
+    }
+}
+
+/// Decrement the active-resume-key refcount for `key`. Called by every
+/// supervisor exit path so the tracker stays accurate. Poison handling
+/// recovers the inner guard; the entry is removed when the count
+/// returns to zero.
+pub(crate) fn decrement_active_key(
+    active: &Arc<Mutex<HashMap<ResumeKey, usize>>>,
+    key: &ResumeKey,
+) {
+    let mut guard = match active.lock() {
+        Ok(g) => g,
+        Err(poison) => poison.into_inner(),
+    };
+    if let Some(count) = guard.get_mut(key) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            guard.remove(key);
+        }
+    }
+}
+
+/// Compute the resume key for a watch request against this client's
+/// base URL. Surface filter-canonicalisation failures as
+/// `ClientError::Config` since they indicate a malformed `WatchRequest`,
+/// not a runtime persistence failure.
+fn compute_resume_key(base_url: &Url, request: &WatchRequest) -> crate::Result<ResumeKey> {
+    let filter_value = serde_json::Value::Object(
+        request
+            .filter()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    );
+    ResumeKey::new(base_url, request.event_type(), &filter_value, None)
+        .map_err(|e| ClientError::Config(format!("compute resume key for watch request: {e}")))
 }
 
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
-    reason = "test code: unwrap on constructor success is the expected diagnostic"
+    clippy::expect_used,
+    reason = "test code: unwrap and expect on constructor success and on assertion-shaped awaits are the expected diagnostics"
 )]
 mod tests {
-    use std::sync::Arc;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use super::AvisoClient;
     use crate::auth::Bearer;
@@ -510,5 +760,87 @@ mod tests {
             !formatted.contains("operator"),
             "AvisoClient Debug must strip username from base_url: {formatted}"
         );
+    }
+
+    #[tokio::test]
+    async fn drop_guard_fires_when_last_clone_drops() {
+        let client = AvisoClient::builder()
+            .base_url("http://localhost:8000")
+            .build()
+            .unwrap();
+        let mut receiver = client.parent_drop.subscribe();
+        assert!(!*receiver.borrow_and_update());
+        let clone = client.clone();
+        drop(client);
+        assert!(
+            !*receiver.borrow_and_update(),
+            "guard must NOT fire while another clone is alive"
+        );
+        drop(clone);
+        let observed = tokio::time::timeout(Duration::from_millis(100), receiver.changed())
+            .await
+            .expect("guard must fire within 100ms of last clone drop");
+        assert!(observed.is_ok());
+        assert!(*receiver.borrow_and_update());
+    }
+
+    #[tokio::test]
+    async fn resume_key_collision_refcount_semantics() {
+        let active = Arc::new(Mutex::new(HashMap::new()));
+        let key = crate::state::ResumeKey::new(
+            &url::Url::parse("http://example.com/").unwrap(),
+            "mars",
+            &serde_json::Value::Object(serde_json::Map::default()),
+            None,
+        )
+        .unwrap();
+
+        let count_at = |a: &Arc<Mutex<HashMap<_, _>>>, k: &crate::state::ResumeKey| -> usize {
+            *a.lock().unwrap().get(k).unwrap_or(&0)
+        };
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 1);
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 2);
+
+        super::decrement_active_key(&active, &key);
+        assert_eq!(count_at(&active, &key), 1);
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 2);
+
+        super::decrement_active_key(&active, &key);
+        super::decrement_active_key(&active, &key);
+        assert_eq!(count_at(&active, &key), 0);
+        assert!(
+            !active.lock().unwrap().contains_key(&key),
+            "entry must be removed at zero refcount"
+        );
+
+        super::increment_active_key(&active, &key, "mars");
+        assert_eq!(count_at(&active, &key), 1);
+        super::decrement_active_key(&active, &key);
+    }
+
+    #[tokio::test]
+    async fn drop_guard_broadcasts_to_multiple_subscribers() {
+        let client = AvisoClient::builder()
+            .base_url("http://localhost:8000")
+            .build()
+            .unwrap();
+        let mut a = client.parent_drop.subscribe();
+        let mut b = client.parent_drop.subscribe();
+        let mut c = client.parent_drop.subscribe();
+        drop(client);
+        for rx in [&mut a, &mut b, &mut c] {
+            let observed = tokio::time::timeout(Duration::from_millis(100), rx.changed()).await;
+            assert!(
+                observed.is_ok_and(|r| r.is_ok()),
+                "every subscriber must observe the drop"
+            );
+            assert!(*rx.borrow_and_update());
+        }
     }
 }

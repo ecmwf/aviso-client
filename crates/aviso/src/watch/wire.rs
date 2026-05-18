@@ -39,7 +39,21 @@ impl<'a> WireWatchRequest<'a> {
     /// so the next event to fetch is `n + 1`. Saturation at `u64::MAX` is
     /// rejected with [`ClientError::Config`] rather than wrapping silently.
     pub(crate) fn from_public(req: &'a WatchRequest) -> Result<Self, ClientError> {
-        let (from_id, from_date) = match req.from() {
+        Self::from_parts(req.event_type(), req.filter(), req.from())
+    }
+
+    /// Build a wire request from the parts the watch supervisor's outer
+    /// reconnect loop has to hand: the event type and filter from the
+    /// original `WatchRequest`, plus the supervisor's CURRENT cursor
+    /// (which differs from `request.from()` after the first commit).
+    ///
+    /// Same overflow handling as [`Self::from_public`].
+    pub(crate) fn from_parts(
+        event_type: &'a str,
+        filter: &'a BTreeMap<String, serde_json::Value>,
+        from: Option<&'a ResumeStart>,
+    ) -> Result<Self, ClientError> {
+        let (from_id, from_date) = match from {
             None => (None, None),
             Some(ResumeStart::AfterSequence(n)) => {
                 let next = n.checked_add(1).ok_or_else(|| {
@@ -52,8 +66,8 @@ impl<'a> WireWatchRequest<'a> {
             Some(ResumeStart::Date(s)) => (None, Some(s.as_str())),
         };
         Ok(WireWatchRequest {
-            event_type: req.event_type(),
-            identifier: req.filter(),
+            event_type,
+            identifier: filter,
             from_id,
             from_date,
         })
