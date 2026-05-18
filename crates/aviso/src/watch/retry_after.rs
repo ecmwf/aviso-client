@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "consumed by the watch supervisor's HTTP-status mapping in a follow-up commit; the pure-logic module ships with tests so the parser is reviewable in isolation"
-)]
-
 //! HTTP `Retry-After` header parser.
 //!
 //! RFC 9110 section 10.2.3 accepts two forms:

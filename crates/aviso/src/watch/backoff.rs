@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    reason = "consumed by the watch supervisor's outer reconnect loop in a follow-up commit; the pure-logic module ships with tests so the calculator is reviewable in isolation"
-)]
-
 //! Reconnect backoff calculator.
 //!
 //! Pure function mapping `(attempt, ReconnectPolicy)` to a `Duration`.

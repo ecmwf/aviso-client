@@ -1,10 +1,10 @@
 //! Integration tests for `AvisoClient::watch()` resilience behaviour:
 //! reconnect on routine server close, `Retry-After` honouring on 503,
 //! EOF-without-close reclassification as routine transport loss, auth
-//! refresh on 401, and heartbeat-starvation reconnect.
-//!
-//! State-store-backed checkpoints and the parent-drop cancel cascade
-//! ship in follow-up commits and have dedicated tests there.
+//! refresh on 401, heartbeat-starvation reconnect, state-store-backed
+//! checkpoint round-trip, user-`from` precedence over the stored
+//! checkpoint, and parent-drop cancel cascade including the
+//! channel-full edge case.
 
 #![allow(
     clippy::unwrap_used,
@@ -462,53 +462,44 @@ async fn state_store_checkpoint_round_trip() {
     use serde_json::Value;
     use std::sync::Arc;
 
-    let server = MockServer::start().await;
-    let body = format!(
-        "{}{}{}{}",
+    // Step 1. A paced TcpListener server emits exactly three notifications
+    // and then holds the connection open without further data. The
+    // supervisor commits item 1 before sending item 2, commits item 2
+    // before sending item 3, and sets `pending_commit = Some(3)`.
+    // Sequence 3 stays uncommitted because the supervisor never sends a
+    // fourth item. After the consumer reads all three and drops the
+    // stream, the store's checkpoint must be EXACTLY 2; the no-final-
+    // flush invariant guarantees this.
+    let bodies_step_1 = vec![format!(
+        "{}{}{}",
         sse_chunk("live-notification", &cloud_event("mars", 1)),
         sse_chunk("live-notification", &cloud_event("mars", 2)),
         sse_chunk("live-notification", &cloud_event("mars", 3)),
-        max_duration_chunk(),
-    );
-    Mock::given(method("POST"))
-        .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
-        .mount(&server)
-        .await;
+    )];
+    let (url_step_1, _server_step_1) = paced_sse_server(bodies_step_1).await;
 
     let store: Arc<dyn StateStore> = Arc::new(MemoryStore::new());
     let client = AvisoClient::builder()
-        .base_url(server.uri())
+        .base_url(&url_step_1)
         .state_store(store.clone())
         .build()
         .unwrap();
 
     let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
-
-    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
-        .await
-        .expect("first item")
-        .expect("stream open")
-        .expect("no error");
-    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
-        .await
-        .expect("second item")
-        .expect("stream open")
-        .expect("no error");
-    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
-        .await
-        .expect("third item")
-        .expect("stream open")
-        .expect("no error");
-
+    for expected in 1u64..=3 {
+        let item = timeout(Duration::from_secs(5), next_item(&mut stream))
+            .await
+            .expect("notification should arrive")
+            .expect("stream open")
+            .expect("no error");
+        assert_eq!(item.sequence, expected);
+    }
     drop(stream);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    drop(client);
 
-    let base_url = url::Url::parse(&server.uri()).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let base_url = url::Url::parse(&url_step_1).unwrap();
     let resume_key = ResumeKey::new(
         &base_url,
         "mars",
@@ -516,14 +507,128 @@ async fn state_store_checkpoint_round_trip() {
         None,
     )
     .expect("resume key");
-    let checkpoint: Option<Checkpoint> = store.get(&resume_key).await.expect("store get");
-    let checkpoint = checkpoint.expect("checkpoint must be set after three sends");
-    assert!(
-        checkpoint.last_committed_sequence >= 2,
-        "after sending three items the commit cursor must be at least 2 (the second item, \
-         committed before the third send); got {}",
-        checkpoint.last_committed_sequence
+    let checkpoint: Checkpoint = store
+        .get(&resume_key)
+        .await
+        .expect("store get")
+        .expect("checkpoint must be set after three sends");
+    assert_eq!(
+        checkpoint.last_committed_sequence, 2,
+        "no-final-flush invariant: after sending items 1, 2, 3 the supervisor commits \
+         items 1 and 2 (each before the NEXT send); item 3 stays uncommitted because \
+         no fourth send ever happens"
     );
+
+    // Step 2. A second paced server. The wire request body for the new
+    // watch must contain `from_id = "3"` (the stored cursor 2 + 1),
+    // proving the second process resumes from the persisted checkpoint
+    // and re-delivers item 3 per at-least-once semantics.
+    let captured_body: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let captured_clone = captured_body.clone();
+    let bodies_step_2 = vec![sse_chunk("live-notification", &cloud_event("mars", 3))];
+    let (url_step_2, _server_step_2) =
+        paced_sse_server_with_capture(bodies_step_2, captured_clone).await;
+    let base_url_step_2 = url::Url::parse(&url_step_2).unwrap();
+    let resume_key_step_2 = ResumeKey::new(
+        &base_url_step_2,
+        "mars",
+        &Value::Object(serde_json::Map::default()),
+        None,
+    )
+    .expect("resume key step 2");
+    store
+        .put(&resume_key_step_2, checkpoint.clone())
+        .await
+        .expect("re-seed store under step-2 base url");
+
+    let client_step_2 = AvisoClient::builder()
+        .base_url(&url_step_2)
+        .state_store(store.clone())
+        .build()
+        .unwrap();
+    let mut stream_step_2 = client_step_2.watch(WatchRequest::watch("mars")).unwrap();
+    let item = timeout(Duration::from_secs(5), next_item(&mut stream_step_2))
+        .await
+        .expect("re-delivered notification should arrive")
+        .expect("stream open")
+        .expect("no error");
+    assert_eq!(
+        item.sequence, 3,
+        "supervisor re-delivers item 3 per at-least-once"
+    );
+
+    let recorded = captured_body
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("body recorded");
+    let body_json: serde_json::Value = serde_json::from_str(&recorded).expect("body is JSON");
+    assert_eq!(
+        body_json.get("from_id").and_then(|v| v.as_str()),
+        Some("3"),
+        "second process must request from_id=3 (stored cursor 2 + 1)"
+    );
+
+    drop(stream_step_2);
+    drop(client_step_2);
+}
+
+/// `paced_sse_server` variant that captures each connection's request body
+/// in the provided `Arc<Mutex<Option<String>>>`. The capture records only
+/// the first request body so the test can assert on the second process's
+/// wire-level resume parameter.
+async fn paced_sse_server_with_capture(
+    bodies: Vec<String>,
+    captured: Arc<Mutex<Option<String>>>,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{addr}");
+    let handle = tokio::spawn(async move {
+        let mut index = 0;
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let body = bodies.get(index).cloned().unwrap_or_default();
+            let captured_for_this = captured.clone();
+            index += 1;
+            tokio::spawn(async move {
+                let mut request_buf = Vec::with_capacity(4096);
+                let mut chunk = [0u8; 1024];
+                loop {
+                    match tokio::io::AsyncReadExt::read(&mut socket, &mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            request_buf.extend_from_slice(&chunk[..n]);
+                            if request_buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
+                        }
+                    }
+                }
+                let raw = String::from_utf8_lossy(&request_buf).into_owned();
+                if let Some(idx) = raw.find("\r\n\r\n") {
+                    let body_str = raw[idx + 4..].to_string();
+                    let mut g = captured_for_this.lock().unwrap();
+                    if g.is_none() {
+                        *g = Some(body_str);
+                    }
+                }
+                let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: \
+                     chunked\r\n\r\n";
+                let _ = socket.write_all(header.as_bytes()).await;
+                let chunk_frame = format!("{:X}\r\n{}\r\n", body.len(), body);
+                let _ = socket.write_all(chunk_frame.as_bytes()).await;
+                let _ = socket.flush().await;
+                let mut sink = [0u8; 256];
+                loop {
+                    match tokio::io::AsyncReadExt::read(&mut socket, &mut sink).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            });
+        }
+    });
+    (url, handle)
 }
 
 #[tokio::test]
@@ -597,6 +702,51 @@ async fn user_supplied_from_wins_over_stored_checkpoint() {
         from_id, "6",
         "user-supplied AfterSequence(5) must serialise as from_id=6, ignoring the stored \
          checkpoint at sequence 99"
+    );
+}
+
+#[tokio::test]
+async fn parent_drop_cancels_supervisor_blocked_on_full_channel() {
+    // Pin the load-bearing invariant: if a supervisor is parked on
+    // `tx.send().await` because the bounded mpsc channel is full,
+    // dropping the parent `AvisoClient` must STILL terminate the
+    // supervisor. Without the parent-cancel arm in `send_or_cancel`
+    // the supervisor would block forever, holding the HTTP connection
+    // open and any state-store handles.
+    let server = MockServer::start().await;
+    let mut body = String::new();
+    for n in 1..=300 {
+        body.push_str(&sse_chunk("live-notification", &cloud_event("mars", n)));
+    }
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+
+    let _ = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("first notification")
+        .expect("stream open")
+        .expect("no error");
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    drop(client);
+
+    let end = timeout(Duration::from_secs(2), async {
+        while next_item(&mut stream).await.is_some() {}
+    })
+    .await;
+    assert!(
+        end.is_ok(),
+        "supervisor must exit on parent-drop within 2s even when the channel is full"
     );
 }
 
