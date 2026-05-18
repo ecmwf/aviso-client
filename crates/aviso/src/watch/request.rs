@@ -161,7 +161,7 @@ impl WatchRequest {
     ///
     /// Triggers run in declaration order BEFORE each notification is sent on
     /// the consumer channel. A required trigger that fails after all retries
-    /// terminates the watch with `ClientError::TriggerFailed`; an optional
+    /// terminates the watch with [`crate::ClientError::TriggerFailed`]; an optional
     /// trigger logs a `WARN` event and the watch continues.
     ///
     /// Calling this method replaces any previously attached trigger list;

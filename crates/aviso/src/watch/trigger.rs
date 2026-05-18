@@ -11,7 +11,7 @@
 //!
 //! Each trigger has a `retries` count (default `0`) and a `required` flag
 //! (default `true`). A required trigger that fails after all retries
-//! terminates the watch with `ClientError::TriggerFailed`; an optional
+//! terminates the watch with [`crate::ClientError::TriggerFailed`]; an optional
 //! trigger that fails logs a `WARN` event and the watch continues.
 //!
 //! # Dispatcher contract
@@ -207,7 +207,7 @@ impl Trigger {
     /// Override the required flag.
     ///
     /// A required trigger (default) that fails after all retries terminates
-    /// the watch with `ClientError::TriggerFailed`. An optional trigger logs
+    /// the watch with [`crate::ClientError::TriggerFailed`]. An optional trigger logs
     /// a `WARN` event with stable name `client.trigger.failed` and the watch
     /// continues.
     #[must_use]
@@ -522,7 +522,7 @@ fn dispatch_test_fail_on_call(
 }
 
 /// Human-readable label naming the kind of trigger that produced a
-/// `ClientError::TriggerFailed`.
+/// [`crate::ClientError::TriggerFailed`].
 ///
 /// Separate from the crate-private `TriggerKind` enum so future internal
 /// variants (or test-only ones) cannot leak into public error displays.
@@ -549,7 +549,7 @@ impl std::fmt::Display for TriggerKindLabel {
 
 /// Error returned by a single trigger dispatch attempt.
 ///
-/// Carried as the `source` of `ClientError::TriggerFailed` when a required
+/// Carried as the `source` of [`crate::ClientError::TriggerFailed`] when a required
 /// trigger fails. The variants cover the failure modes the v1 dispatcher
 /// can produce; the enum is `#[non_exhaustive]` so future triggers (for
 /// example a Webhook trigger with HTTP-status awareness) can add variants
