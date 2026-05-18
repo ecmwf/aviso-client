@@ -17,9 +17,9 @@ pub trait StateStore: Send + Sync {
 }
 ```
 
-The trait promises **linearizable semantics**: a successful `put` is durable-before-visible. A subsequent `get` (from any clone of the same store) is guaranteed to return what was just written. A failed `put` leaves both in-memory and on-disk state unchanged.
+The trait promises **linearizable semantics**: a successful `put` is committed-before-visible. A subsequent `get` (from any clone of the same store) is guaranteed to return what was just written. For durable implementations (such as `JsonFileStore` below) the same guarantee is durable-before-visible: the disk write returns success before the new value becomes visible to readers. A failed `put` leaves all state unchanged.
 
-Implementations serialise concurrent writes internally so the in-memory and on-disk views stay consistent.
+Implementations serialise concurrent writes internally so the in-memory and (where applicable) on-disk views stay consistent.
 
 ## The key: `ResumeKey`
 
@@ -75,13 +75,21 @@ Use it for tests, short-lived CLI invocations, and any consumer that is fine sta
 
 ```rust,ignore
 use aviso::state::JsonFileStore;
+use std::path::PathBuf;
 
-let store = JsonFileStore::open("~/.config/aviso/state.json").await?;
+// `JsonFileStore::open` takes a real filesystem path. Rust's
+// `Path`/`PathBuf` do not expand `~`, so pick an absolute path or
+// resolve the home directory yourself (the `directories` or
+// `etcetera` crate does this on every supported OS).
+let path = PathBuf::from("/var/lib/aviso/state.json");
+let store = JsonFileStore::open(&path).await?;
 ```
 
 Backed by a JSON file with crash-safe atomic writes. Each write goes to a temp file in the same directory, the temp file is `fsync`ed, then atomically renamed over the target, then the parent directory is `fsync`ed (on POSIX). On Windows the rename step uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH | MOVEFILE_REPLACE_EXISTING`. A `kill -9` mid-write cannot corrupt the existing file.
 
-The store is single-process: two processes pointing at the same file can race and lose writes. Multi-process correctness (cross-process locking, monotonic-cursor merge) is a follow-up.
+The store is single-process AND single-handle: linearizability holds across `Clone`s of one handle, but two independent `open` calls to the same path do not coordinate (separate in-memory state, separate write mutexes; concurrent writes can lose data). Open once, share via `Clone`. Cross-process safety is a separate follow-up.
+
+`put` and `delete` are NOT cancellation-safe; drive them to completion and do not race them against `select!` arms that may cancel.
 
 It is NOT a polling store: external edits to the file after `open` returns are not observed. Restart the process (or open a new handle) to pick up external changes.
 
@@ -89,7 +97,7 @@ The parent directory must exist; `open` does not create it. The file itself is c
 
 ## Choosing a path
 
-The library exposes the trait so consumers pick any path or any backend. The CLI binary picks `~/.config/aviso/state.json` by default. That is documented separately as part of the CLI surface.
+The library exposes the trait so consumers pick any path or any backend. The CLI binary picks `~/.config/aviso/state.json` by default (the literal tilde is expanded by the CLI before the path reaches `JsonFileStore::open`, since `Path`/`PathBuf` do not perform that expansion). That is documented separately as part of the CLI surface.
 
 ## Architectural references
 
