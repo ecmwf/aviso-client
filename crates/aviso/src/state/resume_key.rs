@@ -97,8 +97,14 @@ impl ResumeKey {
     /// The digest as a 64-character lowercase hex string.
     ///
     /// Note: `key_format_version` is part of [`PartialEq`] for `ResumeKey`
-    /// but is NOT encoded in this hex form. The file format stores the
-    /// key format version at the file level, not per-key.
+    /// AND contributes to the digest (it is fed into the hash before the
+    /// other fields, so two `ResumeKey`s with the same logical inputs
+    /// but different format versions produce different hex strings).
+    /// What this hex does NOT do is encode the version as a separately
+    /// recoverable component: you cannot read the version back out of
+    /// the digest. The file format stores the version at the file level
+    /// so it can be compared against the current `KEY_FORMAT_VERSION`
+    /// on read.
     #[must_use]
     pub fn as_hex(&self) -> String {
         hex::encode(self.digest)
