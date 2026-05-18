@@ -43,15 +43,21 @@ use aviso::watch::{
 use proptest::collection::vec;
 use proptest::prelude::*;
 
-fn mode_strategy() -> impl Strategy<Value = WatchMode> {
-    prop_oneof![Just(WatchMode::Watch), Just(WatchMode::ReplayOnly)]
+fn resume_start_strategy() -> impl Strategy<Value = ResumeStart> {
+    prop_oneof![
+        any::<u64>().prop_map(ResumeStart::AfterSequence),
+        "[a-z0-9-]{1,16}".prop_map(ResumeStart::Date),
+    ]
 }
 
-fn start_strategy() -> impl Strategy<Value = Option<ResumeStart>> {
+/// Build a fresh `WatchState` through the two valid constructors:
+/// `watch(start: Option<ResumeStart>)` or
+/// `replay_only(start: ResumeStart)`. `ReplayOnly` without a start is
+/// not representable by design, so the generator never produces it.
+fn state_strategy() -> impl Strategy<Value = WatchState> {
     prop_oneof![
-        Just(None::<ResumeStart>),
-        any::<u64>().prop_map(|n| Some(ResumeStart::Sequence(n))),
-        "[a-z0-9-]{1,16}".prop_map(|s| Some(ResumeStart::Date(s))),
+        proptest::option::of(resume_start_strategy()).prop_map(WatchState::watch),
+        resume_start_strategy().prop_map(WatchState::replay_only),
     ]
 }
 
@@ -153,11 +159,10 @@ fn expected_reconnect_policy(
 proptest! {
     #[test]
     fn invariants_hold_for_random_event_sequences(
-        mode in mode_strategy(),
-        start in start_strategy(),
+        mut state in state_strategy(),
         events in vec(event_strategy(), 0..=64),
     ) {
-        let mut state = WatchState::new(mode, start);
+        let mode = state.mode();
         let mut terminal_snapshot: Option<WatchState> = None;
 
         for event in events {
@@ -271,18 +276,48 @@ proptest! {
                 );
             }
 
-            // Invariant 8: Reconnect outcomes carry the spec-mandated
-            // policy for the event that produced them.
-            if let WatchOutcome::Reconnect { policy } = outcome {
-                let expected = expected_reconnect_policy(&event, mode, prior.replay_phase());
-                prop_assert_eq!(
-                    Some(policy),
-                    expected,
-                    "Reconnect policy mismatch: event={:?}, mode={:?}, prior_phase={:?}",
-                    event,
-                    mode,
-                    prior.replay_phase()
-                );
+            // Invariant 8 (bijection between event and Reconnect outcome).
+            //
+            // 8a (forward): if outcome is Reconnect, policy matches the
+            //   spec for (event, mode, prior_phase).
+            // 8b (reverse): if the spec says event should reconnect, the
+            //   reducer must actually produce that Reconnect, not silently
+            //   swallow it. Catches regressions like a transport-error
+            //   handler that returns `Continue`.
+            let expected = expected_reconnect_policy(&event, mode, prior.replay_phase());
+            match (&outcome, expected) {
+                (WatchOutcome::Reconnect { policy }, Some(expected_policy)) => {
+                    prop_assert_eq!(
+                        *policy,
+                        expected_policy,
+                        "Reconnect policy mismatch: event={:?}, mode={:?}, prior_phase={:?}",
+                        event,
+                        mode,
+                        prior.replay_phase()
+                    );
+                }
+                (WatchOutcome::Reconnect { policy }, None) => {
+                    prop_assert!(
+                        false,
+                        "unexpected Reconnect({:?}) for event {:?} (mode={:?}, prior_phase={:?})",
+                        policy,
+                        event,
+                        mode,
+                        prior.replay_phase()
+                    );
+                }
+                (_, Some(expected_policy)) => {
+                    prop_assert!(
+                        false,
+                        "expected Reconnect({:?}) for event {:?} but got {:?} (mode={:?}, prior_phase={:?})",
+                        expected_policy,
+                        event,
+                        outcome,
+                        mode,
+                        prior.replay_phase()
+                    );
+                }
+                (_, None) => {}
             }
 
             // Capture the snapshot on the first transition to terminal so
@@ -295,14 +330,12 @@ proptest! {
 
     #[test]
     fn connection_status_stays_within_expected_set(
-        mode in mode_strategy(),
-        start in start_strategy(),
+        mut state in state_strategy(),
         events in vec(event_strategy(), 0..=64),
     ) {
         // Invariant: connection_status is always one of the four
         // defined variants. This is structurally guaranteed by the
         // enum, but the test exercises every transition for it.
-        let mut state = WatchState::new(mode, start);
         for event in events {
             let _ = state.transition(event);
             let status = state.connection_status().clone();

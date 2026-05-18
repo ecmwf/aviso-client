@@ -34,16 +34,15 @@ pub struct WatchState {
 }
 
 impl WatchState {
-    /// Construct a watch state for `mode`, optionally with a resume
-    /// position.
+    /// Construct a [`WatchMode::Watch`] session.
     ///
     /// `start = None` enters [`ReplayPhase::Live`] directly (no replay
-    /// to do). `start = Some(_)` enters
-    /// [`ReplayPhase::Replaying`] with `replay_completed: false`. In
-    /// both cases [`ConnectionStatus`] starts as `Reconnecting`
-    /// because no transport is open yet.
+    /// to do, the supervisor sends neither `from_id` nor `from_date`).
+    /// `start = Some(_)` enters [`ReplayPhase::Replaying`] with
+    /// `replay_completed: false`. [`ConnectionStatus`] starts as
+    /// `Reconnecting` because no transport is open yet.
     #[must_use]
-    pub fn new(mode: WatchMode, start: Option<ResumeStart>) -> Self {
+    pub fn watch(start: Option<ResumeStart>) -> Self {
         let replay_phase = match start {
             Some(start) => ReplayPhase::Replaying {
                 start,
@@ -54,7 +53,27 @@ impl WatchState {
         Self {
             replay_phase,
             connection_status: ConnectionStatus::Reconnecting,
-            mode,
+            mode: WatchMode::Watch,
+        }
+    }
+
+    /// Construct a [`WatchMode::ReplayOnly`] session.
+    ///
+    /// `start` is mandatory because a replay-only session with no
+    /// resume position has nothing to replay; the natural-termination
+    /// path requires landing in [`ReplayPhase::Replaying`] before
+    /// `replay_completed` and `end_of_stream` can fire. The reducer
+    /// enters `Replaying { start, replay_completed: false }` with
+    /// `ConnectionStatus::Reconnecting`.
+    #[must_use]
+    pub fn replay_only(start: ResumeStart) -> Self {
+        Self {
+            replay_phase: ReplayPhase::Replaying {
+                start,
+                replay_completed: false,
+            },
+            connection_status: ConnectionStatus::Reconnecting,
+            mode: WatchMode::ReplayOnly,
         }
     }
 
@@ -276,7 +295,7 @@ mod tests {
 
     #[test]
     fn constructor_without_start_enters_live() {
-        let s = WatchState::new(WatchMode::Watch, None);
+        let s = WatchState::watch(None);
         assert_eq!(s.replay_phase(), &ReplayPhase::Live);
         assert_eq!(s.connection_status(), &ConnectionStatus::Reconnecting);
         assert_eq!(s.mode(), WatchMode::Watch);
@@ -285,11 +304,11 @@ mod tests {
 
     #[test]
     fn constructor_with_sequence_enters_replaying() {
-        let s = WatchState::new(WatchMode::Watch, Some(ResumeStart::Sequence(42)));
+        let s = WatchState::watch(Some(ResumeStart::AfterSequence(42)));
         assert_eq!(
             s.replay_phase(),
             &ReplayPhase::Replaying {
-                start: ResumeStart::Sequence(42),
+                start: ResumeStart::AfterSequence(42),
                 replay_completed: false,
             }
         );
@@ -297,10 +316,7 @@ mod tests {
 
     #[test]
     fn constructor_with_date_enters_replaying() {
-        let s = WatchState::new(
-            WatchMode::ReplayOnly,
-            Some(ResumeStart::Date("2026-01-01".into())),
-        );
+        let s = WatchState::replay_only(ResumeStart::Date("2026-01-01".into()));
         assert_eq!(
             s.replay_phase(),
             &ReplayPhase::Replaying {
@@ -312,7 +328,7 @@ mod tests {
 
     #[test]
     fn connection_established_moves_to_connected() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let out = s.transition(WatchEvent::ConnectionEstablished);
         assert_eq!(out, WatchOutcome::Continue);
         assert_eq!(s.connection_status(), &ConnectionStatus::Connected);
@@ -320,7 +336,7 @@ mod tests {
 
     #[test]
     fn transport_error_reconnects_with_exponential_backoff() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let _ = s.transition(WatchEvent::ConnectionEstablished);
         let out = s.transition(WatchEvent::ConnectionLost {
             reason: ConnectionLossReason::TransportError,
@@ -336,7 +352,7 @@ mod tests {
 
     #[test]
     fn server_max_duration_reconnects_immediately() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let _ = s.transition(WatchEvent::ConnectionEstablished);
         let out = s.transition(WatchEvent::ServerClose {
             reason: ServerCloseReason::MaxDurationReached,
@@ -351,7 +367,7 @@ mod tests {
 
     #[test]
     fn server_shutdown_reconnects_with_short_backoff() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let out = s.transition(WatchEvent::ServerClose {
             reason: ServerCloseReason::ServerShutdown,
         });
@@ -365,7 +381,7 @@ mod tests {
 
     #[test]
     fn replay_completed_in_watch_moves_to_live() {
-        let mut s = WatchState::new(WatchMode::Watch, Some(ResumeStart::Sequence(1)));
+        let mut s = WatchState::watch(Some(ResumeStart::AfterSequence(1)));
         let out = s.transition(WatchEvent::ReplayCompleted);
         assert_eq!(out, WatchOutcome::Continue);
         assert_eq!(s.replay_phase(), &ReplayPhase::Live);
@@ -373,13 +389,13 @@ mod tests {
 
     #[test]
     fn replay_completed_in_replay_only_flips_flag_without_leaving_replaying() {
-        let mut s = WatchState::new(WatchMode::ReplayOnly, Some(ResumeStart::Sequence(1)));
+        let mut s = WatchState::replay_only(ResumeStart::AfterSequence(1));
         let out = s.transition(WatchEvent::ReplayCompleted);
         assert_eq!(out, WatchOutcome::Continue);
         assert_eq!(
             s.replay_phase(),
             &ReplayPhase::Replaying {
-                start: ResumeStart::Sequence(1),
+                start: ResumeStart::AfterSequence(1),
                 replay_completed: true,
             }
         );
@@ -387,7 +403,7 @@ mod tests {
 
     #[test]
     fn end_of_stream_in_replay_only_after_replay_completed_terminates() {
-        let mut s = WatchState::new(WatchMode::ReplayOnly, Some(ResumeStart::Sequence(1)));
+        let mut s = WatchState::replay_only(ResumeStart::AfterSequence(1));
         let _ = s.transition(WatchEvent::ReplayCompleted);
         let out = s.transition(WatchEvent::ServerClose {
             reason: ServerCloseReason::EndOfStream,
@@ -403,7 +419,7 @@ mod tests {
 
     #[test]
     fn stop_event_terminates_with_user_requested() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let out = s.transition(WatchEvent::Stop);
         assert_eq!(
             out,
@@ -416,7 +432,7 @@ mod tests {
 
     #[test]
     fn fatal_event_terminates_with_fatal_close_reason() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let out = s.transition(WatchEvent::Fatal(FatalKind::MalformedEvent));
         assert_eq!(
             out,
@@ -431,7 +447,7 @@ mod tests {
 
     #[test]
     fn auth_rejected_emits_refresh_auth_outcome() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let _ = s.transition(WatchEvent::ConnectionEstablished);
         let out = s.transition(WatchEvent::AuthRejected);
         assert_eq!(out, WatchOutcome::RefreshAuth);
@@ -440,7 +456,7 @@ mod tests {
 
     #[test]
     fn auth_refresh_failure_terminates_with_specific_fatal_kind() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let _ = s.transition(WatchEvent::AuthRejected);
         let out = s.transition(WatchEvent::AuthRefreshCompleted { success: false });
         assert_eq!(
@@ -456,7 +472,7 @@ mod tests {
 
     #[test]
     fn gap_detected_emits_gap_outcome_and_enters_gap_phase() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let reason = GapReason::ReplayLimitReached {
             oldest_available: 100,
             requested: 1,
@@ -468,7 +484,7 @@ mod tests {
 
     #[test]
     fn backoff_started_stores_duration_then_elapsed_returns_to_reconnecting() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let d = Duration::from_millis(500);
         let _ = s.transition(WatchEvent::BackoffStarted(d));
         assert_eq!(s.connection_status(), &ConnectionStatus::BackoffWait(d));
@@ -478,7 +494,7 @@ mod tests {
 
     #[test]
     fn terminal_state_swallows_all_subsequent_events() {
-        let mut s = WatchState::new(WatchMode::Watch, None);
+        let mut s = WatchState::watch(None);
         let _ = s.transition(WatchEvent::Stop);
         let snapshot = s.clone();
         // Every event becomes a no-op returning Continue and leaves state
