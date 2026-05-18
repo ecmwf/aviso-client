@@ -33,9 +33,15 @@ pub enum StoreError {
 
     /// Key format version stored in the file does not match this client.
     ///
-    /// Existing checkpoints become unreachable when this happens because
-    /// keys cannot be re-derived from in-process state alone. The user
-    /// must delete the file or upgrade the client.
+    /// The gate is an exact-match (`!=`), so both newer and older
+    /// file versions surface here. Existing checkpoints become
+    /// unreachable when this happens because keys cannot be
+    /// re-derived from in-process state alone. The actionable
+    /// recoveries are: delete the file and re-checkpoint from a
+    /// fresh stream, run a client version that handles the file's
+    /// `key_format_version` (which may mean upgrading OR
+    /// downgrading depending on direction), or migrate the file
+    /// manually if its layout is still recoverable.
     #[error("state file uses key_format_version {found}; this client uses {supported}")]
     UnsupportedKeyFormatVersion {
         /// Key format version read from the file.
