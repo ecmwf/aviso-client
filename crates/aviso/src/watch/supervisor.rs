@@ -365,12 +365,24 @@ pub(crate) async fn run_supervisor(
             }
         }
 
-        // Build the wire-request cursor from the current commit_cursor
-        // when one is set; before the first commit, fall back to the
-        // initial cursor (which may be a `Date` per D17 bootstrap).
-        let wire_from: Option<ResumeStart> = match commit_cursor {
-            Some(n) => Some(ResumeStart::AfterSequence(n)),
-            None => initial_cursor.clone(),
+        // Build the wire-request cursor with this precedence:
+        //   1. The persisted commit cursor (`commit_cursor`), once any
+        //      notification has been committed.
+        //   2. The last-sent-but-not-yet-committed sequence in
+        //      `pending_commit` (the supervisor sent it to the channel
+        //      but the commit-on-next-send promotion has not run yet).
+        //      Without this fallback, a `Date` initial cursor would be
+        //      reused on reconnect even after one notification had been
+        //      sent, contradicting D17's "from_date is bootstrap-only"
+        //      contract and weakening cross-reconnect gap detection
+        //      (the `GapGuard` would start without an expected next
+        //      sequence and tolerate any starting value).
+        //   3. The initial cursor (which may be a `Date` per D17
+        //      bootstrap, valid only for the very first connection).
+        let wire_from: Option<ResumeStart> = match (commit_cursor, pending_commit.as_ref()) {
+            (Some(n), _) => Some(ResumeStart::AfterSequence(n)),
+            (None, Some(p)) => Some(ResumeStart::AfterSequence(p.sequence)),
+            (None, None) => initial_cursor.clone(),
         };
 
         let outcome = run_one_connection(
@@ -578,7 +590,14 @@ async fn run_one_connection(
         Err(e) => return ConnectionOutcome::TransportError(e),
     };
 
-    if !response.status().is_success() {
+    // SSE streams MUST return 200. A 2xx-but-not-200 (204 No Content, 206
+    // Partial Content, etc.) would have no streamable body and the
+    // supervisor would EOF immediately into a reconnect loop without ever
+    // surfacing the misclassified status to the consumer. Require exact
+    // 200 so unexpected 2xx variants surface as `HttpStatus` with the
+    // verbatim status code and the classifier in the outer loop decides
+    // whether to retry or fatal them.
+    if response.status() != reqwest::StatusCode::OK {
         let status = response.status().as_u16();
         let request_id = response
             .headers()
