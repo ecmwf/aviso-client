@@ -135,6 +135,64 @@ impl AvisoClient {
         Ok(NotificationStream::new(rx, cancel_tx))
     }
 
+    /// Open a watch and drain it through a per-notification handler.
+    ///
+    /// Convenience wrapper over [`Self::watch`]: opens the stream, calls
+    /// `handler(notification).await` for each `Ok(_)` item, and propagates
+    /// the first `Err(_)` from either the stream or the handler. Returns
+    /// `Ok(())` when the stream ends without errors (the server closed
+    /// cleanly or the consumer is replay-only and ran to completion).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use aviso::watch::WatchRequest;
+    /// use aviso::{AvisoClient, Result};
+    ///
+    /// # async fn run(client: AvisoClient) -> Result<()> {
+    /// client
+    ///     .watch_with_handler(WatchRequest::watch("mars"), |notification| async move {
+    ///         println!("got sequence {}", notification.sequence);
+    ///         Ok(())
+    ///     })
+    ///     .await
+    /// # }
+    /// ```
+    ///
+    /// Daemon-style consumers prefer this over the raw [`Self::watch`]
+    /// stream when they do not need select-loop integration: the
+    /// supervisor's reconnect, checkpoint, and trigger semantics are
+    /// identical because both surfaces drain the same internal channel.
+    ///
+    /// If `handler` returns `Err(_)`, the underlying stream is dropped
+    /// (which cancels the supervisor cooperatively) and the error
+    /// propagates as the method's return value.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Self::watch`] is propagated.
+    /// - Any `Err(_)` item from the stream is propagated.
+    /// - Any `Err(_)` from the handler is propagated, with the supervisor
+    ///   cancelled before return.
+    pub async fn watch_with_handler<F, Fut>(
+        &self,
+        request: WatchRequest,
+        mut handler: F,
+    ) -> crate::Result<()>
+    where
+        F: FnMut(crate::Notification) -> Fut + Send,
+        Fut: std::future::Future<Output = crate::Result<()>> + Send,
+    {
+        let mut stream = self.watch(request)?;
+        loop {
+            match stream.recv().await {
+                Some(Ok(notification)) => handler(notification).await?,
+                Some(Err(e)) => return Err(e),
+                None => return Ok(()),
+            }
+        }
+    }
+
     /// Sends a request with the shared `401 -> refresh -> retry once` contract per D8.
     ///
     /// The caller supplies a closure that builds a fresh `RequestBuilder` each time it is called.

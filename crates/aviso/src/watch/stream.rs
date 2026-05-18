@@ -68,6 +68,20 @@ impl NotificationStream {
             _cancel: cancel,
         }
     }
+
+    /// Await and return the next stream item.
+    ///
+    /// `Some(Ok(_))` is a notification; `Some(Err(_))` is a terminal
+    /// error followed by `None` on the next call; `None` means the stream
+    /// has ended cleanly (server-driven close, drop, or supervisor exit).
+    ///
+    /// Equivalent to one `<Self as futures_core::Stream>::poll_next` cycle
+    /// driven to readiness. Provided so callers who do not want to pull in
+    /// `futures-util` for `StreamExt::next` can drain the stream with a
+    /// plain `await`.
+    pub async fn recv(&mut self) -> Option<Result<Notification, ClientError>> {
+        self.receiver.recv().await
+    }
 }
 
 impl std::fmt::Debug for NotificationStream {
