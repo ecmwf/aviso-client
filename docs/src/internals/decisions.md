@@ -87,11 +87,17 @@ SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users
 
 ---
 
-## D5. HTTP via `reqwest`, SSE via a parser-only crate
+## D5. HTTP via `reqwest`, SSE via the owned `finesse` parser
 
 HTTP: `reqwest` with `rustls-tls`. Matches `aviso-server`'s choice.
 
-SSE: a **parser-only** crate (`sse-core`, with `eventsource-stream` as fallback). The reconnect loop is *ours*, not the SSE crate's. The reason is structural: high-level SSE client crates (`eventsource-client`, `reqwest-eventsource`) drive reconnects using the WHATWG `Last-Event-ID` mechanism, which `aviso-server` does not honour. The server's resume contract is `from_id` or `from_date` in the POST body, which requires a re-POST on every reconnect. That is incompatible with the high-level crates' assumptions.
+SSE: an owned parser-only workspace crate, [`crates/finesse`](https://github.com/ecmwf/aviso-client/tree/main/crates/finesse) (named for the SSE that hides in the middle of the word). It implements the WHATWG parsing algorithm from the [HTML Living Standard](https://html.spec.whatwg.org/multipage/server-sent-events.html) sections 9.2.5 and 9.2.6 as a sync push-based API: bytes go in via `feed`, frames come out via `next_frame`, end-of-stream is signalled via `end`. The reconnect loop is *ours*, not the parser's; the parser owns no transport, no async runtime, no aviso semantics.
+
+The reason for owning the parser is structural. High-level SSE client crates (`eventsource-client`, `reqwest-eventsource`) drive reconnects using the WHATWG `Last-Event-ID` mechanism, which `aviso-server` does not honour. The server's resume contract is `from_id` or `from_date` in the POST body, which requires a re-POST on every reconnect. That is incompatible with the high-level crates' assumptions. Parser-only crates on crates.io were either too fresh to depend on, maintenance-cold for years, or shipped reconnect logic glued to their parser. `sse-codec` (MPL-2.0, mature, parser-only) was the closest match, but keeping the parser in-tree puts spec-conformance fixes and any future aviso-driven extensions on our critical path rather than upstream's.
+
+The parser is `publish = false` until a second consumer needs it (likely the `aviso-py` extension). The first external consumer revisits that.
+
+*Amendment, 2026-05-18*: this ADR originally named `sse-core` as the chosen third-party parser-only crate. The decision was revised before any client code shipped against it. The current text reflects the owned-parser approach.
 
 ---
 

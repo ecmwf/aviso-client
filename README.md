@@ -17,6 +17,7 @@ cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo build --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
+cargo test --locked --workspace --doc
 git diff --exit-code Cargo.lock
 cargo deny check
 mdbook build docs
