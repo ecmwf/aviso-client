@@ -9,6 +9,8 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 description = "WHATWG Server-Sent Events parser. Sync, push-based, no I/O."
+keywords = ["sse", "eventsource", "server-sent-events", "parser", "whatwg"]
+categories = ["parser-implementations", "network-programming", "web-programming"]
 publish = false
 
 [lints]
