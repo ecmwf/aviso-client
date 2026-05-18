@@ -3,6 +3,7 @@
 !.claude/commands/
 .weave/
 .sisyphus/
+.omo/
 .coverage
 *.dylib.dSYM/
 **/target

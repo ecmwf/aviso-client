@@ -83,13 +83,13 @@ pub enum ReplayPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GapReason {
     /// The server reported `notification_replay_limit_reached` (D2):
-    /// the oldest available sequence is newer than the cursor the
-    /// client asked for.
+    /// the client asked to replay more notifications than the server's
+    /// configured cap, so some of the requested backlog will not be
+    /// delivered.
     ReplayLimitReached {
-        /// Oldest sequence the server can still replay.
-        oldest_available: u64,
-        /// Cursor the client requested.
-        requested: u64,
+        /// Server-side cap on how many notifications a single replay may
+        /// return (the `max_allowed` field from the server payload).
+        max_allowed: u64,
     },
 
     /// The wire delivered a non-consecutive sequence number

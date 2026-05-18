@@ -74,6 +74,8 @@ dependencies = [
  "async-trait",
  "atomicwrites",
  "base64",
+ "finesse",
+ "futures-core",
  "hex",
  "proptest",
  "reqwest",

@@ -13,10 +13,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client as HttpClient;
+use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
 use crate::ClientError;
 use crate::auth::AuthProvider;
+use crate::watch::{
+    CHANNEL_CAPACITY, NotificationStream, WatchRequest, WireWatchRequest, run_supervisor,
+};
 
 /// Top-level handle to an `aviso-server`.
 ///
@@ -95,6 +99,97 @@ impl AvisoClient {
             Ok(builder.header(reqwest::header::AUTHORIZATION, value))
         } else {
             Ok(builder)
+        }
+    }
+
+    /// Open a watch on the configured server and return a
+    /// [`NotificationStream`].
+    ///
+    /// The call spawns a supervisor task on the ambient Tokio runtime that
+    /// owns its own HTTP connection and forwards [`crate::Notification`]s
+    /// to the returned stream. The stream is single-consumer; dropping it
+    /// cancels the supervisor cooperatively.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Config`] when no Tokio runtime is entered (this
+    ///   method requires `tokio::runtime::Handle::try_current()` to
+    ///   succeed; the spawn would otherwise panic, which the library does
+    ///   not do).
+    /// - [`ClientError::Config`] when the request would advance past
+    ///   `u64::MAX` on the wire (`AfterSequence(u64::MAX)`).
+    ///
+    /// Errors observed by the supervisor while the stream is open surface
+    /// on the stream itself as `Err(_)` items, not from this method.
+    pub fn watch(&self, request: WatchRequest) -> crate::Result<NotificationStream> {
+        let handle = tokio::runtime::Handle::try_current().map_err(|_| {
+            ClientError::Config("AvisoClient::watch requires a Tokio runtime".into())
+        })?;
+        let _ = WireWatchRequest::from_public(&request)?;
+        let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let http = self.http.clone();
+        let base_url = self.base_url.clone();
+        let auth = self.auth.clone();
+        handle.spawn(run_supervisor(request, http, base_url, auth, tx, cancel_rx));
+        Ok(NotificationStream::new(rx, cancel_tx))
+    }
+
+    /// Open a watch and drain it through a per-notification handler.
+    ///
+    /// Convenience wrapper over [`Self::watch`]: opens the stream, calls
+    /// `handler(notification).await` for each `Ok(_)` item, and propagates
+    /// the first `Err(_)` from either the stream or the handler. Returns
+    /// `Ok(())` when the stream ends without errors (the server closed
+    /// cleanly or the consumer is replay-only and ran to completion).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use aviso::watch::WatchRequest;
+    /// use aviso::{AvisoClient, Result};
+    ///
+    /// # async fn run(client: AvisoClient) -> Result<()> {
+    /// client
+    ///     .watch_with_handler(WatchRequest::watch("mars"), |notification| async move {
+    ///         println!("got sequence {}", notification.sequence);
+    ///         Ok(())
+    ///     })
+    ///     .await
+    /// # }
+    /// ```
+    ///
+    /// Daemon-style consumers prefer this over the raw [`Self::watch`]
+    /// stream when they do not need select-loop integration: the
+    /// supervisor's reconnect, checkpoint, and trigger semantics are
+    /// identical because both surfaces drain the same internal channel.
+    ///
+    /// If `handler` returns `Err(_)`, the underlying stream is dropped
+    /// (which cancels the supervisor cooperatively) and the error
+    /// propagates as the method's return value.
+    ///
+    /// # Errors
+    ///
+    /// - Any error from [`Self::watch`] is propagated.
+    /// - Any `Err(_)` item from the stream is propagated.
+    /// - Any `Err(_)` from the handler is propagated, with the supervisor
+    ///   cancelled before return.
+    pub async fn watch_with_handler<F, Fut>(
+        &self,
+        request: WatchRequest,
+        mut handler: F,
+    ) -> crate::Result<()>
+    where
+        F: FnMut(crate::Notification) -> Fut + Send,
+        Fut: std::future::Future<Output = crate::Result<()>> + Send,
+    {
+        let mut stream = self.watch(request)?;
+        loop {
+            match stream.recv().await {
+                Some(Ok(notification)) => handler(notification).await?,
+                Some(Err(e)) => return Err(e),
+                None => return Ok(()),
+            }
         }
     }
 

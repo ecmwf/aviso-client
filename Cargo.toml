@@ -27,6 +27,8 @@ async-trait = "0.1"
 atomicwrites = "0.4"
 base64 = "0.22"
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+finesse = { version = "0.1", path = "crates/finesse" }
+futures-core = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 proptest = "1.5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2"] }
@@ -38,7 +40,7 @@ sha2 = "0.11"
 static_assertions = "1.1"
 tempfile = "3.10"
 thiserror = "2.0"
-tokio = { version = "1.45", default-features = false, features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.45", default-features = false, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
 url = "2.5"
