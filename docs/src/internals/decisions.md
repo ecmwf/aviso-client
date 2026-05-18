@@ -79,11 +79,15 @@ Two listeners with different filters get different stored cursors. Two listeners
 
 ## D4. `StateStore` trait, `MemoryStore` and `JsonFileStore`
 
-- `StateStore` is a small trait (`get`, `set`, `delete` by resume key).
+- `StateStore` is a small async trait (`get`, `set`, `delete` by resume key).
 - `MemoryStore` is the in-process default used by the streaming API.
-- `JsonFileStore` provides on-disk persistence: JSON under `$XDG_STATE_HOME/aviso/state.json` (matching the binary name `aviso`), atomic temp-write plus `fsync` plus atomic replace, advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported.
+- `JsonFileStore` provides on-disk persistence in two scoping levels:
+  - Single-process correctness ships first: a JSON file with atomic temp-write plus `fsync` of the file plus atomic rename plus `fsync` of the parent directory (Windows uses `MoveFileExW` with `MOVEFILE_WRITE_THROUGH | MOVEFILE_REPLACE_EXISTING`). A `kill -9` mid-write cannot corrupt the existing file. The store is linearizable: a successful `put` is durable-before-visible, a failed `put` leaves both in-memory and on-disk state unchanged. The CLI consumes this default at `~/.config/aviso/state.json`.
+  - Multi-process correctness lands as a follow-up: advisory file lock around read-modify-write, monotonic-cursor merge on conflict, network filesystems explicitly unsupported. The single-process implementation above is sufficient for the common one-binary-per-state-file pattern; the multi-process work hardens shared-state daemon clusters.
 
 SQLite is *not* shipped in v1. It becomes a drop-in `StateStore` impl when users actually need shared durable state across processes or hosts.
+
+*Amendment, 2026-05-18*: the original scope bundled the multi-process correctness work with the file store from day one. Pulled the single-process implementation forward so the CLI binary can resume across restarts without waiting for the cross-process work to settle. The multi-process correctness story above is unchanged in substance, only deferred.
 
 ---
 
