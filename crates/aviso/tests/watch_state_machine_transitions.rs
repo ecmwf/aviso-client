@@ -239,8 +239,7 @@ fn row_15d_replay_completed_in_live_phase_is_idempotent() {
 fn row_15d_replay_completed_in_gap_phase_is_idempotent() {
     let mut s = watch_live_connected();
     let _ = s.transition(WatchEvent::GapDetected(GapReason::ReplayLimitReached {
-        oldest_available: 100,
-        requested: 1,
+        max_allowed: 100,
     }));
     let before = s.clone();
     let out = s.transition(WatchEvent::ReplayCompleted);
@@ -340,10 +339,7 @@ fn row_13_heartbeat_starvation_reconnects_with_exponential_backoff() {
 #[test]
 fn gap_replay_limit_reached_is_surfaced_in_outcome() {
     let mut s = watch_live_connected();
-    let reason = GapReason::ReplayLimitReached {
-        oldest_available: 200,
-        requested: 50,
-    };
+    let reason = GapReason::ReplayLimitReached { max_allowed: 200 };
     let out = s.transition(WatchEvent::GapDetected(reason));
     assert_eq!(out, WatchOutcome::Gap { reason });
 }

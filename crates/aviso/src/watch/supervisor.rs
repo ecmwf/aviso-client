@@ -33,8 +33,8 @@ use super::wire::{
     WireReplayControl, WireWatchRequest,
 };
 use super::{
-    FatalKind, GapReason, ResumeStart, ServerCloseReason, WatchEvent, WatchMode, WatchRequest,
-    WatchState,
+    ConnectionLossReason, FatalKind, GapReason, ResumeStart, ServerCloseReason, WatchEvent,
+    WatchMode, WatchRequest, WatchState,
 };
 use crate::auth::AuthProvider;
 use crate::{ClientError, Notification, parse_cloudevent_id};
@@ -57,7 +57,13 @@ pub(crate) async fn run_supervisor(
     tx: mpsc::Sender<Result<Notification, ClientError>>,
     mut cancel: oneshot::Receiver<()>,
 ) {
-    let mut state = initial_state(&request);
+    let mut state = match initial_state(&request) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = send_or_cancel(&tx, Err(e), &mut cancel).await;
+            return;
+        }
+    };
 
     match run_one_connection(
         &mut state,
@@ -77,16 +83,13 @@ pub(crate) async fn run_supervisor(
     }
 }
 
-fn initial_state(request: &WatchRequest) -> WatchState {
+fn initial_state(request: &WatchRequest) -> Result<WatchState, ClientError> {
     match (request.mode(), request.from().cloned()) {
-        (WatchMode::Watch, from) => WatchState::watch(from),
-        (WatchMode::ReplayOnly, Some(from)) => WatchState::replay_only(from),
-        (WatchMode::ReplayOnly, None) => {
-            unreachable!(
-                "WatchRequest::replay_only constructor requires `from`; reaching this arm \
-                 would mean a new constructor leaked an invalid combination through"
-            )
-        }
+        (WatchMode::Watch, from) => Ok(WatchState::watch(from)),
+        (WatchMode::ReplayOnly, Some(from)) => Ok(WatchState::replay_only(from)),
+        (WatchMode::ReplayOnly, None) => Err(ClientError::Config(
+            "replay-only watch requires a resume position".into(),
+        )),
     }
 }
 
@@ -147,7 +150,11 @@ async fn run_one_connection(
             .get("x-request-id")
             .and_then(|h| h.to_str().ok())
             .map(String::from);
-        let body_bytes = response.bytes().await?;
+        let body_bytes = tokio::select! {
+            biased;
+            _ = &mut *cancel => return Ok(()),
+            b = response.bytes() => b?,
+        };
         let body = String::from_utf8_lossy(&body_bytes).into_owned();
         return Err(ClientError::Http {
             status,
@@ -178,15 +185,36 @@ async fn run_one_connection(
         }
         match drain_frames(&mut parser, state, &mut gap_guard, tx, cancel).await? {
             DrainOutcome::Continue => {}
-            DrainOutcome::StopRequested => return Ok(()),
+            DrainOutcome::ServerClosed | DrainOutcome::StopRequested => return Ok(()),
         }
-        if state.is_terminal() || eof {
+        if state.is_terminal() {
             return Ok(());
+        }
+        if eof {
+            // The wire ended without a `connection-closing` frame. That is
+            // a transport-level abnormality; surface it as a typed error so
+            // a consumer can tell "the server told me it was done" (clean
+            // close, returns None) apart from "the connection went dark"
+            // (this error). The reducer is told too so the state machine
+            // captures the loss reason for any downstream observability.
+            let _ = state.transition(WatchEvent::ConnectionLost {
+                reason: ConnectionLossReason::UnexpectedEof,
+            });
+            return Err(ClientError::StreamProtocol {
+                message: "stream ended without a connection-closing frame".to_string(),
+                request_id: None,
+            });
         }
     }
 }
 
 /// Result of one call to [`drain_frames`].
+///
+/// `ServerClosed` is the supervisor's signal that a known
+/// `connection-closing` frame was observed; in this single-connection
+/// version of the supervisor, that always means "exit cleanly". A future
+/// reconnect-loop revision will replace this with a richer signal that
+/// carries the close reason.
 ///
 /// `StopRequested` carries the "consumer is gone or cancellation fired"
 /// signal up to [`run_one_connection`] so it does not re-poll the cancel
@@ -194,6 +222,7 @@ async fn run_one_connection(
 #[derive(Debug, PartialEq, Eq)]
 enum DrainOutcome {
     Continue,
+    ServerClosed,
     StopRequested,
 }
 
@@ -205,6 +234,10 @@ enum DrainOutcome {
 /// an unknown `connection-closing.reason`, or a JSON decode failure.
 /// Routine frame handling returns `Ok(())` and the caller decides
 /// whether to keep draining the wire.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the SSE-event-type dispatch is a flat match over six wire variants; splitting each branch into its own helper trades readability for line count, and reviewers want to see the full mapping table in one place"
+)]
 async fn drain_frames(
     parser: &mut finesse::Parser,
     state: &mut WatchState,
@@ -260,8 +293,19 @@ async fn drain_frames(
             }
             "replay-control" => {
                 let wire: WireReplayControl = serde_json::from_str(&msg.data)?;
-                if wire.tag == "replay_completed" {
-                    let _ = state.transition(WatchEvent::ReplayCompleted);
+                match wire.tag.as_str() {
+                    "replay_completed" => {
+                        let _ = state.transition(WatchEvent::ReplayCompleted);
+                    }
+                    "notification_replay_limit_reached" => {
+                        let max_allowed = wire.max_allowed.unwrap_or(0);
+                        let reason = GapReason::ReplayLimitReached { max_allowed };
+                        let _ = state.transition(WatchEvent::GapDetected(reason));
+                        let _ = send_or_cancel(tx, Err(ClientError::HistoryGap { reason }), cancel)
+                            .await;
+                        return Ok(DrainOutcome::StopRequested);
+                    }
+                    _other => {}
                 }
             }
             "connection-closing" => {
@@ -282,6 +326,12 @@ async fn drain_frames(
                     }
                 };
                 let _ = state.transition(WatchEvent::ServerClose { reason });
+                // Every recognised `connection-closing` reason ends this
+                // watch session in the single-connection supervisor. The
+                // reducer's `Reconnect` outcome is intentionally ignored
+                // here; the reconnect loop driven by `ReconnectPolicy` is
+                // a separate, follow-up piece of code.
+                return Ok(DrainOutcome::ServerClosed);
             }
             "error" => {
                 let wire: WireErrorEvent = serde_json::from_str(&msg.data)?;
@@ -677,6 +727,98 @@ mod tests {
         let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
+        assert!(rx.recv().await.is_none());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn drain_frames_mapping_terminates_on_replay_limit_reached_with_history_gap() {
+        let server = MockServer::start().await;
+        let limit = json!({
+            "type": "notification_replay_limit_reached",
+            "topic": "mars",
+            "max_allowed": 1000u64,
+            "timestamp": "2026-05-17T12:00:00Z"
+        });
+        let body = sse_chunk("replay-control", limit);
+        Mock::given(method("POST"))
+            .and(path("/api/v1/watch"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let item = rx.recv().await.unwrap();
+        match item {
+            Err(ClientError::HistoryGap {
+                reason: GapReason::ReplayLimitReached { max_allowed },
+            }) => {
+                assert_eq!(max_allowed, 1000);
+            }
+            other => panic!("expected HistoryGap{{ReplayLimitReached}}, got {other:?}"),
+        }
+        assert!(rx.recv().await.is_none());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn connection_closing_terminates_before_any_following_frames() {
+        // Even if the server keeps writing notifications after a
+        // `connection-closing` frame on the same wire (which it should not,
+        // but which is exactly the bug class the supervisor must guard
+        // against), the supervisor must stop at the close frame and not
+        // surface the trailing notifications.
+        let server = MockServer::start().await;
+        let body = format!(
+            "{}{}{}",
+            sse_chunk("live-notification", cloud_event("mars", 1)),
+            sse_chunk("connection-closing", closing("end_of_stream")),
+            sse_chunk("live-notification", cloud_event("mars", 99)),
+        );
+        Mock::given(method("POST"))
+            .and(path("/api/v1/watch"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let first = rx.recv().await.unwrap().unwrap();
+        assert_eq!(first.sequence, 1);
+        assert!(
+            rx.recv().await.is_none(),
+            "the post-close-frame notification must NOT surface"
+        );
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn unexpected_eof_without_close_frame_terminates_with_stream_protocol_error() {
+        let server = MockServer::start().await;
+        // One notification, then the response body ends (no close frame).
+        let body = sse_chunk("live-notification", cloud_event("mars", 1));
+        Mock::given(method("POST"))
+            .and(path("/api/v1/watch"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let first = rx.recv().await.unwrap().unwrap();
+        assert_eq!(first.sequence, 1);
+        let item = rx.recv().await.unwrap();
+        assert!(
+            matches!(item, Err(ClientError::StreamProtocol { .. })),
+            "got {item:?}"
+        );
         assert!(rx.recv().await.is_none());
         handle.await.unwrap();
     }
