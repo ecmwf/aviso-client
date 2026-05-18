@@ -14,14 +14,19 @@
 )]
 
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use aviso::AvisoClient;
+use async_trait::async_trait;
+use aviso::auth::AuthProvider;
 use aviso::watch::WatchRequest;
+use aviso::{AvisoClient, ClientError};
 use futures_core::Stream;
+use reqwest::header::HeaderValue;
 use serde_json::{Value, json};
 use tokio::time::timeout;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 fn sse_chunk(event_type: &str, data: &Value) -> String {
@@ -204,6 +209,162 @@ async fn retry_after_honoured_on_503() {
     );
 
     drop(stream);
+}
+
+/// Stub auth provider whose `authorization_header()` returns a value held
+/// in a `Mutex<String>`. `refresh()` swaps the value to the post-refresh
+/// token, so the test mock can match the two distinct `Authorization`
+/// headers and assert the refreshed credential is actually used on the
+/// retry POST.
+#[derive(Debug)]
+struct SwappingAuth {
+    token: Mutex<String>,
+    new_token: String,
+    refresh_count: Mutex<u32>,
+    refresh_always_succeeds: bool,
+}
+
+impl SwappingAuth {
+    fn new(initial: impl Into<String>, after_refresh: impl Into<String>) -> Self {
+        Self {
+            token: Mutex::new(initial.into()),
+            new_token: after_refresh.into(),
+            refresh_count: Mutex::new(0),
+            refresh_always_succeeds: true,
+        }
+    }
+}
+
+#[async_trait]
+impl AuthProvider for SwappingAuth {
+    async fn authorization_header(&self) -> aviso::Result<HeaderValue> {
+        let guard = self.token.lock().unwrap();
+        HeaderValue::from_str(&format!("Bearer {}", *guard))
+            .map_err(|e| ClientError::Auth(format!("header build: {e}")))
+    }
+
+    async fn refresh(&self) -> aviso::Result<()> {
+        *self.refresh_count.lock().unwrap() += 1;
+        if !self.refresh_always_succeeds {
+            return Err(ClientError::Auth("test: refresh refused".into()));
+        }
+        (*self.token.lock().unwrap()).clone_from(&self.new_token);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn auth_refresh_on_401_uses_refreshed_credential() {
+    let server = MockServer::start().await;
+
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 1)),
+        end_of_stream_chunk(),
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .and(header("authorization", "Bearer old-token"))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .insert_header("x-request-id", "req-401")
+                .set_body_string("unauthorized"),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .and(header("authorization", "Bearer new-token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let auth = Arc::new(SwappingAuth::new("old-token", "new-token"));
+    let client = AvisoClient::builder()
+        .base_url(server.uri())
+        .auth(auth.clone())
+        .build()
+        .unwrap();
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+
+    let item = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("notification should arrive after refresh")
+        .expect("stream must not close before the first item")
+        .expect("no terminal error should surface");
+    assert_eq!(item.sequence, 1);
+
+    assert_eq!(
+        *auth.refresh_count.lock().unwrap(),
+        1,
+        "refresh() must be called exactly once"
+    );
+
+    drop(stream);
+}
+
+#[tokio::test]
+async fn auth_refresh_followed_by_second_401_terminates() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .insert_header("x-request-id", "req-401")
+                .set_body_string("still no"),
+        )
+        .mount(&server)
+        .await;
+
+    let auth = Arc::new(SwappingAuth::new("old-token", "new-token"));
+    let client = AvisoClient::builder()
+        .base_url(server.uri())
+        .auth(auth.clone())
+        .build()
+        .unwrap();
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+
+    let item = timeout(Duration::from_secs(5), next_item(&mut stream))
+        .await
+        .expect("terminal error should arrive promptly")
+        .expect("stream must surface one item before closing");
+    match item {
+        Err(ClientError::Auth(msg)) => {
+            assert!(
+                msg.contains("after refresh"),
+                "error message should name the post-refresh rejection: {msg}"
+            );
+        }
+        other => panic!("expected ClientError::Auth, got {other:?}"),
+    }
+
+    let next = timeout(Duration::from_secs(2), next_item(&mut stream))
+        .await
+        .expect("stream should close promptly after terminal error");
+    assert!(
+        next.is_none(),
+        "stream must yield None after terminal error"
+    );
+
+    assert_eq!(
+        *auth.refresh_count.lock().unwrap(),
+        1,
+        "refresh() must be called exactly once before the second 401 terminates"
+    );
+
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(
+        received.len(),
+        2,
+        "expected exactly two POSTs (initial 401 + post-refresh 401); got {}",
+        received.len()
+    );
 }
 
 #[tokio::test]

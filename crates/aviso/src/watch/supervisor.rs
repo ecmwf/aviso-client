@@ -33,8 +33,8 @@ use super::wire::{
     WireReplayControl, WireWatchRequest,
 };
 use super::{
-    ConnectionLossReason, FatalKind, GapReason, ReconnectPolicy, ResumeStart, ServerCloseReason,
-    WatchEvent, WatchMode, WatchOutcome, WatchRequest, WatchState,
+    ConnectionLossReason, ConnectionStatus, FatalKind, GapReason, ReconnectPolicy, ResumeStart,
+    ServerCloseReason, WatchEvent, WatchMode, WatchOutcome, WatchRequest, WatchState,
 };
 use crate::auth::AuthProvider;
 use crate::{ClientError, Notification, parse_cloudevent_id};
@@ -158,6 +158,7 @@ pub(crate) async fn run_supervisor(
         ResumeStart::AfterSequence(n) => Some(*n),
         ResumeStart::Date(_) => None,
     });
+    let mut refreshed_for_current_attempt: bool = false;
 
     loop {
         if state.is_terminal() {
@@ -187,6 +188,50 @@ pub(crate) async fn run_supervisor(
             }
         }
 
+        // Auth refresh step: when the reducer is in `RefreshingAuth` the
+        // previous iteration emitted `WatchEvent::AuthRejected` after a 401
+        // and the supervisor now drives `AuthProvider::refresh()` before
+        // attempting the next connection. D8's refresh-then-retry-once
+        // contract is enforced by `refreshed_for_current_attempt`: the
+        // flag is set after a successful refresh and reset on any
+        // non-401 outcome, so a second 401 within the same attempt cycle
+        // surfaces `AuthenticationRejectedAfterRefresh`.
+        if matches!(state.connection_status(), ConnectionStatus::RefreshingAuth) {
+            let Some(auth_provider) = auth.as_ref() else {
+                let outcome = state.transition(WatchEvent::AuthRefreshCompleted { success: false });
+                apply_outcome(&mut last_reconnect_policy, outcome);
+                let _ = send_or_cancel(
+                    &tx,
+                    Err(ClientError::Auth(
+                        "auth refresh requested but no auth provider is configured".into(),
+                    )),
+                    &mut cancel,
+                )
+                .await;
+                break;
+            };
+            let refresh_result = tokio::select! {
+                biased;
+                _ = &mut cancel => break,
+                r = auth_provider.refresh() => r,
+            };
+            match refresh_result {
+                Ok(()) => {
+                    refreshed_for_current_attempt = true;
+                    let outcome =
+                        state.transition(WatchEvent::AuthRefreshCompleted { success: true });
+                    apply_outcome(&mut last_reconnect_policy, outcome);
+                }
+                Err(e) => {
+                    let outcome =
+                        state.transition(WatchEvent::AuthRefreshCompleted { success: false });
+                    apply_outcome(&mut last_reconnect_policy, outcome);
+                    let _ = send_or_cancel(&tx, Err(e), &mut cancel).await;
+                    break;
+                }
+            }
+        }
+
         // Build the wire-request cursor from the current commit_cursor
         // when one is set; before the first commit, fall back to the
         // initial cursor (which may be a `Date` per D17 bootstrap).
@@ -212,6 +257,7 @@ pub(crate) async fn run_supervisor(
         match outcome {
             ConnectionOutcome::ServerClosed => {
                 retry_counter = 0;
+                refreshed_for_current_attempt = false;
             }
             ConnectionOutcome::Cancelled => break,
             ConnectionOutcome::HttpStatus {
@@ -220,6 +266,41 @@ pub(crate) async fn run_supervisor(
                 request_id,
                 retry_after,
             } => match status {
+                401 if auth.is_some() && !refreshed_for_current_attempt => {
+                    let outcome = state.transition(WatchEvent::AuthRejected);
+                    apply_outcome(&mut last_reconnect_policy, outcome);
+                }
+                401 if refreshed_for_current_attempt => {
+                    let outcome =
+                        state.transition(WatchEvent::AuthRefreshCompleted { success: false });
+                    apply_outcome(&mut last_reconnect_policy, outcome);
+                    let _ = send_or_cancel(
+                        &tx,
+                        Err(ClientError::Auth(
+                            "authentication rejected after refresh".into(),
+                        )),
+                        &mut cancel,
+                    )
+                    .await;
+                    break;
+                }
+                401 => {
+                    let fatal = state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                        "401 with no auth provider configured".to_string(),
+                    )));
+                    apply_outcome(&mut last_reconnect_policy, fatal);
+                    let _ = send_or_cancel(
+                        &tx,
+                        Err(ClientError::Http {
+                            status: 401,
+                            body,
+                            request_id,
+                        }),
+                        &mut cancel,
+                    )
+                    .await;
+                    break;
+                }
                 429 | 503 => {
                     retry_after_override = retry_after;
                     let lost = state.transition(WatchEvent::ConnectionLost {
@@ -227,6 +308,7 @@ pub(crate) async fn run_supervisor(
                     });
                     apply_outcome(&mut last_reconnect_policy, lost);
                     retry_counter = retry_counter.saturating_add(1);
+                    refreshed_for_current_attempt = false;
                 }
                 s if (500..=599).contains(&s) => {
                     let lost = state.transition(WatchEvent::ConnectionLost {
@@ -234,13 +316,9 @@ pub(crate) async fn run_supervisor(
                     });
                     apply_outcome(&mut last_reconnect_policy, lost);
                     retry_counter = retry_counter.saturating_add(1);
+                    refreshed_for_current_attempt = false;
                 }
                 s => {
-                    // 401, 403, 404, 410, other 4xx, and any unclassified
-                    // status: terminal. Auth refresh on 401 lands in a
-                    // follow-up commit, at which point the 401 branch
-                    // splits out and feeds `WatchEvent::AuthRejected`
-                    // instead of falling through here.
                     let fatal = state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
                         format!("server returned {s}"),
                     )));
@@ -264,12 +342,11 @@ pub(crate) async fn run_supervisor(
                 });
                 apply_outcome(&mut last_reconnect_policy, lost);
                 retry_counter = retry_counter.saturating_add(1);
+                refreshed_for_current_attempt = false;
             }
             ConnectionOutcome::UnexpectedEof => {
-                // EOF is already mapped to `ConnectionLost { UnexpectedEof
-                // }` inside `run_one_connection`; the outer loop just
-                // accepts and reconnects.
                 retry_counter = retry_counter.saturating_add(1);
+                refreshed_for_current_attempt = false;
             }
             ConnectionOutcome::Fatal(err) => {
                 let _ = send_or_cancel(&tx, Err(err), &mut cancel).await;
