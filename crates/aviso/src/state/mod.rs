@@ -48,6 +48,27 @@ use async_trait::async_trait;
 /// Implementations are `Send + Sync` and serialise concurrent writes
 /// internally. See the [module docs](self) for the linearizable-
 /// semantics contract.
+///
+/// # Cancel-safety expectation for watch supervisor consumers
+///
+/// The watch supervisor in [`crate::AvisoClient::watch`] consumes this
+/// trait with a deliberate non-cancellable contract: an in-progress
+/// [`Self::put`] or [`Self::get`] is allowed to complete before the
+/// supervisor observes parent-drop or per-stream cancellation. The
+/// guarantee this gives implementations is that they may rely on
+/// atomic completion within their own `await` lifetime; the price is
+/// that the supervisor's exit latency on parent drop is bounded by
+/// the duration of an in-progress store call.
+///
+/// Implementations SHOULD therefore keep `put` and `get` bounded in
+/// wall-clock time (the shipped [`JsonFileStore`] is dominated by
+/// `fsync`, typically tens of milliseconds on local disk). A custom
+/// store that performs an unbounded network call from within `put`
+/// will extend `AvisoClient::Drop` latency by that amount; if that is
+/// unacceptable, the implementation may internally apply its own
+/// timeout and return [`StoreError`] on expiry. The supervisor will
+/// surface that timeout as [`crate::ClientError::StateStore`] and
+/// terminate the watch.
 #[async_trait]
 pub trait StateStore: Send + Sync {
     /// Return the checkpoint stored at `key`, if any.
