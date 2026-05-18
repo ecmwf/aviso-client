@@ -28,12 +28,14 @@ const DIGEST_BYTE_LEN: usize = 32;
 ///
 /// # Concurrency model
 ///
-/// A dedicated disk-write mutex serialises writes. Each write builds
-/// a candidate map outside the in-memory lock, performs the atomic
-/// disk write outside the in-memory lock, and only mutates the
-/// in-memory state after the disk write succeeds. Reads are never
-/// blocked by an in-flight write beyond the brief installation of
-/// the candidate.
+/// A dedicated disk-write mutex serialises writes. Each write clones
+/// the current map into a candidate under a brief shared (read) lock
+/// on the in-memory state (which does not block other readers),
+/// applies the mutation to the candidate, performs the atomic disk
+/// write with NO lock on the in-memory state held, then briefly
+/// takes the exclusive write lock to install the candidate on
+/// success. Reads only block on writers during that final install
+/// step.
 ///
 /// Failed `put` and `delete` calls leave both disk and memory
 /// unchanged.
