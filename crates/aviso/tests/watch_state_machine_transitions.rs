@@ -344,7 +344,7 @@ fn gap_replay_limit_reached_is_surfaced_in_outcome() {
         oldest_available: 200,
         requested: 50,
     };
-    let out = s.transition(WatchEvent::GapDetected(reason.clone()));
+    let out = s.transition(WatchEvent::GapDetected(reason));
     assert_eq!(out, WatchOutcome::Gap { reason });
 }
 
@@ -355,7 +355,7 @@ fn gap_sequence_jump_is_surfaced_in_outcome() {
         expected: 10,
         observed: 15,
     };
-    let out = s.transition(WatchEvent::GapDetected(reason.clone()));
+    let out = s.transition(WatchEvent::GapDetected(reason));
     assert_eq!(out, WatchOutcome::Gap { reason });
 }
 

@@ -77,7 +77,7 @@ pub enum ReplayPhase {
 
 /// Why a gap was detected in the stream.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GapReason {
     /// The server reported `notification_replay_limit_reached` (D2):
     /// the oldest available sequence is newer than the cursor the

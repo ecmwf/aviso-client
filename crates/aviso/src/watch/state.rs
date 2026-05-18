@@ -254,9 +254,7 @@ impl WatchState {
     }
 
     fn enter_gap(&mut self, reason: GapReason) -> WatchOutcome {
-        self.replay_phase = ReplayPhase::GapDetected {
-            reason: reason.clone(),
-        };
+        self.replay_phase = ReplayPhase::GapDetected { reason };
         WatchOutcome::Gap { reason }
     }
 }
@@ -463,13 +461,8 @@ mod tests {
             oldest_available: 100,
             requested: 1,
         };
-        let out = s.transition(WatchEvent::GapDetected(reason.clone()));
-        assert_eq!(
-            out,
-            WatchOutcome::Gap {
-                reason: reason.clone()
-            }
-        );
+        let out = s.transition(WatchEvent::GapDetected(reason));
+        assert_eq!(out, WatchOutcome::Gap { reason });
         assert_eq!(s.replay_phase(), &ReplayPhase::GapDetected { reason });
     }
 
