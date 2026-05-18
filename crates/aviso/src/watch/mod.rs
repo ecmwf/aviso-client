@@ -5,16 +5,14 @@
 //! orthogonal product of two axes,
 //! [`ReplayPhase`] x [`ConnectionStatus`], and is advanced through a
 //! single reducer. The reducer owns no I/O, no async runtime, and no
-//! checkpoint state; the supervisor (a follow-up PR) wires it to the
+//! checkpoint state; downstream watch supervisors wire it to the
 //! HTTP/SSE transport, the auth provider, and the [`crate::state`]
 //! store.
 //!
-//! In this PR only the types and the reducer ship. There is no
-//! `AvisoClient::watch()` method yet; the public surface is
-//! deliberately accessible only as `aviso::watch::*` until the watch
-//! API shape (Stream-based versus callback-based, an open question
-//! tracked in `plans/v0.3.md`) is settled. The reducer is the
-//! foundation either choice builds on.
+//! Only the types and the reducer live in this module; there is no
+//! `AvisoClient::watch()` method. The public surface is accessible
+//! as `aviso::watch::*`. Higher-level watch APIs (Stream-based or
+//! callback-based) build on top of this reducer.
 //!
 //! # Concepts
 //!

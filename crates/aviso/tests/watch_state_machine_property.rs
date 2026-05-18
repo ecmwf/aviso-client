@@ -24,9 +24,14 @@
 //!    false }` never produce a `Reconnect` outcome.
 //! 7. Once `GapDetected`, the next phase is either `GapDetected`
 //!    again or `Closed`; never `Replaying` or `Live`.
-//! 8. Every `Reconnect` outcome carries the D2-correct policy for
-//!    the event that produced it (combined with mode and prior
-//!    phase). Encodes spec rows 9, 10, 11 from the plan.
+//! 8. Event-to-Reconnect bijection: the reducer produces a
+//!    `Reconnect` outcome with the D2-mandated policy iff the
+//!    `(event, mode, prior_phase)` triple is one the spec assigns a
+//!    reconnect to. Forward direction catches wrong-policy bugs;
+//!    reverse direction catches silently-swallowed reconnects.
+//!    Encodes the reconnect rows of the canonical transition table
+//!    (`ConnectionLost`, `HeartbeatStarvation`, all `ServerClose`
+//!    sub-cases).
 
 #![allow(
     clippy::panic,
