@@ -1,4 +1,4 @@
-//! Trigger configuration types for watch sessions.
+//! Trigger configuration types and dispatcher for watch sessions.
 //!
 //! A [`Trigger`] is a per-notification side effect attached to a
 //! [`crate::watch::WatchRequest`] via
@@ -14,15 +14,34 @@
 //! terminates the watch with `ClientError::TriggerFailed`; an optional
 //! trigger that fails logs a `WARN` event and the watch continues.
 //!
-//! This module ships the public type surface only. The dispatcher internals
-//! that act on `Trigger` values land alongside the supervisor integration in
-//! the next commit.
+//! # Dispatcher contract
+//!
+//! [`dispatch_triggers`] is the supervisor's entry point. It runs each
+//! configured trigger in declaration order, sequential, with the per-trigger
+//! `retries` budget and the supervisor's `compute_backoff` schedule
+//! between attempts. A single dispatch attempt runs to completion (it is the
+//! atomic unit; the dispatcher does NOT race the attempt against
+//! cancellation). Between attempts and between triggers, the dispatcher
+//! honours both `parent_cancel` and the per-stream `cancel` oneshot.
+//!
+//! [`dispatch_triggers_with_backoff`] is the test-injectable inner form.
+//! Production wraps it with `compute_backoff`; unit tests pass a
+//! deterministic sleep function so `tokio::time::pause` + `advance` can
+//! step over the backoff without depending on jitter.
 //!
 //! The error surface returned by trigger dispatch is [`TriggerError`]; the
 //! human-readable kind tag that appears on
 //! `ClientError::TriggerFailed` is [`TriggerKindLabel`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use tokio::sync::{oneshot, watch};
+
+use crate::Notification;
+
+use super::backoff::compute_backoff;
+use super::outcome::ReconnectPolicy;
 
 /// A single trigger configured on a watch.
 ///
@@ -84,7 +103,36 @@ impl std::fmt::Debug for Trigger {
 #[derive(Clone)]
 pub(crate) enum TriggerKind {
     Echo,
-    Log { path: PathBuf },
+    Log {
+        path: PathBuf,
+    },
+    /// Test-only: fails the first `failures_remaining` attempts, then
+    /// resolves per `eventual`. Used by unit tests to drive "fail K times
+    /// then succeed/fail" patterns deterministically.
+    #[cfg(test)]
+    TestFailing {
+        failures_remaining: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        eventual: TestEventual,
+    },
+    /// Test-only: fails on the Nth invocation across notifications and
+    /// succeeds on all others. Used by unit tests to drive "succeed on
+    /// N=1, fail on N=2" patterns that share a single trigger config.
+    #[cfg(test)]
+    TestFailOnCall {
+        calls: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        fail_on_call: u32,
+    },
+}
+
+/// Resolution of a test-only [`TriggerKind::TestFailing`] after its
+/// `failures_remaining` counter hits zero.
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub(crate) enum TestEventual {
+    /// Subsequent calls succeed.
+    Succeed,
+    /// Subsequent calls also fail (the trigger never recovers).
+    Fail,
 }
 
 /// Manual `Debug` impl for the same reason as [`Trigger`]'s manual impl.
@@ -93,6 +141,24 @@ impl std::fmt::Debug for TriggerKind {
         match self {
             Self::Echo => f.debug_struct("Echo").finish(),
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
+            #[cfg(test)]
+            Self::TestFailing {
+                failures_remaining,
+                eventual,
+            } => f
+                .debug_struct("TestFailing")
+                .field("failures_remaining", failures_remaining)
+                .field("eventual", eventual)
+                .finish(),
+            #[cfg(test)]
+            Self::TestFailOnCall {
+                calls,
+                fail_on_call,
+            } => f
+                .debug_struct("TestFailOnCall")
+                .field("calls", calls)
+                .field("fail_on_call", fail_on_call)
+                .finish(),
         }
     }
 }
@@ -148,6 +214,310 @@ impl Trigger {
     pub fn required(mut self, required: bool) -> Self {
         self.required = required;
         self
+    }
+}
+
+#[cfg(test)]
+impl Trigger {
+    /// Test-only constructor for a trigger backed by
+    /// [`TriggerKind::TestFailing`]. Returns the trigger together with the
+    /// shared atomic counter so the test can inspect the remaining-failures
+    /// state after dispatch.
+    pub(crate) fn test_failing(
+        failures_remaining: u32,
+        eventual: TestEventual,
+        retries: u32,
+        required: bool,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicU32>) {
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(failures_remaining));
+        let trigger = Self {
+            kind: TriggerKind::TestFailing {
+                failures_remaining: counter.clone(),
+                eventual,
+            },
+            retries,
+            required,
+        };
+        (trigger, counter)
+    }
+
+    /// Test-only constructor for a trigger backed by
+    /// [`TriggerKind::TestFailOnCall`]. Returns the trigger together with
+    /// the shared atomic counter so the test can inspect the per-call
+    /// count after dispatch.
+    pub(crate) fn test_fail_on_call(
+        fail_on_call: u32,
+        retries: u32,
+        required: bool,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicU32>) {
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let trigger = Self {
+            kind: TriggerKind::TestFailOnCall {
+                calls: counter.clone(),
+                fail_on_call,
+            },
+            retries,
+            required,
+        };
+        (trigger, counter)
+    }
+}
+
+/// Per-watch, per-trigger mutable state held by the dispatcher across
+/// notifications. The log file handle is opened lazily on first dispatch
+/// and held for the trigger's lifetime; dropped on supervisor exit (which
+/// closes the file via tokio's `File` drop).
+pub(crate) struct TriggerState {
+    pub(crate) log_handle: Option<tokio::fs::File>,
+}
+
+impl TriggerState {
+    pub(crate) fn new() -> Self {
+        Self { log_handle: None }
+    }
+}
+
+/// Reason the trigger pipeline aborted early.
+///
+/// The supervisor maps `RequiredFailed` to
+/// [`crate::ClientError::TriggerFailed`] and surfaces it as the watch's
+/// terminal error. `Cancelled` causes the supervisor to exit cleanly
+/// without sending the current notification.
+#[derive(Debug)]
+pub(crate) enum DispatchOutcome {
+    /// A required trigger failed after all retries.
+    RequiredFailed {
+        kind: TriggerKindLabel,
+        source: TriggerError,
+    },
+    /// Parent or per-stream cancellation fired between triggers or during
+    /// a retry backoff sleep.
+    Cancelled,
+}
+
+/// Run all configured triggers for a notification using the production
+/// backoff schedule.
+///
+/// See module docs for the contract; this is a thin wrapper around
+/// [`dispatch_triggers_with_backoff`] that wires the supervisor's
+/// `compute_backoff` schedule.
+pub(crate) async fn dispatch_triggers(
+    triggers: &[Trigger],
+    states: &mut [TriggerState],
+    notification: &Notification,
+    parent_cancel: &mut watch::Receiver<bool>,
+    cancel: &mut oneshot::Receiver<()>,
+) -> Result<(), DispatchOutcome> {
+    dispatch_triggers_with_backoff(
+        triggers,
+        states,
+        notification,
+        parent_cancel,
+        cancel,
+        |attempt| compute_backoff(attempt, ReconnectPolicy::ExponentialBackoff),
+    )
+    .await
+}
+
+/// Run all configured triggers using an injectable backoff function.
+///
+/// Unit tests pass a deterministic backoff (typically
+/// `|_| Duration::from_millis(100)`) so `tokio::time::pause` plus
+/// `tokio::time::advance` can step over retry sleeps without depending on
+/// the production jitter that can legitimately return zero nanoseconds.
+///
+/// The `backoff` function is invoked with the zero-based retry attempt
+/// index that just failed (so attempt 0 is the FIRST retry sleep after
+/// the initial-attempt failure).
+pub(crate) async fn dispatch_triggers_with_backoff<F>(
+    triggers: &[Trigger],
+    states: &mut [TriggerState],
+    notification: &Notification,
+    parent_cancel: &mut watch::Receiver<bool>,
+    cancel: &mut oneshot::Receiver<()>,
+    backoff: F,
+) -> Result<(), DispatchOutcome>
+where
+    F: Fn(u32) -> Duration,
+{
+    debug_assert_eq!(
+        triggers.len(),
+        states.len(),
+        "triggers and states must be aligned"
+    );
+
+    for (trigger, state) in triggers.iter().zip(states.iter_mut()) {
+        // Cancel check between triggers.
+        if check_cancelled(parent_cancel, cancel) {
+            return Err(DispatchOutcome::Cancelled);
+        }
+
+        let mut attempt: u32 = 0;
+        let outcome = loop {
+            match dispatch_one_attempt(&trigger.kind, state, notification).await {
+                Ok(()) => break Ok(()),
+                Err(err) => {
+                    if attempt >= trigger.retries {
+                        break Err(err);
+                    }
+                    let delay = backoff(attempt);
+                    let sleep = tokio::time::sleep(delay);
+                    tokio::pin!(sleep);
+                    tokio::select! {
+                        biased;
+                        _ = parent_cancel.changed() => return Err(DispatchOutcome::Cancelled),
+                        _ = &mut *cancel => return Err(DispatchOutcome::Cancelled),
+                        () = &mut sleep => {}
+                    }
+                    attempt = attempt.saturating_add(1);
+                }
+            }
+        };
+
+        if let Err(source) = outcome {
+            let label = trigger_kind_label(&trigger.kind);
+            if trigger.required {
+                return Err(DispatchOutcome::RequiredFailed {
+                    kind: label,
+                    source,
+                });
+            }
+            tracing::warn!(
+                event.name = "client.trigger.failed",
+                kind = %label,
+                retries = trigger.retries,
+                error = %source,
+                "optional trigger failed; continuing"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Non-blocking cancel probe used between triggers.
+///
+/// Both senders are observed via try-style reads: `parent_cancel` checks
+/// `has_changed`, and `cancel` checks `try_recv`. Returning `true` means
+/// either cancellation source has fired and the dispatcher should exit.
+fn check_cancelled(
+    parent_cancel: &mut watch::Receiver<bool>,
+    cancel: &mut oneshot::Receiver<()>,
+) -> bool {
+    if matches!(parent_cancel.has_changed(), Ok(true)) {
+        return true;
+    }
+    matches!(
+        cancel.try_recv(),
+        Ok(()) | Err(oneshot::error::TryRecvError::Closed)
+    )
+}
+
+/// Map an internal kind to its public-facing diagnostic label.
+fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
+    match kind {
+        TriggerKind::Echo => TriggerKindLabel::Echo,
+        TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
+        #[cfg(test)]
+        TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,
+        #[cfg(test)]
+        TriggerKind::TestFailOnCall { .. } => TriggerKindLabel::Echo,
+    }
+}
+
+async fn dispatch_one_attempt(
+    kind: &TriggerKind,
+    state: &mut TriggerState,
+    notification: &Notification,
+) -> Result<(), TriggerError> {
+    match kind {
+        TriggerKind::Echo => dispatch_echo(notification),
+        TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
+        #[cfg(test)]
+        TriggerKind::TestFailing {
+            failures_remaining,
+            eventual,
+        } => dispatch_test_failing(failures_remaining, eventual),
+        #[cfg(test)]
+        TriggerKind::TestFailOnCall {
+            calls,
+            fail_on_call,
+        } => dispatch_test_fail_on_call(calls, *fail_on_call),
+    }
+}
+
+/// Echo dispatch: serialise the notification into a buffer ONCE (appending
+/// the newline to the same buffer), then a single `write_all` against a
+/// locked stdout handle. Buffer-then-write avoids any intra-trigger seam
+/// between the JSON body and the line terminator.
+fn dispatch_echo(notification: &Notification) -> Result<(), TriggerError> {
+    use std::io::Write as _;
+    let mut buf = serde_json::to_vec(notification)?;
+    buf.push(b'\n');
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    handle.write_all(&buf)?;
+    Ok(())
+}
+
+/// Log dispatch: lazy-open the file on first call, then buffer-then-write
+/// the NDJSON line. No fsync per the at-least-once contract (a crashed
+/// pre-commit log write replays on restart).
+async fn dispatch_log(
+    path: &Path,
+    state: &mut TriggerState,
+    notification: &Notification,
+) -> Result<(), TriggerError> {
+    use tokio::io::AsyncWriteExt as _;
+    if state.log_handle.is_none() {
+        let file = tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .await?;
+        state.log_handle = Some(file);
+    }
+    let Some(handle) = state.log_handle.as_mut() else {
+        return Err(TriggerError::Io(std::io::Error::other(
+            "log handle missing immediately after init; bug in lazy-open invariant",
+        )));
+    };
+    let mut buf = serde_json::to_vec(notification)?;
+    buf.push(b'\n');
+    handle.write_all(&buf).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+fn dispatch_test_failing(
+    failures_remaining: &std::sync::Arc<std::sync::atomic::AtomicU32>,
+    eventual: &TestEventual,
+) -> Result<(), TriggerError> {
+    use std::sync::atomic::Ordering;
+    let prev = failures_remaining.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+        if v > 0 { Some(v - 1) } else { None }
+    });
+    if prev.is_ok() {
+        return Err(TriggerError::Io(std::io::Error::other("test failure")));
+    }
+    match eventual {
+        TestEventual::Succeed => Ok(()),
+        TestEventual::Fail => Err(TriggerError::Io(std::io::Error::other(
+            "test eventual fail",
+        ))),
+    }
+}
+
+#[cfg(test)]
+fn dispatch_test_fail_on_call(
+    calls: &std::sync::Arc<std::sync::atomic::AtomicU32>,
+    fail_on_call: u32,
+) -> Result<(), TriggerError> {
+    use std::sync::atomic::Ordering;
+    let n = calls.fetch_add(1, Ordering::AcqRel) + 1;
+    if n == fail_on_call {
+        Err(TriggerError::Io(std::io::Error::other("test fail on call")))
+    } else {
+        Ok(())
     }
 }
 
@@ -221,10 +591,10 @@ mod tests {
     #[test]
     fn log_constructor_uses_default_retries_zero_and_required_true() {
         let trigger = Trigger::log("/tmp/some.log");
-        match &trigger.kind {
-            TriggerKind::Log { path } => assert_eq!(path, &PathBuf::from("/tmp/some.log")),
-            TriggerKind::Echo => panic!("expected Log variant, got Echo"),
-        }
+        let TriggerKind::Log { path } = &trigger.kind else {
+            panic!("expected Log variant");
+        };
+        assert_eq!(path, &PathBuf::from("/tmp/some.log"));
         assert_eq!(trigger.retries, 0);
         assert!(trigger.required);
     }
@@ -312,5 +682,231 @@ mod tests {
         let parse_err = serde_json::from_str::<i32>("not a number").unwrap_err();
         let err: TriggerError = parse_err.into();
         assert!(matches!(err, TriggerError::Encode(_)));
+    }
+
+    mod dispatch {
+        use std::collections::BTreeMap;
+        use std::sync::atomic::Ordering;
+        use std::time::Duration;
+
+        use tokio::sync::{oneshot, watch};
+
+        use super::super::{
+            DispatchOutcome, TestEventual, Trigger, TriggerKindLabel, TriggerState,
+            dispatch_triggers_with_backoff,
+        };
+        use crate::Notification;
+
+        fn make_notification() -> Notification {
+            Notification {
+                event_type: "mars".to_string(),
+                sequence: 1,
+                identifier: BTreeMap::new(),
+                payload: serde_json::Value::Null,
+                request_id: None,
+            }
+        }
+
+        async fn run_once<F>(
+            triggers: &[Trigger],
+            states: &mut [TriggerState],
+            backoff: F,
+        ) -> Result<(), DispatchOutcome>
+        where
+            F: Fn(u32) -> Duration,
+        {
+            let (_drop_tx, mut parent_rx) = watch::channel(false);
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+            let n = make_notification();
+            dispatch_triggers_with_backoff(
+                triggers,
+                states,
+                &n,
+                &mut parent_rx,
+                &mut cancel_rx,
+                backoff,
+            )
+            .await
+        }
+
+        #[tokio::test]
+        async fn echo_trigger_succeeds_without_retry() {
+            let trigger = Trigger::echo();
+            let mut states = vec![TriggerState::new()];
+            let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            assert!(matches!(result, Ok(())));
+        }
+
+        #[tokio::test]
+        async fn log_trigger_writes_ndjson_to_tempfile() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("notif.log");
+            let trigger = Trigger::log(&path);
+            let mut states = vec![TriggerState::new()];
+            let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            assert!(matches!(result, Ok(())));
+            // Drop the handle so the file's writes flush to disk before
+            // we read it back (tokio::fs::File on Drop closes the fd).
+            drop(states);
+            let contents = std::fs::read_to_string(&path).unwrap();
+            assert!(contents.starts_with('{'), "got: {contents}");
+            assert!(
+                contents.contains("\"event_type\":\"mars\""),
+                "got: {contents}"
+            );
+            assert!(contents.ends_with('\n'), "got: {contents}");
+        }
+
+        #[tokio::test]
+        async fn log_trigger_returns_io_error_when_parent_dir_missing() {
+            let trigger = Trigger::log("/nonexistent-dir-aviso-test/x.log");
+            let mut states = vec![TriggerState::new()];
+            let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            match result {
+                Err(DispatchOutcome::RequiredFailed { kind, source }) => {
+                    assert!(matches!(kind, TriggerKindLabel::Log { .. }));
+                    let rendered = source.to_string();
+                    assert!(rendered.starts_with("io:"), "got: {rendered}");
+                }
+                other => panic!("expected RequiredFailed, got {other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn log_trigger_lazy_opens_then_reuses_handle_across_dispatches() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("reuse.log");
+            let trigger = Trigger::log(&path);
+            let mut states = vec![TriggerState::new()];
+            assert!(states[0].log_handle.is_none());
+            let _ = run_once(std::slice::from_ref(&trigger), &mut states, |_| {
+                Duration::from_millis(1)
+            })
+            .await;
+            assert!(states[0].log_handle.is_some(), "handle should be open");
+            let handle_ptr_before: *const _ = states[0].log_handle.as_ref().unwrap();
+            let _ = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            let handle_ptr_after: *const _ = states[0].log_handle.as_ref().unwrap();
+            assert!(std::ptr::eq(handle_ptr_before, handle_ptr_after));
+        }
+
+        #[tokio::test]
+        async fn retries_exhausted_returns_required_failed_with_io_source() {
+            let (trigger, counter) = Trigger::test_failing(5, TestEventual::Succeed, 2, true);
+            let mut states = vec![TriggerState::new()];
+            let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            match result {
+                Err(DispatchOutcome::RequiredFailed { source, .. }) => {
+                    assert!(source.to_string().starts_with("io:"));
+                }
+                other => panic!("expected RequiredFailed, got {other:?}"),
+            }
+            // 3 attempts (initial + 2 retries) all fail, decrementing
+            // failures_remaining from 5 down to 2.
+            assert_eq!(counter.load(Ordering::Acquire), 2);
+        }
+
+        #[tokio::test]
+        async fn retries_zero_fails_on_first_attempt() {
+            let (trigger, counter) = Trigger::test_failing(1, TestEventual::Succeed, 0, true);
+            let mut states = vec![TriggerState::new()];
+            let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+            assert!(matches!(
+                result,
+                Err(DispatchOutcome::RequiredFailed { .. })
+            ));
+            assert_eq!(counter.load(Ordering::Acquire), 0);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn success_after_retry_advances_through_backoff_and_completes() {
+            let (trigger, counter) = Trigger::test_failing(2, TestEventual::Succeed, 3, true);
+            let mut states = vec![TriggerState::new()];
+            let (_drop_tx, mut parent_rx) = watch::channel(false);
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+            let n = make_notification();
+            let fut = dispatch_triggers_with_backoff(
+                std::slice::from_ref(&trigger),
+                &mut states,
+                &n,
+                &mut parent_rx,
+                &mut cancel_rx,
+                |_| Duration::from_millis(100),
+            );
+            tokio::pin!(fut);
+
+            // Step over both backoff sleeps (2 failures => 2 sleeps).
+            for _ in 0..2 {
+                tokio::task::yield_now().await;
+                tokio::time::advance(Duration::from_millis(110)).await;
+            }
+            let result = fut.await;
+            assert!(matches!(result, Ok(())), "got: {result:?}");
+            assert_eq!(counter.load(Ordering::Acquire), 0);
+        }
+
+        #[tokio::test]
+        async fn optional_trigger_failure_logs_warn_does_not_short_circuit() {
+            let (failing_trigger, _) = Trigger::test_failing(5, TestEventual::Fail, 0, false);
+            let success_trigger = Trigger::echo();
+            let mut states = vec![TriggerState::new(), TriggerState::new()];
+            let result = run_once(&[failing_trigger, success_trigger], &mut states, |_| {
+                Duration::from_millis(1)
+            })
+            .await;
+            assert!(matches!(result, Ok(())));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn parent_cancel_during_retry_backoff_returns_cancelled() {
+            let (trigger, _counter) = Trigger::test_failing(1, TestEventual::Succeed, 3, true);
+            let mut states = vec![TriggerState::new()];
+            let (drop_tx, mut parent_rx) = watch::channel(false);
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+            let n = make_notification();
+            let fut = dispatch_triggers_with_backoff(
+                std::slice::from_ref(&trigger),
+                &mut states,
+                &n,
+                &mut parent_rx,
+                &mut cancel_rx,
+                |_| Duration::from_secs(60),
+            );
+            tokio::pin!(fut);
+
+            // Let dispatch enter the retry backoff sleep (the first
+            // attempt fails synchronously; the dispatcher then sleeps).
+            tokio::task::yield_now().await;
+            tokio::task::yield_now().await;
+            // Fire parent_cancel; the select arm must win over the
+            // 60-second sleep.
+            drop_tx.send(true).unwrap();
+            let result = fut.await;
+            assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
+        }
+
+        #[tokio::test]
+        async fn parent_cancel_between_triggers_returns_cancelled() {
+            let echo1 = Trigger::echo();
+            let echo2 = Trigger::echo();
+            let mut states = vec![TriggerState::new(), TriggerState::new()];
+            let (drop_tx, mut parent_rx) = watch::channel(false);
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+            // Pre-fire the parent cancel before dispatch even starts; the
+            // between-triggers cancel check fires immediately on the first
+            // trigger (the dispatcher sees `has_changed()` true).
+            drop_tx.send(true).unwrap();
+            let n = make_notification();
+            let result = dispatch_triggers_with_backoff(
+                &[echo1, echo2],
+                &mut states,
+                &n,
+                &mut parent_rx,
+                &mut cancel_rx,
+                |_| Duration::from_millis(1),
+            )
+            .await;
+            assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
+        }
     }
 }
