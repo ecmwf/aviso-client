@@ -54,6 +54,16 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     /// or an atomic) to publish the new token; the next call to
     /// [`Self::authorization_header`] is expected to see it.
     ///
+    /// # Cancel-safety
+    ///
+    /// The watch supervisor races this future against per-stream drop and parent-client drop via
+    /// `tokio::select!`, so a refresh in progress may be dropped before completion. Implementations
+    /// MUST publish any updated state via the interior-mutability pattern so a dropped refresh
+    /// leaves the cached credential in a consistent state (either the old or the new value, never
+    /// a torn intermediate). The shipped providers use atomic-swap; a future custom provider that
+    /// violates this contract would cause stale-credential bugs on the next `authorization_header`
+    /// call, which the next 401 cycle would naturally repair.
+    ///
     /// # Errors
     ///
     /// Returns [`crate::ClientError::Auth`] when refresh itself fails (network error talking to
