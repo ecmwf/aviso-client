@@ -27,6 +27,22 @@ pub struct ResumeKey {
 impl ResumeKey {
     /// Compute a resume key from its components.
     ///
+    /// `base_url` is expected to be an HTTP(S) `aviso-server` URL.
+    /// Other URL schemes are not rejected but are also not the
+    /// intended workload; normalisation passes them through `url::Url`
+    /// serialization plus the rules documented in the implementation
+    /// (lowercased scheme and host, default-port stripping, userinfo
+    /// removal, path preservation).
+    ///
+    /// The hash uses null-byte (`0x00`) separators between
+    /// variable-length fields. For the intended inputs (HTTP(S)
+    /// server URLs, JSON filter bodies, ASCII-ish event types and
+    /// schema fingerprints) collisions are not reachable in
+    /// practice: `url::Url` serialization percent-encodes any zero
+    /// bytes, and RFC 8785 JCS escapes them in string values. The
+    /// test module pins this invariant for the few fields that pass
+    /// through unescaped (`event_type` and `schema_fingerprint`).
+    ///
     /// Fallible because the filter is canonicalised via RFC 8785 JSON
     /// Canonicalization Scheme, which rejects inputs `serde_json::Value`
     /// would otherwise accept (such as floats outside finite range).
@@ -245,6 +261,28 @@ mod tests {
     fn key_format_version_is_current() {
         let k = ResumeKey::new(&url("https://a/"), "mars", &json!({}), None).unwrap();
         assert_eq!(k.key_format_version(), KEY_FORMAT_VERSION);
+    }
+
+    #[test]
+    fn event_type_with_nul_byte_does_not_collide_with_different_inputs() {
+        // The null-byte separator strategy requires inputs to not
+        // contain raw null bytes. event_type is the most exposed
+        // path because it goes straight into the hash unescaped.
+        // This fixture pins the property: an event_type with a NUL
+        // does not produce the same key as a different
+        // (event_type, filter) combination where the NUL lands at a
+        // boundary.
+        let with_nul = ResumeKey::new(&url("https://a/"), "a\x00b", &json!({}), None).unwrap();
+        let separate = ResumeKey::new(&url("https://a/"), "a", &json!({"_": "b"}), None).unwrap();
+        assert_ne!(with_nul, separate);
+    }
+
+    #[test]
+    fn schema_fingerprint_with_nul_does_not_collide_with_longer_event_type() {
+        let fp_nul =
+            ResumeKey::new(&url("https://a/"), "mars", &json!({}), Some("v\x001")).unwrap();
+        let no_fp = ResumeKey::new(&url("https://a/"), "marsfp:v\x001", &json!({}), None).unwrap();
+        assert_ne!(fp_nul, no_fp);
     }
 
     #[test]
