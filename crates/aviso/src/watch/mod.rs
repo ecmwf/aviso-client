@@ -125,6 +125,9 @@ mod outcome;
 mod phase;
 mod request;
 mod state;
+mod stream;
+mod supervisor;
+mod wire;
 
 pub use connection::{ConnectionLossReason, ConnectionStatus};
 pub use event::{ServerCloseReason, WatchEvent};
@@ -133,3 +136,7 @@ pub use outcome::{ReconnectPolicy, WatchOutcome};
 pub use phase::{CloseReason, FatalKind, GapReason, ReplayPhase, ResumeStart};
 pub use request::WatchRequest;
 pub use state::WatchState;
+pub use stream::NotificationStream;
+
+pub(crate) use supervisor::{CHANNEL_CAPACITY, run_supervisor};
+pub(crate) use wire::WireWatchRequest;
