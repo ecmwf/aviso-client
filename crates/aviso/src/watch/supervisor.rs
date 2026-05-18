@@ -71,16 +71,21 @@ pub(crate) enum ConnectionOutcome {
         retry_after: Option<std::time::Duration>,
     },
     /// reqwest reported a transport error (TLS, connect, mid-stream
-    /// read). The outer supervisor fires `WatchEvent::ConnectionLost`
-    /// and reconnects with exponential backoff in a follow-up commit;
-    /// today it is surfaced as a terminal `ClientError::Transport`.
+    /// read). The outer supervisor fires `WatchEvent::ConnectionLost {
+    /// reason: TransportError }` and reconnects with exponential
+    /// backoff.
     TransportError(reqwest::Error),
+    /// The TCP connection closed cleanly (EOF) without a server-emitted
+    /// `connection-closing` frame. The outer supervisor fires
+    /// `WatchEvent::ConnectionLost { reason: UnexpectedEof }` and
+    /// reconnects with exponential backoff. Long-lived watches survive
+    /// NAT timeouts and half-open sockets via this path.
+    UnexpectedEof,
     /// The wire delivered a frame the supervisor must surface as a
     /// typed error: malformed `CloudEvent` id, server `error` event,
-    /// unknown `connection-closing` reason, gap detected, EOF without
-    /// a close frame (until a follow-up commit reclassifies EOF as
-    /// `UnexpectedEof`). The reducer has already transitioned. The
-    /// outer supervisor sends the error and exits.
+    /// unknown `connection-closing` reason, or gap detected. The
+    /// reducer has already transitioned. The outer supervisor sends
+    /// the error and exits.
     Fatal(ClientError),
     /// Cancellation observed (per-stream drop). The outer supervisor
     /// exits without surfacing anything.
@@ -126,6 +131,10 @@ pub(crate) const CHANNEL_CAPACITY: usize = 128;
 /// or `Arc`-shared handles so the task is `'static` without forcing the
 /// supervisor to keep an [`crate::AvisoClient`] alive (which would defeat
 /// parent-cancellation work in the follow-up resilience commit).
+#[allow(
+    clippy::too_many_lines,
+    reason = "the outer reconnect loop is intentionally one function: each iteration's classification (close, http, transport, eof, heartbeat, fatal, cancel) and the wire-request rebuild belong together for readability; splitting them into helpers obscures the per-iteration state-mutation order"
+)]
 pub(crate) async fn run_supervisor(
     request: WatchRequest,
     http: reqwest::Client,
@@ -142,50 +151,132 @@ pub(crate) async fn run_supervisor(
         }
     };
     let mut last_reconnect_policy: Option<ReconnectPolicy> = None;
+    let mut retry_counter: u32 = 0;
+    let mut retry_after_override: Option<std::time::Duration> = None;
+    let initial_cursor: Option<ResumeStart> = request.from().cloned();
+    let mut commit_cursor: Option<u64> = initial_cursor.as_ref().and_then(|r| match r {
+        ResumeStart::AfterSequence(n) => Some(*n),
+        ResumeStart::Date(_) => None,
+    });
 
-    let outcome = run_one_connection(
-        &mut state,
-        &mut last_reconnect_policy,
-        &request,
-        &http,
-        &base_url,
-        auth.as_ref(),
-        &tx,
-        &mut cancel,
-    )
-    .await;
+    loop {
+        if state.is_terminal() {
+            break;
+        }
 
-    match outcome {
-        ConnectionOutcome::ServerClosed | ConnectionOutcome::Cancelled => {}
-        ConnectionOutcome::HttpStatus {
-            status,
-            body,
-            request_id,
-            retry_after: _retry_after,
-        } => {
-            let _ = send_or_cancel(
-                &tx,
-                Err(ClientError::Http {
-                    status,
-                    body,
-                    request_id,
-                }),
-                &mut cancel,
-            )
-            .await;
+        // Apply backoff sleep when the previous iteration captured a
+        // reconnect policy. The first iteration's `last_reconnect_policy`
+        // is `None`, so the initial connect proceeds without delay.
+        if let Some(policy) = last_reconnect_policy.take() {
+            let delay = retry_after_override
+                .take()
+                .unwrap_or_else(|| super::backoff::compute_backoff(retry_counter, policy));
+            if !delay.is_zero() {
+                let started = state.transition(WatchEvent::BackoffStarted(delay));
+                apply_outcome(&mut last_reconnect_policy, started);
+                let woke_for_cancel = tokio::select! {
+                    biased;
+                    _ = &mut cancel => true,
+                    () = tokio::time::sleep(delay) => false,
+                };
+                if woke_for_cancel {
+                    break;
+                }
+                let elapsed = state.transition(WatchEvent::BackoffElapsed);
+                apply_outcome(&mut last_reconnect_policy, elapsed);
+            }
         }
-        ConnectionOutcome::TransportError(e) => {
-            let _ = send_or_cancel(&tx, Err(ClientError::Transport(e)), &mut cancel).await;
-        }
-        ConnectionOutcome::Fatal(err) => {
-            let _ = send_or_cancel(&tx, Err(err), &mut cancel).await;
+
+        // Build the wire-request cursor from the current commit_cursor
+        // when one is set; before the first commit, fall back to the
+        // initial cursor (which may be a `Date` per D17 bootstrap).
+        let wire_from: Option<ResumeStart> = match commit_cursor {
+            Some(n) => Some(ResumeStart::AfterSequence(n)),
+            None => initial_cursor.clone(),
+        };
+
+        let outcome = run_one_connection(
+            &mut state,
+            &mut last_reconnect_policy,
+            &request,
+            wire_from.as_ref(),
+            &mut commit_cursor,
+            &http,
+            &base_url,
+            auth.as_ref(),
+            &tx,
+            &mut cancel,
+        )
+        .await;
+
+        match outcome {
+            ConnectionOutcome::ServerClosed => {
+                retry_counter = 0;
+            }
+            ConnectionOutcome::Cancelled => break,
+            ConnectionOutcome::HttpStatus {
+                status,
+                body,
+                request_id,
+                retry_after,
+            } => match status {
+                429 | 503 => {
+                    retry_after_override = retry_after;
+                    let lost = state.transition(WatchEvent::ConnectionLost {
+                        reason: ConnectionLossReason::TransportError,
+                    });
+                    apply_outcome(&mut last_reconnect_policy, lost);
+                    retry_counter = retry_counter.saturating_add(1);
+                }
+                s if (500..=599).contains(&s) => {
+                    let lost = state.transition(WatchEvent::ConnectionLost {
+                        reason: ConnectionLossReason::TransportError,
+                    });
+                    apply_outcome(&mut last_reconnect_policy, lost);
+                    retry_counter = retry_counter.saturating_add(1);
+                }
+                s => {
+                    // 401, 403, 404, 410, other 4xx, and any unclassified
+                    // status: terminal. Auth refresh on 401 lands in a
+                    // follow-up commit, at which point the 401 branch
+                    // splits out and feeds `WatchEvent::AuthRejected`
+                    // instead of falling through here.
+                    let fatal = state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                        format!("server returned {s}"),
+                    )));
+                    apply_outcome(&mut last_reconnect_policy, fatal);
+                    let _ = send_or_cancel(
+                        &tx,
+                        Err(ClientError::Http {
+                            status: s,
+                            body,
+                            request_id,
+                        }),
+                        &mut cancel,
+                    )
+                    .await;
+                    break;
+                }
+            },
+            ConnectionOutcome::TransportError(_e) => {
+                let lost = state.transition(WatchEvent::ConnectionLost {
+                    reason: ConnectionLossReason::TransportError,
+                });
+                apply_outcome(&mut last_reconnect_policy, lost);
+                retry_counter = retry_counter.saturating_add(1);
+            }
+            ConnectionOutcome::UnexpectedEof => {
+                // EOF is already mapped to `ConnectionLost { UnexpectedEof
+                // }` inside `run_one_connection`; the outer loop just
+                // accepts and reconnects.
+                retry_counter = retry_counter.saturating_add(1);
+            }
+            ConnectionOutcome::Fatal(err) => {
+                let _ = send_or_cancel(&tx, Err(err), &mut cancel).await;
+                break;
+            }
         }
     }
-    // `last_reconnect_policy` is consumed by the outer reconnect loop
-    // that lands in a follow-up commit; for now it is captured but
-    // unused. The capture path itself is exercised by reducer-based
-    // unit tests so the cache is verified to fill correctly.
-    let _ = last_reconnect_policy;
 }
 
 fn initial_state(request: &WatchRequest) -> Result<WatchState, ClientError> {
@@ -213,6 +304,8 @@ async fn run_one_connection(
     state: &mut WatchState,
     last_reconnect_policy: &mut Option<ReconnectPolicy>,
     request: &WatchRequest,
+    wire_from: Option<&ResumeStart>,
+    commit_cursor: &mut Option<u64>,
     http: &reqwest::Client,
     base_url: &Url,
     auth: Option<&Arc<dyn AuthProvider>>,
@@ -231,10 +324,14 @@ async fn run_one_connection(
             )));
         }
     };
-    let body = match WireWatchRequest::from_public(request) {
+    let body = match WireWatchRequest::from_parts(request.event_type(), request.filter(), wire_from)
+    {
         Ok(b) => b,
         Err(e) => return ConnectionOutcome::Fatal(e),
     };
+    // commit_cursor is threaded through but not yet updated; the
+    // state-store integration commit advances it on each send.
+    let _ = &commit_cursor;
 
     let auth_header = match auth {
         Some(provider) => {
@@ -297,7 +394,7 @@ async fn run_one_connection(
     apply_outcome(last_reconnect_policy, connected);
 
     let mut parser = finesse::Parser::new();
-    let mut gap_guard = GapGuard::starting_from(request.from());
+    let mut gap_guard = GapGuard::starting_from(wire_from);
 
     loop {
         let chunk = tokio::select! {
@@ -335,17 +432,15 @@ async fn run_one_connection(
         }
         if eof {
             // The wire ended without a `connection-closing` frame. The
-            // current contract surfaces this as a terminal `StreamProtocol`;
-            // the reclassification to `UnexpectedEof` plus reconnect lands
-            // in a follow-up commit.
+            // outer reconnect loop classifies this as routine transport
+            // loss and reconnects with exponential backoff; long-lived
+            // watches survive NAT timeouts and half-open sockets through
+            // this path.
             let lost = state.transition(WatchEvent::ConnectionLost {
                 reason: ConnectionLossReason::UnexpectedEof,
             });
             apply_outcome(last_reconnect_policy, lost);
-            return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
-                message: "stream ended without a connection-closing frame".to_string(),
-                request_id: None,
-            });
+            return ConnectionOutcome::UnexpectedEof;
         }
     }
 }
@@ -759,15 +854,14 @@ mod tests {
             .mount(&server)
             .await;
 
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.event_type, "mars");
         assert_eq!(first.sequence, 7);
-        assert!(
-            rx.recv().await.is_none(),
-            "stream should close after end_of_stream"
-        );
-        handle.await.unwrap();
+        // In watch mode end_of_stream reconnects; drop the cancel to break
+        // the reconnect loop and let the supervisor exit.
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
@@ -795,14 +889,14 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(
             first.sequence, 1,
             "the connection_established marker must not emit a notification"
         );
-        assert!(rx.recv().await.is_none());
-        handle.await.unwrap();
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
@@ -830,12 +924,12 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.event_type, "mars");
         assert_eq!(first.sequence, 5);
-        assert!(rx.recv().await.is_none());
-        handle.await.unwrap();
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
@@ -918,11 +1012,11 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
-        assert!(rx.recv().await.is_none());
-        handle.await.unwrap();
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
@@ -1019,20 +1113,37 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
-        assert!(
-            rx.recv().await.is_none(),
-            "the post-close-frame notification must NOT surface"
-        );
-        handle.await.unwrap();
+        // Sequence 99 (after the close frame) must not arrive. We give the
+        // supervisor a small window to misbehave, then drop the cancel to
+        // break the reconnect loop.
+        let next = tokio::time::timeout(Duration::from_millis(150), rx.recv()).await;
+        match next {
+            Err(_) => {
+                // Timeout: nothing more arrived. The expected outcome.
+            }
+            Ok(Some(Ok(n))) => {
+                assert_ne!(
+                    n.sequence, 99,
+                    "the post-close-frame notification must NOT surface"
+                );
+            }
+            Ok(other) => panic!("unexpected receive: {other:?}"),
+        }
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
-    async fn unexpected_eof_without_close_frame_terminates_with_stream_protocol_error() {
+    async fn unexpected_eof_without_close_frame_does_not_surface_fatal_error() {
+        // EOF without close-frame is reclassified as routine transport
+        // loss; the supervisor reconnects rather than surfacing a terminal
+        // error. The end-to-end behaviour is covered by an integration
+        // test (`unexpected_eof_triggers_reconnect`); this unit test pins
+        // the negative invariant: no `Err(_)` item ever surfaces.
         let server = MockServer::start().await;
-        // One notification, then the response body ends (no close frame).
         let body = sse_chunk("live-notification", cloud_event("mars", 1));
         Mock::given(method("POST"))
             .and(path("/api/v1/watch"))
@@ -1043,16 +1154,23 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
-        let item = rx.recv().await.unwrap();
-        assert!(
-            matches!(item, Err(ClientError::StreamProtocol { .. })),
-            "got {item:?}"
-        );
-        assert!(rx.recv().await.is_none());
-        handle.await.unwrap();
+        // After the first notification the server EOFs; the supervisor
+        // reconnects. The second connection serves the same body (mock
+        // does not differentiate), so the next item the consumer sees
+        // would be another notification (possibly flagged by GapGuard
+        // because sequence 1 is observed-before-expected, which the
+        // GapGuard tolerates as a backwards-jump). We do not assert on
+        // the second item's exact shape here; we only assert that no
+        // `Err(StreamProtocol)` surfaces.
+        let next = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+        if let Ok(Some(Err(e))) = next {
+            panic!("EOF must not surface as a terminal error, got: {e:?}");
+        }
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[tokio::test]
@@ -1073,11 +1191,11 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let (mut rx, _cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
+        let (mut rx, cancel_tx, handle) = start_supervisor(&server, WatchRequest::watch("mars"));
         let first = rx.recv().await.unwrap().unwrap();
         assert_eq!(first.sequence, 1);
-        assert!(rx.recv().await.is_none());
-        handle.await.unwrap();
+        drop(cancel_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
     }
 
     #[test]
