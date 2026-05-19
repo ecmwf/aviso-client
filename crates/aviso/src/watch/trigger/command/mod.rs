@@ -47,6 +47,9 @@ use crate::Notification;
 use super::TriggerError;
 use super::template::{CompiledTemplate, TemplateError, compile, template_error_to_trigger_error};
 
+#[cfg(test)]
+mod tests;
+
 /// Bytes of stdout / stderr to retain per attempt.
 const RING_CAP: usize = 4096;
 
@@ -71,6 +74,14 @@ pub(super) struct CommandConfig {
     pub(super) working_dir: Option<PathBuf>,
 }
 
+/// Manual Debug impl that REDACTS the raw command template and the
+/// env-var VALUES, because either can carry secrets (bearer tokens,
+/// connection URIs). The redacted output names only structural facts:
+/// whether the template compiled, whether a `working_dir` is set, and
+/// the count of env vars the user supplied. Operators who need the
+/// raw template for diagnosis use DEBUG-level tracing, which sees the
+/// template through the `client.trigger.template.render_failed`
+/// event field and never goes through Debug.
 impl std::fmt::Debug for CommandConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let CommandConfig {
@@ -78,17 +89,13 @@ impl std::fmt::Debug for CommandConfig {
             env,
             working_dir,
         } = self;
-        // Render the template by its raw source if compiled, or
-        // mark as "<bad>" if the parse failed. Either way the raw
-        // template is debug-only output and never reaches public
-        // errors.
-        let command_dbg: &dyn std::fmt::Debug = match command_template {
-            Ok(t) => t,
-            Err(e) => e,
+        let template_state: &dyn std::fmt::Display = match command_template {
+            Ok(_) => &"<compiled-template-redacted>",
+            Err(_) => &"<bad-template-redacted>",
         };
         f.debug_struct("CommandConfig")
-            .field("command_template", command_dbg)
-            .field("env", env)
+            .field("command_template", &format_args!("{template_state}"))
+            .field("env_count", &env.len())
             .field("working_dir", working_dir)
             .finish()
     }
@@ -285,7 +292,7 @@ fn env_injection(n: &Notification) -> Result<Vec<(String, String)>, TriggerError
 /// Uppercase the key and replace non-alphanumerics with `_`, so
 /// identifiers like `country-code` round-trip into
 /// `AVISO_IDENTIFIER_COUNTRY_CODE` (env-var-safe).
-fn normalize_key(k: &str) -> String {
+pub(super) fn normalize_key(k: &str) -> String {
     k.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {
@@ -304,7 +311,11 @@ fn normalize_key(k: &str) -> String {
 /// and the buffer accumulated so far is returned; the captured tail
 /// is best-effort diagnostic, and the authoritative success / fail
 /// signal is the child's exit status.
-async fn drain_to_ring<R>(mut reader: R, cap: usize, stream_label: &'static str) -> Vec<u8>
+pub(super) async fn drain_to_ring<R>(
+    mut reader: R,
+    cap: usize,
+    stream_label: &'static str,
+) -> Vec<u8>
 where
     R: AsyncRead + Unpin,
 {
@@ -350,208 +361,5 @@ pub(super) fn build_command_config(cmd: impl Into<String>) -> CommandConfig {
         command_template: compiled,
         env: BTreeMap::new(),
         working_dir: None,
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    reason = "test code: unwrap/expect on dispatch results and panic on unexpected variants are the standard test diagnostics"
-)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use super::{build_command_config, dispatch_command, drain_to_ring, normalize_key};
-    use crate::Notification;
-    use crate::watch::TriggerError;
-
-    fn make_notification() -> Notification {
-        let mut identifier = BTreeMap::new();
-        identifier.insert("country".to_string(), "uk".to_string());
-        Notification {
-            event_type: "mars".to_string(),
-            sequence: 42,
-            identifier,
-            payload: serde_json::json!({ "location": "south", "qty": 7 }),
-            request_id: Some("req-abc".to_string()),
-        }
-    }
-
-    #[tokio::test]
-    async fn command_trigger_zero_exit_is_success() {
-        let cfg = build_command_config("true");
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-    }
-
-    #[tokio::test]
-    async fn command_trigger_nonzero_exit_returns_command_error_with_stderr_tail() {
-        let cfg = build_command_config("printf 'bad happened' 1>&2; exit 7");
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        match result {
-            Err(TriggerError::Command {
-                exit_code,
-                stderr_tail,
-            }) => {
-                assert_eq!(exit_code, 7, "got exit_code: {exit_code}");
-                assert!(stderr_tail.contains("bad happened"), "got: {stderr_tail}");
-            }
-            other => panic!("expected Command error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn command_trigger_stderr_tail_capped_at_4kib() {
-        // Emit 8 KiB of 'A' followed by a sentinel suffix to stderr,
-        // then exit 1. The captured tail must be exactly 4096 bytes
-        // and must contain the sentinel suffix (i.e., we kept the
-        // TAIL, not the head).
-        let cfg = build_command_config(
-            "perl -e 'print STDERR \"A\" x 8192; print STDERR \"SENTINEL\"; exit 1'",
-        );
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        match result {
-            Err(TriggerError::Command {
-                exit_code: 1,
-                stderr_tail,
-            }) => {
-                assert_eq!(
-                    stderr_tail.len(),
-                    4096,
-                    "ring buffer must cap at 4096 bytes"
-                );
-                assert!(stderr_tail.ends_with("SENTINEL"), "ring must keep the TAIL");
-            }
-            other => panic!("expected Command exit 1, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn command_trigger_stdout_overflow_does_not_block_child() {
-        // Emit 128 KiB of stdout (well past Linux's default 64 KiB
-        // pipe buffer) AND exit cleanly. Without the concurrent
-        // drain_to_ring task, the child would block waiting for the
-        // parent to read stdout, and child.wait() would hang.
-        // The test must complete within the test framework's default
-        // timeout (typically 60s on CI).
-        let cfg = build_command_config("perl -e 'print \"X\" x 131072; exit 0'");
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-    }
-
-    #[tokio::test]
-    async fn command_trigger_aviso_env_vars_injected_into_child() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outfile = dir.path().join("out.txt");
-        let cfg = build_command_config(format!(
-            "printf '%s|%s|%s|%s' \"$AVISO_EVENT_TYPE\" \"$AVISO_SEQUENCE\" \"$AVISO_IDENTIFIER_COUNTRY\" \"$AVISO_REQUEST_ID\" > '{}'",
-            outfile.display()
-        ));
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-        let contents = std::fs::read_to_string(&outfile).expect("read outfile");
-        assert_eq!(contents, "mars|42|uk|req-abc");
-    }
-
-    #[tokio::test]
-    async fn command_trigger_user_env_overrides_aviso_injection() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outfile = dir.path().join("out.txt");
-        let mut cfg = build_command_config(format!(
-            "printf '%s' \"$AVISO_EVENT_TYPE\" > '{}'",
-            outfile.display()
-        ));
-        cfg.env
-            .insert("AVISO_EVENT_TYPE".to_string(), "OVERRIDDEN".to_string());
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-        let contents = std::fs::read_to_string(&outfile).expect("read outfile");
-        assert_eq!(contents, "OVERRIDDEN");
-    }
-
-    #[tokio::test]
-    async fn command_trigger_working_dir_missing_returns_io_error() {
-        let mut cfg = build_command_config("true");
-        cfg.working_dir = Some(std::path::PathBuf::from(
-            "/no/such/path/aviso-test-missing-dir-NEVER-CREATED-9d3b",
-        ));
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        match result {
-            Err(TriggerError::Io(_)) => {}
-            other => panic!("expected Io error for missing working_dir, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn command_trigger_template_substitution_renders_notification_field() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outfile = dir.path().join("out.txt");
-        let cfg = build_command_config(format!(
-            "printf 'event:{{{{ notification.event_type }}}}' > '{}'",
-            outfile.display()
-        ));
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-        let contents = std::fs::read_to_string(&outfile).expect("read outfile");
-        assert_eq!(contents, "event:mars");
-    }
-
-    #[tokio::test]
-    async fn command_trigger_template_compile_failure_surfaces_at_dispatch() {
-        // Builder is infallible: a malformed template produces a
-        // CommandConfig whose command_template stores Err(...).
-        let cfg = build_command_config("hello {{ notification.event_type");
-        let result = dispatch_command(&cfg, None, &make_notification()).await;
-        match result {
-            Err(TriggerError::Template {
-                context,
-                field,
-                kind,
-            }) => {
-                assert_eq!(context, "command");
-                assert_eq!(field, "unclosed_braces");
-                assert_eq!(kind, crate::watch::TemplateErrorKind::BadSyntax);
-            }
-            other => panic!("expected Template error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn normalize_key_uppercases_and_replaces_non_alphanumerics() {
-        assert_eq!(normalize_key("country-code"), "COUNTRY_CODE");
-        assert_eq!(normalize_key("a.b.c"), "A_B_C");
-        assert_eq!(normalize_key("X1y2"), "X1Y2");
-        assert_eq!(normalize_key(""), "");
-    }
-
-    #[tokio::test]
-    async fn drain_to_ring_keeps_tail_when_input_exceeds_cap() {
-        let cursor = std::io::Cursor::new(b"abcdefghij".to_vec());
-        let tail = drain_to_ring(cursor, 4, "test").await;
-        assert_eq!(&tail, b"ghij");
-    }
-
-    #[tokio::test]
-    async fn drain_to_ring_returns_full_input_when_under_cap() {
-        let cursor = std::io::Cursor::new(b"abc".to_vec());
-        let tail = drain_to_ring(cursor, 4096, "test").await;
-        assert_eq!(&tail, b"abc");
-    }
-
-    #[tokio::test]
-    async fn drain_to_ring_handles_single_read_larger_than_cap() {
-        // 4096 bytes fills the per-read 4096-byte buffer iter (the
-        // function reads 4096 at a time). A single read of >= cap
-        // exercises the special-case `if n >= cap` branch.
-        let bytes: Vec<u8> = (0u32..4096)
-            .map(|i| u8::try_from(i % 256).unwrap_or(0))
-            .collect();
-        let cursor = std::io::Cursor::new(bytes.clone());
-        let tail = drain_to_ring(cursor, 100, "test").await;
-        assert_eq!(tail.len(), 100);
-        // The tail must equal the LAST 100 bytes of the input.
-        assert_eq!(&tail[..], &bytes[bytes.len() - 100..]);
     }
 }
