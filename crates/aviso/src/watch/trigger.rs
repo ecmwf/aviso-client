@@ -780,7 +780,11 @@ mod tests {
 
         #[tokio::test]
         async fn log_trigger_returns_io_error_when_parent_dir_missing() {
-            let trigger = Trigger::log("/nonexistent-dir-aviso-test/x.log");
+            let dir = tempfile::tempdir().unwrap();
+            // Intentionally do NOT create the `missing` subdirectory; the
+            // open syscall must surface a typed Io error.
+            let bad_path = dir.path().join("missing").join("x.log");
+            let trigger = Trigger::log(&bad_path);
             let mut states = vec![TriggerState::new()];
             let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
             match result {
