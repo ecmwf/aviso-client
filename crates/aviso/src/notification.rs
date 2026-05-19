@@ -86,7 +86,11 @@ impl NotificationRequest {
 /// Constructed from the wire-format `CloudEvent` envelope, which is hidden per D9. New envelope
 /// fields will appear here as the streaming surface lands; the type is `#[non_exhaustive]` so
 /// additions do not break downstream code.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize` is derived so trigger dispatchers (and any downstream consumer) can render the
+/// notification as JSON without bespoke serialisation code. The wire shape on serialisation is
+/// the public field layout: `event_type`, `sequence`, `identifier`, `payload`, `request_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct Notification {
     /// Schema event-type, parsed from the `CloudEvent` id (the part before `@`).
@@ -276,6 +280,50 @@ mod tests {
                 json.get("payload").is_none(),
                 "payload field must be omitted when None: {json}"
             );
+        }
+    }
+
+    mod notification_serialize {
+        use std::collections::BTreeMap;
+
+        use crate::Notification;
+
+        #[test]
+        fn serializes_to_expected_wire_shape_with_all_fields() {
+            let mut identifier = BTreeMap::new();
+            identifier.insert("country".to_string(), "uk".to_string());
+            let notification = Notification {
+                event_type: "mars".to_string(),
+                sequence: 42,
+                identifier,
+                payload: serde_json::json!({ "location": "south" }),
+                request_id: Some("req-abc".to_string()),
+            };
+            let json = serde_json::to_value(&notification).unwrap();
+            assert_eq!(
+                json,
+                serde_json::json!({
+                    "event_type": "mars",
+                    "sequence": 42,
+                    "identifier": { "country": "uk" },
+                    "payload": { "location": "south" },
+                    "request_id": "req-abc",
+                })
+            );
+        }
+
+        #[test]
+        fn serializes_null_payload_as_json_null() {
+            let notification = Notification {
+                event_type: "mars".to_string(),
+                sequence: 7,
+                identifier: BTreeMap::new(),
+                payload: serde_json::Value::Null,
+                request_id: None,
+            };
+            let json = serde_json::to_value(&notification).unwrap();
+            assert_eq!(json.get("payload"), Some(&serde_json::Value::Null));
+            assert_eq!(json.get("request_id"), Some(&serde_json::Value::Null));
         }
     }
 }

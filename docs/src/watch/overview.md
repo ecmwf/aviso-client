@@ -97,6 +97,7 @@ The remaining error variants are terminal: they surface as `Some(Err(_))` follow
 - `Auth(_)` when an `AuthProvider::refresh()` call returns an error, or when a second 401 arrives within the same attempt cycle (signalling the refreshed credential was also rejected).
 - `StreamProtocol { message, request_id }` for the server's `error` SSE event and for `connection-closing` frames whose `reason` is not one of the three documented values. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
 - `StateStore(_)` when a configured `StateStore` fails during `get` or `put`. Continuing without a working store would silently violate at-least-once delivery, so this is terminal.
+- `TriggerFailed { kind, source }` when a required trigger fails after all configured retries. The committed checkpoint stays at the previous notification's sequence; on next process start the supervisor re-delivers the notification whose trigger failed. `kind` is `TriggerKindLabel::Echo` or `TriggerKindLabel::Log { path }`; `source` is `TriggerError::Io` or `TriggerError::Encode`.
 - `Decode(_)` on a wire-shape JSON payload that does not deserialise.
 - `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal to avoid livelocking on a poisoned stream.
 - `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
@@ -186,6 +187,50 @@ let client = AvisoClient::builder()
 ```
 
 A failure to persist the checkpoint terminates the watch with `ClientError::StateStore(_)`. Continuing without a working store would silently violate at-least-once delivery; the user must see the failure to fix the underlying problem (disk full, file corrupted, permissions).
+
+## Triggers
+
+A trigger is a per-notification side effect attached to a `WatchRequest` via `with_triggers(Vec<Trigger>)`. Triggers run in declaration order **before** each notification is sent on the consumer channel, so the consumer never sees an item whose required triggers have not all passed. Two built-in kinds ship in the first release:
+
+- `Trigger::echo()` writes the notification as a single compact JSON line to standard output (NDJSON; one line per notification, terminating `\n`). The trigger has no configurable destination; it writes to `stdout` via a locked handle. Use `aviso watch ... | jq` to compose with line-oriented tools.
+- `Trigger::log(path)` appends the same NDJSON line to a user-specified file. The file is opened on first dispatch with `append(true).create(true)` and held open for the watch's lifetime; the trigger does not `fsync` per write (at-least-once at the state-store level covers crash replay), does not rotate the file (use `logrotate` or similar externally), and does not reopen on signals.
+
+```rust,ignore
+use aviso::watch::{Trigger, WatchRequest};
+
+let req = WatchRequest::watch("mars")
+    .with_triggers(vec![
+        Trigger::echo(),
+        Trigger::log("/var/log/aviso/notifications.log"),
+    ]);
+let mut stream = client.watch(req)?;
+```
+
+Each trigger has two tunables on the builder:
+
+- `.retries(u32)` (default `0`): up to `N` additional attempts after the initial-attempt failure, for a total of `N + 1` attempts. Backoff between attempts is the supervisor's standard exponential schedule with full jitter (base 250 ms, capped at 30 s).
+- `.required(bool)` (default `true`): a required trigger that fails after all retries terminates the watch with `ClientError::TriggerFailed`; an optional trigger that fails after all retries emits a `tracing::warn!` event with stable name `client.trigger.failed` carrying `kind`, `retries`, and the inner error display, and the watch continues to the next trigger and the channel send.
+
+```rust,ignore
+let req = WatchRequest::watch("mars").with_triggers(vec![
+    Trigger::log("/var/log/aviso/audit.log"),                  // required
+    Trigger::log("/var/log/aviso/telemetry.log")
+        .retries(3)
+        .required(false),                                      // optional
+]);
+```
+
+### Atomicity and ordering
+
+Each dispatch attempt is the atomic unit: the supervisor serialises the notification into a `Vec<u8>` once (with the newline appended to the same buffer) and writes the buffer through a single `write_all` call. Within a single dispatch attempt the dispatcher does not race against cancellation, matching the same atomicity contract that applies to `StateStore::put`. Between attempts (during retry backoff sleep) and between triggers (in the per-notification loop), the dispatcher honours both parent-drop and the per-stream cancel oneshot.
+
+The pipeline runs **before** the channel send, so a required trigger that fails for notification N never causes N to be sent or committed. On the next process start, the supervisor's resume cursor still points at the previous notification's sequence and N is re-delivered.
+
+### v1 limitations
+
+- No per-attempt `timeout`. A pathological filesystem hang (NFS deadlock, FIFO with no reader) during a single dispatch attempt would block the supervisor's shutdown latency until the OS call returns. For local stdout and regular files this is microseconds in practice. A `.timeout()` builder method will be added when a future trigger kind (Webhook) ships, where `reqwest`'s HTTP-level timeout makes it meaningful.
+- No log rotation, no signal-driven reopen, no per-write `fsync`. External tools like `logrotate` handle rotation; crash replay covers durability via the state-store's at-least-once invariant.
+- No process-level stdout capture in tests. Echo content is verified by unit tests over the serialisation; integration tests verify the pipeline does not break stream delivery.
 
 ## Operator ingress recipe
 

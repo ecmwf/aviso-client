@@ -14,9 +14,9 @@ impl AvisoClient {
     ///
     /// # Errors
     ///
-    /// Returns the same error shape as [`AvisoClient::notify`]: [`ClientError::Transport`] on
-    /// network failure, [`ClientError::Http`] on non-success status (with verbatim body and
-    /// `X-Request-ID`), [`ClientError::Auth`] on auth-provider failure.
+    /// Returns the same error shape as [`AvisoClient::notify`]: [`crate::ClientError::Transport`] on
+    /// network failure, [`crate::ClientError::Http`] on non-success status (with verbatim body and
+    /// `X-Request-ID`), [`crate::ClientError::Auth`] on auth-provider failure.
     pub async fn wipe_stream(&self, stream_name: &str) -> crate::Result<()> {
         let url = self.endpoint("api/v1/admin/wipe/stream")?;
         let body = serde_json::json!({ "stream_name": stream_name });
@@ -50,7 +50,7 @@ impl AvisoClient {
     /// # Errors
     ///
     /// Same shape as [`AvisoClient::wipe_stream`]. A missing id returns
-    /// [`ClientError::Http`] with `status = 404`.
+    /// [`crate::ClientError::Http`] with `status = 404`.
     pub async fn delete_notification(&self, notification_id: &str) -> crate::Result<()> {
         crate::client::validate_path_segment(notification_id)?;
         let url = self.endpoint(&format!("api/v1/admin/notification/{notification_id}"))?;

@@ -7,7 +7,7 @@
 //! `request_id` field, so callers can quote it when reporting issues.
 
 use crate::state::StoreError;
-use crate::watch::GapReason;
+use crate::watch::{GapReason, TriggerError, TriggerKindLabel};
 
 /// Result alias using [`ClientError`] as the error type.
 pub type Result<T> = std::result::Result<T, ClientError>;
@@ -97,6 +97,29 @@ pub enum ClientError {
     /// classify the root cause via `source()` if they need to.
     #[error("state store: {0}")]
     StateStore(#[from] StoreError),
+
+    /// A required trigger failed after all configured retries.
+    ///
+    /// Surfaced when a [`crate::watch::Trigger`] configured on a
+    /// [`crate::watch::WatchRequest`] with `required: true` (the default)
+    /// exhausts its retry budget. Terminal: the stream yields `None`
+    /// after this error and the supervisor exits.
+    ///
+    /// The committed checkpoint stays at the previous notification's
+    /// sequence (or remains unset if the failing trigger was on the very
+    /// first notification of the session). On next process start the
+    /// supervisor re-delivers the notification whose trigger failed.
+    ///
+    /// `kind` names the trigger for diagnostics; `source` carries the
+    /// underlying error (typically a [`crate::watch::TriggerError::Io`]).
+    #[error("trigger {kind} failed: {source}")]
+    TriggerFailed {
+        /// Kind of trigger that failed (echo or log).
+        kind: TriggerKindLabel,
+        /// Inner error from the trigger dispatcher.
+        #[source]
+        source: TriggerError,
+    },
 }
 
 impl ClientError {
@@ -120,6 +143,12 @@ impl ClientError {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: expect and panic on unexpected variant are the standard test diagnostics"
+)]
 mod tests {
     use super::ClientError;
     use crate::watch::GapReason;
@@ -216,5 +245,50 @@ mod tests {
         let store_err: StoreError = std::io::Error::other("boom").into();
         let err: ClientError = store_err.into();
         assert_eq!(err.request_id(), None);
+    }
+
+    #[test]
+    fn trigger_failed_display_includes_kind_and_source() {
+        use crate::watch::{TriggerError, TriggerKindLabel};
+        let inner: TriggerError = std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied: /var/log/aviso.log",
+        )
+        .into();
+        let err = ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Log {
+                path: std::path::PathBuf::from("/var/log/aviso.log"),
+            },
+            source: inner,
+        };
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("trigger log(/var/log/aviso.log) failed"),
+            "got: {rendered}"
+        );
+        assert!(rendered.contains("permission denied"), "got: {rendered}");
+    }
+
+    #[test]
+    fn trigger_failed_request_id_is_none() {
+        use crate::watch::{TriggerError, TriggerKindLabel};
+        let err = ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Echo,
+            source: TriggerError::Io(std::io::Error::other("broken pipe")),
+        };
+        assert_eq!(err.request_id(), None);
+    }
+
+    #[test]
+    fn trigger_failed_source_chain_exposes_inner_io_error() {
+        use crate::watch::{TriggerError, TriggerKindLabel};
+        use std::error::Error as _;
+        let err = ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Echo,
+            source: TriggerError::Io(std::io::Error::other("disk full")),
+        };
+        let source = err.source().expect("TriggerFailed must expose source");
+        let chain = source.to_string();
+        assert!(chain.contains("io:"), "got: {chain}");
     }
 }
