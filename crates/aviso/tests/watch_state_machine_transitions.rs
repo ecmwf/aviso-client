@@ -267,21 +267,6 @@ fn row_17_fatal_malformed_event_terminates() {
 }
 
 #[test]
-fn row_17_fatal_schema_fingerprint_changed_terminates() {
-    let mut s = watch_live_connected();
-    let out = s.transition(WatchEvent::Fatal(FatalKind::SchemaFingerprintChanged));
-    assert_eq!(
-        out,
-        WatchOutcome::Stop {
-            reason: CloseReason::Fatal {
-                kind: FatalKind::SchemaFingerprintChanged,
-            },
-        }
-    );
-    assert!(s.is_terminal());
-}
-
-#[test]
 fn row_17_fatal_transport_retries_exhausted_terminates() {
     let mut s = watch_live_connected();
     let out = s.transition(WatchEvent::Fatal(FatalKind::TransportRetriesExhausted));

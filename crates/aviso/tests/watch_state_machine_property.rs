@@ -94,7 +94,6 @@ fn gap_reason_strategy() -> impl Strategy<Value = GapReason> {
 fn fatal_kind_strategy() -> impl Strategy<Value = FatalKind> {
     prop_oneof![
         Just(FatalKind::MalformedEvent),
-        Just(FatalKind::SchemaFingerprintChanged),
         Just(FatalKind::AuthenticationRejectedAfterRefresh),
         Just(FatalKind::TransportRetriesExhausted),
         "[a-z ]{0,32}".prop_map(FatalKind::ProtocolViolation),
