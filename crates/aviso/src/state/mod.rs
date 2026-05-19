@@ -1,27 +1,36 @@
 //! Persistence for watch resume state.
 //!
 //! [`StateStore`] is an async trait for persisting and retrieving
-//! [`Checkpoint`]s keyed by [`ResumeKey`]. The aviso watch
-//! supervisor will consume it once the supervisor lands (a
-//! follow-up PR); today the trait stands alone with two
-//! implementations. Implementations are `Send + Sync` and serialise
+//! [`Checkpoint`]s keyed by [`ResumeKey`], consumed by the aviso
+//! watch supervisor for at-least-once delivery across reconnects and
+//! process restarts. Implementations are `Send + Sync` and serialise
 //! concurrent writes internally so the in-memory and (where
 //! applicable) on-disk states stay consistent.
 //!
 //! A successful [`StateStore::put`] is committed-before-visible: a
-//! subsequent [`StateStore::get`] returns the value just written. For
+//! subsequent [`StateStore::get`] returns the resolved value. For
 //! durable implementations (such as [`JsonFileStore`]) the same
 //! guarantee is durable-before-visible: the disk write returns
 //! success before the new value becomes visible to readers. A failed
 //! `put` leaves all state unchanged.
+//!
+//! `put` is **strictly monotonic** in `last_committed_sequence`: a
+//! put with a sequence less than or equal to the existing value is a
+//! silent no-op. Both implementations enforce this so consumers see
+//! identical behaviour regardless of the backing store. Callers
+//! needing to reset a checkpoint to a lower sequence must
+//! [`delete`](StateStore::delete) first, then `put`.
 //!
 //! Two implementations are provided:
 //!
 //! - [`MemoryStore`]: in-process. State dies with the program. Good
 //!   for tests and short-lived consumers.
 //! - [`JsonFileStore`]: backed by a JSON file with crash-safe atomic
-//!   writes via the `atomicwrites` crate. Single-process; multi-process
-//!   correctness is a follow-up.
+//!   writes via the `atomicwrites` crate plus a cross-process
+//!   advisory lock on a sidecar lockfile. Safe for cooperating
+//!   processes on local filesystems; see the type docs for the
+//!   precondition list (no NFS/CIFS, no external deletion of the
+//!   lockfile).
 //!
 //! Resume keys are derived from a base URL, an event type, the watch
 //! filter body, and an optional schema fingerprint (D3 in the ADR log).
@@ -46,8 +55,9 @@ use async_trait::async_trait;
 /// Persistent storage for [`Checkpoint`] keyed by [`ResumeKey`].
 ///
 /// Implementations are `Send + Sync` and serialise concurrent writes
-/// internally. See the [module docs](self) for the linearizable-
-/// semantics contract.
+/// internally. See the [module docs](self) for the strict-monotonic
+/// `put` contract and the multi-writer concurrency notes that
+/// distinguish [`MemoryStore`] from [`JsonFileStore`].
 ///
 /// # Cancel-safety expectation for watch supervisor consumers
 ///
@@ -92,12 +102,28 @@ pub trait StateStore: Send + Sync {
     /// the underlying storage cannot be read.
     async fn get(&self, key: &ResumeKey) -> Result<Option<Checkpoint>, StoreError>;
 
-    /// Store `checkpoint` at `key`, overwriting any existing value.
+    /// Store `checkpoint` at `key`.
     ///
-    /// On success the new value is committed and visible. For durable
-    /// implementations the value is also persisted before this
-    /// method returns. On error neither the in-memory nor (where
-    /// applicable) the on-disk state is mutated.
+    /// Implementations must be **strictly monotonic** in
+    /// `last_committed_sequence`: a `put` whose sequence is less than
+    /// or equal to the existing value's sequence is silently a no-op.
+    /// `last_committed_sequence` is the load-bearing forward-only
+    /// cursor the supervisor reconnects from; allowing it to move
+    /// backwards would silently lose at-least-once delivery
+    /// guarantees, both within a single process (where a stale
+    /// callback could clobber a fresh advance) and across cooperating
+    /// processes (where a fresh handle reading disk and writing a
+    /// lower value would overwrite the durable state).
+    ///
+    /// Callers that need to reset a checkpoint to a lower sequence
+    /// must [`delete`](Self::delete) the key first, then `put` the
+    /// new value.
+    ///
+    /// On success (whether the write landed or was monotonically
+    /// suppressed) the resolved value is committed and visible. For
+    /// durable implementations the resolved value is also persisted
+    /// before this method returns. On error neither the in-memory
+    /// nor (where applicable) the on-disk state is mutated.
     ///
     /// # Errors
     ///
@@ -106,10 +132,38 @@ pub trait StateStore: Send + Sync {
 
     /// Remove the checkpoint at `key`. No-op if absent.
     ///
-    /// On success the removal is committed and visible. For durable
-    /// implementations the removal is also persisted before this
-    /// method returns. On error neither the in-memory nor (where
-    /// applicable) the on-disk state is mutated.
+    /// Multi-writer implementations (such as [`JsonFileStore`])
+    /// may leave the key present on durable storage when a
+    /// concurrent writer's value coexists with this caller's
+    /// `delete`. Two distinct races trigger this:
+    ///
+    /// 1. **Caller observed the key**: the caller's pre-state held
+    ///    `(key, seq=N)`. A sibling process advanced it to
+    ///    `(key, seq=N+M)` between the pre-state load and the
+    ///    write-through merge. The "delete the K I knew" intent
+    ///    becomes ambiguous in that race; the implementation
+    ///    preserves the sibling's later value.
+    /// 2. **Caller observed the key absent**: the caller's
+    ///    pre-state did not contain `key` at all. A sibling
+    ///    process created it (any sequence) between the
+    ///    pre-state load and the write-through merge. The
+    ///    implementation cannot distinguish "delete a key I never
+    ///    saw" from "did not touch this key" through the mutator
+    ///    API, so the sibling's value is preserved.
+    ///
+    /// A subsequent [`get`](Self::get) then returns the concurrent
+    /// value rather than `None`. Callers that need a strict
+    /// remove-and-confirm semantic must re-read and retry
+    /// (or accept the at-least-once delivery the supervisor uses,
+    /// which treats either outcome as valid). Single-writer
+    /// implementations (such as [`MemoryStore`]) always honour the
+    /// delete because there is no concurrent-writer race to resolve.
+    ///
+    /// On success the resolved state (either the delete or the
+    /// preserved concurrent value) is committed and visible. For
+    /// durable implementations the resolved state is also persisted
+    /// before this method returns. On error neither the in-memory
+    /// nor (where applicable) the on-disk state is mutated.
     ///
     /// # Errors
     ///

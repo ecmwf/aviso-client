@@ -77,7 +77,15 @@ async fn apply_and_verify<S: StateStore>(store: &S, ops: Vec<Op>) {
         match op {
             Op::Put(k, v) => {
                 store.put(&key(k), Checkpoint::new(v, None)).await.unwrap();
-                model.insert(k, v);
+                // Mirror the strict-monotonic put contract: a put
+                // with sequence <= existing is a no-op. Resets
+                // require an explicit Delete in the op sequence.
+                match model.get(&k) {
+                    Some(existing) if *existing >= v => {}
+                    _ => {
+                        model.insert(k, v);
+                    }
+                }
                 touched.insert(k);
             }
             Op::Delete(k) => {

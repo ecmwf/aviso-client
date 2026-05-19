@@ -13,6 +13,14 @@ use crate::state::{Checkpoint, ResumeKey, StateStore, StoreError};
 /// `Clone` is cheap (an `Arc` bump); two cloned handles share the same
 /// underlying map. State is lost when the last handle is dropped.
 ///
+/// Like [`JsonFileStore`](super::JsonFileStore), `put` is monotonic
+/// in `last_committed_sequence`: a put with a sequence lower than or
+/// equal to the existing value is silently a no-op. Callers that
+/// need to reset a checkpoint to a lower sequence must `delete`
+/// first. This matches the `JsonFileStore` semantics so tests and
+/// downstream consumers see the same behaviour regardless of the
+/// backing store.
+///
 /// For state that survives process restarts, use
 /// [`JsonFileStore`](super::JsonFileStore).
 #[derive(Debug, Default, Clone)]
@@ -37,7 +45,17 @@ impl StateStore for MemoryStore {
 
     async fn put(&self, key: &ResumeKey, checkpoint: Checkpoint) -> Result<(), StoreError> {
         let mut map = self.inner.write().await;
-        map.insert(key.clone(), checkpoint);
+        match map.get(key) {
+            Some(existing)
+                if existing.last_committed_sequence >= checkpoint.last_committed_sequence =>
+            {
+                // Strict monotonic: never overwrite with an equal or
+                // lower sequence. Same contract as JsonFileStore.
+            }
+            _ => {
+                map.insert(key.clone(), checkpoint);
+            }
+        }
         Ok(())
     }
 

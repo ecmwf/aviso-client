@@ -1,6 +1,7 @@
 //! File-backed implementation of [`StateStore`](super::StateStore).
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -18,7 +19,8 @@ const FILE_FORMAT_VERSION: u32 = 1;
 /// Length of a SHA-256 digest in bytes.
 const DIGEST_BYTE_LEN: usize = 32;
 
-/// Single-process file-backed state store.
+/// File-backed state store, multi-process safe for cooperating
+/// processes on local filesystems.
 ///
 /// # Runtime dependency
 ///
@@ -28,55 +30,103 @@ const DIGEST_BYTE_LEN: usize = 32;
 ///
 /// # Concurrency model
 ///
-/// A dedicated disk-write mutex serialises writes. Each write clones
-/// the current map into a candidate under a brief shared (read) lock
-/// on the in-memory state (which does not block other readers),
-/// applies the mutation to the candidate, performs the atomic disk
-/// write with NO lock on the in-memory state held, then briefly
-/// takes the exclusive write lock to install the candidate on
-/// success. Reads only block on writers during that final install
-/// step.
+/// A dedicated intra-process mutex serialises writes within a single
+/// process. A cross-process `flock` on a sibling lockfile at
+/// `<path>.lock` serialises writes between processes. Each write
+/// clones the current map into a candidate under a brief shared
+/// (read) lock on the in-memory state (which does not block other
+/// readers), applies the mutation to the candidate, then runs
+/// inside [`tokio::task::spawn_blocking`]: acquire the cross-process
+/// exclusive lock, re-read the on-disk state, run a monotonic-cursor
+/// merge against the candidate, perform the atomic disk write, and
+/// release the lock. On success, briefly take the exclusive write
+/// lock on the in-memory state to install the merged candidate.
+/// Reads only block on writers during that final install step.
+///
+/// The merge step ensures that no checkpoint goes backwards under
+/// concurrent writers: if a sibling process wrote a higher
+/// `last_committed_sequence` for a key after this handle's last
+/// observation, the merge keeps the sibling's value rather than
+/// our stale candidate's value. Unrelated keys present on disk but
+/// unknown to this handle are preserved. Intentional deletes are
+/// honoured unless the on-disk sequence has advanced past the
+/// value the handle observed at delete time (a concurrent writer
+/// then wins).
 ///
 /// Failed `put` and `delete` calls leave both disk and memory
 /// unchanged.
 ///
-/// # Linearizability scope: one open handle plus its clones
+/// # Concurrency scope
 ///
-/// Linearizability holds across [`Clone`]s of a single
-/// `JsonFileStore` handle. Two independent [`open`](Self::open)
-/// calls to the same path return separate handles with independent
-/// in-memory state and independent write mutexes; they DO NOT
-/// coordinate, and concurrent writes against them can lose data
-/// (the last writer's snapshot may not include the earlier
-/// writer's commit). Always open the store once and share the
-/// handle via `Clone`; never call `open` twice on the same path in
-/// one process.
+/// Writes are serialised and monotonic across both `Clone`s of a
+/// single `JsonFileStore` handle and across separate processes that
+/// open the same path: the intra-process mutex plus the
+/// cross-process `flock` plus the strict-monotonic merge guarantee
+/// that no commit is silently lost. A successful `put` from any
+/// participant ends up visible to a subsequent re-open or to the
+/// next write-through cycle of every other live handle.
 ///
-/// # Single-process only
+/// Reads ([`get`](Self::get)) return this handle's in-memory
+/// snapshot. Within a single handle (and its `Clone`s) the snapshot
+/// is fully consistent: every successful `put` here is immediately
+/// visible to a `get` here. Across independent handles (different
+/// `open` calls in the same process, or other processes), the
+/// snapshot can be stale until this handle's next write-through
+/// cycle, which re-reads disk under the lock and merges in any
+/// sibling commits. Consumers that need cross-handle read freshness
+/// should either re-open the store or trigger a no-op write to
+/// force a re-read.
 ///
-/// This store does not perform cross-process locking either. Two
-/// processes writing to the same file race; the loser's writes can
-/// be lost. Cross-process safety is a follow-up on the roadmap.
+/// Within a single process, prefer one [`open`](Self::open) +
+/// [`Clone`] over multiple independent opens: it avoids the
+/// per-handle in-memory drift and the redundant intra-process
+/// mutexes.
+///
+/// # Lockfile precondition
+///
+/// The sidecar lockfile at `<path>.lock` must not be deleted,
+/// renamed, or replaced while any `JsonFileStore` is using the
+/// state file. The `flock` is attached to the inode; deleting and
+/// recreating the path lets two writers acquire "the" lock on two
+/// different inodes simultaneously, breaking mutual exclusion. The
+/// library never deletes the lockfile; operators must not either.
+///
+/// # Local filesystems only
+///
+/// `flock(2)` is not safe over NFS, CIFS, or other network
+/// filesystems. The state file and its lockfile must live on a
+/// local filesystem.
 ///
 /// # Async cancellation
 ///
 /// `put` and `delete` are NOT cancellation-safe. If the future
 /// returned by either method is dropped after the underlying
-/// `spawn_blocking` has started the disk write but before the
-/// in-memory install completes, the disk and in-memory state will
-/// diverge: disk reflects the new value, memory reflects the old
-/// one. Always drive `put`/`delete` to completion; do not race
-/// them against `select!` arms that may cancel them.
+/// `spawn_blocking` has started but before the in-memory install
+/// completes, the disk and in-memory state will diverge: disk
+/// reflects the new value, memory reflects the old one. This handle
+/// then returns stale data on subsequent [`get`](Self::get) calls
+/// until it is dropped and re-opened.
+///
+/// The lock acquisition inside the spawned task is blocking and
+/// can wait indefinitely if a sibling process holds the lock. A
+/// dropped calling future does not cancel the spawned task, so the
+/// disk-write window between cancellation and observable completion
+/// can be wider than under the single-process design. Always drive
+/// `put`/`delete` to completion; do not race them against `select!`
+/// arms that may cancel them.
 ///
 /// # Not a polling store
 ///
-/// External edits to the state file after [`open`](Self::open)
-/// returns are NOT observed by an existing `JsonFileStore` handle.
-/// Restart the process (or open a new handle) to pick up external
-/// changes.
+/// External edits to the state file by other processes are observed
+/// only at the next `put` or `delete` (via the merge step) or after
+/// a fresh [`open`](Self::open). A `get` that does not race a write
+/// returns this handle's in-memory snapshot, which can be stale
+/// compared to disk if siblings have written since this handle's
+/// last write.
 #[derive(Debug, Clone)]
 pub struct JsonFileStore {
     path: Arc<PathBuf>,
+    lock_path: Arc<PathBuf>,
     inner: Arc<RwLock<HashMap<ResumeKey, Checkpoint>>>,
     disk_write_mutex: Arc<Mutex<()>>,
 }
@@ -111,12 +161,14 @@ impl JsonFileStore {
     /// itself fails (panic or cancellation).
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let path: PathBuf = path.into();
+        let lock_path = lock_path_for(&path);
         let read_path = path.clone();
         let initial = tokio::task::spawn_blocking(move || load_from_disk(&read_path))
             .await
             .map_err(StoreError::BackgroundTaskFailed)??;
         Ok(Self {
             path: Arc::new(path),
+            lock_path: Arc::new(lock_path),
             inner: Arc::new(RwLock::new(initial)),
             disk_write_mutex: Arc::new(Mutex::new(())),
         })
@@ -128,32 +180,178 @@ impl JsonFileStore {
     {
         let _disk_guard = self.disk_write_mutex.lock().await;
 
-        let candidate = {
+        let (pre_state, mut candidate) = {
             let map = self.inner.read().await;
+            let pre = map.clone();
             let mut c = map.clone();
             mutate(&mut c);
-            c
+            (pre, c)
         };
 
-        let file = FileFormat {
-            version: FILE_FORMAT_VERSION,
-            key_format_version: KEY_FORMAT_VERSION,
-            checkpoints: candidate
-                .iter()
-                .map(|(k, v)| (k.as_hex(), v.clone()))
-                .collect(),
-        };
-        let bytes = serde_json::to_vec_pretty(&file).map_err(StoreError::Encode)?;
+        // Enforce strict-monotonic put against pre_state, BEFORE the
+        // merge sees disk. The merge's rule 1 only fires when disk
+        // has a value >= candidate's; if disk is missing or older
+        // than pre_state (external removal, rollback, or NFS-style
+        // stale read), the merge would silently accept a regressing
+        // candidate. Restore candidate[k] = pre_state[k] for every
+        // key the mutator left at a lower or equal sequence to
+        // pre_state. Intentional deletes (key absent from candidate)
+        // skip this loop and reach the deletes map below.
+        for (k, pre_cp) in &pre_state {
+            if let Some(cand_cp) = candidate.get(k) {
+                if cand_cp.last_committed_sequence <= pre_cp.last_committed_sequence {
+                    candidate.insert(k.clone(), pre_cp.clone());
+                }
+            }
+        }
+
+        // Keys present in pre-state but absent from the candidate
+        // are intentional deletes. Record each one's pre-state
+        // sequence so the merge step can suppress the delete when a
+        // concurrent writer has advanced the key past what this
+        // handle observed.
+        let deletes: HashMap<ResumeKey, u64> = pre_state
+            .iter()
+            .filter(|(k, _)| !candidate.contains_key(*k))
+            .map(|(k, cp)| (k.clone(), cp.last_committed_sequence))
+            .collect();
 
         let path = (*self.path).clone();
-        tokio::task::spawn_blocking(move || write_atomically(&path, &bytes))
-            .await
-            .map_err(StoreError::BackgroundTaskFailed)??;
+        let lock_path = (*self.lock_path).clone();
+
+        let merged = tokio::task::spawn_blocking(move || -> Result<_, StoreError> {
+            let lock_file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&lock_path)
+                .map_err(StoreError::Io)?;
+            let mut rw_lock = fd_lock::RwLock::new(lock_file);
+
+            // EINTR retry: rustix's flock surfaces Interrupted on
+            // signal delivery (SIGCHLD from spawned children,
+            // SIGALRM from timers). Retry until acquired or a
+            // non-Interrupted error surfaces. The empty Interrupted
+            // arm yields () so the loop iterates without an
+            // explicit `continue` (clippy::needless_continue).
+            let _guard = loop {
+                match rw_lock.write() {
+                    Ok(g) => break g,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(StoreError::Io(e)),
+                }
+            };
+
+            let disk_state = load_from_disk(&path)?;
+            let disk_snapshot = disk_state.clone();
+            let merged = merge_monotonic(candidate, disk_state, &deletes);
+
+            // Skip the JSON encode + atomic write + fsync when the
+            // resolved state matches what is already on disk: a
+            // monotonically suppressed put (candidate seq <= disk
+            // seq) or a delete of an absent key resolves to disk's
+            // existing state, and rewriting it would add fsync
+            // latency and lock hold time without changing anything.
+            // Either way, return `merged` so the in-memory install
+            // refreshes this handle's snapshot with any sibling
+            // commits the lock acquisition exposed.
+            if merged != disk_snapshot {
+                let file = FileFormat {
+                    version: FILE_FORMAT_VERSION,
+                    key_format_version: KEY_FORMAT_VERSION,
+                    checkpoints: merged
+                        .iter()
+                        .map(|(k, v)| (k.as_hex(), v.clone()))
+                        .collect(),
+                };
+                let bytes = serde_json::to_vec_pretty(&file).map_err(StoreError::Encode)?;
+                write_atomically(&path, &bytes)?;
+            }
+
+            Ok(merged)
+        })
+        .await
+        .map_err(StoreError::BackgroundTaskFailed)??;
 
         let mut map = self.inner.write().await;
-        *map = candidate;
+        *map = merged;
         Ok(())
     }
+}
+
+/// Sidecar lockfile path: append `.lock` to the state file's name.
+///
+/// Sibling placement ensures same-filesystem locking semantics. The
+/// fallback for paths without a file name (e.g., bare `/`) produces
+/// `<parent>/.lock`, which is syntactically valid but semantically
+/// indicates a misconfigured state path; the subsequent open call
+/// surfaces the error.
+fn lock_path_for(state_path: &Path) -> PathBuf {
+    let mut lock_name = state_path
+        .file_name()
+        .map(OsStr::to_os_string)
+        .unwrap_or_default();
+    lock_name.push(".lock");
+    state_path.with_file_name(lock_name)
+}
+
+/// Merge `candidate` against the freshly re-read `disk_state` so no
+/// committed checkpoint moves backwards, ever.
+///
+/// `last_committed_sequence` is the load-bearing forward-only cursor
+/// the supervisor reconnects from. The merge enforces three rules:
+///
+/// 1. Key in candidate AND disk's sequence is greater than OR equal
+///    to candidate's: disk wins. ("No checkpoint goes backwards"
+///    applies uniformly, whether the higher value came from another
+///    process or from this handle's own earlier put. The
+///    equal-sequence case also yields to disk so the visible value
+///    matches the trait's "put with sequence <= existing is a
+///    silent no-op" contract for both `MemoryStore` and
+///    `JsonFileStore`.)
+/// 2. Key in disk but NOT in candidate AND NOT in `deletes`:
+///    preserve disk (another process's write this handle has never
+///    observed, or this handle's own earlier put that has not yet
+///    propagated into this candidate).
+/// 3. Key in `deletes`: if disk has it AND disk's sequence is
+///    greater than the pre-state sequence we recorded at delete
+///    time, the delete is suppressed and disk's value is preserved
+///    (a concurrent writer advanced the key past what the caller
+///    saw, so the "delete the K I knew" intent is no longer well
+///    defined). Otherwise the delete is honoured.
+///
+/// Rule 3 prevents the bug where `DELETE K` against a concurrent
+/// `PUT K=N+M` would silently drop the concurrent write. Rule 1
+/// applies even when disk matches pre-state because a fresh process
+/// that opens an existing store sees pre-state == disk: a `put` with
+/// a lower sequence in that situation is still a regression that
+/// would silently lose the durable value. Callers that need to
+/// reset a checkpoint to a lower sequence must `delete` first, then
+/// `put`; a bare `put(k, lower_seq)` silently no-ops by design.
+fn merge_monotonic(
+    mut candidate: HashMap<ResumeKey, Checkpoint>,
+    disk_state: HashMap<ResumeKey, Checkpoint>,
+    deletes: &HashMap<ResumeKey, u64>,
+) -> HashMap<ResumeKey, Checkpoint> {
+    for (k, disk_cp) in disk_state {
+        if let Some(&pre_seq) = deletes.get(&k) {
+            if disk_cp.last_committed_sequence > pre_seq {
+                candidate.insert(k, disk_cp);
+            }
+            continue;
+        }
+        match candidate.get(&k) {
+            Some(cand) if disk_cp.last_committed_sequence >= cand.last_committed_sequence => {
+                candidate.insert(k, disk_cp);
+            }
+            Some(_) => {}
+            None => {
+                candidate.insert(k, disk_cp);
+            }
+        }
+    }
+    candidate
 }
 
 #[async_trait]
@@ -253,7 +451,10 @@ mod tests {
     use tokio::task::JoinSet;
     use url::Url;
 
-    use super::{FILE_FORMAT_VERSION, JsonFileStore};
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+
+    use super::{FILE_FORMAT_VERSION, JsonFileStore, lock_path_for, merge_monotonic};
     use crate::state::resume_key::KEY_FORMAT_VERSION;
     use crate::state::{Checkpoint, ResumeKey, StateStore, StoreError};
 
@@ -514,13 +715,15 @@ mod tests {
 
     #[tokio::test]
     async fn two_independent_opens_to_same_path_do_not_share_state() {
-        // Regression fixture for the type-doc warning under
-        // "Linearizability scope". Two calls to `open` on the same
-        // path produce independent in-memory state. Consumers must
-        // open once and `Clone`; opening twice can lose writes.
-        // Documented behaviour, not a bug. If we ever add a
-        // process-local registry to coordinate independent opens,
-        // this test inverts: each pair of opens shares state.
+        // Regression fixture for the "Concurrency scope" type-doc.
+        // Two calls to `open` on the same path produce independent
+        // in-memory snapshots: the cross-process lock + monotonic
+        // merge still guarantees commits cannot be silently lost
+        // across opens, but a `get` on one handle does not see a
+        // `put` on the other until that other handle's next
+        // write-through cycle (or a re-open). Documented behaviour,
+        // not a bug. If we ever add a process-local registry to
+        // share state across independent opens, this test inverts.
         let dir = tempdir().unwrap();
         let path = dir.path().join("state.json");
 
@@ -575,5 +778,175 @@ mod tests {
                 u64::from(i)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn put_lower_seq_is_no_op_even_when_disk_is_externally_rolled_back() {
+        // Regression fixture: write_through must enforce strict-
+        // monotonic put against pre_state (this handle's cached
+        // in-memory state), not just against disk. If disk is
+        // externally removed or rolled back to a stale value, the
+        // merge alone would accept a regressing candidate; the
+        // in-memory monotonic-restore loop catches it first.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let store = JsonFileStore::open(&path).await.unwrap();
+
+        store
+            .put(&key(0), Checkpoint::new(10, Some("e@10".into())))
+            .await
+            .unwrap();
+
+        // Externally remove the state file while the handle stays
+        // open. The handle's in-memory snapshot still holds seq=10.
+        std::fs::remove_file(&path).unwrap();
+
+        // A put with seq=5 must NOT regress the handle's
+        // committed state, even though disk no longer has a
+        // sequence to compare against.
+        store
+            .put(&key(0), Checkpoint::new(5, Some("e@5".into())))
+            .await
+            .unwrap();
+
+        let got = store.get(&key(0)).await.unwrap().unwrap();
+        assert_eq!(
+            got.last_committed_sequence, 10,
+            "put(seq=5) against externally-removed disk must not regress pre_state seq=10",
+        );
+        assert_eq!(
+            got.last_event_id.as_deref(),
+            Some("e@10"),
+            "restored value keeps pre_state metadata, not the suppressed put's metadata",
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // lock_path_for
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn lock_path_for_appends_lock_suffix() {
+        assert_eq!(
+            lock_path_for(Path::new("/a/b/state.json")),
+            PathBuf::from("/a/b/state.json.lock"),
+        );
+    }
+
+    #[test]
+    fn lock_path_for_handles_paths_without_extension() {
+        assert_eq!(
+            lock_path_for(Path::new("/a/b/state")),
+            PathBuf::from("/a/b/state.lock"),
+        );
+    }
+
+    #[test]
+    fn lock_path_for_handles_bare_filename() {
+        assert_eq!(
+            lock_path_for(Path::new("state.json")),
+            PathBuf::from("state.json.lock"),
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // merge_monotonic
+    // ---------------------------------------------------------------------
+
+    fn cp(seq: u64) -> Checkpoint {
+        Checkpoint::new(seq, None)
+    }
+
+    fn map(pairs: &[(u8, u64)]) -> HashMap<ResumeKey, Checkpoint> {
+        pairs.iter().map(|(k, s)| (key(*k), cp(*s))).collect()
+    }
+
+    fn deletes(pairs: &[(u8, u64)]) -> HashMap<ResumeKey, u64> {
+        pairs.iter().map(|(k, s)| (key(*k), *s)).collect()
+    }
+
+    #[test]
+    fn merge_empty_disk_and_empty_candidate_is_empty() {
+        let result = merge_monotonic(map(&[]), map(&[]), &deletes(&[]));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn merge_empty_disk_keeps_candidate_as_is() {
+        let result = merge_monotonic(map(&[(1, 5)]), map(&[]), &deletes(&[]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 5);
+    }
+
+    #[test]
+    fn merge_preserves_disk_keys_unknown_to_candidate() {
+        let result = merge_monotonic(map(&[]), map(&[(1, 7)]), &deletes(&[]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 7);
+    }
+
+    #[test]
+    fn merge_disk_wins_when_disk_seq_greater_than_candidate_seq() {
+        // Strict monotonic: a lower-sequence put never overwrites a
+        // higher-sequence on-disk value, even when the on-disk value
+        // matches this handle's pre-state. Callers that need to
+        // reset must delete first.
+        let result = merge_monotonic(map(&[(1, 0)]), map(&[(1, 9)]), &deletes(&[]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 9);
+    }
+
+    #[test]
+    fn merge_candidate_wins_when_candidate_seq_greater_than_disk_seq() {
+        let result = merge_monotonic(map(&[(1, 15)]), map(&[(1, 10)]), &deletes(&[]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 15);
+    }
+
+    #[test]
+    fn merge_disk_wins_when_seqs_are_equal() {
+        // The trait contract is "put with sequence <= existing is a
+        // silent no-op". On equal sequences, disk wins; the visible
+        // value (last_committed_sequence) is identical so callers
+        // observe a no-op even when the candidate's metadata (e.g.,
+        // a slightly different event_id from a parallel writer)
+        // differs.
+        let result = merge_monotonic(map(&[(1, 5)]), map(&[(1, 5)]), &deletes(&[]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 5);
+    }
+
+    #[test]
+    fn merge_honours_delete_when_disk_seq_matches_pre_state() {
+        // pre={K=5}, mutator deletes K, disk K=5 (matches pre).
+        // No concurrent writer; honour the delete.
+        let result = merge_monotonic(map(&[]), map(&[(1, 5)]), &deletes(&[(1, 5)]));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn merge_suppresses_delete_when_disk_advanced_past_pre_state() {
+        // pre={K=5}, mutator deletes K, disk K=10 (concurrent
+        // writer). 10 > 5 so delete is suppressed; disk wins.
+        let result = merge_monotonic(map(&[]), map(&[(1, 10)]), &deletes(&[(1, 5)]));
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 10);
+    }
+
+    #[test]
+    fn merge_honours_delete_when_disk_has_no_key() {
+        // pre={K=5}, mutator deletes K, disk has no K (concurrent
+        // writer also deleted, or never existed). Honour delete.
+        let result = merge_monotonic(map(&[]), map(&[]), &deletes(&[(1, 5)]));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn merge_mixed_put_and_delete_against_concurrent_writes() {
+        // pre={K=2, L=3}, mutator put L=20 + delete K.
+        // disk has K=10, L=5 (concurrent writes on both).
+        // Expected: K=10 preserved (delete suppressed), L=20 kept
+        // (candidate is monotonically ahead of disk's L=5).
+        let result = merge_monotonic(
+            map(&[(2, 20)]),
+            map(&[(1, 10), (2, 5)]),
+            &deletes(&[(1, 2)]),
+        );
+        assert_eq!(result.get(&key(1)).unwrap().last_committed_sequence, 10);
+        assert_eq!(result.get(&key(2)).unwrap().last_committed_sequence, 20);
     }
 }
