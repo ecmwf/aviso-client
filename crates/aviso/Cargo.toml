@@ -41,3 +41,8 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 wiremock = { workspace = true }
 
+[[test]]
+name = "state_store_kill_fuzz"
+path = "tests/state_store_kill_fuzz.rs"
+harness = false
+
