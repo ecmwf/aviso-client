@@ -137,12 +137,6 @@ pub enum FatalKind {
     /// to avoid livelock on a poisoned server stream.
     MalformedEvent,
 
-    /// The server's schema fingerprint for the subscribed event type
-    /// changed mid-stream. Terminal because the resume key embeds the
-    /// fingerprint (D3); a continued session would silently route to
-    /// the wrong checkpoint.
-    SchemaFingerprintChanged,
-
     /// A 401 was still returned after a credential refresh. The
     /// supervisor has nothing left to try.
     AuthenticationRejectedAfterRefresh,
