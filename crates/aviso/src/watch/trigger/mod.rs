@@ -33,6 +33,7 @@ use std::path::PathBuf;
 use kind::TriggerKind;
 
 pub(crate) use dispatcher::dispatch_triggers;
+pub use template::TemplateErrorKind;
 
 /// Trigger dispatch orchestration.
 mod dispatcher;
@@ -42,6 +43,8 @@ mod echo;
 mod kind;
 /// Log trigger dispatch.
 mod log;
+/// Template substitution engine shared by command and webhook triggers.
+mod template;
 
 /// A single trigger configured on a watch.
 ///
@@ -273,6 +276,38 @@ pub enum TriggerError {
     /// safety.
     #[error("encode notification: {0}")]
     Encode(#[from] serde_json::Error),
+
+    /// A template substitution failed.
+    ///
+    /// The `context` is a safe static label naming WHICH template
+    /// surface produced the error (`"command"`, `"webhook url"`,
+    /// `"webhook body"`, `"webhook header"`). It is NOT a snippet of
+    /// the raw template source: raw templates may carry secrets
+    /// (e.g., a bearer token baked into a webhook URL), so only safe
+    /// labels reach the public error chain.
+    ///
+    /// The `field` names the specific path or env-var name that
+    /// failed: a JSON path like `"notification.payload.target"` for
+    /// `Missing`, an env-var name like `"SLACK_TOKEN"` for `EnvNotSet`,
+    /// or a safe static label like `"unclosed_braces"` for `BadSyntax`.
+    /// For `BadSyntax` specifically, the `field` carries no fragment
+    /// from the raw template; it names only the parse failure
+    /// category.
+    ///
+    /// The raw template source is logged at `DEBUG` via the
+    /// `client.trigger.template.render_failed` tracing event for
+    /// operators who control the logging sink, but never appears in
+    /// this public variant.
+    #[error("template render in {context} failed at {field}: {kind:?}")]
+    Template {
+        /// Safe static label naming which template surface failed.
+        context: String,
+        /// Specific path or env-var name that failed; for
+        /// `BadSyntax`, a safe static label naming the parse failure.
+        field: String,
+        /// Categorisation of the failure.
+        kind: TemplateErrorKind,
+    },
 }
 
 #[cfg(test)]
@@ -365,7 +400,7 @@ mod tests {
         let err: TriggerError = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe").into();
         match err {
             TriggerError::Io(inner) => assert_eq!(inner.kind(), std::io::ErrorKind::BrokenPipe),
-            TriggerError::Encode(e) => panic!("expected Io, got Encode: {e}"),
+            other => panic!("expected Io, got {other:?}"),
         }
     }
 
@@ -374,5 +409,22 @@ mod tests {
         let parse_err = serde_json::from_str::<i32>("not a number").unwrap_err();
         let err: TriggerError = parse_err.into();
         assert!(matches!(err, TriggerError::Encode(_)));
+    }
+
+    #[test]
+    fn trigger_error_template_display_uses_safe_context_not_raw_template() {
+        use crate::watch::TemplateErrorKind;
+        let err = TriggerError::Template {
+            context: "command".to_string(),
+            field: "notification.payload.target".to_string(),
+            kind: TemplateErrorKind::Missing,
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("command"), "got: {rendered}");
+        assert!(
+            rendered.contains("notification.payload.target"),
+            "got: {rendered}"
+        );
+        assert!(rendered.contains("Missing"), "got: {rendered}");
     }
 }

@@ -140,7 +140,7 @@ pub use phase::{CloseReason, FatalKind, GapReason, ReplayPhase, ResumeStart};
 pub use request::WatchRequest;
 pub use state::WatchState;
 pub use stream::NotificationStream;
-pub use trigger::{Trigger, TriggerError, TriggerKindLabel};
+pub use trigger::{TemplateErrorKind, Trigger, TriggerError, TriggerKindLabel};
 
 pub(crate) use supervisor::{CHANNEL_CAPACITY, run_supervisor};
 pub(crate) use wire::WireWatchRequest;
