@@ -396,14 +396,23 @@ where
 
 /// Non-blocking cancel probe used between triggers.
 ///
-/// Both senders are observed via try-style reads: `parent_cancel` checks
-/// `has_changed`, and `cancel` checks `try_recv`. Returning `true` means
-/// either cancellation source has fired and the dispatcher should exit.
+/// Returns `true` when either cancellation source has fired:
+///
+/// - **Parent drop**: the watch `Sender` was dropped (all clones gone), in
+///   which case `has_changed` returns `Err(_)`, OR the borrowed value is
+///   already `true` (the `DropGuard` flipped it). Reading `*borrow()`
+///   directly is robust to the case where an earlier `select!` arm
+///   already consumed the change marker via `parent_cancel.changed()` and
+///   left `has_changed()` returning `Ok(false)` while the value is still
+///   `true`.
+/// - **Per-stream cancel**: the oneshot has been signaled OR the sender
+///   was dropped, observed via `try_recv` returning `Ok(())` or
+///   `Err(Closed)`.
 fn check_cancelled(
     parent_cancel: &mut watch::Receiver<bool>,
     cancel: &mut oneshot::Receiver<()>,
 ) -> bool {
-    if matches!(parent_cancel.has_changed(), Ok(true)) {
+    if parent_cancel.has_changed().is_err() || *parent_cancel.borrow() {
         return true;
     }
     matches!(
