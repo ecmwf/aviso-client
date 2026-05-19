@@ -72,10 +72,10 @@ where
 
         let mut attempt: u32 = 0;
         let outcome = loop {
-            match dispatch_one_attempt(&trigger.kind, state, notification).await {
+            match dispatch_one_attempt(trigger, state, notification).await {
                 Ok(()) => break Ok(()),
                 Err(err) => {
-                    if attempt >= trigger.retries {
+                    if is_terminal_error(trigger, &err) || attempt >= trigger.retries {
                         break Err(err);
                     }
                     let delay = backoff(attempt);
@@ -140,14 +140,14 @@ fn check_cancelled(
 }
 
 async fn dispatch_one_attempt(
-    kind: &TriggerKind,
+    trigger: &Trigger,
     state: &mut TriggerState,
     notification: &Notification,
 ) -> Result<(), TriggerError> {
-    match kind {
+    match &trigger.kind {
         TriggerKind::Echo => dispatch_echo(notification),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
-        TriggerKind::Command(cfg) => dispatch_command(cfg, None, notification).await,
+        TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,
         #[cfg(test)]
         TriggerKind::TestFailing {
             failures_remaining,
@@ -159,6 +159,26 @@ async fn dispatch_one_attempt(
             fail_on_call,
         } => dispatch_test_fail_on_call(calls, *fail_on_call),
     }
+}
+
+/// Decide whether an attempt error should terminate the retry loop
+/// immediately (bypassing the retry budget) or stay retryable.
+///
+/// `fail_fast = false` keeps every failure retryable. `fail_fast =
+/// true` (the default) treats `TriggerError::Command` (non-zero exit)
+/// and `TriggerError::Template` (malformed template) as terminal
+/// because they are deterministic; the same input produces the same
+/// failure, so retrying wastes the budget. `Io`, `Encode`, and
+/// `Timeout` stay retryable because they are genuinely transient
+/// (broken pipe, disk transiently full, slow downstream).
+fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
+    if !trigger.fail_fast {
+        return false;
+    }
+    matches!(
+        err,
+        TriggerError::Command { .. } | TriggerError::Template { .. }
+    )
 }
 
 #[cfg(test)]
@@ -210,7 +230,9 @@ mod tests {
 
     use super::dispatch_triggers_with_backoff;
     use crate::Notification;
-    use crate::watch::trigger::kind::TestEventual;
+    use crate::watch::TriggerError;
+    use crate::watch::trigger::command::build_command_config;
+    use crate::watch::trigger::kind::{TestEventual, TriggerKind};
     use crate::watch::trigger::{DispatchOutcome, Trigger, TriggerState};
 
     fn make_notification() -> Notification {
@@ -331,6 +353,133 @@ mod tests {
         drop_tx.send(true).unwrap();
         let result = fut.await;
         assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
+    }
+
+    #[tokio::test]
+    async fn command_terminal_failure_short_circuits_retries_with_fail_fast_true() {
+        let cfg = build_command_config("exit 7");
+        let trigger = Trigger {
+            kind: TriggerKind::Command(Box::new(cfg)),
+            retries: 5,
+            required: true,
+            timeout: None,
+            fail_fast: true,
+        };
+        let mut states = vec![TriggerState::new()];
+        let started = std::time::Instant::now();
+        let result = run_once(&[trigger], &mut states, |_| Duration::from_secs(60)).await;
+        let elapsed = started.elapsed();
+        assert!(
+            matches!(
+                result,
+                Err(DispatchOutcome::RequiredFailed {
+                    source: TriggerError::Command { exit_code: 7, .. },
+                    ..
+                })
+            ),
+            "got: {result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "fail_fast=true must short-circuit retries; took {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn command_template_error_is_terminal_with_fail_fast_true() {
+        let cfg = build_command_config("hello {{ notification.event_type");
+        let trigger = Trigger {
+            kind: TriggerKind::Command(Box::new(cfg)),
+            retries: 5,
+            required: true,
+            timeout: None,
+            fail_fast: true,
+        };
+        let mut states = vec![TriggerState::new()];
+        let started = std::time::Instant::now();
+        let result = run_once(&[trigger], &mut states, |_| Duration::from_secs(60)).await;
+        let elapsed = started.elapsed();
+        assert!(
+            matches!(
+                result,
+                Err(DispatchOutcome::RequiredFailed {
+                    source: TriggerError::Template { .. },
+                    ..
+                })
+            ),
+            "got: {result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "template errors are deterministic; must short-circuit"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn command_nonzero_exit_retries_when_fail_fast_false() {
+        let cfg = build_command_config("exit 1");
+        let trigger = Trigger {
+            kind: TriggerKind::Command(Box::new(cfg)),
+            retries: 2,
+            required: true,
+            timeout: None,
+            fail_fast: false,
+        };
+        let mut states = vec![TriggerState::new()];
+        let (_drop_tx, mut parent_rx) = watch::channel(false);
+        let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+        let n = make_notification();
+        let fut = dispatch_triggers_with_backoff(
+            std::slice::from_ref(&trigger),
+            &mut states,
+            &n,
+            &mut parent_rx,
+            &mut cancel_rx,
+            |_| Duration::from_millis(100),
+        );
+        tokio::pin!(fut);
+        for _ in 0..2 {
+            tokio::task::yield_now().await;
+            tokio::time::advance(Duration::from_millis(110)).await;
+        }
+        let result = fut.await;
+        match result {
+            Err(DispatchOutcome::RequiredFailed {
+                source: TriggerError::Command { exit_code: 1, .. },
+                ..
+            }) => {}
+            other => panic!("expected RequiredFailed after retries exhausted, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn command_timeout_returns_timeout_error_after_kill_and_reap() {
+        let cfg = build_command_config("sleep 30");
+        let trigger = Trigger {
+            kind: TriggerKind::Command(Box::new(cfg)),
+            retries: 0,
+            required: true,
+            timeout: Some(Duration::from_millis(200)),
+            fail_fast: true,
+        };
+        let mut states = vec![TriggerState::new()];
+        let started = std::time::Instant::now();
+        let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
+        let elapsed = started.elapsed();
+        assert!(
+            matches!(
+                result,
+                Err(DispatchOutcome::RequiredFailed {
+                    source: TriggerError::Timeout(_),
+                    ..
+                })
+            ),
+            "got: {result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "timeout must kill the child quickly; took {elapsed:?}"
+        );
     }
 
     #[tokio::test]
