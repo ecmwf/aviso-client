@@ -6,6 +6,7 @@ use tokio::sync::{oneshot, watch};
 
 use crate::Notification;
 
+use super::command::dispatch_command;
 use super::echo::dispatch_echo;
 use super::kind::{TriggerKind, trigger_kind_label};
 use super::log::dispatch_log;
@@ -146,6 +147,7 @@ async fn dispatch_one_attempt(
     match kind {
         TriggerKind::Echo => dispatch_echo(notification),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
+        TriggerKind::Command(cfg) => dispatch_command(cfg, None, notification).await,
         #[cfg(test)]
         TriggerKind::TestFailing {
             failures_remaining,

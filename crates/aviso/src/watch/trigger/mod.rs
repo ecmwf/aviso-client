@@ -35,6 +35,8 @@ use kind::TriggerKind;
 pub(crate) use dispatcher::dispatch_triggers;
 pub use template::TemplateErrorKind;
 
+/// Command trigger dispatch.
+mod command;
 /// Trigger dispatch orchestration.
 mod dispatcher;
 /// Echo trigger dispatch.
@@ -125,6 +127,90 @@ impl Trigger {
             retries: 0,
             required: true,
         }
+    }
+
+    /// Build a command trigger that runs `/bin/sh -c <cmd>` once per
+    /// notification, with the notification's fields exposed as
+    /// `AVISO_*` environment variables. The command string is
+    /// rendered through the trigger template engine: `{{ notification.<path> }}`
+    /// substitutes a notification field and `{{ env.<NAME> }}` reads
+    /// from the process environment.
+    ///
+    /// # Environment variable injection
+    ///
+    /// The dispatcher injects `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
+    /// `AVISO_REQUEST_ID` (when present), `AVISO_IDENTIFIER_<KEY>`
+    /// per identifier entry (uppercased, non-alphanumerics replaced
+    /// with `_`), `AVISO_PAYLOAD_JSON` (full payload as compact JSON),
+    /// and `AVISO_NOTIFICATION_JSON` (full notification as compact
+    /// JSON). User-supplied env vars via [`Self::env`] are applied
+    /// AFTER the dispatcher-injected vars, so user keys override
+    /// dispatcher keys when both are present.
+    ///
+    /// # Output capture
+    ///
+    /// Stdout and stderr are captured concurrently into ring buffers
+    /// of 4 KiB. Command stdout content is dropped per the
+    /// no-payload-logging discipline; only the captured byte count
+    /// reaches DEBUG-level tracing. Stderr tail goes into the public
+    /// [`crate::ClientError::TriggerFailed`] variant on non-zero
+    /// exit.
+    ///
+    /// # Shell descendant cleanup
+    ///
+    /// The dispatcher kills the `/bin/sh -c ...` child on timeout
+    /// (when a per-trigger timeout setter wires in on this branch)
+    /// but does NOT propagate the kill signal to pipelines,
+    /// backgrounded jobs, or grandchildren. Operators who need full
+    /// process-tree cleanup should use `exec ./binary` so the shell
+    /// PID equals the target binary's PID.
+    ///
+    /// # POSIX-only
+    ///
+    /// Supports unix only; Windows support is deferred.
+    ///
+    /// # Template errors
+    ///
+    /// The constructor is infallible. A malformed template (unclosed
+    /// braces, unknown namespace, etc.) surfaces at first dispatch as
+    /// [`TriggerError::Template`].
+    ///
+    /// Defaults: `retries: 0`, `required: true`.
+    #[must_use]
+    pub fn command(cmd: impl Into<String>) -> Self {
+        Self {
+            kind: TriggerKind::Command(Box::new(command::build_command_config(cmd))),
+            retries: 0,
+            required: true,
+        }
+    }
+
+    /// Adds an environment variable to the command trigger's child
+    /// process. Repeatable; later sets override earlier ones with the
+    /// same key.
+    ///
+    /// Has no effect on echo or log triggers; only the command
+    /// trigger honours it.
+    #[must_use]
+    pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        if let TriggerKind::Command(cfg) = &mut self.kind {
+            cfg.env.insert(key.into(), value.into());
+        }
+        self
+    }
+
+    /// Sets the working directory for the command trigger's child
+    /// process. If the path does not exist or is not a directory,
+    /// dispatch returns [`TriggerError::Io`] at first invocation.
+    ///
+    /// Has no effect on echo or log triggers; only the command
+    /// trigger honours it.
+    #[must_use]
+    pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        if let TriggerKind::Command(cfg) = &mut self.kind {
+            cfg.working_dir = Some(dir.into());
+        }
+        self
     }
 
     /// Override the retry count.
@@ -235,6 +321,13 @@ pub(super) enum DispatchOutcome {
 ///
 /// Separate from the crate-private `TriggerKind` enum so future internal
 /// variants (or test-only ones) cannot leak into public error displays.
+///
+/// The `Command` variant intentionally carries no body: a command
+/// trigger's full command string may contain secrets (bearer tokens,
+/// connection URIs), and any redacted summary is still an attack
+/// surface if the secret appears in the visible prefix. The label
+/// displays as the bare string `"command"`; the full command goes
+/// into DEBUG-level structured tracing only.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerKindLabel {
@@ -245,6 +338,10 @@ pub enum TriggerKindLabel {
         /// The configured log file path.
         path: PathBuf,
     },
+    /// The command trigger (subprocess spawn). Carries no body to
+    /// avoid leaking secret-bearing command fragments through error
+    /// chains; the full command appears in DEBUG-level tracing only.
+    Command,
 }
 
 impl std::fmt::Display for TriggerKindLabel {
@@ -252,6 +349,7 @@ impl std::fmt::Display for TriggerKindLabel {
         match self {
             Self::Echo => f.write_str("echo"),
             Self::Log { path } => write!(f, "log({})", path.display()),
+            Self::Command => f.write_str("command"),
         }
     }
 }
@@ -276,6 +374,20 @@ pub enum TriggerError {
     /// safety.
     #[error("encode notification: {0}")]
     Encode(#[from] serde_json::Error),
+
+    /// A command trigger's child process exited with a non-zero
+    /// status. `stderr_tail` is the last 4 KiB of the child's stderr,
+    /// captured into a ring buffer; the head is dropped on overflow.
+    /// Stdout content is suppressed per the no-payload-logging rule.
+    #[error("command exited {exit_code}: {stderr_tail}")]
+    Command {
+        /// Child process's exit code. `-1` when the child died from
+        /// a signal (Unix sets the exit code to None for
+        /// signal-terminated children; `-1` is the canonical sentinel).
+        exit_code: i32,
+        /// Last 4 KiB of the child's stderr, lossily UTF-8 decoded.
+        stderr_tail: String,
+    },
 
     /// A template substitution failed.
     ///
