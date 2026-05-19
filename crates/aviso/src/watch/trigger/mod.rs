@@ -78,6 +78,8 @@ pub struct Trigger {
     kind: TriggerKind,
     pub(crate) retries: u32,
     pub(crate) required: bool,
+    pub(crate) timeout: Option<std::time::Duration>,
+    pub(crate) fail_fast: bool,
 }
 
 /// Manual `Debug` impl rather than `#[derive(Debug)]`: the derived form
@@ -91,11 +93,15 @@ impl std::fmt::Debug for Trigger {
             kind,
             retries,
             required,
+            timeout,
+            fail_fast,
         } = self;
         f.debug_struct("Trigger")
             .field("kind", kind)
             .field("retries", retries)
             .field("required", required)
+            .field("timeout", timeout)
+            .field("fail_fast", fail_fast)
             .finish()
     }
 }
@@ -111,6 +117,8 @@ impl Trigger {
             kind: TriggerKind::Echo,
             retries: 0,
             required: true,
+            timeout: None,
+            fail_fast: true,
         }
     }
 
@@ -126,6 +134,8 @@ impl Trigger {
             kind: TriggerKind::Log { path: path.into() },
             retries: 0,
             required: true,
+            timeout: None,
+            fail_fast: true,
         }
     }
 
@@ -182,6 +192,8 @@ impl Trigger {
             kind: TriggerKind::Command(Box::new(command::build_command_config(cmd))),
             retries: 0,
             required: true,
+            timeout: None,
+            fail_fast: true,
         }
     }
 
@@ -236,6 +248,47 @@ impl Trigger {
         self.required = required;
         self
     }
+
+    /// Set a per-trigger timeout.
+    ///
+    /// Meaningful for the command trigger only: bounds the wait on the
+    /// child process with `tokio::time::sleep` raced against
+    /// `child.wait()`; on expiry the dispatcher issues `SIGKILL`,
+    /// reaps the zombie, and returns [`TriggerError::Timeout`].
+    ///
+    /// Has no effect on echo or log triggers: their dispatchers
+    /// complete in microseconds (locked-stdout write or
+    /// `tokio::fs::File::write_all` flush), and a non-preemptible
+    /// sync syscall cannot be interrupted by a separate sleep
+    /// future. The field is silently ignored on those kinds.
+    #[must_use]
+    pub fn timeout(mut self, t: std::time::Duration) -> Self {
+        self.timeout = Some(t);
+        self
+    }
+
+    /// Override the fail-fast policy on terminal failures.
+    ///
+    /// When `true` (the default), terminal failures bypass the retry
+    /// budget and the trigger fails immediately. When `false`, every
+    /// failure is treated as retryable up to the configured
+    /// [`Self::retries`] budget.
+    ///
+    /// Meaningful for the command trigger only:
+    /// [`TriggerError::Command`] (non-zero exit) and
+    /// [`TriggerError::Template`] (malformed template) are terminal
+    /// under `fail_fast = true` because they are deterministic
+    /// (the same input produces the same failure); `Io` and
+    /// `Timeout` stay retryable because they are genuinely
+    /// transient.
+    ///
+    /// Has no effect on echo or log triggers (their errors are
+    /// always retryable through the normal retry budget).
+    #[must_use]
+    pub fn fail_fast(mut self, on: bool) -> Self {
+        self.fail_fast = on;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -258,6 +311,8 @@ impl Trigger {
             },
             retries,
             required,
+            timeout: None,
+            fail_fast: true,
         };
         (trigger, counter)
     }
@@ -279,6 +334,8 @@ impl Trigger {
             },
             retries,
             required,
+            timeout: None,
+            fail_fast: true,
         };
         (trigger, counter)
     }
@@ -388,6 +445,15 @@ pub enum TriggerError {
         /// Last 4 KiB of the child's stderr, lossily UTF-8 decoded.
         stderr_tail: String,
     },
+
+    /// A trigger attempt exceeded its configured per-trigger timeout.
+    ///
+    /// Surfaced only on triggers that have a meaningful timeout
+    /// (currently the command trigger; echo and log silently ignore
+    /// the [`Trigger::timeout`] setter). The carried duration is the
+    /// timeout that was set, not the actual elapsed time.
+    #[error("trigger timed out after {0:?}")]
+    Timeout(std::time::Duration),
 
     /// A template substitution failed.
     ///

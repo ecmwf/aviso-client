@@ -97,22 +97,20 @@ impl std::fmt::Debug for CommandConfig {
 /// Dispatch a single command-trigger attempt.
 ///
 /// On success returns `Ok(())`. On any failure returns
-/// [`TriggerError`] carrying a typed reason: `Template { .. }` when the
-/// command-string template could not be rendered, `Io(...)` when the
-/// spawn or wait syscalls failed, `Command { exit_code, stderr_tail }`
-/// when the child exited non-zero.
-///
-/// The `timeout` parameter is accepted for forward-compatibility with
-/// the per-trigger timeout setter that lands in a follow-up commit on
-/// this branch; this version of the dispatcher does NOT honour it
-/// (the caller passes `None` from every call site).
+/// [`TriggerError`] carrying a typed reason: `Template { .. }` when
+/// the command-string template could not be rendered, `Io(...)` when
+/// the spawn or wait syscalls failed, `Command { exit_code,
+/// stderr_tail }` when the child exited non-zero, and `Timeout(t)`
+/// when the optional per-trigger timeout fired before the child
+/// exited (the dispatcher kills and reaps the child before
+/// returning).
 #[allow(
     clippy::too_many_lines,
     reason = "function is intrinsically sequential (template render -> working_dir check -> spawn -> drain task spawn -> child wait -> post-exit drain join -> classify exit); extracting subphases adds parameter-passing complexity without improving readability"
 )]
 pub(super) async fn dispatch_command(
     cfg: &CommandConfig,
-    _timeout: Option<Duration>,
+    timeout: Option<Duration>,
     notification: &Notification,
 ) -> Result<(), TriggerError> {
     let template = cfg
@@ -172,7 +170,35 @@ pub(super) async fn dispatch_command(
     let stdout_abort = stdout_task.abort_handle();
     let stderr_abort = stderr_task.abort_handle();
 
-    let exit_status = child.wait().await.map_err(TriggerError::Io)?;
+    let exit_status = match timeout {
+        Some(t) => {
+            let sleep = tokio::time::sleep(t);
+            tokio::pin!(sleep);
+            tokio::select! {
+                status = child.wait() => status.map_err(TriggerError::Io)?,
+                () = &mut sleep => {
+                    if let Err(e) = child.start_kill() {
+                        tracing::warn!(
+                            event.name = "client.trigger.command.kill_failed",
+                            error = %e,
+                            "failed to send SIGKILL to command child; may be already dead"
+                        );
+                    }
+                    if let Err(e) = child.wait().await {
+                        tracing::warn!(
+                            event.name = "client.trigger.command.reap_failed",
+                            error = %e,
+                            "failed to reap killed command child"
+                        );
+                    }
+                    stdout_abort.abort();
+                    stderr_abort.abort();
+                    return Err(TriggerError::Timeout(t));
+                }
+            }
+        }
+        None => child.wait().await.map_err(TriggerError::Io)?,
+    };
 
     let drained = tokio::time::timeout(POST_EXIT_DRAIN_CAP, async {
         let s_out = stdout_task.await;
@@ -519,7 +545,9 @@ mod tests {
         // 4096 bytes fills the per-read 4096-byte buffer iter (the
         // function reads 4096 at a time). A single read of >= cap
         // exercises the special-case `if n >= cap` branch.
-        let bytes: Vec<u8> = (0u32..4096).map(|i| u8::try_from(i % 256).unwrap_or(0)).collect();
+        let bytes: Vec<u8> = (0u32..4096)
+            .map(|i| u8::try_from(i % 256).unwrap_or(0))
+            .collect();
         let cursor = std::io::Cursor::new(bytes.clone());
         let tail = drain_to_ring(cursor, 100, "test").await;
         assert_eq!(tail.len(), 100);
