@@ -3,18 +3,20 @@
 use std::path::PathBuf;
 
 use super::TriggerKindLabel;
+use super::command::CommandConfig;
 
 /// Internal description of which built-in trigger a [`super::Trigger`] runs.
 ///
 /// Crate-private; downstream callers configure a `Trigger` through the
-/// public [`super::Trigger::echo`] and [`super::Trigger::log`] constructors,
-/// never by naming this enum.
+/// public [`super::Trigger::echo`], [`super::Trigger::log`], and
+/// [`super::Trigger::command`] constructors, never by naming this enum.
 #[derive(Clone)]
 pub(super) enum TriggerKind {
     Echo,
     Log {
         path: PathBuf,
     },
+    Command(Box<CommandConfig>),
     /// Test-only: fails the first `failures_remaining` attempts, then
     /// resolves per `eventual`. Used by unit tests to drive "fail K times
     /// then succeed/fail" patterns deterministically.
@@ -50,6 +52,7 @@ impl std::fmt::Debug for TriggerKind {
         match self {
             Self::Echo => f.debug_struct("Echo").finish(),
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
+            Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
             #[cfg(test)]
             Self::TestFailing {
                 failures_remaining,
@@ -77,6 +80,7 @@ pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
     match kind {
         TriggerKind::Echo => TriggerKindLabel::Echo,
         TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
+        TriggerKind::Command(_) => TriggerKindLabel::Command,
         #[cfg(test)]
         TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,
         #[cfg(test)]
