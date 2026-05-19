@@ -75,11 +75,16 @@ pub struct Trigger {
     pub(crate) required: bool,
 }
 
-/// Manual `Debug` impl: derived `Debug` does not satisfy rustc's `dead_code`
-/// lint for private fields that are only constructed but never read by
-/// production code. Destructuring `self` and naming each field here is what
-/// the lint counts as a read until the dispatcher (which reads these fields)
-/// lands in the next commit.
+/// Manual `Debug` impl rather than `#[derive(Debug)]`: the derived form
+/// does not count as a "production read" for rustc's `dead_code` lint,
+/// so a private field that is only constructed but never read elsewhere
+/// would still warn even with the derive. The destructure-then-name-each-
+/// field pattern below is what the lint counts as a read. The dispatcher
+/// in this file also reads `kind`, `retries`, and `required`, so the
+/// manual impl is not strictly required today; it is kept so that the
+/// "fields are intentionally used" invariant is documented at the type
+/// declaration itself, surviving any future refactor that moves the
+/// dispatcher out of this module.
 impl std::fmt::Debug for Trigger {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Trigger {
