@@ -180,17 +180,23 @@ The project is licensed under Apache-2.0 (`LICENSE.txt`) matching `aviso-server`
 
 ---
 
-## D14. Metrics deferred to v1.1
+## D14. Tracing-only observability; metrics are a consumer concern
 
-No `prometheus`/`metrics` dependency ships in v1. The reserved namespace and label policy are documented here so the v1.1 implementation is mechanical:
+The client emits structured `tracing` events at every state transition (connection open, connection close with reason, heartbeat starvation, replay phase boundaries, trigger outcomes, fatal errors). See D12 for the stable `event.name` strings and the redaction discipline. No `prometheus` or `metrics` crate dependency ships in the core library, and there is no public metrics surface.
+
+Consumers that need Prometheus or OpenTelemetry metrics build a thin adapter on top of the `tracing` events: a `tracing_subscriber::Layer` that maps specific event names onto counter or histogram updates against the `metrics` crate facade (or a direct Prometheus client). The adapter owns the policy decisions (which events count, what labels apply, what aggregation window) that the library would otherwise have to bake in for every consumer.
+
+Rationale: a notification client emits the same handful of observability events whether the operator wants Prometheus, StatsD, OpenTelemetry, or no metrics at all. Wiring those events into a metrics facade inside the library forces every consumer to pay the dependency cost. Keeping it out lets the core stay small and lets each consumer pick their stack.
+
+If a future adapter ships in this workspace or downstream, the recommended Prometheus prefix is `aviso_client_` (underscore-separator with an explicit `_client_` segment). The prefix disambiguates from `aviso-server`'s `aviso_server_*` metrics when both are scraped into the same Prometheus instance. The Rust crate name (`aviso`) and the recommended metric prefix (`aviso_client_`) intentionally differ for this reason. Plausible counter and histogram names, mapping onto the existing `tracing` events:
 
 - `aviso_client_reconnects_total{reason,outcome}`
 - `aviso_client_notifications_processed_total{outcome}`
 - `aviso_client_trigger_duration_seconds{trigger_kind,outcome}`
 
-The `aviso_client_` prefix (underscore-separator with an explicit `_client_` segment) is deliberate. It disambiguates from `aviso-server`'s `aviso_server_*` metrics when both are scraped into the same Prometheus instance. The Rust crate name (`aviso`) and the Prometheus metric prefix (`aviso_client_`) intentionally differ for this reason.
+Banned labels (ECMWF Codex high-cardinality rule), to carry forward into any adapter: `request_id`, `resume_key`, raw URL, username, UUID, payload fields, full event identifiers (`<event_type>@<sequence>`).
 
-Banned labels (ECMWF Codex high-cardinality rule): `request_id`, `resume_key`, raw URL, username, UUID, payload fields, full event identifiers (`<event_type>@<sequence>`).
+*Amendment, 2026-05-19*: this ADR originally read "Metrics deferred to v1.1", framing a future client-side metrics surface with a reserved namespace and a mechanical implementation path. The amendment reflects the current stance: the core emits `tracing` events only, and metrics live in consumer-built adapters. The Prometheus prefix and banned-labels guidance survive as forward advice for any adapter crate.
 
 ---
 
