@@ -47,6 +47,14 @@ pub(super) enum TestEventual {
 }
 
 /// Manual `Debug` impl for the same reason as [`super::Trigger`]'s manual impl.
+///
+/// The `Command` arm carries a redacted body so the public Debug of a
+/// `Trigger` never echoes a raw command template (which may contain
+/// bearer tokens, connection URIs, or other secrets). The variant
+/// formatter prints only structural facts (whether the template
+/// compiled, whether a `working_dir` is set, the count of env vars set
+/// by the user); the raw command and env values go to DEBUG-level
+/// tracing only.
 impl std::fmt::Debug for TriggerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
