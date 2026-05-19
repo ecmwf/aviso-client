@@ -224,8 +224,8 @@ async fn required_log_failure_terminates_watch_with_typed_error() {
     )
     .await;
 
-    let bad_path =
-        std::path::PathBuf::from("/nonexistent-dir-aviso-required-trigger-test/notif.log");
+    let dir = tempfile::tempdir().unwrap();
+    let bad_path = dir.path().join("missing").join("notif.log");
     let client = client_for(&server);
     let request = WatchRequest::watch("mars").with_triggers(vec![Trigger::log(&bad_path)]);
     let mut stream = client.watch(request).unwrap();
@@ -254,7 +254,7 @@ async fn optional_trigger_failure_continues_with_remaining_trigger() {
     let server = MockServer::start().await;
     mount_finite_stream(&server, two_notifications_body()).await;
 
-    let bad_path = std::path::PathBuf::from("/nonexistent-dir-aviso-optional-trigger-test/bad.log");
+    let bad_path = dir.path().join("missing").join("bad.log");
     let client = client_for(&server);
     let request = WatchRequest::watch("mars").with_triggers(vec![
         Trigger::log(&bad_path).required(false),
@@ -283,8 +283,8 @@ async fn retries_exhausted_on_missing_dir_surfaces_typed_error() {
     )
     .await;
 
-    let bad_path =
-        std::path::PathBuf::from("/nonexistent-dir-aviso-retries-exhausted-test/notif.log");
+    let dir = tempfile::tempdir().unwrap();
+    let bad_path = dir.path().join("missing").join("notif.log");
     let client = client_for(&server);
     let request =
         WatchRequest::watch("mars").with_triggers(vec![Trigger::log(&bad_path).retries(2)]);
@@ -368,7 +368,8 @@ async fn failed_required_trigger_on_first_notification_does_not_commit_via_real_
     )
     .await;
 
-    let bad_path = std::path::PathBuf::from("/nonexistent-dir-aviso-no-commit-on-fail/notif.log");
+    let dir = tempfile::tempdir().unwrap();
+    let bad_path = dir.path().join("missing").join("notif.log");
     let store = Arc::new(MemoryStore::new());
     let client = AvisoClient::builder()
         .base_url(server.uri())
