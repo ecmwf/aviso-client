@@ -236,7 +236,16 @@ pub(crate) async fn run_supervisor(
                 r = store.get(&resume_key) => r,
             };
             match get_result {
-                Ok(Some(cp)) => Some(ResumeStart::AfterSequence(cp.last_committed_sequence)),
+                Ok(Some(cp)) => {
+                    tracing::info!(
+                        event.name = "client.resume.applied",
+                        resume_key = %resume_key.as_hex(),
+                        sequence = cp.last_committed_sequence,
+                        event_id = cp.last_event_id.as_deref(),
+                        "resumed watch from stored checkpoint",
+                    );
+                    Some(ResumeStart::AfterSequence(cp.last_committed_sequence))
+                }
                 Ok(None) => None,
                 Err(e) => {
                     let _ = send_or_cancel(
