@@ -46,6 +46,9 @@ pub(crate) use dispatcher::dispatch_triggers;
 pub use error::{TriggerError, TriggerKindLabel};
 pub use http_method::HttpMethod;
 pub use template::TemplateErrorKind;
+#[cfg(unix)]
+pub use yaml::CommandTriggerConfig;
+pub use yaml::{EchoConfig, LogConfig, TriggerConfig, WebhookTriggerConfig};
 
 /// Command trigger dispatch. Unix-only (`#[cfg(unix)]`).
 #[cfg(unix)]
@@ -66,6 +69,8 @@ mod log;
 mod template;
 /// Webhook trigger dispatch.
 mod webhook;
+/// Declarative YAML configuration for triggers.
+mod yaml;
 
 #[cfg(test)]
 mod tests;
