@@ -51,12 +51,8 @@ fn command_config_debug_redacts_raw_template_and_env_values() {
         "env-var values must NOT leak into Debug: {rendered}"
     );
     assert!(
-        rendered.contains("env_count"),
-        "Debug must surface the env count (structural fact): {rendered}"
-    );
-    assert!(
-        rendered.contains('2'),
-        "env_count must show 2 (the test set two vars): {rendered}"
+        rendered.contains("env_count: 2"),
+        "Debug must surface env_count: 2 as a structural fact (the test set two env vars): {rendered}"
     );
 }
 
@@ -88,8 +84,12 @@ async fn command_trigger_stderr_tail_capped_at_4kib() {
     // Emit 8 KiB of 'A' followed by a sentinel suffix to stderr, then
     // exit 1. The captured tail must be exactly 4096 bytes and must
     // contain the sentinel suffix (i.e., we kept the TAIL, not the head).
+    //
+    // awk is POSIX-required and avoids depending on perl. The BEGIN
+    // block runs once at startup; exit 1 propagates as the shell's
+    // exit status because awk is the last (only) command.
     let cfg = build_command_config(
-        "perl -e 'print STDERR \"A\" x 8192; print STDERR \"SENTINEL\"; exit 1'",
+        "awk 'BEGIN { for (i = 0; i < 8192; i++) printf \"A\"; printf \"SENTINEL\"; exit 1 }' 1>&2",
     );
     let result = dispatch_command(&cfg, None, &make_notification()).await;
     match result {
@@ -115,7 +115,13 @@ async fn command_trigger_stdout_overflow_does_not_block_child() {
     // child would block waiting for the parent to read stdout, and
     // child.wait() would hang. The test must complete within the test
     // framework's default timeout (typically 60s on CI).
-    let cfg = build_command_config("perl -e 'print \"X\" x 131072; exit 0'");
+    //
+    // `head -c 131072 /dev/zero` is the most portable way to emit a
+    // fixed byte count to stdout: head's -c flag is POSIX 2008,
+    // /dev/zero is on every Unix the trigger supports, and the
+    // content (NUL bytes) does not matter for this test (the goal
+    // is to overflow the pipe buffer, not assert byte values).
+    let cfg = build_command_config("head -c 131072 /dev/zero");
     let result = dispatch_command(&cfg, None, &make_notification()).await;
     assert!(matches!(result, Ok(())), "got: {result:?}");
 }
