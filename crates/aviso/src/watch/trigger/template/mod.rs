@@ -64,6 +64,14 @@ pub enum TemplateErrorKind {
     /// parse failure category, NOT a snippet of the raw template, so
     /// it is safe to surface even when the template contains secrets.
     BadSyntax,
+    /// The notification could not be serialised to JSON. Practically
+    /// unreachable given the well-typed [`crate::Notification`]
+    /// shape (every field is a concrete scalar or `serde_json::Value`
+    /// that already round-trips through `serde_json::to_value`), but
+    /// kept as a distinct kind so the operator's diagnosis points at
+    /// the notification itself rather than chasing a missing-path
+    /// template bug.
+    NotificationEncode,
 }
 
 /// Crate-private carrier returned by the template engine. The raw
@@ -287,11 +295,18 @@ impl CompiledTemplate {
         // Serialise the notification ONCE per render; cache the value
         // for the duration of this call so multiple notification-path
         // segments share the same JSON walk basis.
+        //
+        // A `serde_json::to_value` failure is reported with the
+        // distinct `NotificationEncode` kind so the operator's
+        // diagnosis points at the notification itself, not at a
+        // missing template path. The well-typed `Notification`
+        // shape makes this path practically unreachable, but the
+        // mapping is correct if it ever fires.
         let notification_json: serde_json::Value =
             serde_json::to_value(notification).map_err(|_| TemplateError {
                 raw_template: self.raw.clone(),
                 field: "notification".to_string(),
-                kind: TemplateErrorKind::Missing,
+                kind: TemplateErrorKind::NotificationEncode,
             })?;
 
         let mut out = String::new();
