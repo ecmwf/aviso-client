@@ -186,7 +186,10 @@ async fn dispatch_one_attempt(
 /// encode failure; also deterministic);
 /// `TriggerError::Webhook { status: Some(s), .. }` where `s` is a
 /// 4xx (client error; the receiver is rejecting the request, retrying
-/// will not change the outcome). `TriggerError::Webhook` with a 5xx
+/// will not change the outcome); and
+/// `TriggerError::WebhookBuild { .. }` (the HTTP client rejected the
+/// rendered request at build time; same notification will produce
+/// the same rejection on retry). `TriggerError::Webhook` with a 5xx
 /// status or `None` status (transport error), `Io`, `Encode`, and
 /// `Timeout` stay retryable because they are genuinely transient
 /// (broken pipe, disk transiently full, slow downstream, server-side
@@ -215,16 +218,23 @@ fn is_command_terminal(_err: &TriggerError) -> bool {
     false
 }
 
-/// Webhook-specific terminal classifier. 4xx is terminal because the
-/// receiver is rejecting the request; 5xx and `None` status stay
-/// retryable because the failure is server-side transient. The
-/// `is_client_error()` method on `reqwest::StatusCode` matches the
-/// HTTP 4xx range exactly.
+/// Webhook-specific terminal classifier.
+///
+/// 4xx is terminal because the receiver is rejecting the request;
+/// 5xx and `None` status stay retryable because the failure is
+/// server-side transient. The `is_client_error()` method on
+/// `reqwest::StatusCode` matches the HTTP 4xx range exactly.
+///
+/// `TriggerError::WebhookBuild` is also terminal: the HTTP client
+/// rejected the rendered request at build time (malformed URL,
+/// invalid header value), which is deterministic with respect to
+/// the current notification.
 fn is_webhook_terminal(err: &TriggerError) -> bool {
-    matches!(
-        err,
-        TriggerError::Webhook { status: Some(s), .. } if s.is_client_error()
-    )
+    matches!(err, TriggerError::WebhookBuild { .. })
+        || matches!(
+            err,
+            TriggerError::Webhook { status: Some(s), .. } if s.is_client_error()
+        )
 }
 
 #[cfg(test)]

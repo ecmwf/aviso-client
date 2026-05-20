@@ -209,10 +209,32 @@ pub(super) async fn dispatch_webhook(
     let response = match request.send().await {
         Ok(r) => r,
         Err(e) => {
-            if e.is_timeout() {
+            let is_timeout = e.is_timeout();
+            let is_builder = e.is_builder();
+            let is_connect = e.is_connect();
+            // Do NOT pass `error = %e` to the tracing event:
+            // reqwest's `Display` for these errors includes the
+            // rendered URL ("builder error for url (..)" and the
+            // same suffix on transport errors), which may carry
+            // secrets baked into the URL via `{{ env.<NAME> }}`
+            // template substitution. The category booleans below
+            // are sufficient for operator diagnosis.
+            tracing::debug!(
+                event.name = "client.trigger.webhook.send_failed",
+                is_timeout,
+                is_builder,
+                is_connect,
+                "webhook request send failed"
+            );
+            if is_timeout {
                 if let Some(t) = timeout {
                     return Err(TriggerError::Timeout(t));
                 }
+            }
+            if is_builder {
+                return Err(TriggerError::WebhookBuild {
+                    reason: "request build failed (invalid URL or header value)".to_string(),
+                });
             }
             return Err(TriggerError::Webhook {
                 status: None,
@@ -310,10 +332,13 @@ async fn capture_body_tail(mut response: reqwest::Response) -> BodyDrain {
             }
             Err(e) => {
                 let timed_out = e.is_timeout();
+                // Do NOT pass `error = %e`: reqwest's Display for
+                // body-read errors also includes the rendered URL
+                // (the same "for url ({url})" suffix that builder
+                // errors carry); the URL can hold secrets.
                 tracing::debug!(
                     event.name = "client.trigger.webhook.body_read_error",
                     timed_out,
-                    error = %e,
                     "response body read error during chunked drain"
                 );
                 if timed_out {

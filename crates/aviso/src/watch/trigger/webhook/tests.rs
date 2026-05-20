@@ -128,6 +128,33 @@ async fn webhook_dispatch_4xx_returns_webhook_error() {
 }
 
 #[tokio::test]
+async fn webhook_dispatch_invalid_url_returns_webhook_build_error() {
+    // A URL that cannot be parsed (whitespace + no scheme) is
+    // accepted by the template engine as a literal string but
+    // rejected by reqwest at build time with is_builder() = true.
+    // The dispatcher must surface this as TriggerError::WebhookBuild
+    // (terminal under fail_fast = true), NOT as a transport-error
+    // Webhook { status: None } (which would waste the retry budget
+    // on a deterministic misconfiguration).
+    let cfg = build_webhook_config("not a valid url");
+    let http = reqwest::Client::new();
+    let result = dispatch_webhook(&cfg, &http, None, &make_notification()).await;
+    match result {
+        Err(TriggerError::WebhookBuild { reason }) => {
+            assert!(!reason.is_empty(), "WebhookBuild reason must be non-empty");
+            // Reason MUST NOT include the rendered URL: reqwest's
+            // Display includes the URL in builder errors, and the
+            // URL can carry secrets.
+            assert!(
+                !reason.contains("not a valid url"),
+                "WebhookBuild reason must not leak the rendered URL; got: {reason}"
+            );
+        }
+        other => panic!("expected WebhookBuild for invalid URL, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn webhook_dispatch_transport_error_returns_none_status() {
     // Refused connection: bind to a port the kernel will refuse.
     // 127.0.0.1:1 is reliably closed on every test platform; any
