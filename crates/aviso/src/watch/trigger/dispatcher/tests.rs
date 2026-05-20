@@ -1,6 +1,6 @@
 //! Unit tests for the trigger dispatcher: retry loop, backoff
 //! injection, terminal-vs-retryable classifier (`fail_fast`),
-//! parent-drop cancellation, and the cgf(test) `Test*` variant
+//! parent-drop cancellation, and the `cfg(test)` `Test*` variant
 //! dispatch paths.
 
 #![allow(
