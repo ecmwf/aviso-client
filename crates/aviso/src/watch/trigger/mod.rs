@@ -204,7 +204,8 @@ impl Trigger {
 
     /// Adds an environment variable to the command trigger's child
     /// process. Repeatable; later sets override earlier ones with
-    /// the same key. Unix-only (`#[cfg(unix)]`); absent on Windows.
+    /// the same key. Silently ignored when called on an echo or log
+    /// trigger. Unix-only (`#[cfg(unix)]`).
     #[cfg(unix)]
     #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -217,7 +218,8 @@ impl Trigger {
     /// Sets the working directory for the command trigger's child
     /// process. If the path does not exist or is not a directory,
     /// dispatch returns [`TriggerError::Io`] at first invocation.
-    /// Unix-only (`#[cfg(unix)]`); absent on Windows.
+    /// Silently ignored when called on an echo or log trigger.
+    /// Unix-only (`#[cfg(unix)]`).
     #[cfg(unix)]
     #[must_use]
     pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -258,13 +260,11 @@ impl Trigger {
     /// `child.wait()`; on expiry the dispatcher issues `SIGKILL`,
     /// reaps the zombie, and returns [`TriggerError::Timeout`].
     ///
-    /// Has no effect on echo or log triggers: each one writes a
-    /// buffer-prepared NDJSON line in a single I/O call (locked
-    /// stdout for echo, `tokio::fs::File::write_all` for log), and
-    /// the dispatcher preserves that single-call atomicity rather
-    /// than racing the write against a sleep that could cancel it
-    /// mid-flight and leave a malformed line on stdout or in the
-    /// log file. The field is silently ignored on those kinds.
+    /// Silently ignored on echo or log triggers: each writes a
+    /// buffer-prepared NDJSON line in a single I/O call and the
+    /// dispatcher preserves that single-call atomicity rather than
+    /// racing the write against a cancellable sleep that could
+    /// leave a malformed line on stdout or in the log file.
     #[must_use]
     pub fn timeout(mut self, t: std::time::Duration) -> Self {
         self.timeout = Some(t);
