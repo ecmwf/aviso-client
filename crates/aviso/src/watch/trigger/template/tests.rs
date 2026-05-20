@@ -145,7 +145,9 @@ fn render_env_variable_set_substitutes_value() {
     let t = compile("env=\"{{ env.MY_TOKEN }}\"").expect("compile");
     let out = t
         .render_with_env(&make_notification(), |name| {
-            env.get(name).map(|v| (*v).to_string())
+            env.get(name)
+                .map(|v| (*v).to_string())
+                .ok_or(TemplateErrorKind::EnvNotSet)
         })
         .expect("render");
     assert_eq!(out, "env=\"hello\"");
@@ -155,10 +157,29 @@ fn render_env_variable_set_substitutes_value() {
 fn render_env_variable_missing_returns_envnotset() {
     let t = compile("{{ env.NOT_SET_BY_TEST }}").expect("compile");
     let err = t
-        .render_with_env(&make_notification(), |_name| None)
+        .render_with_env(&make_notification(), |_name| {
+            Err(TemplateErrorKind::EnvNotSet)
+        })
         .expect_err("must miss");
     assert_eq!(err.kind, TemplateErrorKind::EnvNotSet);
     assert_eq!(err.field, "NOT_SET_BY_TEST");
+}
+
+#[test]
+fn render_env_variable_not_unicode_returns_envnotunicode() {
+    // The production path maps VarError::NotUnicode -> EnvNotUnicode
+    // via the resolver wired up in `render()`. We exercise the
+    // distinct error variant through the resolver seam here because
+    // the crate forbids `unsafe` and `std::env::set_var` would be
+    // required to install a non-UTF-8 env var in the live process.
+    let t = compile("{{ env.NOT_UTF8 }}").expect("compile");
+    let err = t
+        .render_with_env(&make_notification(), |_name| {
+            Err(TemplateErrorKind::EnvNotUnicode)
+        })
+        .expect_err("must report not-unicode");
+    assert_eq!(err.kind, TemplateErrorKind::EnvNotUnicode);
+    assert_eq!(err.field, "NOT_UTF8");
 }
 
 #[test]
