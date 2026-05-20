@@ -19,10 +19,15 @@
 //!
 //! The response body is captured into a 4 KiB ring buffer via the
 //! streaming [`reqwest::Response::chunk`] primitive (paralleling
-//! `command/mod.rs::drain_to_ring`). Memory stays bounded at
-//! `O(RING_CAP)` regardless of how many bytes the server streams in
-//! the request-timeout window; a misbehaving server cannot OOM the
-//! client through an oversized body.
+//! `command/mod.rs::drain_to_ring`). The captured-body-tail storage
+//! stays capped at `RING_CAP` regardless of how many bytes the
+//! server streams in the request-timeout window; per-chunk
+//! transient memory (the `Bytes` reqwest hands to `chunk()`, the
+//! lossy-UTF-8 decode when the ring is converted to a `String`) is
+//! proportional to chunk size, not total body size, so the
+//! dispatcher's per-request footprint stays bounded against a
+//! server that streams a multi-gigabyte body within the timeout
+//! window.
 //!
 //! # Retry classifier
 //!
