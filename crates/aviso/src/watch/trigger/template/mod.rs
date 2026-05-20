@@ -53,6 +53,12 @@ pub enum TemplateErrorKind {
     /// A `{{ env.<NAME> }}` expression's environment variable was not
     /// set in the process environment.
     EnvNotSet,
+    /// A `{{ env.<NAME> }}` expression's environment variable WAS set
+    /// but contained bytes that are not valid UTF-8. Distinct from
+    /// `EnvNotSet` because the operator's diagnosis differs: a
+    /// not-set variable means a misconfigured deployment, while a
+    /// not-unicode variable means the value itself needs fixing.
+    EnvNotUnicode,
     /// The template source itself was malformed. The accompanying
     /// `field` on [`crate::watch::TriggerError::Template`] names the
     /// parse failure category, NOT a snippet of the raw template, so
@@ -249,21 +255,34 @@ impl CompiledTemplate {
     /// process environment (`std::env::set_var` is `unsafe` and the
     /// crate forbids unsafe).
     pub(crate) fn render(&self, notification: &Notification) -> Result<String, TemplateError> {
-        self.render_with_env(notification, |name| std::env::var(name).ok())
+        // Match VarError variants explicitly so a present-but-not-UTF-8
+        // env var surfaces as the distinct `EnvNotUnicode` error rather
+        // than collapsing into `EnvNotSet` (which would mislead the
+        // operator looking for a misconfigured deployment when the
+        // actual bug is in the value).
+        self.render_with_env(notification, |name| match std::env::var(name) {
+            Ok(value) => Ok(value),
+            Err(std::env::VarError::NotPresent) => Err(TemplateErrorKind::EnvNotSet),
+            Err(std::env::VarError::NotUnicode(_)) => Err(TemplateErrorKind::EnvNotUnicode),
+        })
     }
 
     /// Renders the template with an injected env-var resolver.
     ///
-    /// The resolver returns `Some(value)` when the variable is set, or
-    /// `None` when it is not. Production wires `std::env::var`; tests
-    /// pass a closure that returns hardcoded values.
+    /// The resolver returns `Ok(value)` when the variable is set and
+    /// usable, or `Err(kind)` when it is not; `kind` is the
+    /// [`TemplateErrorKind`] that gets carried into the resulting
+    /// `TemplateError`. Production wires `std::env::var` and maps
+    /// `VarError::NotPresent` -> `EnvNotSet` and
+    /// `VarError::NotUnicode` -> `EnvNotUnicode`. Tests pass a
+    /// closure that returns hardcoded values.
     pub(crate) fn render_with_env<F>(
         &self,
         notification: &Notification,
         env_resolver: F,
     ) -> Result<String, TemplateError>
     where
-        F: Fn(&str) -> Option<String>,
+        F: Fn(&str) -> Result<String, TemplateErrorKind>,
     {
         // Serialise the notification ONCE per render; cache the value
         // for the duration of this call so multiple notification-path
@@ -293,10 +312,10 @@ impl CompiledTemplate {
                     out.push_str(&render_value(value));
                 }
                 Segment::EnvVar(name) => {
-                    let value = env_resolver(name).ok_or_else(|| TemplateError {
+                    let value = env_resolver(name).map_err(|kind| TemplateError {
                         raw_template: self.raw.clone(),
                         field: name.clone(),
-                        kind: TemplateErrorKind::EnvNotSet,
+                        kind,
                     })?;
                     out.push_str(&value);
                 }
