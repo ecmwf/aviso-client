@@ -51,7 +51,11 @@ fn required_setter_overrides_default() {
 
 #[test]
 fn trigger_clone_preserves_all_fields() {
-    let original = Trigger::log("/tmp/clone.log").retries(3).required(false);
+    let original = Trigger::log("/tmp/clone.log")
+        .retries(3)
+        .required(false)
+        .timeout(std::time::Duration::from_secs(15))
+        .fail_fast(false);
     let cloned = original.clone();
     let (TriggerKind::Log { path: a }, TriggerKind::Log { path: b }) =
         (&original.kind, &cloned.kind)
@@ -61,16 +65,24 @@ fn trigger_clone_preserves_all_fields() {
     assert_eq!(a, b);
     assert_eq!(cloned.retries, original.retries);
     assert_eq!(cloned.required, original.required);
+    assert_eq!(cloned.timeout, original.timeout);
+    assert_eq!(cloned.fail_fast, original.fail_fast);
 }
 
 #[test]
 fn trigger_debug_includes_all_fields() {
-    let trigger = Trigger::log("/tmp/dbg.log").retries(2).required(true);
+    let trigger = Trigger::log("/tmp/dbg.log")
+        .retries(2)
+        .required(true)
+        .timeout(std::time::Duration::from_secs(7))
+        .fail_fast(false);
     let dbg = format!("{trigger:?}");
     assert!(dbg.contains("Trigger"), "got: {dbg}");
     assert!(dbg.contains("kind"), "got: {dbg}");
     assert!(dbg.contains("retries"), "got: {dbg}");
     assert!(dbg.contains("required"), "got: {dbg}");
+    assert!(dbg.contains("timeout"), "got: {dbg}");
+    assert!(dbg.contains("fail_fast"), "got: {dbg}");
     assert!(dbg.contains("/tmp/dbg.log"), "got: {dbg}");
 }
 
