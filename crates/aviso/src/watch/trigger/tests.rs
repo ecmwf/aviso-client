@@ -139,3 +139,59 @@ fn trigger_error_template_display_uses_safe_context_not_raw_template() {
     );
     assert!(rendered.contains("Missing"), "got: {rendered}");
 }
+
+#[test]
+fn trigger_kind_label_display_for_webhook_is_bare() {
+    let label = TriggerKindLabel::Webhook;
+    assert_eq!(label.to_string(), "webhook");
+}
+
+#[test]
+fn webhook_constructor_uses_default_timeout_and_fail_fast_true() {
+    let trigger = Trigger::webhook("https://example.com/hook");
+    assert!(matches!(trigger.kind, TriggerKind::Webhook(_)));
+    assert_eq!(trigger.retries, 0);
+    assert!(trigger.required);
+    assert_eq!(trigger.timeout, Some(super::DEFAULT_WEBHOOK_TIMEOUT));
+    assert!(trigger.fail_fast);
+}
+
+#[test]
+fn webhook_timeout_setter_overrides_default() {
+    let trigger =
+        Trigger::webhook("https://example.com/hook").timeout(std::time::Duration::from_secs(5));
+    assert_eq!(trigger.timeout, Some(std::time::Duration::from_secs(5)));
+}
+
+#[test]
+fn method_setter_silently_ignored_on_echo() {
+    use super::HttpMethod;
+    let trigger = Trigger::echo().method(HttpMethod::Get);
+    assert!(matches!(trigger.kind, TriggerKind::Echo));
+}
+
+#[test]
+fn header_setter_silently_ignored_on_log() {
+    let trigger = Trigger::log("/tmp/ignored.log").header("X-Foo", "bar");
+    let TriggerKind::Log { .. } = &trigger.kind else {
+        panic!("expected Log variant after setter no-op");
+    };
+}
+
+#[cfg(unix)]
+#[test]
+fn body_template_setter_silently_ignored_on_command() {
+    let trigger = Trigger::command("echo hi").body_template(r#"{"k": "v"}"#);
+    assert!(matches!(trigger.kind, TriggerKind::Command(_)));
+}
+
+#[test]
+fn trigger_error_webhook_variant_carries_status_and_body_tail() {
+    let err = TriggerError::Webhook {
+        status: Some(reqwest::StatusCode::BAD_GATEWAY),
+        body_tail: "upstream is down".to_string(),
+    };
+    let rendered = err.to_string();
+    assert!(rendered.contains("502"), "got: {rendered}");
+    assert!(rendered.contains("upstream is down"), "got: {rendered}");
+}
