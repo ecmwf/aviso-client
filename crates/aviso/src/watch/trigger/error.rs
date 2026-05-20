@@ -43,8 +43,11 @@ pub enum TriggerKindLabel {
     /// values can carry tokens (Slack `?token=...`, GitHub `?key=...`,
     /// Auth headers), and any redacted summary risks leaking the
     /// visible prefix of a secret. The label displays as the bare
-    /// string `"webhook"`; the full URL and headers stay in
-    /// DEBUG-level structured tracing only.
+    /// string `"webhook"`. The rendered URL and header values are
+    /// deliberately not surfaced through any error variant or
+    /// default tracing event emitted by the dispatcher; only the
+    /// response status and a 4 KiB body tail surface to the
+    /// operator via [`TriggerError::Webhook`].
     Webhook,
 }
 
@@ -63,9 +66,9 @@ impl std::fmt::Display for TriggerKindLabel {
 /// Error returned by a single trigger dispatch attempt.
 ///
 /// Carried as the `source` of [`crate::ClientError::TriggerFailed`] when a required
-/// trigger fails. The variants cover the failure modes the v1 dispatcher
-/// can produce; the enum is `#[non_exhaustive]` so future triggers (for
-/// example a Webhook trigger with HTTP-status awareness) can add variants
+/// trigger fails. The variants cover the failure modes the current dispatcher
+/// can produce; the enum is `#[non_exhaustive]` so future trigger kinds (for
+/// example an email trigger with SMTP-status awareness) can add variants
 /// without breaking downstream matches.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -121,6 +124,28 @@ pub enum TriggerError {
         /// Last 4 KiB of the response body, lossily UTF-8 decoded.
         /// Empty on transport errors.
         body_tail: String,
+    },
+
+    /// A webhook trigger could not be built into a request: the
+    /// rendered URL was malformed, a rendered header value
+    /// contained invalid characters, or some other input that
+    /// passed template rendering was rejected by the HTTP client
+    /// builder. The dispatcher classifies this variant as terminal
+    /// under `fail_fast = true` because the failure is
+    /// deterministic with respect to the current notification: the
+    /// next attempt would render the same invalid input and fail
+    /// identically.
+    ///
+    /// `reason` is a static category label (`"request build failed
+    /// (invalid URL or header value)"`); it deliberately does NOT
+    /// include the rendered URL, header values, or the underlying
+    /// HTTP client's `Display` message, because the HTTP client's
+    /// error string can include the rendered URL (which may carry
+    /// secrets from `{{ env.<NAME> }}` substitutions).
+    #[error("webhook build: {reason}")]
+    WebhookBuild {
+        /// Static category label naming the build-time rejection.
+        reason: String,
     },
 
     /// A template substitution failed.

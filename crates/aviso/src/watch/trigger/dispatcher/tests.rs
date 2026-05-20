@@ -378,6 +378,46 @@ async fn webhook_transport_error_is_retryable_with_fail_fast_true() {
 }
 
 #[tokio::test]
+async fn webhook_build_error_is_terminal_with_fail_fast_true() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: true,
+    };
+    let err = TriggerError::WebhookBuild {
+        reason: "request build failed (invalid URL or header value)".to_string(),
+    };
+    assert!(
+        super::is_terminal_error(&trigger, &err),
+        "WebhookBuild must be terminal under fail_fast = true; the failure is deterministic"
+    );
+}
+
+#[tokio::test]
+async fn webhook_build_error_is_retryable_with_fail_fast_false() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: false,
+    };
+    let err = TriggerError::WebhookBuild {
+        reason: "request build failed (invalid URL or header value)".to_string(),
+    };
+    assert!(
+        !super::is_terminal_error(&trigger, &err),
+        "fail_fast=false must keep every error retryable, including WebhookBuild"
+    );
+}
+
+#[tokio::test]
 async fn webhook_4xx_is_retryable_with_fail_fast_false() {
     use crate::watch::trigger::webhook::build_webhook_config;
     let cfg = build_webhook_config("http://127.0.0.1:1/unused");
