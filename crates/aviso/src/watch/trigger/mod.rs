@@ -2,17 +2,24 @@
 //!
 //! A [`Trigger`] is a per-notification side effect attached to a
 //! [`crate::watch::WatchRequest`] via
-//! [`crate::watch::WatchRequest::with_triggers`]. Two built-in kinds ship in
-//! the first release:
+//! [`crate::watch::WatchRequest::with_triggers`]. Three built-in kinds
+//! ship in the core:
 //!
-//! - [`Trigger::echo`]: writes the notification as NDJSON to standard output.
-//! - [`Trigger::log`]: appends the notification as NDJSON to a user-specified
-//!   file.
+//! - [`Trigger::echo`]: writes the notification as NDJSON to standard
+//!   output.
+//! - [`Trigger::log`]: appends the notification as NDJSON to a
+//!   user-specified file.
+//! - [`Trigger::command`]: runs `/bin/sh -c <rendered>` per notification
+//!   with the notification's fields exposed as `AVISO_*` environment
+//!   variables.
 //!
-//! Each trigger has a `retries` count (default `0`) and a `required` flag
-//! (default `true`). A required trigger that fails after all retries
-//! terminates the watch with [`crate::ClientError::TriggerFailed`]; an optional
-//! trigger that fails logs a `WARN` event and the watch continues.
+//! Each trigger has a `retries` count (default `0`), a `required` flag
+//! (default `true`), a `timeout` (default `None`; meaningful for the
+//! command trigger only), and a `fail_fast` flag (default `true`;
+//! meaningful for the command trigger only). A required trigger that
+//! fails after all retries terminates the watch with
+//! [`crate::ClientError::TriggerFailed`]; an optional trigger that
+//! fails logs a `WARN` event and the watch continues.
 //!
 //! # Dispatcher contract
 //!
@@ -33,7 +40,11 @@ use std::path::PathBuf;
 use kind::TriggerKind;
 
 pub(crate) use dispatcher::dispatch_triggers;
+pub use template::TemplateErrorKind;
 
+/// Command trigger dispatch. Unix-only (`#[cfg(unix)]`).
+#[cfg(unix)]
+mod command;
 /// Trigger dispatch orchestration.
 mod dispatcher;
 /// Echo trigger dispatch.
@@ -42,13 +53,20 @@ mod echo;
 mod kind;
 /// Log trigger dispatch.
 mod log;
+/// Template substitution engine shared by command and webhook triggers.
+mod template;
+
+#[cfg(test)]
+mod tests;
 
 /// A single trigger configured on a watch.
 ///
-/// Built via [`Self::echo`] or [`Self::log`]; tuned via the chainable
-/// [`Self::retries`] and [`Self::required`] setters. Defaults are the
-/// safe choice for an at-least-once system: required (failure terminates
-/// the watch), zero retries.
+/// Built via [`Self::echo`], [`Self::log`], or [`Self::command`];
+/// tuned via chainable setters ([`Self::retries`], [`Self::required`],
+/// [`Self::timeout`], [`Self::fail_fast`], [`Self::env`],
+/// [`Self::working_dir`]; the last two apply only to command).
+/// Defaults are at-least-once safe: required, zero retries,
+/// no timeout, fail-fast on.
 ///
 /// # Examples
 ///
@@ -73,6 +91,8 @@ pub struct Trigger {
     kind: TriggerKind,
     pub(crate) retries: u32,
     pub(crate) required: bool,
+    pub(crate) timeout: Option<std::time::Duration>,
+    pub(crate) fail_fast: bool,
 }
 
 /// Manual `Debug` impl rather than `#[derive(Debug)]`: the derived form
@@ -86,42 +106,126 @@ impl std::fmt::Debug for Trigger {
             kind,
             retries,
             required,
+            timeout,
+            fail_fast,
         } = self;
         f.debug_struct("Trigger")
             .field("kind", kind)
             .field("retries", retries)
             .field("required", required)
+            .field("timeout", timeout)
+            .field("fail_fast", fail_fast)
             .finish()
     }
 }
 
 impl Trigger {
-    /// Build an echo trigger that writes each notification as a single line
-    /// of compact JSON to standard output.
-    ///
-    /// Defaults: `retries: 0`, `required: true`.
+    /// Build an echo trigger that writes each notification as a single
+    /// line of compact JSON to standard output.
     #[must_use]
     pub fn echo() -> Self {
         Self {
             kind: TriggerKind::Echo,
             retries: 0,
             required: true,
+            timeout: None,
+            fail_fast: true,
         }
     }
 
-    /// Build a log trigger that appends each notification as a single line of
-    /// compact JSON to the file at `path`. The file is opened with
-    /// `append(true).create(true)` on first dispatch and held open for the
-    /// trigger's lifetime; no rotation, no per-write `fsync`.
-    ///
-    /// Defaults: `retries: 0`, `required: true`.
+    /// Build a log trigger that appends each notification as a single
+    /// line of compact JSON to the file at `path`. The file is opened
+    /// with `append(true).create(true)` on first dispatch and held
+    /// open for the trigger's lifetime; no rotation, no per-write
+    /// `fsync`.
     #[must_use]
     pub fn log(path: impl Into<PathBuf>) -> Self {
         Self {
             kind: TriggerKind::Log { path: path.into() },
             retries: 0,
             required: true,
+            timeout: None,
+            fail_fast: true,
         }
+    }
+
+    /// Build a command trigger that runs `/bin/sh -c <cmd>` once per
+    /// notification, with the notification's fields exposed as
+    /// `AVISO_*` environment variables. The command string is rendered
+    /// through the trigger template engine: `{{ notification.<path> }}`
+    /// substitutes a notification field, `{{ env.<NAME> }}` reads from
+    /// the process environment.
+    ///
+    /// # Environment variable injection
+    ///
+    /// The dispatcher injects `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
+    /// `AVISO_REQUEST_ID` (when present), `AVISO_IDENTIFIER_<KEY>`
+    /// per identifier entry (uppercased, non-alphanumerics replaced
+    /// with `_`), `AVISO_PAYLOAD_JSON` (full payload as compact JSON),
+    /// and `AVISO_NOTIFICATION_JSON` (full notification as compact
+    /// JSON). User-supplied env vars via [`Self::env`] are applied
+    /// AFTER the dispatcher-injected vars, so user keys override
+    /// dispatcher keys when both are present.
+    ///
+    /// # Output capture
+    ///
+    /// Stdout and stderr are captured concurrently into 4 KiB ring
+    /// buffers. Stdout content is dropped per the no-payload-logging
+    /// discipline; only the captured byte count reaches DEBUG-level
+    /// tracing. Stderr tail surfaces in the public
+    /// [`crate::ClientError::TriggerFailed`] variant on non-zero exit.
+    ///
+    /// # Shell descendant cleanup, Unix-only, and template errors
+    ///
+    /// The dispatcher kills the `/bin/sh -c ...` child when the
+    /// [`Self::timeout`] expires, but does NOT propagate the kill
+    /// signal to pipelines, backgrounded jobs, or grandchildren that
+    /// survive the shell. Use `exec ./binary` so the shell PID
+    /// equals the target binary's PID if you need full process-tree
+    /// cleanup. The method and the related command-trigger surface
+    /// ([`TriggerKindLabel::Command`], [`TriggerError::Command`],
+    /// [`Self::env`], [`Self::working_dir`]) are `#[cfg(unix)]`;
+    /// Windows builds compile cleanly without them. The constructor
+    /// is infallible; a malformed template surfaces at first
+    /// dispatch as [`TriggerError::Template`]. See the [`Trigger`]
+    /// struct doc for tunable defaults.
+    #[cfg(unix)]
+    #[must_use]
+    pub fn command(cmd: impl Into<String>) -> Self {
+        Self {
+            kind: TriggerKind::Command(Box::new(command::build_command_config(cmd))),
+            retries: 0,
+            required: true,
+            timeout: None,
+            fail_fast: true,
+        }
+    }
+
+    /// Adds an environment variable to the command trigger's child
+    /// process. Repeatable; later sets override earlier ones with
+    /// the same key. Silently ignored when called on an echo or log
+    /// trigger. Unix-only (`#[cfg(unix)]`).
+    #[cfg(unix)]
+    #[must_use]
+    pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        if let TriggerKind::Command(cfg) = &mut self.kind {
+            cfg.env.insert(key.into(), value.into());
+        }
+        self
+    }
+
+    /// Sets the working directory for the command trigger's child
+    /// process. If the path does not exist or is not a directory,
+    /// dispatch returns [`TriggerError::Io`] at first invocation.
+    /// Silently ignored when called on an echo or log trigger.
+    /// Unix-only (`#[cfg(unix)]`).
+    #[cfg(unix)]
+    #[must_use]
+    pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        if let TriggerKind::Command(cfg) = &mut self.kind {
+            cfg.working_dir = Some(dir.into());
+        }
+        self
     }
 
     /// Override the retry count.
@@ -147,6 +251,49 @@ impl Trigger {
         self.required = required;
         self
     }
+
+    /// Set a per-trigger timeout.
+    ///
+    /// Meaningful for the command trigger only: bounds the wait on the
+    /// child process with `tokio::time::sleep` raced against
+    /// `child.wait()`; on expiry the dispatcher issues `SIGKILL`,
+    /// reaps the zombie, and returns [`TriggerError::Timeout`].
+    ///
+    /// Silently ignored on echo or log triggers: each writes a
+    /// buffer-prepared NDJSON line in a single I/O call and the
+    /// dispatcher preserves that single-call atomicity rather than
+    /// racing the write against a cancellable sleep that could
+    /// leave a malformed line on stdout or in the log file.
+    #[must_use]
+    pub fn timeout(mut self, t: std::time::Duration) -> Self {
+        self.timeout = Some(t);
+        self
+    }
+
+    /// Override the fail-fast policy on terminal failures.
+    ///
+    /// When `true` (the default), terminal failures bypass the retry
+    /// budget and the trigger fails immediately. When `false`, every
+    /// failure is treated as retryable up to the configured
+    /// [`Self::retries`] budget.
+    ///
+    /// Meaningful for the command trigger only:
+    /// [`TriggerError::Command`] (non-zero exit) and every
+    /// [`TriggerError::Template`] (any render-time failure: missing
+    /// notification path, missing env var, malformed template) are
+    /// terminal under `fail_fast = true` because they are
+    /// deterministic with respect to the current notification and
+    /// process environment (the same input produces the same
+    /// failure); `Io`, `Encode`, and `Timeout` stay retryable
+    /// because they are genuinely transient.
+    ///
+    /// Has no effect on echo or log triggers (their errors are
+    /// always retryable through the normal retry budget).
+    #[must_use]
+    pub fn fail_fast(mut self, on: bool) -> Self {
+        self.fail_fast = on;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +316,8 @@ impl Trigger {
             },
             retries,
             required,
+            timeout: None,
+            fail_fast: true,
         };
         (trigger, counter)
     }
@@ -190,6 +339,8 @@ impl Trigger {
             },
             retries,
             required,
+            timeout: None,
+            fail_fast: true,
         };
         (trigger, counter)
     }
@@ -232,6 +383,13 @@ pub(super) enum DispatchOutcome {
 ///
 /// Separate from the crate-private `TriggerKind` enum so future internal
 /// variants (or test-only ones) cannot leak into public error displays.
+///
+/// The `Command` variant intentionally carries no body: a command
+/// trigger's full command string may contain secrets (bearer tokens,
+/// connection URIs), and any redacted summary is still an attack
+/// surface if the secret appears in the visible prefix. The label
+/// displays as the bare string `"command"`; the full command goes
+/// into DEBUG-level structured tracing only.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerKindLabel {
@@ -242,6 +400,12 @@ pub enum TriggerKindLabel {
         /// The configured log file path.
         path: PathBuf,
     },
+    /// The command trigger (subprocess spawn). Carries no body to
+    /// avoid leaking secret-bearing command fragments through error
+    /// chains; the full command appears in DEBUG-level tracing only.
+    /// Unix-only (`#[cfg(unix)]`).
+    #[cfg(unix)]
+    Command,
 }
 
 impl std::fmt::Display for TriggerKindLabel {
@@ -249,6 +413,8 @@ impl std::fmt::Display for TriggerKindLabel {
         match self {
             Self::Echo => f.write_str("echo"),
             Self::Log { path } => write!(f, "log({})", path.display()),
+            #[cfg(unix)]
+            Self::Command => f.write_str("command"),
         }
     }
 }
@@ -273,106 +439,61 @@ pub enum TriggerError {
     /// safety.
     #[error("encode notification: {0}")]
     Encode(#[from] serde_json::Error),
-}
 
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code: unwrap on constructor success and panic on unexpected variant are the standard test diagnostics"
-)]
-mod tests {
-    use std::path::PathBuf;
+    /// A command trigger's child process exited with a non-zero
+    /// status. `stderr_tail` is the last 4 KiB of the child's
+    /// stderr, captured into a ring buffer; the head is dropped on
+    /// overflow. Stdout content is suppressed per the
+    /// no-payload-logging rule. Unix-only (`#[cfg(unix)]`).
+    #[cfg(unix)]
+    #[error("command exited {exit_code}: {stderr_tail}")]
+    Command {
+        /// Child process's exit code. `-1` when the child died from
+        /// a signal (Unix sets the exit code to None for
+        /// signal-terminated children; `-1` is the canonical sentinel).
+        exit_code: i32,
+        /// Last 4 KiB of the child's stderr, lossily UTF-8 decoded.
+        stderr_tail: String,
+    },
 
-    use super::{Trigger, TriggerError, TriggerKindLabel};
-    use crate::watch::trigger::kind::TriggerKind;
+    /// A trigger attempt exceeded its configured per-trigger timeout.
+    ///
+    /// Surfaced only on triggers that have a meaningful timeout
+    /// (currently the command trigger; echo and log silently ignore
+    /// the [`Trigger::timeout`] setter). The carried duration is the
+    /// timeout that was set, not the actual elapsed time.
+    #[error("trigger timed out after {0:?}")]
+    Timeout(std::time::Duration),
 
-    #[test]
-    fn echo_constructor_uses_default_retries_zero_and_required_true() {
-        let trigger = Trigger::echo();
-        assert!(matches!(trigger.kind, TriggerKind::Echo));
-        assert_eq!(trigger.retries, 0);
-        assert!(trigger.required);
-    }
-
-    #[test]
-    fn log_constructor_uses_default_retries_zero_and_required_true() {
-        let trigger = Trigger::log("/tmp/some.log");
-        let TriggerKind::Log { path } = &trigger.kind else {
-            panic!("expected Log variant");
-        };
-        assert_eq!(path, &PathBuf::from("/tmp/some.log"));
-        assert_eq!(trigger.retries, 0);
-        assert!(trigger.required);
-    }
-
-    #[test]
-    fn retries_setter_overrides_default() {
-        let trigger = Trigger::echo().retries(7);
-        assert_eq!(trigger.retries, 7);
-        assert!(matches!(trigger.kind, TriggerKind::Echo));
-        assert!(trigger.required);
-    }
-
-    #[test]
-    fn required_setter_overrides_default() {
-        let trigger = Trigger::echo().required(false);
-        assert!(!trigger.required);
-        assert_eq!(trigger.retries, 0);
-    }
-
-    #[test]
-    fn trigger_clone_preserves_all_fields() {
-        let original = Trigger::log("/tmp/clone.log").retries(3).required(false);
-        let cloned = original.clone();
-        let (TriggerKind::Log { path: a }, TriggerKind::Log { path: b }) =
-            (&original.kind, &cloned.kind)
-        else {
-            panic!("clone did not preserve Log variant");
-        };
-        assert_eq!(a, b);
-        assert_eq!(cloned.retries, original.retries);
-        assert_eq!(cloned.required, original.required);
-    }
-
-    #[test]
-    fn trigger_debug_includes_all_fields() {
-        let trigger = Trigger::log("/tmp/dbg.log").retries(2).required(true);
-        let dbg = format!("{trigger:?}");
-        assert!(dbg.contains("Trigger"), "got: {dbg}");
-        assert!(dbg.contains("kind"), "got: {dbg}");
-        assert!(dbg.contains("retries"), "got: {dbg}");
-        assert!(dbg.contains("required"), "got: {dbg}");
-        assert!(dbg.contains("/tmp/dbg.log"), "got: {dbg}");
-    }
-
-    #[test]
-    fn trigger_kind_label_display_for_echo() {
-        let label = TriggerKindLabel::Echo;
-        assert_eq!(label.to_string(), "echo");
-    }
-
-    #[test]
-    fn trigger_kind_label_display_for_log_includes_path() {
-        let label = TriggerKindLabel::Log {
-            path: PathBuf::from("/var/log/aviso.log"),
-        };
-        assert_eq!(label.to_string(), "log(/var/log/aviso.log)");
-    }
-
-    #[test]
-    fn trigger_error_io_variant_carries_io_kind() {
-        let err: TriggerError = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe").into();
-        match err {
-            TriggerError::Io(inner) => assert_eq!(inner.kind(), std::io::ErrorKind::BrokenPipe),
-            TriggerError::Encode(e) => panic!("expected Io, got Encode: {e}"),
-        }
-    }
-
-    #[test]
-    fn trigger_error_encode_variant_carries_serde_error() {
-        let parse_err = serde_json::from_str::<i32>("not a number").unwrap_err();
-        let err: TriggerError = parse_err.into();
-        assert!(matches!(err, TriggerError::Encode(_)));
-    }
+    /// A template substitution failed.
+    ///
+    /// The `context` is a safe static label naming WHICH template
+    /// surface produced the error (`"command"`, `"webhook url"`,
+    /// `"webhook body"`, `"webhook header"`). It is NOT a snippet of
+    /// the raw template source: raw templates may carry secrets
+    /// (e.g., a bearer token baked into a webhook URL), so only safe
+    /// labels reach the public error chain.
+    ///
+    /// The `field` names the specific path or env-var name that
+    /// failed: a JSON path like `"notification.payload.target"` for
+    /// `Missing`, an env-var name like `"SLACK_TOKEN"` for `EnvNotSet`,
+    /// or a safe static label like `"unclosed_braces"` for `BadSyntax`.
+    /// For `BadSyntax` specifically, the `field` carries no fragment
+    /// from the raw template; it names only the parse failure
+    /// category.
+    ///
+    /// The raw template source is logged at `DEBUG` via the
+    /// `client.trigger.template.render_failed` tracing event for
+    /// operators who control the logging sink, but never appears in
+    /// this public variant.
+    #[error("template render in {context} failed at {field}: {kind:?}")]
+    Template {
+        /// Safe static label naming which template surface failed.
+        context: String,
+        /// Specific path or env-var name that failed; for
+        /// `BadSyntax`, a safe static label naming the parse failure.
+        field: String,
+        /// Categorisation of the failure.
+        kind: TemplateErrorKind,
+    },
 }

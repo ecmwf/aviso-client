@@ -6,12 +6,17 @@ use tokio::sync::{oneshot, watch};
 
 use crate::Notification;
 
+#[cfg(unix)]
+use super::command::dispatch_command;
 use super::echo::dispatch_echo;
 use super::kind::{TriggerKind, trigger_kind_label};
 use super::log::dispatch_log;
 use super::{DispatchOutcome, Trigger, TriggerError, TriggerState};
 use crate::watch::backoff::compute_backoff;
 use crate::watch::outcome::ReconnectPolicy;
+
+#[cfg(test)]
+mod tests;
 
 /// Run all configured triggers for a notification using the production
 /// backoff schedule.
@@ -71,10 +76,10 @@ where
 
         let mut attempt: u32 = 0;
         let outcome = loop {
-            match dispatch_one_attempt(&trigger.kind, state, notification).await {
+            match dispatch_one_attempt(trigger, state, notification).await {
                 Ok(()) => break Ok(()),
                 Err(err) => {
-                    if attempt >= trigger.retries {
+                    if is_terminal_error(trigger, &err) || attempt >= trigger.retries {
                         break Err(err);
                     }
                     let delay = backoff(attempt);
@@ -139,13 +144,15 @@ fn check_cancelled(
 }
 
 async fn dispatch_one_attempt(
-    kind: &TriggerKind,
+    trigger: &Trigger,
     state: &mut TriggerState,
     notification: &Notification,
 ) -> Result<(), TriggerError> {
-    match kind {
+    match &trigger.kind {
         TriggerKind::Echo => dispatch_echo(notification),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
+        #[cfg(unix)]
+        TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,
         #[cfg(test)]
         TriggerKind::TestFailing {
             failures_remaining,
@@ -157,6 +164,41 @@ async fn dispatch_one_attempt(
             fail_on_call,
         } => dispatch_test_fail_on_call(calls, *fail_on_call),
     }
+}
+
+/// Decide whether an attempt error should terminate the retry loop
+/// immediately (bypassing the retry budget) or stay retryable.
+///
+/// `fail_fast = false` keeps every failure retryable. `fail_fast =
+/// true` (the default) treats every `TriggerError::Command` (non-zero
+/// exit) and every `TriggerError::Template` (any render-time failure:
+/// missing notification path, missing env var, env var not unicode,
+/// malformed template, or notification encode failure) as terminal
+/// because they are deterministic with respect to the current
+/// notification and process environment: the same input produces the
+/// same failure, so retrying wastes the budget. `Io`, `Encode`, and
+/// `Timeout` stay retryable because they are genuinely transient
+/// (broken pipe, disk transiently full, slow downstream).
+fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
+    if !trigger.fail_fast {
+        return false;
+    }
+    matches!(err, TriggerError::Template { .. }) || is_command_terminal(err)
+}
+
+/// Per-platform helper: matches the Unix-only
+/// [`TriggerError::Command`] variant. On non-Unix builds the variant
+/// is absent and the helper returns false unconditionally, so the
+/// classifier still compiles and the `Template` arm above keeps the
+/// only meaningful terminal classification.
+#[cfg(unix)]
+fn is_command_terminal(err: &TriggerError) -> bool {
+    matches!(err, TriggerError::Command { .. })
+}
+
+#[cfg(not(unix))]
+fn is_command_terminal(_err: &TriggerError) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -190,165 +232,5 @@ fn dispatch_test_fail_on_call(
         Err(TriggerError::Io(std::io::Error::other("test fail on call")))
     } else {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code: unwrap on channel send and panic on unexpected variant are the standard test diagnostics"
-)]
-mod tests {
-    use std::collections::BTreeMap;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-
-    use tokio::sync::{oneshot, watch};
-
-    use super::dispatch_triggers_with_backoff;
-    use crate::Notification;
-    use crate::watch::trigger::kind::TestEventual;
-    use crate::watch::trigger::{DispatchOutcome, Trigger, TriggerState};
-
-    fn make_notification() -> Notification {
-        Notification {
-            event_type: "mars".to_string(),
-            sequence: 1,
-            identifier: BTreeMap::new(),
-            payload: serde_json::Value::Null,
-            request_id: None,
-        }
-    }
-
-    async fn run_once<F>(
-        triggers: &[Trigger],
-        states: &mut [TriggerState],
-        backoff: F,
-    ) -> Result<(), DispatchOutcome>
-    where
-        F: Fn(u32) -> Duration,
-    {
-        let (_drop_tx, mut parent_rx) = watch::channel(false);
-        let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        let n = make_notification();
-        dispatch_triggers_with_backoff(
-            triggers,
-            states,
-            &n,
-            &mut parent_rx,
-            &mut cancel_rx,
-            backoff,
-        )
-        .await
-    }
-
-    #[tokio::test]
-    async fn retries_exhausted_returns_required_failed_with_io_source() {
-        let (trigger, counter) = Trigger::test_failing(5, TestEventual::Succeed, 2, true);
-        let mut states = vec![TriggerState::new()];
-        let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
-        match result {
-            Err(DispatchOutcome::RequiredFailed { source, .. }) => {
-                assert!(source.to_string().starts_with("io:"));
-            }
-            other => panic!("expected RequiredFailed, got {other:?}"),
-        }
-        assert_eq!(counter.load(Ordering::Acquire), 2);
-    }
-
-    #[tokio::test]
-    async fn retries_zero_fails_on_first_attempt() {
-        let (trigger, counter) = Trigger::test_failing(1, TestEventual::Succeed, 0, true);
-        let mut states = vec![TriggerState::new()];
-        let result = run_once(&[trigger], &mut states, |_| Duration::from_millis(1)).await;
-        assert!(matches!(
-            result,
-            Err(DispatchOutcome::RequiredFailed { .. })
-        ));
-        assert_eq!(counter.load(Ordering::Acquire), 0);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn success_after_retry_advances_through_backoff_and_completes() {
-        let (trigger, counter) = Trigger::test_failing(2, TestEventual::Succeed, 3, true);
-        let mut states = vec![TriggerState::new()];
-        let (_drop_tx, mut parent_rx) = watch::channel(false);
-        let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        let n = make_notification();
-        let fut = dispatch_triggers_with_backoff(
-            std::slice::from_ref(&trigger),
-            &mut states,
-            &n,
-            &mut parent_rx,
-            &mut cancel_rx,
-            |_| Duration::from_millis(100),
-        );
-        tokio::pin!(fut);
-
-        for _ in 0..2 {
-            tokio::task::yield_now().await;
-            tokio::time::advance(Duration::from_millis(110)).await;
-        }
-        let result = fut.await;
-        assert!(matches!(result, Ok(())), "got: {result:?}");
-        assert_eq!(counter.load(Ordering::Acquire), 0);
-    }
-
-    #[tokio::test]
-    async fn optional_trigger_failure_logs_warn_does_not_short_circuit() {
-        let (failing_trigger, _) = Trigger::test_failing(5, TestEventual::Fail, 0, false);
-        let success_trigger = Trigger::echo();
-        let mut states = vec![TriggerState::new(), TriggerState::new()];
-        let result = run_once(&[failing_trigger, success_trigger], &mut states, |_| {
-            Duration::from_millis(1)
-        })
-        .await;
-        assert!(matches!(result, Ok(())));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn parent_cancel_during_retry_backoff_returns_cancelled() {
-        let (trigger, _counter) = Trigger::test_failing(1, TestEventual::Succeed, 3, true);
-        let mut states = vec![TriggerState::new()];
-        let (drop_tx, mut parent_rx) = watch::channel(false);
-        let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        let n = make_notification();
-        let fut = dispatch_triggers_with_backoff(
-            std::slice::from_ref(&trigger),
-            &mut states,
-            &n,
-            &mut parent_rx,
-            &mut cancel_rx,
-            |_| Duration::from_secs(60),
-        );
-        tokio::pin!(fut);
-
-        tokio::task::yield_now().await;
-        tokio::task::yield_now().await;
-        drop_tx.send(true).unwrap();
-        let result = fut.await;
-        assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
-    }
-
-    #[tokio::test]
-    async fn parent_cancel_between_triggers_returns_cancelled() {
-        let echo1 = Trigger::echo();
-        let echo2 = Trigger::echo();
-        let mut states = vec![TriggerState::new(), TriggerState::new()];
-        let (drop_tx, mut parent_rx) = watch::channel(false);
-        let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        drop_tx.send(true).unwrap();
-        let n = make_notification();
-        let result = dispatch_triggers_with_backoff(
-            &[echo1, echo2],
-            &mut states,
-            &n,
-            &mut parent_rx,
-            &mut cancel_rx,
-            |_| Duration::from_millis(1),
-        )
-        .await;
-        assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
     }
 }
