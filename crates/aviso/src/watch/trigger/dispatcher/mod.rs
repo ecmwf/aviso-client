@@ -6,6 +6,7 @@ use tokio::sync::{oneshot, watch};
 
 use crate::Notification;
 
+#[cfg(unix)]
 use super::command::dispatch_command;
 use super::echo::dispatch_echo;
 use super::kind::{TriggerKind, trigger_kind_label};
@@ -150,6 +151,7 @@ async fn dispatch_one_attempt(
     match &trigger.kind {
         TriggerKind::Echo => dispatch_echo(notification),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
+        #[cfg(unix)]
         TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,
         #[cfg(test)]
         TriggerKind::TestFailing {
@@ -181,10 +183,22 @@ fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
     if !trigger.fail_fast {
         return false;
     }
-    matches!(
-        err,
-        TriggerError::Command { .. } | TriggerError::Template { .. }
-    )
+    matches!(err, TriggerError::Template { .. }) || is_command_terminal(err)
+}
+
+/// Per-platform helper: matches the Unix-only
+/// [`TriggerError::Command`] variant. On non-Unix builds the variant
+/// is absent and the helper returns false unconditionally, so the
+/// classifier still compiles and the `Template` arm above keeps the
+/// only meaningful terminal classification.
+#[cfg(unix)]
+fn is_command_terminal(err: &TriggerError) -> bool {
+    matches!(err, TriggerError::Command { .. })
+}
+
+#[cfg(not(unix))]
+fn is_command_terminal(_err: &TriggerError) -> bool {
+    false
 }
 
 #[cfg(test)]

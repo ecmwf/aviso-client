@@ -100,6 +100,7 @@ fn trigger_kind_label_display_for_log_includes_path() {
     assert_eq!(label.to_string(), "log(/var/log/aviso.log)");
 }
 
+#[cfg(unix)]
 #[test]
 fn trigger_kind_label_display_for_command_is_bare() {
     let label = TriggerKindLabel::Command;

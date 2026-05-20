@@ -1,5 +1,10 @@
 //! Integration tests for `AvisoClient::watch()` with command triggers.
 //!
+//! Unix-only: the entire file is gated behind `#![cfg(unix)]` because
+//! the `Trigger::command` API surface it exercises is itself
+//! `#[cfg(unix)]`. On non-Unix targets cargo skips the file and the
+//! suite still builds.
+//!
 //! - A command trigger runs per notification against a tempdir script
 //!   that appends the sequence number to a file; after two
 //!   notifications the file has two lines and the watch stream
@@ -12,6 +17,7 @@
 //!   `ClientError::TriggerFailed { source: TriggerError::Timeout(..) }`
 //!   and terminates within a few seconds (not the full sleep duration).
 
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
