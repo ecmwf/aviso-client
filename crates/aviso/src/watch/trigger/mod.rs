@@ -121,8 +121,7 @@ impl std::fmt::Debug for Trigger {
 
 impl Trigger {
     /// Build an echo trigger that writes each notification as a single
-    /// line of compact JSON to standard output. See the [`Trigger`]
-    /// struct doc for the default tunable values.
+    /// line of compact JSON to standard output.
     #[must_use]
     pub fn echo() -> Self {
         Self {
@@ -138,7 +137,7 @@ impl Trigger {
     /// line of compact JSON to the file at `path`. The file is opened
     /// with `append(true).create(true)` on first dispatch and held
     /// open for the trigger's lifetime; no rotation, no per-write
-    /// `fsync`. See the [`Trigger`] struct doc for tunable defaults.
+    /// `fsync`.
     #[must_use]
     pub fn log(path: impl Into<PathBuf>) -> Self {
         Self {
