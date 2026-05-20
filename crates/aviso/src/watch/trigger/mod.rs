@@ -264,11 +264,13 @@ impl Trigger {
     /// `child.wait()`; on expiry the dispatcher issues `SIGKILL`,
     /// reaps the zombie, and returns [`TriggerError::Timeout`].
     ///
-    /// Has no effect on echo or log triggers: their dispatchers
-    /// complete in microseconds (locked-stdout write or
-    /// `tokio::fs::File::write_all` flush), and a non-preemptible
-    /// sync syscall cannot be interrupted by a separate sleep
-    /// future. The field is silently ignored on those kinds.
+    /// Has no effect on echo or log triggers: each one writes a
+    /// buffer-prepared NDJSON line in a single I/O call (locked
+    /// stdout for echo, `tokio::fs::File::write_all` for log), and
+    /// the dispatcher preserves that single-call atomicity rather
+    /// than racing the write against a sleep that could cancel it
+    /// mid-flight and leave a malformed line on stdout or in the
+    /// log file. The field is silently ignored on those kinds.
     #[must_use]
     pub fn timeout(mut self, t: std::time::Duration) -> Self {
         self.timeout = Some(t);
