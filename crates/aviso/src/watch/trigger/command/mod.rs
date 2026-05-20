@@ -25,8 +25,9 @@
 //!
 //! # POSIX-only
 //!
-//! v1 supports unix only; Windows support is deferred until the wheel
-//! matrix phase.
+//! Unix only. The whole module is gated behind `#[cfg(unix)]` at
+//! the parent `trigger/mod.rs` declaration site; native Windows
+//! support for the command trigger is not planned.
 
 // The whole `command` module is gated behind `#[cfg(unix)]` at the
 // parent `mod.rs` declaration site, so the compiler never visits
