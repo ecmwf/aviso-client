@@ -190,15 +190,16 @@ A failure to persist the checkpoint terminates the watch with `ClientError::Stat
 
 ## Triggers
 
-A trigger is a per-notification side effect attached to a `WatchRequest` via `with_triggers(Vec<Trigger>)`. Triggers run in declaration order **before** each notification is sent on the consumer channel, so the consumer never sees an item whose required triggers have not all passed. Three built-in kinds ship in the core:
+A trigger is a per-notification side effect attached to a `WatchRequest` via `with_triggers(Vec<Trigger>)`. Triggers run in declaration order **before** each notification is sent on the consumer channel, so the consumer never sees an item whose required triggers have not all passed. Four built-in kinds ship in the core:
 
 - `Trigger::echo()` writes the notification as a single compact JSON line to standard output (NDJSON; one line per notification, terminating `\n`). The trigger has no configurable destination; it writes to `stdout` via a locked handle. Use `aviso watch ... | jq` to compose with line-oriented tools.
 - `Trigger::log(path)` appends the same NDJSON line to a user-specified file. The file is opened on first dispatch with `append(true).create(true)` and held open for the watch's lifetime; the trigger does not `fsync` per write (at-least-once at the state-store level covers crash replay), does not rotate the file (use `logrotate` or similar externally), and does not reopen on signals.
-- `Trigger::command(cmd)` runs `/bin/sh -c <rendered>` per notification, with the notification's fields exposed as `AVISO_*` environment variables. The command string is rendered through a small template engine (`{{ notification.<dotted.path> }}` substitutes a notification field, `{{ env.<NAME> }}` reads from the process environment).
+- `Trigger::command(cmd)` runs `/bin/sh -c <rendered>` per notification, with the notification's fields exposed as `AVISO_*` environment variables. The command string is rendered through a small template engine (`{{ notification.<dotted.path> }}` substitutes a notification field, `{{ env.<NAME> }}` reads from the process environment). Unix-only.
+- `Trigger::webhook(url)` sends an HTTP request per notification to a user-configured URL. URL, header values, and body all run through the same template engine; header names are taken literally. Default method is `POST`, default body is the notification serialised as compact JSON (same shape as `echo`), default `Content-Type` is `application/json` when the user does not set one, default per-trigger timeout is 30 seconds. Cross-platform.
 
 ```rust,ignore
 use std::time::Duration;
-use aviso::watch::{Trigger, WatchRequest};
+use aviso::watch::{HttpMethod, Trigger, WatchRequest};
 
 let req = WatchRequest::watch("mars")
     .with_triggers(vec![
@@ -208,6 +209,12 @@ let req = WatchRequest::watch("mars")
             .env("EXTRA_KEY", "value")
             .working_dir("/var/data/aviso")
             .timeout(Duration::from_secs(60)),
+        Trigger::webhook("https://hooks.example.org/notify")
+            .method(HttpMethod::Post)
+            .header("Authorization", "Bearer {{ env.HOOK_TOKEN }}")
+            .body_template(r#"{"event": "{{ notification.event_type }}", "seq": {{ notification.sequence }}}"#)
+            .timeout(Duration::from_secs(10))
+            .retries(3),
     ]);
 let mut stream = client.watch(req)?;
 ```
@@ -216,8 +223,8 @@ Each trigger has four tunables on the builder:
 
 - `.retries(u32)` (default `0`): up to `N` additional attempts after the initial-attempt failure, for a total of `N + 1` attempts. Backoff between attempts is the supervisor's standard exponential schedule with full jitter (base 250 ms, capped at 30 s).
 - `.required(bool)` (default `true`): a required trigger that fails after all retries terminates the watch with `ClientError::TriggerFailed`; an optional trigger that fails after all retries emits a `tracing::warn!` event with stable name `client.trigger.failed` carrying `kind`, `retries`, and the inner error display, and the watch continues to the next trigger and the channel send.
-- `.timeout(Duration)` (default `None`): per-attempt timeout for the command trigger only. On expiry the dispatcher kills the shell child and returns `TriggerError::Timeout(t)`. Echo and log silently ignore the field: each one writes a buffer-prepared NDJSON line in a single I/O call (locked-stdout `write_all` for echo, `tokio::fs::File::write_all` for log), and the dispatcher preserves that single-call atomicity rather than racing the write against a cancellable sleep that could leave a truncated or malformed line on stdout or in the log file.
-- `.fail_fast(bool)` (default `true`): treats `TriggerError::Command` (non-zero exit) and every `TriggerError::Template` (any render-time failure: missing notification path, missing env var, malformed template) as terminal because they are deterministic with respect to the current notification and process environment: the same input fails identically next time. `Io`, `Encode`, and `Timeout` stay retryable because they are transient. Echo and log silently ignore the field (their errors are always retryable).
+- `.timeout(Duration)` (default `None` for echo/log/command, `DEFAULT_WEBHOOK_TIMEOUT` (30 s) for webhook): per-attempt timeout for the command and webhook triggers. On expiry the command dispatcher kills the shell child and the webhook dispatcher drops the in-flight request; both return `TriggerError::Timeout(t)`. Echo and log silently ignore the field: each one writes a buffer-prepared NDJSON line in a single I/O call (locked-stdout `write_all` for echo, `tokio::fs::File::write_all` for log), and the dispatcher preserves that single-call atomicity rather than racing the write against a cancellable sleep that could leave a truncated or malformed line on stdout or in the log file.
+- `.fail_fast(bool)` (default `true`): treats deterministic failures as terminal so the retry budget is not wasted on them. For command triggers: `TriggerError::Command` (non-zero exit) and `TriggerError::Template`. For webhook triggers: `TriggerError::Webhook` with a 4xx HTTP status (the receiver is rejecting the request) and `TriggerError::Template`. `Io`, `Encode`, `Timeout`, and `TriggerError::Webhook` with a 5xx or `None` status (server-side glitch or transport error) stay retryable because they are transient. Echo and log silently ignore the field (their errors are always retryable).
 
 ```rust,ignore
 let req = WatchRequest::watch("mars").with_triggers(vec![
@@ -228,8 +235,55 @@ let req = WatchRequest::watch("mars").with_triggers(vec![
     Trigger::command("./consume.sh {{ notification.identifier.country }}")
         .timeout(std::time::Duration::from_secs(30))
         .retries(2),
+    Trigger::webhook("https://hooks.slack.com/services/{{ env.SLACK_HOOK }}")
+        .body_template(r#"{"text": "Got notification {{ notification.sequence }}"}"#)
+        .retries(2),
 ]);
 ```
+
+### Webhook retry semantics
+
+The webhook dispatcher classifies HTTP responses for retry purposes:
+
+- **2xx**: success; the trigger attempt returns `Ok(())`.
+- **4xx**: terminal under `fail_fast = true` (the default). The receiver is rejecting the request deterministically (`400 Bad Request`, `401 Unauthorized`, `404 Not Found`, ...); retrying will not change the outcome. Under `fail_fast = false`, every error is retried through the full budget.
+- **5xx**: retryable, even under `fail_fast = true`. Server-side glitches typically resolve on retry; the budget exists for exactly this case.
+- **Transport error** (DNS, TCP, TLS, mid-response interrupt): retryable. `TriggerError::Webhook { status: None, body_tail: String::new() }`.
+
+The dispatcher captures the last 4 KiB of the response body into a bounded ring buffer using the streaming `Response::chunk` primitive, so a misbehaving server cannot OOM the client with an oversized error body. The body tail surfaces in `TriggerError::Webhook { body_tail, .. }` for operator diagnosis.
+
+### Declarative YAML configuration
+
+Trigger lists round-trip from YAML through the `TriggerConfig` enum and its payload structs. The CLI and the Python bindings both consume this:
+
+```yaml
+triggers:
+  - type: echo
+    retries: 0
+
+  - type: log
+    path: /var/log/aviso/notifications.log
+    retries: 2
+
+  - type: command
+    command: "./process.sh {{ notification.event_type }}"
+    env:
+      EXTRA_KEY: value
+    working_dir: /var/data/aviso
+    timeout: 60s
+    retries: 1
+
+  - type: webhook
+    url: "https://hooks.example.org/notify"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ env.HOOK_TOKEN }}"
+    body_template: '{"event": "{{ notification.event_type }}", "seq": {{ notification.sequence }}}'
+    timeout: 10s
+    retries: 3
+```
+
+Duration values use the [humantime](https://docs.rs/humantime) syntax (`30s`, `2m`, `1h30m`, `500ms`). HTTP method must be uppercase (`POST`, `GET`, `PUT`, `PATCH`, `DELETE`); a lowercase method or an unknown method name fails YAML deserialisation with a clear error. Each variant rejects unknown fields, so a misspelled key fails loudly rather than being silently ignored.
 
 ### Atomicity and ordering
 
@@ -237,13 +291,17 @@ For echo and log triggers, each dispatch attempt is the atomic unit: the supervi
 
 For the command trigger, the unit of work is one child-process spawn plus its `wait()`. When a timeout fires the dispatcher issues `SIGKILL` to the `/bin/sh -c ...` child, reaps the zombie, and returns `TriggerError::Timeout(t)`. The kill signal does NOT propagate to pipelines, backgrounded jobs, or grandchildren that survive the shell; operators who need full process-tree cleanup should use `exec ./binary` so the shell PID equals the target binary's PID. A 5-second post-exit drain cap bounds the dispatcher's exposure to descendants holding the pipes open after the shell exits.
 
+For the webhook trigger, the unit of work is one HTTP request from `send()` through `chunk()`-drained body capture. The dispatcher uses reqwest's `Request::timeout(t)` to bound the wait; on expiry reqwest drops the in-flight request and the dispatcher returns `TriggerError::Timeout(t)`. The body capture streams chunks into a bounded ring buffer; even a server that responds with multi-gigabyte bodies cannot push the client's memory usage above the 4 KiB ring cap.
+
 The pipeline runs **before** the channel send, so a required trigger that fails for notification N never causes N to be sent or committed. On the next process start, the supervisor's resume cursor still points at the previous notification's sequence and N is re-delivered.
 
 ### Limitations
 
-- The command trigger is POSIX-only. The `Trigger::command` API and the related `TriggerKindLabel::Command` / `TriggerError::Command` variants are gated behind `#[cfg(unix)]`; Windows builds of the crate compile cleanly without them and the echo / log triggers continue to work.
+- The command trigger is POSIX-only. The `Trigger::command` API and the related `TriggerKindLabel::Command` / `TriggerError::Command` variants are gated behind `#[cfg(unix)]`; Windows builds of the crate compile cleanly without them and the echo / log / webhook triggers continue to work.
 - No log rotation, no signal-driven reopen, no per-write `fsync` on the log trigger. External tools like `logrotate` handle rotation; crash replay covers durability via the state-store's at-least-once invariant.
 - The command-trigger kill on timeout reaches only the `/bin/sh -c ...` child, not descendants. Use `exec` or accept the documented 5-second post-exit drain cap.
+- The webhook trigger reuses the supervisor's shared `reqwest::Client`. Per-trigger HTTP client construction (custom TLS config, custom connection pool tuning, custom proxy) is not exposed in v1; configure those at the `AvisoClient` level.
+- No multipart bodies, no webhook signing (HMAC-SHA256 or Stripe-style timestamp+signature). Operators who need either of these go through the command trigger and `curl`.
 - No process-level stdout capture in tests. Echo content is verified by unit tests over the serialisation; integration tests verify the pipeline does not break stream delivery.
 
 ## Operator ingress recipe
