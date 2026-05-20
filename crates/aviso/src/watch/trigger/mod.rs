@@ -283,12 +283,14 @@ impl Trigger {
     /// [`Self::retries`] budget.
     ///
     /// Meaningful for the command trigger only:
-    /// [`TriggerError::Command`] (non-zero exit) and
-    /// [`TriggerError::Template`] (malformed template) are terminal
-    /// under `fail_fast = true` because they are deterministic
-    /// (the same input produces the same failure); `Io`, `Encode`,
-    /// and `Timeout` stay retryable because they are genuinely
-    /// transient.
+    /// [`TriggerError::Command`] (non-zero exit) and every
+    /// [`TriggerError::Template`] (any render-time failure: missing
+    /// notification path, missing env var, malformed template) are
+    /// terminal under `fail_fast = true` because they are
+    /// deterministic with respect to the current notification and
+    /// process environment (the same input produces the same
+    /// failure); `Io`, `Encode`, and `Timeout` stay retryable
+    /// because they are genuinely transient.
     ///
     /// Has no effect on echo or log triggers (their errors are
     /// always retryable through the normal retry budget).
