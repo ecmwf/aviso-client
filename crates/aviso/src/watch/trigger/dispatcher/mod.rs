@@ -11,6 +11,7 @@ use super::command::dispatch_command;
 use super::echo::dispatch_echo;
 use super::kind::{TriggerKind, trigger_kind_label};
 use super::log::dispatch_log;
+use super::webhook::dispatch_webhook;
 use super::{DispatchOutcome, Trigger, TriggerError, TriggerState};
 use crate::watch::backoff::compute_backoff;
 use crate::watch::outcome::ReconnectPolicy;
@@ -30,6 +31,7 @@ pub(crate) async fn dispatch_triggers(
     notification: &Notification,
     parent_cancel: &mut watch::Receiver<bool>,
     cancel: &mut oneshot::Receiver<()>,
+    http: &reqwest::Client,
 ) -> Result<(), DispatchOutcome> {
     dispatch_triggers_with_backoff(
         triggers,
@@ -37,6 +39,7 @@ pub(crate) async fn dispatch_triggers(
         notification,
         parent_cancel,
         cancel,
+        http,
         |attempt| compute_backoff(attempt, ReconnectPolicy::ExponentialBackoff),
     )
     .await
@@ -58,6 +61,7 @@ async fn dispatch_triggers_with_backoff<F>(
     notification: &Notification,
     parent_cancel: &mut watch::Receiver<bool>,
     cancel: &mut oneshot::Receiver<()>,
+    http: &reqwest::Client,
     backoff: F,
 ) -> Result<(), DispatchOutcome>
 where
@@ -76,7 +80,7 @@ where
 
         let mut attempt: u32 = 0;
         let outcome = loop {
-            match dispatch_one_attempt(trigger, state, notification).await {
+            match dispatch_one_attempt(trigger, state, notification, http).await {
                 Ok(()) => break Ok(()),
                 Err(err) => {
                     if is_terminal_error(trigger, &err) || attempt >= trigger.retries {
@@ -147,12 +151,16 @@ async fn dispatch_one_attempt(
     trigger: &Trigger,
     state: &mut TriggerState,
     notification: &Notification,
+    http: &reqwest::Client,
 ) -> Result<(), TriggerError> {
     match &trigger.kind {
         TriggerKind::Echo => dispatch_echo(notification),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
         #[cfg(unix)]
         TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,
+        TriggerKind::Webhook(cfg) => {
+            dispatch_webhook(cfg, http, trigger.timeout, notification).await
+        }
         #[cfg(test)]
         TriggerKind::TestFailing {
             failures_remaining,
@@ -170,20 +178,26 @@ async fn dispatch_one_attempt(
 /// immediately (bypassing the retry budget) or stay retryable.
 ///
 /// `fail_fast = false` keeps every failure retryable. `fail_fast =
-/// true` (the default) treats every `TriggerError::Command` (non-zero
-/// exit) and every `TriggerError::Template` (any render-time failure:
-/// missing notification path, missing env var, env var not unicode,
-/// malformed template, or notification encode failure) as terminal
-/// because they are deterministic with respect to the current
-/// notification and process environment: the same input produces the
-/// same failure, so retrying wastes the budget. `Io`, `Encode`, and
+/// true` (the default) treats the following as terminal:
+/// `TriggerError::Command` (non-zero exit; deterministic w.r.t. the
+/// current notification and process environment); `TriggerError::Template`
+/// (any render-time failure: missing notification path, missing env
+/// var, env var not unicode, malformed template, or notification
+/// encode failure; also deterministic);
+/// `TriggerError::Webhook { status: Some(s), .. }` where `s` is a
+/// 4xx (client error; the receiver is rejecting the request, retrying
+/// will not change the outcome). `TriggerError::Webhook` with a 5xx
+/// status or `None` status (transport error), `Io`, `Encode`, and
 /// `Timeout` stay retryable because they are genuinely transient
-/// (broken pipe, disk transiently full, slow downstream).
+/// (broken pipe, disk transiently full, slow downstream, server-side
+/// glitch).
 fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
     if !trigger.fail_fast {
         return false;
     }
-    matches!(err, TriggerError::Template { .. }) || is_command_terminal(err)
+    matches!(err, TriggerError::Template { .. })
+        || is_command_terminal(err)
+        || is_webhook_terminal(err)
 }
 
 /// Per-platform helper: matches the Unix-only
@@ -199,6 +213,18 @@ fn is_command_terminal(err: &TriggerError) -> bool {
 #[cfg(not(unix))]
 fn is_command_terminal(_err: &TriggerError) -> bool {
     false
+}
+
+/// Webhook-specific terminal classifier. 4xx is terminal because the
+/// receiver is rejecting the request; 5xx and `None` status stay
+/// retryable because the failure is server-side transient. The
+/// `is_client_error()` method on `reqwest::StatusCode` matches the
+/// HTTP 4xx range exactly.
+fn is_webhook_terminal(err: &TriggerError) -> bool {
+    matches!(
+        err,
+        TriggerError::Webhook { status: Some(s), .. } if s.is_client_error()
+    )
 }
 
 #[cfg(test)]
