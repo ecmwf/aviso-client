@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use super::TriggerKindLabel;
+#[cfg(unix)]
 use super::command::CommandConfig;
 
 /// Internal description of which built-in trigger a [`super::Trigger`] runs.
@@ -16,6 +17,7 @@ pub(super) enum TriggerKind {
     Log {
         path: PathBuf,
     },
+    #[cfg(unix)]
     Command(Box<CommandConfig>),
     /// Test-only: fails the first `failures_remaining` attempts, then
     /// resolves per `eventual`. Used by unit tests to drive "fail K times
@@ -60,6 +62,7 @@ impl std::fmt::Debug for TriggerKind {
         match self {
             Self::Echo => f.debug_struct("Echo").finish(),
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
+            #[cfg(unix)]
             Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
             #[cfg(test)]
             Self::TestFailing {
@@ -88,6 +91,7 @@ pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
     match kind {
         TriggerKind::Echo => TriggerKindLabel::Echo,
         TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
+        #[cfg(unix)]
         TriggerKind::Command(_) => TriggerKindLabel::Command,
         #[cfg(test)]
         TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,

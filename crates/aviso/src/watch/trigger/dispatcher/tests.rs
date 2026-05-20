@@ -17,9 +17,13 @@ use tokio::sync::{oneshot, watch};
 
 use super::dispatch_triggers_with_backoff;
 use crate::Notification;
+#[cfg(unix)]
 use crate::watch::TriggerError;
+#[cfg(unix)]
 use crate::watch::trigger::command::build_command_config;
-use crate::watch::trigger::kind::{TestEventual, TriggerKind};
+use crate::watch::trigger::kind::TestEventual;
+#[cfg(unix)]
+use crate::watch::trigger::kind::TriggerKind;
 use crate::watch::trigger::{DispatchOutcome, Trigger, TriggerState};
 
 fn make_notification() -> Notification {
@@ -142,6 +146,7 @@ async fn parent_cancel_during_retry_backoff_returns_cancelled() {
     assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn command_terminal_failure_short_circuits_retries_with_fail_fast_true() {
     let cfg = build_command_config("exit 7");
@@ -172,6 +177,7 @@ async fn command_terminal_failure_short_circuits_retries_with_fail_fast_true() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn command_template_error_is_terminal_with_fail_fast_true() {
     let cfg = build_command_config("hello {{ notification.event_type");
@@ -202,6 +208,7 @@ async fn command_template_error_is_terminal_with_fail_fast_true() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test(start_paused = true)]
 async fn command_nonzero_exit_retries_when_fail_fast_false() {
     let cfg = build_command_config("exit 1");
@@ -239,6 +246,7 @@ async fn command_nonzero_exit_retries_when_fail_fast_false() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn command_timeout_returns_timeout_error_after_kill_and_reap() {
     let cfg = build_command_config("sleep 30");

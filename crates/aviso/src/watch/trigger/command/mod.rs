@@ -28,11 +28,12 @@
 //! v1 supports unix only; Windows support is deferred until the wheel
 //! matrix phase.
 
-#[cfg(not(unix))]
-compile_error!(
-    "aviso::watch::Trigger::command currently supports unix only; \
-     Windows support is deferred to a future wheel-matrix phase"
-);
+// The whole `command` module is gated behind `#[cfg(unix)]` at the
+// parent `mod.rs` declaration site, so the compiler never visits
+// this file on non-Unix targets. The previous `compile_error!` in
+// this position was a belt-and-braces guard but is redundant under
+// the parent gate and would prevent a non-Unix build from compiling
+// even when the user only needs echo/log.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

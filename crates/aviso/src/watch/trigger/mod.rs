@@ -42,7 +42,9 @@ use kind::TriggerKind;
 pub(crate) use dispatcher::dispatch_triggers;
 pub use template::TemplateErrorKind;
 
-/// Command trigger dispatch.
+/// Command trigger dispatch. Unix-only; the rest of the trigger
+/// module (echo, log, dispatcher) compiles unconditionally.
+#[cfg(unix)]
 mod command;
 /// Trigger dispatch orchestration.
 mod dispatcher;
@@ -189,11 +191,17 @@ impl Trigger {
     ///
     /// # POSIX-only and template errors
     ///
-    /// Supports unix only; Windows support is deferred. The
-    /// constructor is infallible: a malformed template surfaces at
-    /// first dispatch as [`TriggerError::Template`].
+    /// Unix-only at the API level: this method, the
+    /// [`TriggerKindLabel::Command`] / [`TriggerError::Command`]
+    /// variants, and the `Trigger::env` / `Trigger::working_dir`
+    /// setters are all gated behind `#[cfg(unix)]`. A Windows build
+    /// of the crate compiles successfully without them; consumers
+    /// who only need echo or log work unchanged. The constructor
+    /// itself is infallible: a malformed template surfaces at first
+    /// dispatch as [`TriggerError::Template`].
     ///
     /// Defaults: `retries: 0`, `required: true`.
+    #[cfg(unix)]
     #[must_use]
     pub fn command(cmd: impl Into<String>) -> Self {
         Self {
@@ -209,8 +217,10 @@ impl Trigger {
     /// process. Repeatable; later sets override earlier ones with the
     /// same key.
     ///
-    /// Has no effect on echo or log triggers; only the command
-    /// trigger honours it.
+    /// Unix-only: gated behind `#[cfg(unix)]` because the only
+    /// trigger kind that honours it (`command`) is also Unix-only.
+    /// On non-Unix builds the method is absent.
+    #[cfg(unix)]
     #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         if let TriggerKind::Command(cfg) = &mut self.kind {
@@ -223,8 +233,9 @@ impl Trigger {
     /// process. If the path does not exist or is not a directory,
     /// dispatch returns [`TriggerError::Io`] at first invocation.
     ///
-    /// Has no effect on echo or log triggers; only the command
-    /// trigger honours it.
+    /// Unix-only: gated behind `#[cfg(unix)]` for the same reason as
+    /// [`Self::env`].
+    #[cfg(unix)]
     #[must_use]
     pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         if let TriggerKind::Command(cfg) = &mut self.kind {
@@ -410,6 +421,9 @@ pub enum TriggerKindLabel {
     /// The command trigger (subprocess spawn). Carries no body to
     /// avoid leaking secret-bearing command fragments through error
     /// chains; the full command appears in DEBUG-level tracing only.
+    /// Unix-only; absent on non-Unix builds because the command
+    /// trigger itself is gated behind `#[cfg(unix)]`.
+    #[cfg(unix)]
     Command,
 }
 
@@ -418,6 +432,7 @@ impl std::fmt::Display for TriggerKindLabel {
         match self {
             Self::Echo => f.write_str("echo"),
             Self::Log { path } => write!(f, "log({})", path.display()),
+            #[cfg(unix)]
             Self::Command => f.write_str("command"),
         }
     }
@@ -448,6 +463,9 @@ pub enum TriggerError {
     /// status. `stderr_tail` is the last 4 KiB of the child's stderr,
     /// captured into a ring buffer; the head is dropped on overflow.
     /// Stdout content is suppressed per the no-payload-logging rule.
+    /// Unix-only; absent on non-Unix builds because the command
+    /// trigger itself is gated behind `#[cfg(unix)]`.
+    #[cfg(unix)]
     #[error("command exited {exit_code}: {stderr_tail}")]
     Command {
         /// Child process's exit code. `-1` when the child died from
