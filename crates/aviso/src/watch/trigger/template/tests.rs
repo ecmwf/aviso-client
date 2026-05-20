@@ -166,6 +166,26 @@ fn render_env_variable_missing_returns_envnotset() {
 }
 
 #[test]
+fn template_error_kind_notification_encode_is_distinct_from_missing() {
+    // The notification-encode path is practically unreachable (the
+    // well-typed Notification struct round-trips through
+    // serde_json::to_value), but the variant must exist and be
+    // distinct from Missing so an operator who hits the impossible
+    // path is pointed at the notification rather than at a missing
+    // template path.
+    assert_ne!(
+        TemplateErrorKind::NotificationEncode,
+        TemplateErrorKind::Missing
+    );
+    let err = TemplateError {
+        raw_template: "x".to_string(),
+        field: "notification".to_string(),
+        kind: TemplateErrorKind::NotificationEncode,
+    };
+    assert_eq!(err.kind, TemplateErrorKind::NotificationEncode);
+}
+
+#[test]
 fn render_env_variable_not_unicode_returns_envnotunicode() {
     // The production path maps VarError::NotUnicode -> EnvNotUnicode
     // via the resolver wired up in `render()`. We exercise the

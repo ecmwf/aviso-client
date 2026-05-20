@@ -170,12 +170,13 @@ async fn dispatch_one_attempt(
 /// `fail_fast = false` keeps every failure retryable. `fail_fast =
 /// true` (the default) treats every `TriggerError::Command` (non-zero
 /// exit) and every `TriggerError::Template` (any render-time failure:
-/// missing notification path, missing env var, malformed template) as
-/// terminal because they are deterministic with respect to the
-/// current notification and process environment: the same input
-/// produces the same failure, so retrying wastes the budget. `Io`,
-/// `Encode`, and `Timeout` stay retryable because they are genuinely
-/// transient (broken pipe, disk transiently full, slow downstream).
+/// missing notification path, missing env var, env var not unicode,
+/// malformed template, or notification encode failure) as terminal
+/// because they are deterministic with respect to the current
+/// notification and process environment: the same input produces the
+/// same failure, so retrying wastes the budget. `Io`, `Encode`, and
+/// `Timeout` stay retryable because they are genuinely transient
+/// (broken pipe, disk transiently full, slow downstream).
 fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
     if !trigger.fail_fast {
         return false;
