@@ -241,7 +241,7 @@ The pipeline runs **before** the channel send, so a required trigger that fails 
 
 ### Limitations
 
-- The command trigger is POSIX-only. A Windows build fails fast at compile time with a clear message.
+- The command trigger is POSIX-only. The `Trigger::command` API and the related `TriggerKindLabel::Command` / `TriggerError::Command` variants are gated behind `#[cfg(unix)]`; Windows builds of the crate compile cleanly without them and the echo / log triggers continue to work.
 - No log rotation, no signal-driven reopen, no per-write `fsync` on the log trigger. External tools like `logrotate` handle rotation; crash replay covers durability via the state-store's at-least-once invariant.
 - The command-trigger kill on timeout reaches only the `/bin/sh -c ...` child, not descendants. Use `exec` or accept the documented 5-second post-exit drain cap.
 - No process-level stdout capture in tests. Echo content is verified by unit tests over the serialisation; integration tests verify the pipeline does not break stream delivery.
