@@ -42,8 +42,7 @@ use kind::TriggerKind;
 pub(crate) use dispatcher::dispatch_triggers;
 pub use template::TemplateErrorKind;
 
-/// Command trigger dispatch. Unix-only; the rest of the trigger
-/// module (echo, log, dispatcher) compiles unconditionally.
+/// Command trigger dispatch. Unix-only (`#[cfg(unix)]`).
 #[cfg(unix)]
 mod command;
 /// Trigger dispatch orchestration.
@@ -121,10 +120,9 @@ impl std::fmt::Debug for Trigger {
 }
 
 impl Trigger {
-    /// Build an echo trigger that writes each notification as a single line
-    /// of compact JSON to standard output.
-    ///
-    /// Defaults: `retries: 0`, `required: true`.
+    /// Build an echo trigger that writes each notification as a single
+    /// line of compact JSON to standard output. See the [`Trigger`]
+    /// struct doc for the default tunable values.
     #[must_use]
     pub fn echo() -> Self {
         Self {
@@ -136,12 +134,11 @@ impl Trigger {
         }
     }
 
-    /// Build a log trigger that appends each notification as a single line of
-    /// compact JSON to the file at `path`. The file is opened with
-    /// `append(true).create(true)` on first dispatch and held open for the
-    /// trigger's lifetime; no rotation, no per-write `fsync`.
-    ///
-    /// Defaults: `retries: 0`, `required: true`.
+    /// Build a log trigger that appends each notification as a single
+    /// line of compact JSON to the file at `path`. The file is opened
+    /// with `append(true).create(true)` on first dispatch and held
+    /// open for the trigger's lifetime; no rotation, no per-write
+    /// `fsync`. See the [`Trigger`] struct doc for tunable defaults.
     #[must_use]
     pub fn log(path: impl Into<PathBuf>) -> Self {
         Self {
@@ -155,10 +152,10 @@ impl Trigger {
 
     /// Build a command trigger that runs `/bin/sh -c <cmd>` once per
     /// notification, with the notification's fields exposed as
-    /// `AVISO_*` environment variables. The command string is
-    /// rendered through the trigger template engine: `{{ notification.<path> }}`
-    /// substitutes a notification field and `{{ env.<NAME> }}` reads
-    /// from the process environment.
+    /// `AVISO_*` environment variables. The command string is rendered
+    /// through the trigger template engine: `{{ notification.<path> }}`
+    /// substitutes a notification field, `{{ env.<NAME> }}` reads from
+    /// the process environment.
     ///
     /// # Environment variable injection
     ///
@@ -173,34 +170,26 @@ impl Trigger {
     ///
     /// # Output capture
     ///
-    /// Stdout and stderr are captured concurrently into ring buffers
-    /// of 4 KiB. Command stdout content is dropped per the
-    /// no-payload-logging discipline; only the captured byte count
-    /// reaches DEBUG-level tracing. Stderr tail goes into the public
-    /// [`crate::ClientError::TriggerFailed`] variant on non-zero
-    /// exit.
+    /// Stdout and stderr are captured concurrently into 4 KiB ring
+    /// buffers. Stdout content is dropped per the no-payload-logging
+    /// discipline; only the captured byte count reaches DEBUG-level
+    /// tracing. Stderr tail surfaces in the public
+    /// [`crate::ClientError::TriggerFailed`] variant on non-zero exit.
     ///
-    /// # Shell descendant cleanup
+    /// # Shell descendant cleanup, Unix-only, and template errors
     ///
     /// The dispatcher kills the `/bin/sh -c ...` child when the
     /// [`Self::timeout`] expires, but does NOT propagate the kill
     /// signal to pipelines, backgrounded jobs, or grandchildren that
-    /// survive the shell. Operators who need full process-tree
-    /// cleanup should use `exec ./binary` so the shell PID equals
-    /// the target binary's PID.
-    ///
-    /// # POSIX-only and template errors
-    ///
-    /// Unix-only at the API level: this method, the
-    /// [`TriggerKindLabel::Command`] / [`TriggerError::Command`]
-    /// variants, and the `Trigger::env` / `Trigger::working_dir`
-    /// setters are all gated behind `#[cfg(unix)]`. A Windows build
-    /// of the crate compiles successfully without them; consumers
-    /// who only need echo or log work unchanged. The constructor
-    /// itself is infallible: a malformed template surfaces at first
-    /// dispatch as [`TriggerError::Template`].
-    ///
-    /// Defaults: `retries: 0`, `required: true`.
+    /// survive the shell. Use `exec ./binary` so the shell PID
+    /// equals the target binary's PID if you need full process-tree
+    /// cleanup. The method and the related command-trigger surface
+    /// ([`TriggerKindLabel::Command`], [`TriggerError::Command`],
+    /// [`Self::env`], [`Self::working_dir`]) are `#[cfg(unix)]`;
+    /// Windows builds compile cleanly without them. The constructor
+    /// is infallible; a malformed template surfaces at first
+    /// dispatch as [`TriggerError::Template`]. See the [`Trigger`]
+    /// struct doc for tunable defaults.
     #[cfg(unix)]
     #[must_use]
     pub fn command(cmd: impl Into<String>) -> Self {
@@ -214,12 +203,8 @@ impl Trigger {
     }
 
     /// Adds an environment variable to the command trigger's child
-    /// process. Repeatable; later sets override earlier ones with the
-    /// same key.
-    ///
-    /// Unix-only: gated behind `#[cfg(unix)]` because the only
-    /// trigger kind that honours it (`command`) is also Unix-only.
-    /// On non-Unix builds the method is absent.
+    /// process. Repeatable; later sets override earlier ones with
+    /// the same key. Unix-only (`#[cfg(unix)]`); absent on Windows.
     #[cfg(unix)]
     #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -232,9 +217,7 @@ impl Trigger {
     /// Sets the working directory for the command trigger's child
     /// process. If the path does not exist or is not a directory,
     /// dispatch returns [`TriggerError::Io`] at first invocation.
-    ///
-    /// Unix-only: gated behind `#[cfg(unix)]` for the same reason as
-    /// [`Self::env`].
+    /// Unix-only (`#[cfg(unix)]`); absent on Windows.
     #[cfg(unix)]
     #[must_use]
     pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -421,8 +404,7 @@ pub enum TriggerKindLabel {
     /// The command trigger (subprocess spawn). Carries no body to
     /// avoid leaking secret-bearing command fragments through error
     /// chains; the full command appears in DEBUG-level tracing only.
-    /// Unix-only; absent on non-Unix builds because the command
-    /// trigger itself is gated behind `#[cfg(unix)]`.
+    /// Unix-only (`#[cfg(unix)]`).
     #[cfg(unix)]
     Command,
 }
@@ -460,11 +442,10 @@ pub enum TriggerError {
     Encode(#[from] serde_json::Error),
 
     /// A command trigger's child process exited with a non-zero
-    /// status. `stderr_tail` is the last 4 KiB of the child's stderr,
-    /// captured into a ring buffer; the head is dropped on overflow.
-    /// Stdout content is suppressed per the no-payload-logging rule.
-    /// Unix-only; absent on non-Unix builds because the command
-    /// trigger itself is gated behind `#[cfg(unix)]`.
+    /// status. `stderr_tail` is the last 4 KiB of the child's
+    /// stderr, captured into a ring buffer; the head is dropped on
+    /// overflow. Stdout content is suppressed per the
+    /// no-payload-logging rule. Unix-only (`#[cfg(unix)]`).
     #[cfg(unix)]
     #[error("command exited {exit_code}: {stderr_tail}")]
     Command {
