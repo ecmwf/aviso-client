@@ -3,18 +3,22 @@
 use std::path::PathBuf;
 
 use super::TriggerKindLabel;
+#[cfg(unix)]
+use super::command::CommandConfig;
 
 /// Internal description of which built-in trigger a [`super::Trigger`] runs.
 ///
 /// Crate-private; downstream callers configure a `Trigger` through the
-/// public [`super::Trigger::echo`] and [`super::Trigger::log`] constructors,
-/// never by naming this enum.
+/// public [`super::Trigger::echo`], [`super::Trigger::log`], and
+/// [`super::Trigger::command`] constructors, never by naming this enum.
 #[derive(Clone)]
 pub(super) enum TriggerKind {
     Echo,
     Log {
         path: PathBuf,
     },
+    #[cfg(unix)]
+    Command(Box<CommandConfig>),
     /// Test-only: fails the first `failures_remaining` attempts, then
     /// resolves per `eventual`. Used by unit tests to drive "fail K times
     /// then succeed/fail" patterns deterministically.
@@ -45,11 +49,21 @@ pub(super) enum TestEventual {
 }
 
 /// Manual `Debug` impl for the same reason as [`super::Trigger`]'s manual impl.
+///
+/// The `Command` arm carries a redacted body so the public Debug of a
+/// `Trigger` never echoes a raw command template (which may contain
+/// bearer tokens, connection URIs, or other secrets). The variant
+/// formatter prints only structural facts (whether the template
+/// compiled, whether a `working_dir` is set, the count of env vars set
+/// by the user); the raw command and env values go to DEBUG-level
+/// tracing only.
 impl std::fmt::Debug for TriggerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Echo => f.debug_struct("Echo").finish(),
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
+            #[cfg(unix)]
+            Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
             #[cfg(test)]
             Self::TestFailing {
                 failures_remaining,
@@ -77,6 +91,8 @@ pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
     match kind {
         TriggerKind::Echo => TriggerKindLabel::Echo,
         TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
+        #[cfg(unix)]
+        TriggerKind::Command(_) => TriggerKindLabel::Command,
         #[cfg(test)]
         TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,
         #[cfg(test)]

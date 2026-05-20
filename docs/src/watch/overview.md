@@ -97,7 +97,7 @@ The remaining error variants are terminal: they surface as `Some(Err(_))` follow
 - `Auth(_)` when an `AuthProvider::refresh()` call returns an error, or when a second 401 arrives within the same attempt cycle (signalling the refreshed credential was also rejected).
 - `StreamProtocol { message, request_id }` for the server's `error` SSE event and for `connection-closing` frames whose `reason` is not one of the three documented values. The `request_id` carries the server-supplied correlation id when the payload includes one; quote it when filing issues.
 - `StateStore(_)` when a configured `StateStore` fails during `get` or `put`. Continuing without a working store would silently violate at-least-once delivery, so this is terminal.
-- `TriggerFailed { kind, source }` when a required trigger fails after all configured retries. The committed checkpoint stays at the previous notification's sequence; on next process start the supervisor re-delivers the notification whose trigger failed. `kind` is `TriggerKindLabel::Echo` or `TriggerKindLabel::Log { path }`; `source` is `TriggerError::Io` or `TriggerError::Encode`.
+- `TriggerFailed { kind, source }` when a required trigger fails after all configured retries. The committed checkpoint stays at the previous notification's sequence; on next process start the supervisor re-delivers the notification whose trigger failed. `kind` is `TriggerKindLabel::Echo`, `TriggerKindLabel::Log { path }`, or `TriggerKindLabel::Command` (the bare command label carries no body; the full command may contain secrets and lives in DEBUG tracing only). `source` covers the full `TriggerError` axis: `Io`, `Encode`, `Command { exit_code, stderr_tail }`, `Template { context, field, kind }`, or `Timeout(Duration)`.
 - `Decode(_)` on a wire-shape JSON payload that does not deserialise.
 - `MalformedEvent(_)` on a CloudEvent whose `id` field does not parse as `<event_type>@<u64>`. Terminal to avoid livelocking on a poisoned stream.
 - `HistoryGap { reason }` when the supervisor detects either a non-consecutive sequence number on the wire or a server-emitted replay-limit signal. Terminal: continuing past a known gap would silently violate at-least-once delivery.
@@ -190,26 +190,34 @@ A failure to persist the checkpoint terminates the watch with `ClientError::Stat
 
 ## Triggers
 
-A trigger is a per-notification side effect attached to a `WatchRequest` via `with_triggers(Vec<Trigger>)`. Triggers run in declaration order **before** each notification is sent on the consumer channel, so the consumer never sees an item whose required triggers have not all passed. Two built-in kinds ship in the first release:
+A trigger is a per-notification side effect attached to a `WatchRequest` via `with_triggers(Vec<Trigger>)`. Triggers run in declaration order **before** each notification is sent on the consumer channel, so the consumer never sees an item whose required triggers have not all passed. Three built-in kinds ship in the core:
 
 - `Trigger::echo()` writes the notification as a single compact JSON line to standard output (NDJSON; one line per notification, terminating `\n`). The trigger has no configurable destination; it writes to `stdout` via a locked handle. Use `aviso watch ... | jq` to compose with line-oriented tools.
 - `Trigger::log(path)` appends the same NDJSON line to a user-specified file. The file is opened on first dispatch with `append(true).create(true)` and held open for the watch's lifetime; the trigger does not `fsync` per write (at-least-once at the state-store level covers crash replay), does not rotate the file (use `logrotate` or similar externally), and does not reopen on signals.
+- `Trigger::command(cmd)` runs `/bin/sh -c <rendered>` per notification, with the notification's fields exposed as `AVISO_*` environment variables. The command string is rendered through a small template engine (`{{ notification.<dotted.path> }}` substitutes a notification field, `{{ env.<NAME> }}` reads from the process environment).
 
 ```rust,ignore
+use std::time::Duration;
 use aviso::watch::{Trigger, WatchRequest};
 
 let req = WatchRequest::watch("mars")
     .with_triggers(vec![
         Trigger::echo(),
         Trigger::log("/var/log/aviso/notifications.log"),
+        Trigger::command("./process.sh {{ notification.event_type }}")
+            .env("EXTRA_KEY", "value")
+            .working_dir("/var/data/aviso")
+            .timeout(Duration::from_secs(60)),
     ]);
 let mut stream = client.watch(req)?;
 ```
 
-Each trigger has two tunables on the builder:
+Each trigger has four tunables on the builder:
 
 - `.retries(u32)` (default `0`): up to `N` additional attempts after the initial-attempt failure, for a total of `N + 1` attempts. Backoff between attempts is the supervisor's standard exponential schedule with full jitter (base 250 ms, capped at 30 s).
 - `.required(bool)` (default `true`): a required trigger that fails after all retries terminates the watch with `ClientError::TriggerFailed`; an optional trigger that fails after all retries emits a `tracing::warn!` event with stable name `client.trigger.failed` carrying `kind`, `retries`, and the inner error display, and the watch continues to the next trigger and the channel send.
+- `.timeout(Duration)` (default `None`): per-attempt timeout for the command trigger only. On expiry the dispatcher kills the shell child and returns `TriggerError::Timeout(t)`. Echo and log silently ignore the field: each one writes a buffer-prepared NDJSON line in a single I/O call (locked-stdout `write_all` for echo, `tokio::fs::File::write_all` for log), and the dispatcher preserves that single-call atomicity rather than racing the write against a cancellable sleep that could leave a truncated or malformed line on stdout or in the log file.
+- `.fail_fast(bool)` (default `true`): treats `TriggerError::Command` (non-zero exit) and every `TriggerError::Template` (any render-time failure: missing notification path, missing env var, malformed template) as terminal because they are deterministic with respect to the current notification and process environment: the same input fails identically next time. `Io`, `Encode`, and `Timeout` stay retryable because they are transient. Echo and log silently ignore the field (their errors are always retryable).
 
 ```rust,ignore
 let req = WatchRequest::watch("mars").with_triggers(vec![
@@ -217,19 +225,25 @@ let req = WatchRequest::watch("mars").with_triggers(vec![
     Trigger::log("/var/log/aviso/telemetry.log")
         .retries(3)
         .required(false),                                      // optional
+    Trigger::command("./consume.sh {{ notification.identifier.country }}")
+        .timeout(std::time::Duration::from_secs(30))
+        .retries(2),
 ]);
 ```
 
 ### Atomicity and ordering
 
-Each dispatch attempt is the atomic unit: the supervisor serialises the notification into a `Vec<u8>` once (with the newline appended to the same buffer) and writes the buffer through a single `write_all` call. Within a single dispatch attempt the dispatcher does not race against cancellation, matching the same atomicity contract that applies to `StateStore::put`. Between attempts (during retry backoff sleep) and between triggers (in the per-notification loop), the dispatcher honours both parent-drop and the per-stream cancel oneshot.
+For echo and log triggers, each dispatch attempt is the atomic unit: the supervisor serialises the notification into a `Vec<u8>` once (with the newline appended to the same buffer) and writes the buffer through a single `write_all` call. Within a single dispatch attempt the dispatcher does not race against cancellation, matching the same atomicity contract that applies to `StateStore::put`. Between attempts (during retry backoff sleep) and between triggers (in the per-notification loop), the dispatcher honours both parent-drop and the per-stream cancel oneshot.
+
+For the command trigger, the unit of work is one child-process spawn plus its `wait()`. When a timeout fires the dispatcher issues `SIGKILL` to the `/bin/sh -c ...` child, reaps the zombie, and returns `TriggerError::Timeout(t)`. The kill signal does NOT propagate to pipelines, backgrounded jobs, or grandchildren that survive the shell; operators who need full process-tree cleanup should use `exec ./binary` so the shell PID equals the target binary's PID. A 5-second post-exit drain cap bounds the dispatcher's exposure to descendants holding the pipes open after the shell exits.
 
 The pipeline runs **before** the channel send, so a required trigger that fails for notification N never causes N to be sent or committed. On the next process start, the supervisor's resume cursor still points at the previous notification's sequence and N is re-delivered.
 
-### v1 limitations
+### Limitations
 
-- No per-attempt `timeout`. A pathological filesystem hang (NFS deadlock, FIFO with no reader) during a single dispatch attempt would block the supervisor's shutdown latency until the OS call returns. For local stdout and regular files this is microseconds in practice. A `.timeout()` builder method will be added when a future trigger kind (Webhook) ships, where `reqwest`'s HTTP-level timeout makes it meaningful.
-- No log rotation, no signal-driven reopen, no per-write `fsync`. External tools like `logrotate` handle rotation; crash replay covers durability via the state-store's at-least-once invariant.
+- The command trigger is POSIX-only. The `Trigger::command` API and the related `TriggerKindLabel::Command` / `TriggerError::Command` variants are gated behind `#[cfg(unix)]`; Windows builds of the crate compile cleanly without them and the echo / log triggers continue to work.
+- No log rotation, no signal-driven reopen, no per-write `fsync` on the log trigger. External tools like `logrotate` handle rotation; crash replay covers durability via the state-store's at-least-once invariant.
+- The command-trigger kill on timeout reaches only the `/bin/sh -c ...` child, not descendants. Use `exec` or accept the documented 5-second post-exit drain cap.
 - No process-level stdout capture in tests. Echo content is verified by unit tests over the serialisation; integration tests verify the pipeline does not break stream delivery.
 
 ## Operator ingress recipe

@@ -90,7 +90,8 @@ mod tests {
         let result = dispatch_log(&bad_path, &mut state, &make_notification()).await;
         match result {
             Err(TriggerError::Io(_)) => {}
-            other => panic!("expected Io error, got {other:?}"),
+            Ok(()) => panic!("expected Io error, got Ok"),
+            Err(other) => panic!("expected Io error, got {other:?}"),
         }
     }
 
