@@ -142,6 +142,25 @@ fn severity_text(level: tracing::Level) -> &'static str {
     }
 }
 
+/// Converts a `f64` field value into a JSON value, emitting
+/// non-finite values (`NaN`, `+Infinity`, `-Infinity`) as strings.
+/// JSON has no native representation for non-finite floats, so
+/// `serde_json::Number::from_f64` returns `None` in those cases;
+/// the previous behaviour of silently substituting `0` was
+/// misleading because a numerically distinct sentinel becomes
+/// indistinguishable from a real `0.0` measurement. Routing
+/// non-finite values through a stable string representation
+/// preserves the operator's ability to diagnose them in
+/// downstream log queries.
+fn f64_to_value(value: f64) -> Value {
+    match serde_json::Number::from_f64(value) {
+        Some(n) => Value::Number(n),
+        None if value.is_nan() => Value::String("NaN".into()),
+        None if value.is_sign_negative() => Value::String("-Infinity".into()),
+        None => Value::String("Infinity".into()),
+    }
+}
+
 /// Maps a `tracing::Level` to the matching `severityNumber` value
 /// from OTel's logs data model. Uses the lowest number in each
 /// range per the spec's "use the lowest value unless a finer
@@ -195,9 +214,8 @@ impl Visit for OtelFieldVisitor {
     }
 
     fn record_f64(&mut self, field: &Field, value: f64) {
-        let num = serde_json::Number::from_f64(value).unwrap_or_else(|| 0u64.into());
         self.attributes
-            .insert(field.name().into(), Value::Number(num));
+            .insert(field.name().into(), f64_to_value(value));
     }
 
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
@@ -220,7 +238,8 @@ impl Visit for OtelFieldVisitor {
 #[allow(
     clippy::unwrap_used,
     clippy::expect_used,
-    reason = "test code: unwrap on JSON roundtrip is the expected diagnostic"
+    clippy::panic,
+    reason = "test code: unwrap/expect/panic on JSON roundtrip is the expected diagnostic"
 )]
 mod tests {
     use super::*;
@@ -261,5 +280,30 @@ mod tests {
         let v = OtelFieldVisitor::default();
         assert!(v.body.is_empty());
         assert!(v.attributes.is_empty());
+    }
+
+    #[test]
+    fn f64_to_value_emits_nan_and_infinity_as_distinct_strings() {
+        assert_eq!(f64_to_value(f64::NAN), Value::String("NaN".into()));
+        assert_eq!(
+            f64_to_value(f64::INFINITY),
+            Value::String("Infinity".into())
+        );
+        assert_eq!(
+            f64_to_value(f64::NEG_INFINITY),
+            Value::String("-Infinity".into())
+        );
+    }
+
+    #[test]
+    fn f64_to_value_emits_finite_values_as_numbers() {
+        match f64_to_value(1.5) {
+            Value::Number(n) => assert!((n.as_f64().expect("finite") - 1.5).abs() < f64::EPSILON),
+            other => panic!("expected Number for 1.5, got {other:?}"),
+        }
+        match f64_to_value(0.0) {
+            Value::Number(n) => assert_eq!(n.as_f64(), Some(0.0)),
+            other => panic!("expected Number for 0.0, got {other:?}"),
+        }
     }
 }
