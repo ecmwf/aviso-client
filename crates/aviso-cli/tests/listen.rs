@@ -111,3 +111,69 @@ fn listen_no_listeners_message_names_config_path() {
         .code(2)
         .stderr(contains(cfg_path.display().to_string()));
 }
+
+#[test]
+fn listen_no_listeners_with_no_positional_does_not_claim_section_absent() {
+    let dir = tempdir().unwrap();
+    let cfg_path = dir.path().join("config.yaml");
+    std::fs::write(&cfg_path, "listeners: []\n").unwrap();
+
+    let assertion = aviso()
+        .args([
+            "--config",
+            cfg_path.to_str().unwrap(),
+            "--base-url",
+            "http://unused",
+            "listen",
+        ])
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        !stderr.contains("no `listeners:` section"),
+        "stderr must not falsely claim the section is absent when it is present-but-empty; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("resolved to 0 entries")
+            || stderr.contains("absent, present-but-empty, or commented out"),
+        "stderr should describe the empty-resolution accurately; got: {stderr}"
+    );
+}
+
+#[test]
+fn listen_no_listeners_with_positional_yaml_attributes_to_positional_path_not_config() {
+    let listener = write_listener_file("listeners: []\n");
+    let listener_path = listener.path().to_path_buf();
+    let dir = tempdir().unwrap();
+    let cfg_path = dir.path().join("config.yaml");
+    std::fs::write(&cfg_path, "listeners:\n  - event: never-resolved\n").unwrap();
+
+    let assertion = aviso()
+        .args([
+            "--config",
+            cfg_path.to_str().unwrap(),
+            "--base-url",
+            "http://unused",
+            "listen",
+            listener_path.to_str().unwrap(),
+        ])
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(listener_path.display().to_string().as_str()),
+        "stderr should name the positional file path (the source of the empty resolution); got: {stderr}"
+    );
+    assert!(
+        !stderr.contains(cfg_path.display().to_string().as_str()),
+        "stderr must NOT name the config path when positional files were supplied (Amendment C: positional REPLACES global); got: {stderr}"
+    );
+    assert!(
+        stderr.contains("ensure each positional listener file") || stderr.contains("non-empty"),
+        "stderr should suggest fixing the positional file; got: {stderr}"
+    );
+}

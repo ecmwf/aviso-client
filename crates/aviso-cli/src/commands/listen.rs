@@ -79,25 +79,37 @@ fn resolve_listeners(resolved: &Resolved, listener_files: &[PathBuf]) -> Result<
 }
 
 fn no_listeners_error(resolved: &Resolved, listener_files: &[PathBuf]) -> anyhow::Error {
-    let positional = if listener_files.is_empty() {
-        "(none given)".to_string()
+    let mut err = usage_error("no listeners to run");
+
+    if listener_files.is_empty() {
+        // No positional files supplied: resolution came from the
+        // global config's `listeners:` block. The block may be
+        // absent, present-but-empty (`listeners: []`), or
+        // commented out; we cannot tell which from the resolved
+        // value alone. Attribute the empty resolution to the
+        // config path without claiming the section is absent.
+        err = err.context(format!(
+            "at: {} (the `listeners:` block resolved to 0 entries; the section may be absent, present-but-empty, or commented out)",
+            resolved.config_path.value.display()
+        ));
+        err = err.context(
+            "suggestion: pass listener YAML files as positional arguments (e.g., `aviso listen my_listeners.yaml`), or add a non-empty `listeners:` block to the config file. See `aviso listen --help` for details.",
+        );
     } else {
-        listener_files
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let at_line = format!(
-        "at: {} (no `listeners:` section)",
-        resolved.config_path.value.display()
-    );
-    let suggestion = format!(
-        "suggestion: pass listener YAML files as positional arguments (e.g., `aviso listen my_listeners.yaml`), or add a `listeners:` block to the config file. (Positional arguments checked: {positional}.) See `aviso listen --help` for details."
-    );
-    usage_error("no listeners to run")
-        .context(at_line)
-        .context(suggestion)
+        // Positional files were supplied: Amendment C semantics
+        // mean those REPLACE the global config's `listeners:` for
+        // this invocation, so the config file is intentionally not
+        // consulted here. Attribute the empty resolution to the
+        // positional files instead of mentioning the config path.
+        for path in listener_files {
+            err = err.context(format!("at: {} (resolved to 0 entries)", path.display()));
+        }
+        err = err.context(
+            "suggestion: ensure each positional listener file contains a non-empty `listeners:` block, or omit the positional arguments to fall back to the global config's `listeners:` block. See `aviso listen --help` for details.",
+        );
+    }
+
+    err
 }
 
 async fn drive(
