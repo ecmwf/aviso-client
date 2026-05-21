@@ -20,9 +20,19 @@ use assert_cmd::Command;
 
 /// Builds a fresh `assert_cmd::Command` for the `aviso` binary
 /// with deterministic environment: every `AVISO_*` env variable is
-/// stripped so the test sees only what we set, and `AVISO_LOG` is
+/// stripped so the test sees only what we set, `AVISO_LOG` is
 /// pinned to `error` so the test output is not polluted with INFO
-/// startup events.
+/// events, and `AVISO_CLIENT_CONFIG_FILE` is pointed at a
+/// non-existent path so tests are isolated from the operator's real
+/// `~/.config/aviso/config.yaml` on the test machine (otherwise a
+/// local config file with `base_url:` or `auth:` would make several
+/// tests non-deterministic by silently overriding the test fixture
+/// with whichever values the developer set for interactive use).
+///
+/// `AVISO_STATE_FILE` is NOT overridden here because `aviso listen`
+/// and `aviso replay` exercise state-store creation as part of their
+/// happy path; tests that touch listen/replay opt into isolation
+/// via `--no-state-store` or `--state-file <path>` explicitly.
 pub fn aviso() -> Command {
     let mut cmd = Command::cargo_bin("aviso").expect("aviso binary built");
     for (k, _) in std::env::vars() {
@@ -31,6 +41,10 @@ pub fn aviso() -> Command {
         }
     }
     cmd.env("AVISO_LOG", "error");
+    cmd.env(
+        "AVISO_CLIENT_CONFIG_FILE",
+        "/nonexistent/aviso-test-isolated/config.yaml",
+    );
     cmd
 }
 
