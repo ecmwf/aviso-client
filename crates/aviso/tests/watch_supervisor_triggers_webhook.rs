@@ -315,8 +315,9 @@ async fn webhook_trigger_template_substitution_in_url_headers_body() {
 async fn webhook_trigger_timeout_terminates_with_typed_error() {
     let hook_server = MockServer::start().await;
     // set_delay(10s) much greater than the per-trigger timeout (200ms);
-    // reqwest's Request::timeout fires, dispatch returns Timeout(200ms),
-    // and the whole test must complete in single-digit seconds.
+    // reqwest's RequestBuilder::timeout fires, dispatch returns
+    // Timeout(200ms), and the whole test must complete in single-digit
+    // seconds.
     Mock::given(method("POST"))
         .and(path("/hook"))
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(10)))

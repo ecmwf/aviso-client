@@ -180,20 +180,29 @@ async fn dispatch_one_attempt(
 /// `fail_fast = false` keeps every failure retryable. `fail_fast =
 /// true` (the default) treats the following as terminal:
 /// `TriggerError::Command` (non-zero exit; deterministic w.r.t. the
-/// current notification and process environment); `TriggerError::Template`
-/// (any render-time failure: missing notification path, missing env
-/// var, env var not unicode, malformed template, or notification
-/// encode failure; also deterministic);
+/// current notification and process environment); every variant of
+/// `TriggerError::Template` (the template engine's render-time
+/// failures: `TemplateErrorKind::Missing` for a missing
+/// `{{ notification.<path> }}`, `EnvNotSet` / `EnvNotUnicode` for
+/// `{{ env.<NAME> }}`, `BadSyntax` for a malformed template, and
+/// `NotificationEncode` for the rare in-engine `serde_json::to_value`
+/// failure on the notification while resolving a path; all
+/// deterministic w.r.t. the current notification and environment);
 /// `TriggerError::Webhook { status: Some(s), .. }` where `s` is a
-/// 4xx (client error; the receiver is rejecting the request, retrying
-/// will not change the outcome); and
+/// 4xx (client error; the receiver is rejecting the request,
+/// retrying will not change the outcome); and
 /// `TriggerError::WebhookBuild { .. }` (the HTTP client rejected the
 /// rendered request at build time; same notification will produce
-/// the same rejection on retry). `TriggerError::Webhook` with a 5xx
-/// status or `None` status (transport error), `Io`, `Encode`, and
-/// `Timeout` stay retryable because they are genuinely transient
-/// (broken pipe, disk transiently full, slow downstream, server-side
-/// glitch).
+/// the same rejection on retry).
+///
+/// `TriggerError::Webhook` with a 5xx status or `None` status
+/// (transport error), `TriggerError::Io`, the top-level
+/// `TriggerError::Encode` (`serde_json` refused to serialise the
+/// notification for the trigger's own output, separate from the
+/// template engine's in-engine `NotificationEncode`), and
+/// `TriggerError::Timeout` stay retryable because they are
+/// genuinely transient (broken pipe, disk transiently full, slow
+/// downstream, server-side glitch).
 fn is_terminal_error(trigger: &Trigger, err: &TriggerError) -> bool {
     if !trigger.fail_fast {
         return false;
