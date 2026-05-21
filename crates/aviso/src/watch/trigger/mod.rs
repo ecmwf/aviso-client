@@ -385,16 +385,18 @@ impl Trigger {
     ///
     /// Meaningful for the command and webhook triggers.
     /// [`TriggerError::Command`] (non-zero exit),
-    /// [`TriggerError::Webhook`] with a 4xx status, and every
-    /// [`TriggerError::Template`] (any render-time failure: missing
-    /// notification path, missing env var, malformed template) are
-    /// terminal under `fail_fast = true` because they are
-    /// deterministic with respect to the current notification and
-    /// process environment (the same input produces the same
-    /// failure). [`TriggerError::Webhook`] with a 5xx status or
-    /// `None` status (transport error), `Io`, `Encode`, and
-    /// `Timeout` stay retryable because they are genuinely
-    /// transient.
+    /// [`TriggerError::Webhook`] with a 4xx status,
+    /// [`TriggerError::WebhookBuild`] (HTTP client rejected the
+    /// rendered request at build time: malformed URL, invalid
+    /// header value), and every [`TriggerError::Template`] (any
+    /// render-time failure: missing notification path, missing env
+    /// var, malformed template) are terminal under `fail_fast =
+    /// true` because they are deterministic with respect to the
+    /// current notification and process environment (the same
+    /// input produces the same failure).
+    /// [`TriggerError::Webhook`] with a 5xx status or `None` status
+    /// (transport error), `Io`, `Encode`, and `Timeout` stay
+    /// retryable because they are genuinely transient.
     ///
     /// Has no effect on echo or log triggers (their errors are
     /// always retryable through the normal retry budget).
