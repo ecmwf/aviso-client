@@ -265,7 +265,7 @@ pub(crate) fn resolve(
         cli_ca_bundle,
         cli_danger_accept_invalid_certs,
         file.tls.as_ref(),
-    );
+    )?;
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
     let env_provider = cli_auth::provider_from_env()?;
@@ -292,10 +292,10 @@ fn resolve_tls(
     cli_ca_bundle: &[PathBuf],
     cli_danger: bool,
     file_tls: Option<&TlsConfig>,
-) -> (Sourced<Vec<PathBuf>>, Sourced<bool>) {
+) -> Result<(Sourced<Vec<PathBuf>>, Sourced<bool>)> {
     let ca_bundle = if !cli_ca_bundle.is_empty() {
         Sourced {
-            value: cli_ca_bundle.to_vec(),
+            value: absolutize_all(cli_ca_bundle)?,
             source: Source::Flag,
         }
     } else if let Some(tls) = file_tls {
@@ -306,7 +306,7 @@ fn resolve_tls(
         // actually supplied the value rather than the bundle's
         // emptiness.
         Sourced {
-            value: tls.ca_bundle.clone(),
+            value: absolutize_all(&tls.ca_bundle)?,
             source: Source::File,
         }
     } else {
@@ -333,7 +333,15 @@ fn resolve_tls(
         }
     };
 
-    (ca_bundle, danger)
+    Ok((ca_bundle, danger))
+}
+
+/// Renders every path in `paths_in` absolute via [`paths::absolutize`]
+/// so subsequent error messages quote absolute paths per the Error
+/// UX rule 3 convention regardless of whether the operator supplied
+/// relative or absolute inputs.
+fn absolutize_all(paths_in: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    paths_in.iter().map(|p| paths::absolutize(p)).collect()
 }
 
 fn read_env(name: &str) -> Result<Option<String>> {
@@ -482,5 +490,47 @@ listeners:
         let l = &cfg.listeners[0];
         assert_eq!(l.event, "mars");
         assert_eq!(l.identifiers.len(), 1);
+    }
+
+    #[test]
+    fn resolve_tls_absolutizes_relative_cli_ca_bundle_paths() {
+        let rel = PathBuf::from("aviso-test-relative-flag-ca.pem");
+        let (bundle, _) = resolve_tls(std::slice::from_ref(&rel), false, None).unwrap();
+        assert_eq!(bundle.source, Source::Flag);
+        assert_eq!(bundle.value.len(), 1);
+        assert!(
+            bundle.value[0].is_absolute(),
+            "CA bundle path supplied via flag should be absolutized so error messages quote absolute paths; got {}",
+            bundle.value[0].display()
+        );
+        assert!(
+            bundle.value[0].ends_with("aviso-test-relative-flag-ca.pem"),
+            "file name should be preserved; got {}",
+            bundle.value[0].display()
+        );
+    }
+
+    #[test]
+    fn resolve_tls_absolutizes_relative_file_ca_bundle_paths() {
+        let rel = PathBuf::from("aviso-test-relative-file-ca.pem");
+        let tls = TlsConfig {
+            ca_bundle: vec![rel.clone()],
+            danger_accept_invalid_certs: false,
+        };
+        let (bundle, _) = resolve_tls(&[], false, Some(&tls)).unwrap();
+        assert_eq!(bundle.source, Source::File);
+        assert_eq!(bundle.value.len(), 1);
+        assert!(
+            bundle.value[0].is_absolute(),
+            "CA bundle path supplied via file should be absolutized; got {}",
+            bundle.value[0].display()
+        );
+    }
+
+    #[test]
+    fn resolve_tls_passes_absolute_ca_bundle_paths_through_unchanged() {
+        let abs = PathBuf::from("/tmp/aviso-test-already-absolute.pem");
+        let (bundle, _) = resolve_tls(std::slice::from_ref(&abs), false, None).unwrap();
+        assert_eq!(bundle.value, vec![abs]);
     }
 }

@@ -91,9 +91,12 @@ pub(crate) fn build(
 ///
 /// `--no-state-store` -> [`MemoryStore`].
 /// Otherwise [`JsonFileStore::open`] against the resolved state path;
-/// the parent directory is created via `std::fs::create_dir_all` on
-/// first call so an out-of-the-box `~/.config/aviso/` invocation
+/// the parent directory is created via [`paths::ensure_secure_dir`]
+/// on first call so an out-of-the-box `~/.config/aviso/` invocation
 /// succeeds without asking the operator to `mkdir -p` ahead of time.
+/// On Unix, the helper applies mode `0o700` to every newly-created
+/// directory along the path so the state journal (which can carry
+/// auth-bearing resume cursors) is not world-readable.
 pub(crate) async fn build_state_store(
     resolved: &Resolved,
     no_state_store: bool,
