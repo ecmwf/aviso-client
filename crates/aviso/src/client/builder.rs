@@ -20,6 +20,8 @@ pub struct AvisoClientBuilder {
     user_agent: Option<String>,
     heartbeat_interval: Option<Duration>,
     state_store: Option<Arc<dyn StateStore>>,
+    extra_root_certs: Vec<reqwest::Certificate>,
+    danger_accept_invalid_certs: bool,
 }
 
 impl std::fmt::Debug for AvisoClientBuilder {
@@ -31,6 +33,11 @@ impl std::fmt::Debug for AvisoClientBuilder {
             .field("user_agent", &self.user_agent)
             .field("heartbeat_interval", &self.heartbeat_interval)
             .field("state_store", &self.state_store.as_ref().map(|_| "<set>"))
+            .field("extra_root_certs_count", &self.extra_root_certs.len())
+            .field(
+                "danger_accept_invalid_certs",
+                &self.danger_accept_invalid_certs,
+            )
             .finish()
     }
 }
@@ -80,6 +87,42 @@ impl AvisoClientBuilder {
         self
     }
 
+    /// Adds an additional root certificate that the HTTP client trusts on top of the system
+    /// roots. Repeatable; call once per certificate.
+    ///
+    /// Use this when the `aviso-server` is fronted by a TLS endpoint whose certificate is
+    /// signed by an internal CA not in the system trust store (private deployments behind
+    /// corporate roots, self-hosted clusters with their own ACME setup, and similar). Each
+    /// certificate flows into [`reqwest::ClientBuilder::add_root_certificate`] inside
+    /// [`Self::build`]. The system root store stays in effect; this only adds, never
+    /// replaces.
+    ///
+    /// Pair with [`Self::danger_accept_invalid_certs`] only for the narrowest dev
+    /// scenarios; the right production move is always to install the real CA via
+    /// [`Self::ca_bundle`].
+    pub fn ca_bundle(mut self, certificate: reqwest::Certificate) -> Self {
+        self.extra_root_certs.push(certificate);
+        self
+    }
+
+    /// Disables TLS certificate validation entirely. Insecure by design.
+    ///
+    /// Intended for short-lived dev work against an `aviso-server` that serves a self-signed
+    /// certificate, when shipping the cert via [`Self::ca_bundle`] is not practical. Sets
+    /// [`reqwest::ClientBuilder::danger_accept_invalid_certs`] to the supplied flag inside
+    /// [`Self::build`].
+    ///
+    /// The flag is also surfaced through [`AvisoClient::danger_accept_invalid_certs`] so a
+    /// downstream binary (the CLI in particular) can emit a startup `WARN` log when the
+    /// client is built in insecure mode. The library itself does not log per-request because
+    /// the lib has no session-level emission seam; the WARN is the binary's responsibility.
+    ///
+    /// Default `false`. Never set in production.
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.danger_accept_invalid_certs = accept;
+        self
+    }
+
     /// Wires a persistent state store for resume across process restarts.
     ///
     /// When set, `AvisoClient::watch()` consults the store at watch
@@ -125,6 +168,12 @@ impl AvisoClientBuilder {
         if let Some(timeout) = self.timeout {
             http_builder = http_builder.timeout(timeout);
         }
+        for cert in self.extra_root_certs {
+            http_builder = http_builder.add_root_certificate(cert);
+        }
+        if self.danger_accept_invalid_certs {
+            http_builder = http_builder.danger_accept_invalid_certs(true);
+        }
         let http = http_builder
             .build()
             .map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))?;
@@ -140,6 +189,7 @@ impl AvisoClientBuilder {
             heartbeat_interval,
             state_store: self.state_store,
             active_resume_keys: Arc::new(Mutex::new(HashMap::new())),
+            danger_accept_invalid_certs: self.danger_accept_invalid_certs,
         })
     }
 }
@@ -152,7 +202,8 @@ const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
-    reason = "test code: unwrap on constructor success is the expected diagnostic"
+    clippy::expect_used,
+    reason = "test code: unwrap/expect on constructor success is the expected diagnostic"
 )]
 mod tests {
     use super::AvisoClient;
@@ -197,5 +248,77 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(client.base_url().as_str(), "https://gw.example.org/aviso/");
+    }
+
+    #[test]
+    fn builder_danger_accept_invalid_certs_defaults_false() {
+        let client = AvisoClient::builder()
+            .base_url("https://localhost:8000")
+            .build()
+            .unwrap();
+        assert!(!client.danger_accept_invalid_certs());
+    }
+
+    #[test]
+    fn builder_danger_accept_invalid_certs_setter_propagates_to_client() {
+        let client = AvisoClient::builder()
+            .base_url("https://localhost:8000")
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap();
+        assert!(client.danger_accept_invalid_certs());
+    }
+
+    /// Self-signed X.509 CA certificate pinned for the TLS-knob tests.
+    /// Generated once with
+    /// `openssl req -x509 -newkey rsa:2048 -days 36500 -nodes -subj '/CN=aviso-test' -keyout /dev/null -out cert.pem`
+    /// and committed verbatim so the test is hermetic: no openssl
+    /// invocation at test time, no temp files, no network. Expires in
+    /// year 2126.
+    const TEST_CA_PEM: &[u8] = b"-----BEGIN CERTIFICATE-----\n\
+MIIDDTCCAfWgAwIBAgIUOoEsjJSbNYUFzrZXLulyRChR/XEwDQYJKoZIhvcNAQEL\n\
+BQAwFTETMBEGA1UEAwwKYXZpc28tdGVzdDAgFw0yNjA1MjExMDU2MTJaGA8yMTI2\n\
+MDQyNzEwNTYxMlowFTETMBEGA1UEAwwKYXZpc28tdGVzdDCCASIwDQYJKoZIhvcN\n\
+AQEBBQADggEPADCCAQoCggEBAKvtdr6hpcYQ5R7uHt42S95WQqJn/mm6nJxNyM51\n\
+4ELO2MZ7X9Vgvy2aVPHsqDV5vHGzZF0F7F+FLA664HAsPnaaghjBnKSW7s4arUb8\n\
+4k0RHUi8sivBxYqr5uGbp8uCcas29icFyznaBWELdPmfUFOhhq/BceSmucCoNg0J\n\
+pUxsjqRKtfXpWFI4bpaEmKkNneSYneCqkyWBzy+1DxkYE/yY6vkQqmSgb9gjqq1o\n\
+WPPyJSw0yyC/jKTp9L0Nz6l7Tn2gdEHDZ9j1nsFy9DD2ZNQ9qlY8fg497gXoa1Mg\n\
+Unxhv9usMD6EWWA8yezRxVMcTOEWT9miGEt+Tj6iGLCtXfcCAwEAAaNTMFEwHQYD\n\
+VR0OBBYEFGJb4ns++TufwOE+Cbb0VqZMrO7xMB8GA1UdIwQYMBaAFGJb4ns++Tuf\n\
+wOE+Cbb0VqZMrO7xMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEB\n\
+AJIsFiiJtf425jlvJxXBsYl8AyiQopvs04K1JpfGpIOsKQxKnOZZzSfUrObQAvjr\n\
+IMZEksfPfwOJN4LtPjqzFEO3TqDbWq7bfbzd+pPRh36VceznesuDnBA+z1vNKKH+\n\
+8naFx24zL9itWLt9Is/6AFbRfbdYsDExpisLhr4XIQblGPFneq4Bkh9l7szKuMts\n\
+WH7j++yZ8PoisM0X0wPuCykZiIXTpdzd3tOkz2KYR7sgvoSugQCN+aYPns2DnXj7\n\
+++9qepJtLMoAvtOkutza7a0JuMTkKbnOCiyZELeQq6hHpJuoI2T5lugdanmWkUIF\n\
+62aTjKqXhHyepRlFSTwwEAk=\n\
+-----END CERTIFICATE-----\n";
+
+    #[test]
+    fn builder_ca_bundle_accepts_certificate_built_from_pem() {
+        let cert = reqwest::Certificate::from_pem(TEST_CA_PEM)
+            .expect("the pinned PEM block parses as a single X.509 certificate");
+        let client = AvisoClient::builder()
+            .base_url("https://localhost:8000")
+            .ca_bundle(cert)
+            .build()
+            .unwrap();
+        assert!(!client.danger_accept_invalid_certs());
+    }
+
+    #[test]
+    fn builder_ca_bundle_repeatable_succeeds_with_two_certificates() {
+        let cert_a =
+            reqwest::Certificate::from_pem(TEST_CA_PEM).expect("PEM parses on first construction");
+        let cert_b =
+            reqwest::Certificate::from_pem(TEST_CA_PEM).expect("PEM parses on second construction");
+        let client = AvisoClient::builder()
+            .base_url("https://localhost:8000")
+            .ca_bundle(cert_a)
+            .ca_bundle(cert_b)
+            .build()
+            .unwrap();
+        assert!(!client.danger_accept_invalid_certs());
     }
 }

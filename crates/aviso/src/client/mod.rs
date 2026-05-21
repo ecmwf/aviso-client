@@ -106,6 +106,11 @@ pub struct AvisoClient {
     /// signalling that two or more concurrent watches share the same
     /// checkpoint slot and will interleave commits.
     pub(super) active_resume_keys: ActiveResumeKeys,
+    /// Snapshot of the [`AvisoClientBuilder::danger_accept_invalid_certs`]
+    /// setting. Surfaced via [`AvisoClient::danger_accept_invalid_certs`]
+    /// so a downstream binary can emit a session-level `WARN` log when
+    /// running in insecure-TLS mode.
+    pub(super) danger_accept_invalid_certs: bool,
 }
 
 impl std::fmt::Debug for AvisoClient {
@@ -141,6 +146,20 @@ impl AvisoClient {
     #[must_use]
     pub fn auth(&self) -> Option<&Arc<dyn AuthProvider>> {
         self.auth.as_ref()
+    }
+
+    /// Returns whether this client was built with TLS certificate
+    /// validation disabled via
+    /// [`AvisoClientBuilder::danger_accept_invalid_certs`].
+    ///
+    /// Exposed so a downstream binary (the `aviso` CLI in particular)
+    /// can emit a session-level `WARN` log on startup when the client is
+    /// running in insecure-TLS mode. The library itself never logs this
+    /// per request because it has no session-level emission seam; the
+    /// downstream binary owns the WARN cadence.
+    #[must_use]
+    pub fn danger_accept_invalid_certs(&self) -> bool {
+        self.danger_accept_invalid_certs
     }
 
     /// Internal accessor for the HTTP client; used by sibling modules that build requests.
