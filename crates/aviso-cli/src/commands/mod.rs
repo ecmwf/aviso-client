@@ -5,3 +5,5 @@
 
 pub(crate) mod completions;
 pub(crate) mod config_dump;
+pub(crate) mod notify;
+pub(crate) mod schema;

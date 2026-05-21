@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand};
 
 mod auth;
 mod cancel;
+mod client_builder;
 mod commands;
 mod config;
 mod error;
@@ -282,7 +283,7 @@ fn init_tracing(verbose: u8) -> Result<()> {
     Ok(())
 }
 
-fn run(cli: Cli) -> Result<()> {
+async fn run(cli: Cli) -> Result<()> {
     tracing::info!(
         service.name = "aviso-cli",
         service.version = aviso::VERSION,
@@ -325,9 +326,7 @@ fn run(cli: Cli) -> Result<()> {
     let _cancel = cancel::install();
 
     match cli.command {
-        Commands::Notify { parameters: _ } => {
-            anyhow::bail!("aviso notify is not yet implemented in this build")
-        }
+        Commands::Notify { parameters } => commands::notify::run(&resolved, &parameters).await,
         Commands::Listen { .. } => {
             anyhow::bail!("aviso listen is not yet implemented in this build")
         }
@@ -335,11 +334,9 @@ fn run(cli: Cli) -> Result<()> {
             anyhow::bail!("aviso replay is not yet implemented in this build")
         }
         Commands::Schema(sub) => match sub {
-            SchemaSubcommand::List => {
-                anyhow::bail!("aviso schema list is not yet implemented in this build")
-            }
-            SchemaSubcommand::Get { event_type: _ } => {
-                anyhow::bail!("aviso schema get is not yet implemented in this build")
+            SchemaSubcommand::List => commands::schema::run_list(&resolved).await,
+            SchemaSubcommand::Get { event_type } => {
+                commands::schema::run_get(&resolved, &event_type).await
             }
         },
         Commands::Admin(sub) => match sub {
@@ -379,7 +376,7 @@ async fn main() {
         let _ = writeln!(guard, "error: failed to initialise tracing: {e:#}");
         std::process::exit(exit::RUNTIME_ERROR);
     }
-    match run(cli) {
+    match run(cli).await {
         Ok(()) => std::process::exit(exit::SUCCESS),
         Err(e) => {
             let code = exit::exit_code_for_anyhow(&e);
