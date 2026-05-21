@@ -34,7 +34,7 @@ pub(crate) async fn run(resolved: &Resolved, parameters: &str) -> Result<()> {
         req = req.with_payload(p);
     }
 
-    let client = client_builder::build(resolved)?;
+    let client = client_builder::build(resolved, None)?;
     let response = client
         .notify(&req)
         .await

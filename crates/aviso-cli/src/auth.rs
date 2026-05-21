@@ -99,17 +99,22 @@ pub(crate) fn provider_from_file(
     let Some(cfg) = cfg else {
         return Ok(None);
     };
-    if let Some(token) = cfg.bearer_token.as_deref() {
-        let bearer = Bearer::new(token.to_string())
-            .context("build Bearer auth provider from config-file auth.bearer_token")?;
-        return Ok(Some(Arc::new(bearer)));
+    match (cfg.bearer_token.as_deref(), cfg.basic.as_ref()) {
+        (Some(_), Some(_)) => Err(crate::exit::usage_error(
+            "config file auth: set EITHER `auth.bearer_token` OR `auth.basic.{username,password}`, not both",
+        )),
+        (Some(token), None) => {
+            let bearer = Bearer::new(token.to_string())
+                .context("build Bearer auth provider from config-file auth.bearer_token")?;
+            Ok(Some(Arc::new(bearer)))
+        }
+        (None, Some(basic)) => {
+            let basic = Basic::new(basic.username.clone(), basic.password.clone())
+                .context("build Basic auth provider from config-file auth.basic")?;
+            Ok(Some(Arc::new(basic)))
+        }
+        (None, None) => Ok(None),
     }
-    if let Some(basic) = cfg.basic.as_ref() {
-        let basic = Basic::new(basic.username.clone(), basic.password.clone())
-            .context("build Basic auth provider from config-file auth.basic")?;
-        return Ok(Some(Arc::new(basic)));
-    }
-    Ok(None)
 }
 
 /// Composes the final auth provider from the three tiers.
@@ -194,6 +199,23 @@ mod tests {
         };
         let p = provider_from_file(Some(&cfg)).unwrap();
         assert!(p.is_some());
+    }
+
+    #[test]
+    fn file_provider_rejects_both_bearer_and_basic_set() {
+        let cfg = AuthConfig {
+            bearer_token: Some("token".into()),
+            basic: Some(crate::config::BasicAuthConfig {
+                username: "alice".into(),
+                password: "pw".into(),
+            }),
+        };
+        let err = provider_from_file(Some(&cfg)).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("EITHER") || msg.contains("not both") || msg.contains("auth.bearer_token"),
+            "{msg}"
+        );
     }
 
     #[test]

@@ -50,28 +50,38 @@ use anyhow::Error;
 /// summary.
 pub(crate) fn format_chain(err: &Error) {
     let mut stderr = io::stderr().lock();
-    let _ = writeln!(stderr, "error: {err}");
 
-    let mut chain = err.chain();
-    let _ = chain.next();
-    let mut idx: usize = 0;
-    let mut wrote_caused_by_header = false;
-    for cause in chain {
-        let s = cause.to_string();
-        if let Some(stripped) = s.strip_prefix("suggestion: ") {
-            let _ = writeln!(stderr, "suggestion: {stripped}");
+    let entries: Vec<String> = err.chain().map(ToString::to_string).collect();
+    let mut summary: Option<&str> = None;
+    let mut prefix_lines: Vec<String> = Vec::new();
+    let mut caused_by: Vec<&str> = Vec::new();
+
+    for entry in &entries {
+        if let Some(stripped) = entry.strip_prefix("suggestion: ") {
+            prefix_lines.push(format!("suggestion: {stripped}"));
             continue;
         }
-        if let Some(stripped) = s.strip_prefix("at: ") {
-            let _ = writeln!(stderr, "at: {stripped}");
+        if let Some(stripped) = entry.strip_prefix("at: ") {
+            prefix_lines.push(format!("at: {stripped}"));
             continue;
         }
-        if !wrote_caused_by_header {
-            let _ = writeln!(stderr, "Caused by:");
-            wrote_caused_by_header = true;
+        if summary.is_none() {
+            summary = Some(entry.as_str());
+        } else {
+            caused_by.push(entry.as_str());
         }
-        let _ = writeln!(stderr, "  {idx}: {s}");
-        idx += 1;
+    }
+
+    let summary = summary.unwrap_or("operation failed");
+    let _ = writeln!(stderr, "error: {summary}");
+    for line in &prefix_lines {
+        let _ = writeln!(stderr, "{line}");
+    }
+    if !caused_by.is_empty() {
+        let _ = writeln!(stderr, "Caused by:");
+        for (idx, msg) in caused_by.iter().enumerate() {
+            let _ = writeln!(stderr, "  {idx}: {msg}");
+        }
     }
 }
 

@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
+use aviso::watch::ResumeStart;
 use tokio::sync::watch;
 use tokio::task::{Id, JoinError, JoinSet};
 
@@ -30,6 +31,7 @@ use crate::cancel;
 use crate::client_builder;
 use crate::config::{ListenerSpec, Resolved};
 use crate::exit::usage_error;
+use crate::from_value;
 use crate::listener;
 use crate::listener_file;
 
@@ -37,16 +39,35 @@ use crate::listener_file;
 pub(crate) async fn run(
     resolved: &Resolved,
     listener_files: &[PathBuf],
-    _no_state_store: bool,
+    no_state_store: bool,
+    from: Option<&str>,
 ) -> Result<()> {
-    let listeners = resolve_listeners(resolved, listener_files)?;
+    let mut listeners = resolve_listeners(resolved, listener_files)?;
     if listeners.is_empty() {
         return Err(no_listeners_error(resolved, listener_files));
     }
 
-    let client = Arc::new(client_builder::build(resolved)?);
+    if let Some(value) = from {
+        let cursor = from_value::parse(value)?;
+        apply_cursor_override(&mut listeners, &cursor);
+    }
+
+    let state_store = client_builder::build_state_store(resolved, no_state_store).await?;
+    let client = Arc::new(client_builder::build(resolved, Some(state_store))?);
     let cancel_rx = cancel::install();
     drive(client, listeners, cancel_rx).await
+}
+
+fn apply_cursor_override(listeners: &mut [ListenerSpec], cursor: &ResumeStart) {
+    for spec in listeners.iter_mut() {
+        spec.from_id = None;
+        spec.from_date = None;
+        match cursor {
+            ResumeStart::AfterSequence(n) => spec.from_id = Some(*n),
+            ResumeStart::Date(d) => spec.from_date = Some(d.clone()),
+            _ => {}
+        }
+    }
 }
 
 fn resolve_listeners(resolved: &Resolved, listener_files: &[PathBuf]) -> Result<Vec<ListenerSpec>> {
