@@ -143,6 +143,42 @@ fn listen_no_listeners_with_no_positional_does_not_claim_section_absent() {
 }
 
 #[test]
+fn listen_no_listeners_with_relative_positional_path_renders_absolute_in_at_line() {
+    let listener = write_listener_file("listeners: []\n");
+    let listener_dir = listener.path().parent().expect("tempfile has a parent");
+    let listener_filename = listener
+        .path()
+        .file_name()
+        .expect("tempfile has a name")
+        .to_str()
+        .expect("tempfile name is utf-8");
+    let dir = tempdir().unwrap();
+    let cfg_path = dir.path().join("config.yaml");
+    std::fs::write(&cfg_path, "").unwrap();
+
+    let assertion = aviso()
+        .current_dir(listener_dir)
+        .args([
+            "--config",
+            cfg_path.to_str().unwrap(),
+            "--base-url",
+            "http://unused",
+            "listen",
+            listener_filename,
+        ])
+        .timeout(std::time::Duration::from_secs(5))
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    let absolute_path = listener.path().display().to_string();
+    assert!(
+        stderr.contains(&absolute_path),
+        "at: line should quote absolute path (per Error UX rule 3), not the relative form the operator typed; got stderr: {stderr}"
+    );
+}
+
+#[test]
 fn listen_no_listeners_with_positional_yaml_attributes_to_positional_path_not_config() {
     let listener = write_listener_file("listeners: []\n");
     let listener_path = listener.path().to_path_buf();
