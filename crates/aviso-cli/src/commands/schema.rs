@@ -50,9 +50,9 @@ pub(crate) async fn run_get(resolved: &Resolved, event_type: &str) -> Result<()>
         "event_type": response.event_type,
         "schema": stream_schema_to_value(&response.schema),
     });
-    let pretty = serde_json::to_string_pretty(&value)?;
-    output::write_stdout_bytes(pretty.as_bytes())?;
-    output::write_stdout_bytes(b"\n")
+    let mut pretty = serde_json::to_string_pretty(&value)?;
+    pretty.push('\n');
+    output::write_stdout_bytes(pretty.as_bytes())
 }
 
 fn stream_schema_to_value(schema: &aviso::StreamSchema) -> serde_json::Value {
