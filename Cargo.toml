@@ -23,16 +23,21 @@ documentation = "https://github.com/ecmwf/aviso-client"
 
 [workspace.dependencies]
 anyhow = "1.0"
+assert_cmd = "2.0"
 async-trait = "0.1"
 atomicwrites = "0.4"
 base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 fd-lock = "4.0"
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+clap_complete = { version = "4.5", default-features = false }
+directories = "6.0"
 finesse = { version = "0.1", path = "crates/finesse" }
 futures-core = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 httpdate = "1.0"
 humantime-serde = "1.1"
+predicates = "3.1"
 proptest = "1.5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -43,7 +48,7 @@ sha2 = "0.11"
 static_assertions = "1.1"
 tempfile = "3.10"
 thiserror = "2.0"
-tokio = { version = "1.45", default-features = false, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.45", default-features = false, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
 url = "2.5"
