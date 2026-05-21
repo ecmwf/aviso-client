@@ -9,11 +9,12 @@
 //! Echo trigger uses; the lint permits `write_all` against an
 //! explicit handle, only the `println!` macro is rejected).
 //!
-//! TTY detection via `std::io::IsTerminal` will land alongside the
-//! handlers that need it (notify, schema list) in a follow-up
-//! source change.
+//! [`is_stdout_tty`] wraps `std::io::IsTerminal` so subcommands
+//! pick the TTY-aware text form versus the NDJSON pipe form per
+//! Q5; the `--json` flag overrides this to always pick JSON via
+//! [`use_ndjson`].
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 use anyhow::{Context, Result};
 
@@ -52,4 +53,18 @@ pub(crate) fn write_stdout_bytes(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Returns `true` when stdout is connected to a terminal.
+///
+/// Wraps `std::io::IsTerminal::is_terminal`. Subcommands consult
+/// this to pick the human-readable TTY form versus the NDJSON pipe
+/// form per Q5; `--json` overrides this to always pick NDJSON.
+pub(crate) fn is_stdout_tty() -> bool {
+    io::stdout().is_terminal()
+}
 
+/// Returns whether output should be NDJSON given the resolved
+/// preferences. `--json` (the `force_json` parameter) always wins;
+/// otherwise NDJSON when stdout is not a TTY.
+pub(crate) fn use_ndjson(force_json: bool) -> bool {
+    force_json || !is_stdout_tty()
+}
