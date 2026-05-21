@@ -278,9 +278,32 @@ impl Trigger {
     ///
     /// The webhook reuses the supervisor's shared
     /// [`reqwest::Client`], so any TLS configuration there
-    /// inherits automatically. The constructor is infallible; a
-    /// malformed URL template surfaces at first dispatch as
-    /// [`TriggerError::Template`].
+    /// inherits automatically.
+    ///
+    /// # Dispatch-time failure modes
+    ///
+    /// The constructor is infallible: every check that can reject
+    /// the configuration runs at first dispatch and surfaces as a
+    /// typed error. Two distinct error classes can arise from URL,
+    /// header value, or body input:
+    ///
+    /// - [`TriggerError::Template`]: the template ENGINE rejected
+    ///   the input. Either the template syntax was malformed
+    ///   (unclosed `{{`, empty path segment, unknown namespace:
+    ///   `TemplateErrorKind::BadSyntax`) or a substitution failed
+    ///   at render time (`{{ notification.<path> }}` did not
+    ///   resolve: `Missing`; `{{ env.<NAME> }}` was not set or
+    ///   not valid UTF-8: `EnvNotSet` / `EnvNotUnicode`).
+    /// - [`TriggerError::WebhookBuild`]: the HTTP client rejected
+    ///   the rendered input. Template syntax was valid and every
+    ///   substitution resolved, but the rendered URL is not a
+    ///   valid URL (no scheme, embedded whitespace, etc.) or a
+    ///   rendered header value contains invalid characters (e.g.
+    ///   a newline injected through `{{ env.<NAME> }}`).
+    ///
+    /// Both variants are terminal under `fail_fast = true` because
+    /// the failure is deterministic with respect to the current
+    /// notification and process environment.
     #[must_use]
     pub fn webhook(url: impl Into<String>) -> Self {
         Self {
