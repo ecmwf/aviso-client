@@ -115,7 +115,12 @@ pub(crate) struct Cli {
     no_color: bool,
 
     /// Increase verbosity. Repeatable: -v = DEBUG, -vv = TRACE.
-    /// Overrides any default set via the AVISO_LOG env var.
+    /// Affects the aviso crates only; third-party crates (hyper,
+    /// h2, reqwest, rustls) stay at WARN regardless. When the
+    /// AVISO_LOG env var is set, its EnvFilter directive overrides
+    /// this flag (operator-supplied policy is authoritative); use
+    /// AVISO_LOG=h2=debug,hyper=debug,aviso=debug to also see
+    /// transport-level diagnostics.
     #[arg(short = 'v', long, action = clap::ArgAction::Count, global = true)]
     verbose: u8,
 
@@ -272,13 +277,17 @@ fn init_tracing(verbose: u8) -> Result<()> {
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::fmt;
 
-    // Filter policy is per-crate. The CLI and its core library
-    // honour the -v level; every other crate (hyper, h2, reqwest,
-    // rustls, etc.) stays at WARN regardless of -v so the operator
-    // does not get flooded with HTTP/2 frame logs when they asked
-    // for "a bit more detail from aviso". Power users who want to
-    // debug the transport set `AVISO_LOG` explicitly (e.g.
-    // `AVISO_LOG=h2=debug,hyper=debug,aviso=debug`).
+    // Filter policy is per-crate. The CLI binary and the core
+    // library both compile under the crate name `aviso` (the
+    // binary's `[[bin]] name = "aviso"` makes its module_path
+    // resolve to `aviso`, same as the lib), so a single `aviso`
+    // directive covers both. Every other crate (hyper, h2,
+    // reqwest, rustls, etc.) stays at WARN regardless of -v so
+    // the operator does not get flooded with HTTP/2 frame logs
+    // when they asked for "a bit more detail from aviso". Power
+    // users who want transport diagnostics set `AVISO_LOG`
+    // explicitly (e.g. `AVISO_LOG=h2=debug,hyper=debug,aviso=debug`),
+    // and that operator-supplied directive overrides -v entirely.
     let our_level = match verbose {
         0 => "info",
         1 => "debug",
@@ -289,7 +298,7 @@ fn init_tracing(verbose: u8) -> Result<()> {
             .with_default_directive(LevelFilter::WARN.into())
             .parse_lossy(directives)
     } else {
-        let directive_str = format!("warn,aviso={our_level},aviso_cli={our_level}");
+        let directive_str = format!("warn,aviso={our_level}");
         EnvFilter::try_new(directive_str).context("constructing default tracing filter")?
     };
 

@@ -130,7 +130,7 @@ The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` i
 
 | Variable | Effect |
 |---|---|
-| `AVISO_LOG` | `tracing_subscriber` `EnvFilter` directive. Default `INFO`. `-v` / `-vv` override. |
+| `AVISO_LOG` | `tracing_subscriber` `EnvFilter` directive. When set, **overrides** `-v`/`-vv` and is the authoritative logging policy. Without it: the `aviso` crates honour `-v` (INFO/DEBUG/TRACE) while every other crate stays at WARN. Useful recipes: `AVISO_LOG=warn,aviso=debug` for app-only DEBUG, `AVISO_LOG=h2=debug,hyper=debug,aviso=debug` for transport-level diagnostics. |
 | `AVISO_CLIENT_CONFIG_FILE` | Config file path. Lower priority than `--config`. |
 | `AVISO_STATE_FILE` | State file path. Lower priority than `--state-file`. |
 | `AVISO_BASE_URL` | Base URL. Lower priority than `--base-url`. |
