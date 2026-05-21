@@ -1,9 +1,14 @@
 //! `aviso schema` subcommand: `list` and `get`.
 //!
 //! `aviso schema list` calls `GET /api/v1/schema` and renders the
-//! returned catalogue in a TTY-aware way per Q5: human-readable
-//! table on a terminal, NDJSON otherwise (or always when `--json`
-//! is set).
+//! registered event-type names. The TTY and NDJSON forms carry
+//! the SAME content (just event-type names) so that piping does
+//! not silently change what the operator sees; the only difference
+//! is rendering. Operators who want a full schema use
+//! `aviso schema get <EVENT_TYPE>` for one entry, or pipe the
+//! `list` output through `xargs -I{} aviso schema get {}` for all.
+//! This matches the `ls` / `git branch` convention where the
+//! listing command is an index and a separate command reads details.
 //!
 //! `aviso schema get <EVENT_TYPE>` calls `GET /api/v1/schema/{type}`
 //! and pretty-prints the JSON document. Schemas are JSON by nature
@@ -21,20 +26,17 @@ pub(crate) async fn run_list(resolved: &Resolved) -> Result<()> {
     let client = client_builder::build(resolved, None)?;
     let catalogue = client.schema().await.context("GET /api/v1/schema")?;
 
+    let mut event_types: Vec<&String> = catalogue.event_types.iter().collect();
+    event_types.sort();
+
     if output::use_ndjson(resolved.force_json) {
-        for event_type in &catalogue.event_types {
-            let row = serde_json::json!({
-                "event_type": event_type,
-                "schema": catalogue
-                    .schema
-                    .get(event_type)
-                    .map(stream_schema_to_value),
-            });
+        for event_type in event_types {
+            let row = serde_json::json!({ "event_type": event_type });
             output::write_stdout_line(&serde_json::to_string(&row)?)?;
         }
         Ok(())
     } else {
-        write_table(&catalogue)
+        write_table(&catalogue, &event_types)
     }
 }
 
@@ -62,15 +64,13 @@ fn stream_schema_to_value(schema: &aviso::StreamSchema) -> serde_json::Value {
     })
 }
 
-fn write_table(catalogue: &aviso::SchemaCatalog) -> Result<()> {
+fn write_table(catalogue: &aviso::SchemaCatalog, event_types: &[&String]) -> Result<()> {
     output::write_stdout_line(&format!(
         "{count} schema(s) registered (status: {status})",
         count = catalogue.total_schemas,
         status = catalogue.status
     ))?;
-    let mut rows: Vec<&String> = catalogue.event_types.iter().collect();
-    rows.sort();
-    for event_type in rows {
+    for event_type in event_types {
         output::write_stdout_line(&format!("- {event_type}"))?;
     }
     Ok(())

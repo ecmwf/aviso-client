@@ -70,7 +70,7 @@ The dump shows the resolved configuration with `# from: flag|env|file|default` s
 | `aviso notify <PARAMS>` | POST one notification | TTY: human line; pipe / `--json`: NDJSON with `NotifyResponse` |
 | `aviso listen [FILES...]` | Run one or more listeners concurrently | Empty stdout; triggers handle output |
 | `aviso replay --from <VALUE> [FILES...]` | Replay historical notifications from a cursor (positional listener YAMLs, `--listener <NAME>` to pick one from the resolved set, or `--event <TYPE> --identifiers <JSON>` for ad-hoc) | Empty stdout; triggers handle output |
-| `aviso schema list` | GET `/api/v1/schema` | TTY: table; pipe / `--json`: NDJSON |
+| `aviso schema list` | GET `/api/v1/schema` (index of registered event-type names) | TTY: bullet list; pipe / `--json`: NDJSON. Same content, different rendering. Use `aviso schema get <TYPE>` for the full schema of one entry, or `aviso schema list \| xargs -I{} aviso schema get {}` for all. |
 | `aviso schema get <TYPE>` | GET single schema | Pretty-printed JSON (always) |
 | `aviso admin wipe-stream <EVENT> --yes` | DELETE one event-type stream | TTY: `ok:` line; `--json`: NDJSON |
 | `aviso admin wipe-all --yes` | DELETE every notification | TTY: `ok:` line; `--json`: NDJSON |
