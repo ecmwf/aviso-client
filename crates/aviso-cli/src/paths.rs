@@ -14,7 +14,7 @@
 //! `%APPDATA%` on Windows: both diverge from the requested
 //! `~/.config/aviso` convention.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -86,8 +86,9 @@ pub(crate) fn default_state_path() -> Result<PathBuf> {
 ///
 /// The directory is NOT created here. Callers that need it on disk
 /// (e.g. the `JsonFileStore` lazy-open path) call
-/// `std::fs::create_dir_all(...)` themselves with `0700` perms on
-/// Unix.
+/// [`ensure_secure_dir`] which applies `0o700` on Unix to keep
+/// auth-bearing files (state journal, config) out of reach of
+/// other local users.
 pub(crate) fn aviso_config_dir() -> Result<PathBuf> {
     let home = directories::UserDirs::new()
         .map(|u| u.home_dir().to_path_buf())
@@ -110,9 +111,20 @@ where
     default_fn()
 }
 
-fn absolutize(path: &PathBuf) -> Result<PathBuf> {
+/// Renders `path` absolute per the Error UX rule 3 convention used
+/// across the CLI.
+///
+/// Absolute inputs pass through unchanged (no symlink resolution
+/// or `..` normalisation; an operator-supplied absolute path is
+/// trusted verbatim). Relative inputs are joined with the current
+/// working directory and then best-effort canonicalised via
+/// [`std::path::Path::canonicalize`]; if canonicalisation fails
+/// (typically because the target file does not yet exist) the
+/// cwd-joined path is returned unchanged so the result is still
+/// absolute and usable in error messages.
+pub(crate) fn absolutize(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
-        return Ok(path.clone());
+        return Ok(path.to_path_buf());
     }
     let cwd =
         std::env::current_dir().context("resolve current working directory for relative path")?;
@@ -125,6 +137,33 @@ fn absolutize(path: &PathBuf) -> Result<PathBuf> {
         ));
     }
     Ok(canonical)
+}
+
+/// Creates `path` (and any missing parents) with secure perms.
+///
+/// On Unix, every directory that this call creates is given mode
+/// `0o700` via [`std::os::unix::fs::DirBuilderExt::mode`], so the
+/// CLI's auth-bearing files (state journal, config) are not
+/// world-readable on a multi-user host. Pre-existing directories
+/// along the path are NOT modified, matching `mkdir -p` semantics
+/// so an operator who deliberately widened perms is not surprised.
+///
+/// On non-Unix targets, falls back to
+/// [`std::fs::create_dir_all`]; NTFS ACLs are out of scope and
+/// operators on Windows should set per-file ACLs themselves.
+pub(crate) fn ensure_secure_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(path)
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +223,71 @@ mod tests {
             dir.ends_with(".config/aviso"),
             "config dir should end with .config/aviso; got {}",
             dir.display()
+        );
+    }
+
+    #[test]
+    fn absolutize_passes_absolute_path_through_unchanged() {
+        let abs = PathBuf::from("/tmp/aviso-test-absolutize-passthrough");
+        let got = absolutize(&abs).unwrap();
+        assert_eq!(got, abs);
+    }
+
+    #[test]
+    fn absolutize_joins_relative_path_with_cwd() {
+        let rel = PathBuf::from("aviso-test-relative-listener.yaml");
+        let got = absolutize(&rel).unwrap();
+        assert!(
+            got.is_absolute(),
+            "expected absolute path, got {}",
+            got.display()
+        );
+        assert!(
+            got.ends_with("aviso-test-relative-listener.yaml"),
+            "expected file name to be preserved, got {}",
+            got.display()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_secure_dir_creates_with_0700_perms_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let nested = dir.path().join("aviso-secure").join("subdir");
+        ensure_secure_dir(&nested).expect("create secure dir");
+        let metadata = std::fs::metadata(&nested).expect("read created dir metadata");
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o700,
+            "newly-created directory should have mode 0o700, got {mode:o}"
+        );
+        let parent_meta = std::fs::metadata(nested.parent().unwrap()).expect("parent meta");
+        let parent_mode = parent_meta.permissions().mode() & 0o777;
+        assert_eq!(
+            parent_mode, 0o700,
+            "intermediate created directory should also have mode 0o700, got {parent_mode:o}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_secure_dir_does_not_modify_existing_dir_perms() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let pre_existing = dir.path().join("aviso-pre-existing");
+        std::fs::create_dir(&pre_existing).expect("create pre-existing");
+        std::fs::set_permissions(&pre_existing, std::fs::Permissions::from_mode(0o755))
+            .expect("set 0o755 on pre-existing");
+        ensure_secure_dir(&pre_existing).expect("call on pre-existing dir is a no-op");
+        let mode = std::fs::metadata(&pre_existing)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o755,
+            "pre-existing dir perms must not be modified, got {mode:o}"
         );
     }
 }
