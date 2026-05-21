@@ -31,11 +31,16 @@
 //!
 //! # Retry classifier
 //!
-//! 5xx and transport errors are retryable through the per-trigger
-//! retry budget. 4xx is terminal under the default
-//! `fail_fast = true` and retryable under `fail_fast = false`. The
-//! classifier extension lives in
-//! [`crate::watch::trigger::dispatcher`].
+//! 5xx HTTP status, transport errors (DNS, TCP, TLS, mid-stream
+//! interrupt), and `TriggerError::Timeout` are retryable through
+//! the per-trigger retry budget. Under the default
+//! `fail_fast = true`, three classes are terminal: 4xx HTTP status
+//! (the receiver is rejecting the request); `TriggerError::WebhookBuild`
+//! (HTTP client refused the rendered request: malformed URL,
+//! invalid header value); and `TriggerError::Template` (template
+//! engine rejected the URL, header value, or body template).
+//! `fail_fast = false` keeps every failure retryable. The classifier
+//! extension lives in [`crate::watch::trigger::dispatcher`].
 
 use std::time::Duration;
 
@@ -284,8 +289,9 @@ pub(super) async fn dispatch_webhook(
 /// `Complete` means every chunk drained successfully through to EOF.
 /// `PartialNoTimeout` means a mid-body transport error truncated the
 /// tail but the dispatcher should still classify by the response
-/// status. `Timeout` means reqwest's per-request timeout fired during
-/// body drain; the caller maps it back to [`TriggerError::Timeout`].
+/// status. `Timeout` means reqwest's [`reqwest::RequestBuilder::timeout`]
+/// fired during body drain; the caller maps it back to
+/// [`TriggerError::Timeout`].
 enum BodyDrain {
     Complete {
         status: reqwest::StatusCode,

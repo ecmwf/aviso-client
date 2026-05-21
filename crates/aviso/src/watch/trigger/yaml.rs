@@ -128,7 +128,11 @@ pub struct CommandTriggerConfig {
     /// Required flag; default `true`.
     #[serde(default = "default_required")]
     pub required: bool,
-    /// Fail-fast policy on terminal failures; default `true`.
+    /// Fail-fast policy on terminal failures; default `true`. For
+    /// commands, terminal failures under `fail_fast = true` are
+    /// `TriggerError::Command` (non-zero exit) and
+    /// `TriggerError::Template` (template engine rejection). I/O
+    /// errors and timeouts stay retryable.
     #[serde(default = "default_fail_fast")]
     pub fail_fast: bool,
 }
@@ -164,7 +168,13 @@ pub struct WebhookTriggerConfig {
     #[serde(default = "default_required")]
     pub required: bool,
     /// Fail-fast policy on terminal failures; default `true`. For
-    /// webhooks, terminal failures are 4xx responses.
+    /// webhooks, terminal failures under `fail_fast = true` are:
+    /// `TriggerError::Webhook` with a 4xx HTTP status (the receiver
+    /// is rejecting the request); `TriggerError::WebhookBuild` (the
+    /// HTTP client rejected the rendered request: malformed URL or
+    /// invalid header value); and `TriggerError::Template` (the
+    /// template engine rejected the input). 5xx, transport errors,
+    /// I/O errors, and timeouts stay retryable.
     #[serde(default = "default_fail_fast")]
     pub fail_fast: bool,
 }
