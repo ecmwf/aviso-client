@@ -25,7 +25,15 @@ aviso \
   notify "event=mars,class=od,stream=oper,type=fc,data={\"region\":\"north\"}"
 ```
 
-The single positional argument is a comma-separated `key=value` list (pyaviso parity). Only `event=<TYPE>` is mandatory. The optional `data=<JSON>` key becomes the notification payload; every other `key=value` pair enters the identifier map.
+The single positional argument is a comma-separated `key=value` list (pyaviso parity). Only `event=<TYPE>` is mandatory at the parameter-parsing layer; the server's notify endpoint additionally requires every identifier key listed in the event-type's schema. The schema's `required: false` flag is a **`listen`/`replay`-time filter** semantic (when subscribing, optional identifiers act as wildcards); it does **not** make those identifiers optional for `notify`. Use `aviso schema get <TYPE>` to see the full identifier set the server will demand.
+
+The optional `data=<JSON>` key becomes the notification payload; every other `key=value` pair enters the identifier map.
+
+**Quoting identifier values containing commas**: for identifiers whose values contain top-level commas (`polygon`, lists of identifiers, etc.), wrap the value in double quotes. The CLI's parameter splitter treats top-level commas as parameter separators, but inside `"..."` they are part of the value; the outer quotes are stripped before the value is sent to the server (pyaviso convention):
+
+```bash
+aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260521,time=1200,data={"test":true}'
+```
 
 ### Run a listener
 

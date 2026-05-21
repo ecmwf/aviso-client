@@ -2,17 +2,29 @@
 //!
 //! Pyaviso-parity publisher (per Amendment I). The single
 //! positional argument is a comma-separated `key=value` list.
-//! Only `event=<TYPE>` is mandatory: it names the schema-configured
-//! event type. The `data=<JSON>` key is optional; when present its
-//! value is parsed as JSON and attached as the notification
-//! payload. Every other `key=value` pair enters the notification
-//! identifier map.
+//! Only `event=<TYPE>` is mandatory for parameter parsing; the
+//! server's notify endpoint additionally requires EVERY identifier
+//! key listed in the event-type's schema (the schema's
+//! `required: false` flag is a `listen`/`replay`-time filter
+//! semantic, not a notify-time semantic). The `data=<JSON>` key is
+//! optional; when present its value is parsed as JSON and attached
+//! as the notification payload. Every other `key=value` pair
+//! enters the notification identifier map.
 //!
 //! The parameter parser is brace-respecting: top-level commas
 //! split entries, but commas inside `{}` / `[]` nesting or inside
 //! `"..."` string literals are part of the value. Backslash escapes
 //! inside string literals are honoured. Mismatched braces or
 //! unclosed strings surface as usage errors with the offset.
+//!
+//! Outer `"..."` quotes around an identifier value are stripped
+//! before the value is sent to the server, matching pyaviso
+//! convention. This is the canonical way to pass identifier values
+//! containing top-level commas (e.g.
+//! `polygon="46,8,46,9,47,9,47,8,46,8"`; without the quotes the
+//! commas would be parsed as parameter separators). Quote
+//! stripping does NOT apply to `data=` because the JSON parser
+//! handles its own quoting.
 
 use std::collections::BTreeMap;
 
@@ -144,6 +156,25 @@ fn push_kv(out: &mut Vec<(String, String)>, slice: &str) -> Result<()> {
     Ok(())
 }
 
+/// Strips a matched pair of outer `"..."` from an identifier
+/// value. Pyaviso convention: operators wrap values containing
+/// top-level commas (polygons, lists of identifiers) in double
+/// quotes so the parameter splitter's brace/string awareness
+/// protects the commas; the server then receives the value
+/// without the wrapping quotes.
+///
+/// This intentionally does NOT touch the `data=` JSON payload
+/// (which has its own JSON-syntactic quoting) and does NOT
+/// touch single-character `"` values, which would represent an
+/// unclosed-quote that the splitter would have already rejected.
+fn strip_outer_quotes(value: &str) -> String {
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        value[1..value.len() - 1].to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 fn build_request_parts(
     entries: &[(String, String)],
 ) -> Result<(String, BTreeMap<String, String>, Option<serde_json::Value>)> {
@@ -177,7 +208,7 @@ fn build_request_parts(
                 payload = Some(parsed);
             }
             _ => {
-                identifier.insert(key.clone(), value.clone());
+                identifier.insert(key.clone(), strip_outer_quotes(value));
             }
         }
     }
@@ -311,5 +342,53 @@ mod tests {
         let err = split_parameters("event=mars,nokey").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains('='), "{msg}");
+    }
+
+    #[test]
+    fn quoted_identifier_value_strips_outer_quotes_to_protect_top_level_commas() {
+        let entries = split_parameters(r#"event=test_polygon,polygon="46,8,46,9,47,9""#).unwrap();
+        let (event, ident, _) = build_request_parts(&entries).unwrap();
+        assert_eq!(event, "test_polygon");
+        assert_eq!(
+            ident.get("polygon").map(String::as_str),
+            Some("46,8,46,9,47,9"),
+            "polygon value should be the unquoted content; got: {ident:?}"
+        );
+    }
+
+    #[test]
+    fn unquoted_identifier_value_passes_through_unchanged() {
+        let entries = split_parameters("event=mars,class=od").unwrap();
+        let (_, ident, _) = build_request_parts(&entries).unwrap();
+        assert_eq!(ident.get("class").map(String::as_str), Some("od"));
+    }
+
+    #[test]
+    fn data_payload_does_not_lose_outer_quote_semantics() {
+        let entries = split_parameters(r#"event=mars,data="hello""#).unwrap();
+        let (_, _, payload) = build_request_parts(&entries).unwrap();
+        assert_eq!(
+            payload.unwrap(),
+            serde_json::Value::String("hello".into()),
+            "data= goes through JSON parsing, not strip_outer_quotes; \"hello\" must parse as a JSON string"
+        );
+    }
+
+    #[test]
+    fn strip_outer_quotes_handles_edge_cases() {
+        assert_eq!(strip_outer_quotes("\"abc\""), "abc");
+        assert_eq!(strip_outer_quotes("abc"), "abc");
+        assert_eq!(strip_outer_quotes("\""), "\"", "single char passes through");
+        assert_eq!(strip_outer_quotes(""), "");
+        assert_eq!(
+            strip_outer_quotes("\"\""),
+            "",
+            "empty quoted strips to empty"
+        );
+        assert_eq!(
+            strip_outer_quotes("a\"b"),
+            "a\"b",
+            "inner quotes do not strip"
+        );
     }
 }
