@@ -22,6 +22,7 @@ mod listener;
 mod listener_file;
 mod output;
 mod paths;
+mod tracing_format;
 
 /// Top-level CLI. Holds the global flags shared across every
 /// subcommand plus the dispatch into [`Commands`].
@@ -271,27 +272,31 @@ fn init_tracing(verbose: u8) -> Result<()> {
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::fmt;
 
-    let default = match verbose {
-        0 => LevelFilter::INFO,
-        1 => LevelFilter::DEBUG,
-        _ => LevelFilter::TRACE,
+    // Filter policy is per-crate. The CLI and its core library
+    // honour the -v level; every other crate (hyper, h2, reqwest,
+    // rustls, etc.) stays at WARN regardless of -v so the operator
+    // does not get flooded with HTTP/2 frame logs when they asked
+    // for "a bit more detail from aviso". Power users who want to
+    // debug the transport set `AVISO_LOG` explicitly (e.g.
+    // `AVISO_LOG=h2=debug,hyper=debug,aviso=debug`).
+    let our_level = match verbose {
+        0 => "info",
+        1 => "debug",
+        _ => "trace",
     };
-
-    let filter = if verbose > 0 {
+    let filter = if let Ok(directives) = std::env::var("AVISO_LOG") {
         EnvFilter::builder()
-            .with_default_directive(default.into())
-            .parse_lossy("")
+            .with_default_directive(LevelFilter::WARN.into())
+            .parse_lossy(directives)
     } else {
-        EnvFilter::builder()
-            .with_default_directive(default.into())
-            .with_env_var("AVISO_LOG")
-            .from_env_lossy()
+        let directive_str = format!("warn,aviso={our_level},aviso_cli={our_level}");
+        EnvFilter::try_new(directive_str).context("constructing default tracing filter")?
     };
 
     fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
-        .json()
+        .event_format(tracing_format::OtelLogFormat::new())
         .try_init()
         .map_err(anyhow::Error::from_boxed)
         .context("initialising tracing subscriber")?;
