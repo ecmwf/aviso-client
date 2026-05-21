@@ -356,23 +356,26 @@ async fn run(cli: Cli) -> Result<()> {
             }
         },
         Commands::Admin(sub) => match sub {
-            AdminSubcommand::WipeStream { yes, .. } => {
+            AdminSubcommand::WipeStream { event_type, yes } => {
                 if !yes {
                     return Err(exit::usage_error("aviso admin wipe-stream requires --yes"));
                 }
-                anyhow::bail!("aviso admin wipe-stream is not yet implemented in this build")
+                commands::admin::run_wipe_stream(&resolved, &event_type).await
             }
             AdminSubcommand::WipeAll { yes } => {
                 if !yes {
                     return Err(exit::usage_error("aviso admin wipe-all requires --yes"));
                 }
-                anyhow::bail!("aviso admin wipe-all is not yet implemented in this build")
+                commands::admin::run_wipe_all(&resolved).await
             }
-            AdminSubcommand::Delete { yes, .. } => {
+            AdminSubcommand::Delete {
+                notification_id,
+                yes,
+            } => {
                 if !yes {
                     return Err(exit::usage_error("aviso admin delete requires --yes"));
                 }
-                anyhow::bail!("aviso admin delete is not yet implemented in this build")
+                commands::admin::run_delete(&resolved, &notification_id).await
             }
         },
         Commands::Config(ConfigSubcommand::Dump { redact }) => {
