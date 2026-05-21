@@ -217,6 +217,7 @@ pub(super) async fn run_one_connection(
             resume_key,
             request.triggers(),
             trigger_states,
+            http,
             tx,
             cancel,
             parent_cancel,

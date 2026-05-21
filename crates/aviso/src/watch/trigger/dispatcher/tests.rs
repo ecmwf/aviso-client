@@ -17,13 +17,10 @@ use tokio::sync::{oneshot, watch};
 
 use super::dispatch_triggers_with_backoff;
 use crate::Notification;
-#[cfg(unix)]
 use crate::watch::TriggerError;
 #[cfg(unix)]
 use crate::watch::trigger::command::build_command_config;
-use crate::watch::trigger::kind::TestEventual;
-#[cfg(unix)]
-use crate::watch::trigger::kind::TriggerKind;
+use crate::watch::trigger::kind::{TestEventual, TriggerKind};
 use crate::watch::trigger::{DispatchOutcome, Trigger, TriggerState};
 
 fn make_notification() -> Notification {
@@ -47,15 +44,26 @@ where
     let (_drop_tx, mut parent_rx) = watch::channel(false);
     let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     let n = make_notification();
+    let http = test_http_client();
     dispatch_triggers_with_backoff(
         triggers,
         states,
         &n,
         &mut parent_rx,
         &mut cancel_rx,
+        &http,
         backoff,
     )
     .await
+}
+
+/// Build a fresh reqwest client for dispatcher tests. The test
+/// triggers (`TestFailing`, `TestFailOnCall`) and the production
+/// echo/log/command dispatchers do not use the client; webhook
+/// tests live in `webhook/tests.rs` against a real wiremock
+/// server. The dispatcher loop just threads `&Client` through.
+fn test_http_client() -> reqwest::Client {
+    reqwest::Client::new()
 }
 
 #[tokio::test]
@@ -91,12 +99,14 @@ async fn success_after_retry_advances_through_backoff_and_completes() {
     let (_drop_tx, mut parent_rx) = watch::channel(false);
     let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     let n = make_notification();
+    let http = test_http_client();
     let fut = dispatch_triggers_with_backoff(
         std::slice::from_ref(&trigger),
         &mut states,
         &n,
         &mut parent_rx,
         &mut cancel_rx,
+        &http,
         |_| Duration::from_millis(100),
     );
     tokio::pin!(fut);
@@ -129,12 +139,14 @@ async fn parent_cancel_during_retry_backoff_returns_cancelled() {
     let (drop_tx, mut parent_rx) = watch::channel(false);
     let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     let n = make_notification();
+    let http = test_http_client();
     let fut = dispatch_triggers_with_backoff(
         std::slice::from_ref(&trigger),
         &mut states,
         &n,
         &mut parent_rx,
         &mut cancel_rx,
+        &http,
         |_| Duration::from_secs(60),
     );
     tokio::pin!(fut);
@@ -223,12 +235,14 @@ async fn command_nonzero_exit_retries_when_fail_fast_false() {
     let (_drop_tx, mut parent_rx) = watch::channel(false);
     let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     let n = make_notification();
+    let http = test_http_client();
     let fut = dispatch_triggers_with_backoff(
         std::slice::from_ref(&trigger),
         &mut states,
         &n,
         &mut parent_rx,
         &mut cancel_rx,
+        &http,
         |_| Duration::from_millis(100),
     );
     tokio::pin!(fut);
@@ -286,14 +300,140 @@ async fn parent_cancel_between_triggers_returns_cancelled() {
     let (_cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     drop_tx.send(true).unwrap();
     let n = make_notification();
+    let http = test_http_client();
     let result = dispatch_triggers_with_backoff(
         &[echo1, echo2],
         &mut states,
         &n,
         &mut parent_rx,
         &mut cancel_rx,
+        &http,
         |_| Duration::from_millis(1),
     )
     .await;
     assert!(matches!(result, Err(DispatchOutcome::Cancelled)));
+}
+
+#[tokio::test]
+async fn webhook_4xx_is_terminal_with_fail_fast_true() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: true,
+    };
+    let err = TriggerError::Webhook {
+        status: Some(reqwest::StatusCode::BAD_REQUEST),
+        body_tail: String::new(),
+    };
+    assert!(
+        super::is_terminal_error(&trigger, &err),
+        "4xx must be terminal under fail_fast = true"
+    );
+}
+
+#[tokio::test]
+async fn webhook_5xx_is_retryable_with_fail_fast_true() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: true,
+    };
+    let err = TriggerError::Webhook {
+        status: Some(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+        body_tail: String::new(),
+    };
+    assert!(
+        !super::is_terminal_error(&trigger, &err),
+        "5xx must stay retryable even under fail_fast = true"
+    );
+}
+
+#[tokio::test]
+async fn webhook_transport_error_is_retryable_with_fail_fast_true() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: true,
+    };
+    let err = TriggerError::Webhook {
+        status: None,
+        body_tail: String::new(),
+    };
+    assert!(
+        !super::is_terminal_error(&trigger, &err),
+        "transport error (None status) must stay retryable"
+    );
+}
+
+#[tokio::test]
+async fn webhook_build_error_is_terminal_with_fail_fast_true() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: true,
+    };
+    let err = TriggerError::WebhookBuild {
+        reason: "request build failed (invalid URL or header value)".to_string(),
+    };
+    assert!(
+        super::is_terminal_error(&trigger, &err),
+        "WebhookBuild must be terminal under fail_fast = true; the failure is deterministic"
+    );
+}
+
+#[tokio::test]
+async fn webhook_build_error_is_retryable_with_fail_fast_false() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: false,
+    };
+    let err = TriggerError::WebhookBuild {
+        reason: "request build failed (invalid URL or header value)".to_string(),
+    };
+    assert!(
+        !super::is_terminal_error(&trigger, &err),
+        "fail_fast=false must keep every error retryable, including WebhookBuild"
+    );
+}
+
+#[tokio::test]
+async fn webhook_4xx_is_retryable_with_fail_fast_false() {
+    use crate::watch::trigger::webhook::build_webhook_config;
+    let cfg = build_webhook_config("http://127.0.0.1:1/unused");
+    let trigger = Trigger {
+        kind: TriggerKind::Webhook(Box::new(cfg)),
+        retries: 5,
+        required: true,
+        timeout: None,
+        fail_fast: false,
+    };
+    let err = TriggerError::Webhook {
+        status: Some(reqwest::StatusCode::BAD_REQUEST),
+        body_tail: String::new(),
+    };
+    assert!(
+        !super::is_terminal_error(&trigger, &err),
+        "fail_fast=false must keep every error retryable, including 4xx"
+    );
 }

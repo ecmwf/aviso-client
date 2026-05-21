@@ -47,6 +47,7 @@ pub(super) async fn drain_frames(
     resume_key: &ResumeKey,
     triggers: &[crate::watch::Trigger],
     trigger_states: &mut [crate::watch::trigger::TriggerState],
+    http: &reqwest::Client,
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
     parent_cancel: &mut watch::Receiver<bool>,
@@ -150,6 +151,7 @@ pub(super) async fn drain_frames(
                             &notification,
                             parent_cancel,
                             cancel,
+                            http,
                         )
                         .await
                         {
