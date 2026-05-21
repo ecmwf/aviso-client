@@ -41,6 +41,26 @@ fn dump_shows_resolved_paths_with_source_attribution() {
 }
 
 #[test]
+fn dump_shows_config_path_attributed_to_flag_when_overridden() {
+    let dir = tempdir().unwrap();
+    let cfg = write_config(dir.path(), "base_url: https://from-file.example\n");
+
+    let assertion = aviso_with_config(&cfg)
+        .args(["config", "dump"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout);
+    let config_line = stdout
+        .lines()
+        .find(|l| l.starts_with("config_path:"))
+        .expect("config_path line present");
+    assert!(
+        config_line.contains("# from: flag"),
+        "config_path should attribute to flag when --config is set; got: {config_line}"
+    );
+}
+
+#[test]
 fn flag_overrides_file_with_source_attribution() {
     let dir = tempdir().unwrap();
     let cfg = write_config(dir.path(), "base_url: https://from-file.example\n");

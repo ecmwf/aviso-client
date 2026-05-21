@@ -33,8 +33,8 @@ mod paths;
     long_about = "The `aviso` command-line client for ECMWF's aviso-server notification service. \
                   Configuration lives in ~/.config/aviso/config.yaml by default; flag and env \
                   overrides take precedence per the documented config-layering rule. See \
-                  `aviso <SUBCOMMAND> --help` for per-command details and docs/usage/cli.md for \
-                  full operator documentation.",
+                  `aviso <SUBCOMMAND> --help` for per-command details and docs/src/usage/cli.md \
+                  in the source tree for full operator documentation.",
 )]
 pub(crate) struct Cli {
     /// Path to the YAML config file. Default:
@@ -86,8 +86,8 @@ pub(crate) struct Cli {
                      clusters with their own ACME setup, similar). The system root store stays \
                      in effect; --ca-bundle only adds, never replaces. Repeatable: pass \
                      --ca-bundle multiple times for multiple certificates. See \
-                     docs/usage/cli.md 'TLS configuration' for end-to-end setup steps including \
-                     how to fetch a PEM cert from a running server."
+                     docs/src/usage/cli.md 'TLS configuration' for end-to-end setup steps \
+                     including how to fetch a PEM cert from a running server."
     )]
     ca_bundle: Vec<PathBuf>,
 
@@ -101,7 +101,7 @@ pub(crate) struct Cli {
                      cert via --ca-bundle is not practical. Logs WARN \
                      `event.name=cli.tls.insecure_mode` once per invocation so log scrapers can \
                      flag misuse. The right production move is always --ca-bundle, never this. \
-                     See docs/usage/cli.md 'TLS configuration'."
+                     See docs/src/usage/cli.md 'TLS configuration'."
     )]
     danger_accept_invalid_certs: bool,
 
@@ -183,7 +183,7 @@ enum Commands {
         identifiers: Option<String>,
 
         /// Required cursor. Accepts a u64 sequence id OR one of
-        /// six date forms; see docs/usage/cli.md '--from value
+        /// six date forms; see docs/src/usage/cli.md '--from value
         /// formats' for the full list and the pure-digit-always-id
         /// ambiguity rule.
         #[arg(long, value_name = "VALUE", required = true)]
@@ -331,7 +331,7 @@ async fn run(cli: Cli) -> Result<()> {
 
     tracing::debug!(
         event.name = "cli.config.resolved",
-        config_path = %resolved.config_path.display(),
+        config_path = %resolved.config_path.value.display(),
         state_path = %resolved.state_path.value.display(),
         base_url_set = resolved.base_url.is_some(),
         auth_provider_set = resolved.auth_provider.is_some(),

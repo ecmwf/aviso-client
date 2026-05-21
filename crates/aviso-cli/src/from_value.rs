@@ -25,7 +25,7 @@
 //! as a single argv item:
 //!     aviso listen --from "2024-01-15 14:30"
 //!     aviso listen --from "2024-01-15 14:30:00"
-//! T-separator forms need no quoting. The docs/usage/cli.md
+//! T-separator forms need no quoting. The docs/src/usage/cli.md
 //! '--from value formats' section explains this for operators.
 
 use std::fmt;

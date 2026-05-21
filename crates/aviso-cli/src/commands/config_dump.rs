@@ -39,11 +39,9 @@ pub(crate) fn run(resolved: &Resolved, redact: bool) -> Result<()> {
 fn build_yaml(resolved: &Resolved, redact: bool) -> String {
     let mut out = String::new();
     out.push_str("# resolved configuration (per-field source tags shown)\n");
-    out.push_str(&yaml_line(
-        "config_path",
-        &resolved.config_path.display().to_string(),
-        Source::File,
-    ));
+    out.push_str(&yaml_sourced("config_path", &resolved.config_path, |p| {
+        p.display().to_string()
+    }));
     out.push_str(&yaml_sourced("state_file", &resolved.state_path, |p| {
         p.display().to_string()
     }));
@@ -123,7 +121,10 @@ where
 fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
     use serde_json::json;
     json!({
-        "config_path": resolved.config_path.display().to_string(),
+        "config_path": {
+            "value": resolved.config_path.value.display().to_string(),
+            "source": source_label(resolved.config_path.source),
+        },
         "state_file": {
             "value": resolved.state_path.value.display().to_string(),
             "source": source_label(resolved.state_path.source),
@@ -178,7 +179,10 @@ mod tests {
 
     fn fixture(redacted_provider: bool) -> Resolved {
         Resolved {
-            config_path: PathBuf::from("/tmp/aviso-test/config.yaml"),
+            config_path: Sourced {
+                value: PathBuf::from("/tmp/aviso-test/config.yaml"),
+                source: Source::Default,
+            },
             state_path: Sourced {
                 value: PathBuf::from("/tmp/aviso-test/state.json"),
                 source: Source::Default,

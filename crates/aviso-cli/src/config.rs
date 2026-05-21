@@ -143,7 +143,7 @@ pub(crate) struct Sourced<T> {
 /// per Error UX rule 3.
 #[derive(Debug, Clone)]
 pub(crate) struct Resolved {
-    pub(crate) config_path: PathBuf,
+    pub(crate) config_path: Sourced<PathBuf>,
     pub(crate) state_path: Sourced<PathBuf>,
     pub(crate) base_url: Option<Sourced<String>>,
     pub(crate) timeout: Option<Sourced<Duration>>,
@@ -194,9 +194,19 @@ pub(crate) fn resolve(
     let env_state_path = read_env("AVISO_STATE_FILE");
     let env_base_url = read_env("AVISO_BASE_URL");
 
-    let config_path = paths::resolve_config_path(cli_config, env_config_path.as_deref())?;
-    let file =
-        load_optional(&config_path).with_context(|| format!("at: {}", config_path.display()))?;
+    let config_path = {
+        let value = paths::resolve_config_path(cli_config, env_config_path.as_deref())?;
+        let source = if cli_config.is_some() {
+            Source::Flag
+        } else if env_config_path.is_some() {
+            Source::Env
+        } else {
+            Source::Default
+        };
+        Sourced { value, source }
+    };
+    let file = load_optional(&config_path.value)
+        .with_context(|| format!("at: {}", config_path.value.display()))?;
 
     let state_path = if let Some(p) = cli_state_file {
         Sourced {
@@ -285,16 +295,15 @@ fn resolve_tls(
             source: Source::Flag,
         }
     } else if let Some(tls) = file_tls {
-        if tls.ca_bundle.is_empty() {
-            Sourced {
-                value: Vec::new(),
-                source: Source::Default,
-            }
-        } else {
-            Sourced {
-                value: tls.ca_bundle.clone(),
-                source: Source::File,
-            }
+        // The presence of a `tls:` block in the config IS a
+        // statement of intent from the operator; tag the bundle as
+        // File regardless of whether the list is empty so
+        // `config dump` source attribution reflects the layer that
+        // actually supplied the value rather than the bundle's
+        // emptiness.
+        Sourced {
+            value: tls.ca_bundle.clone(),
+            source: Source::File,
         }
     } else {
         Sourced {
