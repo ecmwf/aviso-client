@@ -2,7 +2,7 @@
 //!
 //! A [`Trigger`] is a per-notification side effect attached to a
 //! [`crate::watch::WatchRequest`] via
-//! [`crate::watch::WatchRequest::with_triggers`]. Three built-in kinds
+//! [`crate::watch::WatchRequest::with_triggers`]. Four built-in kinds
 //! ship in the core:
 //!
 //! - [`Trigger::echo`]: writes the notification as NDJSON to standard
@@ -11,15 +11,18 @@
 //!   user-specified file.
 //! - [`Trigger::command`]: runs `/bin/sh -c <rendered>` per notification
 //!   with the notification's fields exposed as `AVISO_*` environment
-//!   variables.
+//!   variables. Unix-only.
+//! - [`Trigger::webhook`]: sends an HTTP request per notification to a
+//!   user-configured URL, with the URL, header values, and body all
+//!   template-rendered. Cross-platform.
 //!
 //! Each trigger has a `retries` count (default `0`), a `required` flag
-//! (default `true`), a `timeout` (default `None`; meaningful for the
-//! command trigger only), and a `fail_fast` flag (default `true`;
-//! meaningful for the command trigger only). A required trigger that
-//! fails after all retries terminates the watch with
-//! [`crate::ClientError::TriggerFailed`]; an optional trigger that
-//! fails logs a `WARN` event and the watch continues.
+//! (default `true`), a `timeout` (default `None` for echo/log/command,
+//! [`DEFAULT_WEBHOOK_TIMEOUT`] for webhook), and a `fail_fast` flag
+//! (default `true`; meaningful for the command and webhook triggers).
+//! A required trigger that fails after all retries terminates the
+//! watch with [`crate::ClientError::TriggerFailed`]; an optional
+//! trigger that fails logs a `WARN` event and the watch continues.
 //!
 //! # Dispatcher contract
 //!
@@ -40,7 +43,12 @@ use std::path::PathBuf;
 use kind::TriggerKind;
 
 pub(crate) use dispatcher::dispatch_triggers;
+pub use error::{TriggerError, TriggerKindLabel};
+pub use http_method::HttpMethod;
 pub use template::TemplateErrorKind;
+#[cfg(unix)]
+pub use yaml::CommandTriggerConfig;
+pub use yaml::{EchoConfig, LogConfig, TriggerConfig, WebhookTriggerConfig};
 
 /// Command trigger dispatch. Unix-only (`#[cfg(unix)]`).
 #[cfg(unix)]
@@ -49,15 +57,30 @@ mod command;
 mod dispatcher;
 /// Echo trigger dispatch.
 mod echo;
+/// Public error and label types for the trigger surface.
+mod error;
+/// HTTP method enum used by the webhook trigger.
+mod http_method;
 /// Trigger kind internals.
 mod kind;
 /// Log trigger dispatch.
 mod log;
 /// Template substitution engine shared by command and webhook triggers.
 mod template;
+/// Webhook trigger dispatch.
+mod webhook;
+/// Declarative YAML configuration for triggers.
+mod yaml;
 
 #[cfg(test)]
 mod tests;
+
+/// Default per-trigger timeout for the webhook trigger when the user
+/// has not overridden it via [`Trigger::timeout`]. 30 seconds matches
+/// the budget for typical operator-facing receivers (Slack, Teams,
+/// Discord all respond well under a second; the cushion absorbs
+/// transient backend slowness without prematurely timing out).
+pub const DEFAULT_WEBHOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// A single trigger configured on a watch.
 ///
@@ -228,6 +251,106 @@ impl Trigger {
         self
     }
 
+    /// Build a webhook trigger that sends an HTTP request per
+    /// notification to `url` (template-rendered at dispatch time).
+    ///
+    /// Default method is [`HttpMethod::Post`]. Default body is the
+    /// notification serialised as compact JSON (matching the echo
+    /// trigger's output shape). Default `Content-Type` header is
+    /// `application/json` when the user has not set one. Default
+    /// per-trigger timeout is [`DEFAULT_WEBHOOK_TIMEOUT`].
+    ///
+    /// URL, header VALUES, and body run through the in-crate
+    /// template engine: `{{ notification.<path> }}` substitutes a
+    /// notification field; `{{ env.<NAME> }}` substitutes a process
+    /// environment variable. Header NAMES are literal.
+    ///
+    /// # HTTP-status retry semantics
+    ///
+    /// 5xx responses and transport errors (DNS, TCP, TLS,
+    /// mid-stream interrupt) are retryable through the configured
+    /// [`Self::retries`] budget. 4xx responses are terminal under
+    /// the default `fail_fast = true` and retryable under
+    /// `fail_fast = false` (useful when a downstream receiver
+    /// occasionally returns transient 4xx).
+    ///
+    /// # Shared HTTP client
+    ///
+    /// The webhook reuses the supervisor's shared
+    /// [`reqwest::Client`], so any TLS configuration there
+    /// inherits automatically.
+    ///
+    /// # Dispatch-time failure modes
+    ///
+    /// The constructor is infallible: every check that can reject
+    /// the configuration runs at first dispatch and surfaces as a
+    /// typed error. Two distinct error classes can arise from URL,
+    /// header value, or body input:
+    ///
+    /// - [`TriggerError::Template`]: the template ENGINE rejected
+    ///   the input. Either the template syntax was malformed
+    ///   (unclosed `{{`, empty path segment, unknown namespace:
+    ///   `TemplateErrorKind::BadSyntax`) or a substitution failed
+    ///   at render time (`{{ notification.<path> }}` did not
+    ///   resolve: `Missing`; `{{ env.<NAME> }}` was not set or
+    ///   not valid UTF-8: `EnvNotSet` / `EnvNotUnicode`).
+    /// - [`TriggerError::WebhookBuild`]: the HTTP client rejected
+    ///   the rendered input. Template syntax was valid and every
+    ///   substitution resolved, but the rendered URL is not a
+    ///   valid URL (no scheme, embedded whitespace, etc.) or a
+    ///   rendered header value contains invalid characters (e.g.
+    ///   a newline injected through `{{ env.<NAME> }}`).
+    ///
+    /// Both variants are terminal under `fail_fast = true` because
+    /// the failure is deterministic with respect to the current
+    /// notification and process environment.
+    #[must_use]
+    pub fn webhook(url: impl Into<String>) -> Self {
+        Self {
+            kind: TriggerKind::Webhook(Box::new(webhook::build_webhook_config(url))),
+            retries: 0,
+            required: true,
+            timeout: Some(DEFAULT_WEBHOOK_TIMEOUT),
+            fail_fast: true,
+        }
+    }
+
+    /// Override the HTTP method on a webhook trigger. Silently
+    /// ignored on echo, log, and command triggers (the method only
+    /// applies to webhook).
+    #[must_use]
+    pub fn method(mut self, method: HttpMethod) -> Self {
+        if let TriggerKind::Webhook(cfg) = &mut self.kind {
+            webhook::webhook_set_method(cfg, method);
+        }
+        self
+    }
+
+    /// Add an HTTP header to a webhook trigger. Repeatable; the
+    /// same key may be added multiple times to send the header
+    /// twice. Header NAMES are taken literally; header VALUES are
+    /// template-rendered at dispatch. Silently ignored on echo,
+    /// log, and command triggers.
+    #[must_use]
+    pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        if let TriggerKind::Webhook(cfg) = &mut self.kind {
+            webhook::webhook_add_header(cfg, name, value);
+        }
+        self
+    }
+
+    /// Override the request body with a template string. Silently
+    /// ignored on echo, log, and command triggers. When unset, the
+    /// body defaults to the notification serialised as compact JSON
+    /// (matching the echo trigger's output shape).
+    #[must_use]
+    pub fn body_template(mut self, body: impl Into<String>) -> Self {
+        if let TriggerKind::Webhook(cfg) = &mut self.kind {
+            webhook::webhook_set_body_template(cfg, body);
+        }
+        self
+    }
+
     /// Override the retry count.
     ///
     /// `retries: N` means up to `N` additional attempts after the first
@@ -254,10 +377,16 @@ impl Trigger {
 
     /// Set a per-trigger timeout.
     ///
-    /// Meaningful for the command trigger only: bounds the wait on the
-    /// child process with `tokio::time::sleep` raced against
-    /// `child.wait()`; on expiry the dispatcher issues `SIGKILL`,
-    /// reaps the zombie, and returns [`TriggerError::Timeout`].
+    /// Meaningful for the command and webhook triggers. For
+    /// command: bounds the wait on the child process with
+    /// `tokio::time::sleep` raced against `child.wait()`; on expiry
+    /// the dispatcher issues `SIGKILL`, reaps the zombie, and
+    /// returns [`TriggerError::Timeout`]. For webhook: applied as
+    /// `reqwest::RequestBuilder::timeout(t)`; on expiry reqwest
+    /// drops the in-flight request and the dispatcher returns
+    /// [`TriggerError::Timeout`]. The webhook constructor seeds the
+    /// timeout to [`DEFAULT_WEBHOOK_TIMEOUT`] (30s); calling
+    /// `.timeout(d)` overrides it.
     ///
     /// Silently ignored on echo or log triggers: each writes a
     /// buffer-prepared NDJSON line in a single I/O call and the
@@ -277,15 +406,20 @@ impl Trigger {
     /// failure is treated as retryable up to the configured
     /// [`Self::retries`] budget.
     ///
-    /// Meaningful for the command trigger only:
-    /// [`TriggerError::Command`] (non-zero exit) and every
-    /// [`TriggerError::Template`] (any render-time failure: missing
-    /// notification path, missing env var, malformed template) are
-    /// terminal under `fail_fast = true` because they are
-    /// deterministic with respect to the current notification and
-    /// process environment (the same input produces the same
-    /// failure); `Io`, `Encode`, and `Timeout` stay retryable
-    /// because they are genuinely transient.
+    /// Meaningful for the command and webhook triggers.
+    /// [`TriggerError::Command`] (non-zero exit),
+    /// [`TriggerError::Webhook`] with a 4xx status,
+    /// [`TriggerError::WebhookBuild`] (HTTP client rejected the
+    /// rendered request at build time: malformed URL, invalid
+    /// header value), and every [`TriggerError::Template`] (any
+    /// render-time failure: missing notification path, missing env
+    /// var, malformed template) are terminal under `fail_fast =
+    /// true` because they are deterministic with respect to the
+    /// current notification and process environment (the same
+    /// input produces the same failure).
+    /// [`TriggerError::Webhook`] with a 5xx status or `None` status
+    /// (transport error), `Io`, `Encode`, and `Timeout` stay
+    /// retryable because they are genuinely transient.
     ///
     /// Has no effect on echo or log triggers (their errors are
     /// always retryable through the normal retry budget).
@@ -376,124 +510,4 @@ pub(super) enum DispatchOutcome {
     /// Parent or per-stream cancellation fired between triggers or during
     /// a retry backoff sleep.
     Cancelled,
-}
-
-/// Human-readable label naming the kind of trigger that produced a
-/// [`crate::ClientError::TriggerFailed`].
-///
-/// Separate from the crate-private `TriggerKind` enum so future internal
-/// variants (or test-only ones) cannot leak into public error displays.
-///
-/// The `Command` variant intentionally carries no body: a command
-/// trigger's full command string may contain secrets (bearer tokens,
-/// connection URIs), and any redacted summary is still an attack
-/// surface if the secret appears in the visible prefix. The label
-/// displays as the bare string `"command"`; the full command goes
-/// into DEBUG-level structured tracing only.
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TriggerKindLabel {
-    /// The echo trigger (NDJSON to standard output).
-    Echo,
-    /// The log trigger (NDJSON appended to a file at the carried path).
-    Log {
-        /// The configured log file path.
-        path: PathBuf,
-    },
-    /// The command trigger (subprocess spawn). Carries no body to
-    /// avoid leaking secret-bearing command fragments through error
-    /// chains; the full command appears in DEBUG-level tracing only.
-    /// Unix-only (`#[cfg(unix)]`).
-    #[cfg(unix)]
-    Command,
-}
-
-impl std::fmt::Display for TriggerKindLabel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Echo => f.write_str("echo"),
-            Self::Log { path } => write!(f, "log({})", path.display()),
-            #[cfg(unix)]
-            Self::Command => f.write_str("command"),
-        }
-    }
-}
-
-/// Error returned by a single trigger dispatch attempt.
-///
-/// Carried as the `source` of [`crate::ClientError::TriggerFailed`] when a required
-/// trigger fails. The variants cover the failure modes the v1 dispatcher
-/// can produce; the enum is `#[non_exhaustive]` so future triggers (for
-/// example a Webhook trigger with HTTP-status awareness) can add variants
-/// without breaking downstream matches.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum TriggerError {
-    /// Underlying I/O failure (broken pipe writing to stdout, permission
-    /// denied opening the log file, disk full, file vanished, and so on).
-    #[error("io: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// `serde_json` refused to serialise the notification. Highly unlikely
-    /// for the well-typed `Notification` shape, but the variant exists for
-    /// safety.
-    #[error("encode notification: {0}")]
-    Encode(#[from] serde_json::Error),
-
-    /// A command trigger's child process exited with a non-zero
-    /// status. `stderr_tail` is the last 4 KiB of the child's
-    /// stderr, captured into a ring buffer; the head is dropped on
-    /// overflow. Stdout content is suppressed per the
-    /// no-payload-logging rule. Unix-only (`#[cfg(unix)]`).
-    #[cfg(unix)]
-    #[error("command exited {exit_code}: {stderr_tail}")]
-    Command {
-        /// Child process's exit code. `-1` when the child died from
-        /// a signal (Unix sets the exit code to None for
-        /// signal-terminated children; `-1` is the canonical sentinel).
-        exit_code: i32,
-        /// Last 4 KiB of the child's stderr, lossily UTF-8 decoded.
-        stderr_tail: String,
-    },
-
-    /// A trigger attempt exceeded its configured per-trigger timeout.
-    ///
-    /// Surfaced only on triggers that have a meaningful timeout
-    /// (currently the command trigger; echo and log silently ignore
-    /// the [`Trigger::timeout`] setter). The carried duration is the
-    /// timeout that was set, not the actual elapsed time.
-    #[error("trigger timed out after {0:?}")]
-    Timeout(std::time::Duration),
-
-    /// A template substitution failed.
-    ///
-    /// The `context` is a safe static label naming WHICH template
-    /// surface produced the error (`"command"`, `"webhook url"`,
-    /// `"webhook body"`, `"webhook header"`). It is NOT a snippet of
-    /// the raw template source: raw templates may carry secrets
-    /// (e.g., a bearer token baked into a webhook URL), so only safe
-    /// labels reach the public error chain.
-    ///
-    /// The `field` names the specific path or env-var name that
-    /// failed: a JSON path like `"notification.payload.target"` for
-    /// `Missing`, an env-var name like `"SLACK_TOKEN"` for `EnvNotSet`,
-    /// or a safe static label like `"unclosed_braces"` for `BadSyntax`.
-    /// For `BadSyntax` specifically, the `field` carries no fragment
-    /// from the raw template; it names only the parse failure
-    /// category.
-    ///
-    /// The raw template source is logged at `DEBUG` via the
-    /// `client.trigger.template.render_failed` tracing event for
-    /// operators who control the logging sink, but never appears in
-    /// this public variant.
-    #[error("template render in {context} failed at {field}: {kind:?}")]
-    Template {
-        /// Safe static label naming which template surface failed.
-        context: String,
-        /// Specific path or env-var name that failed; for
-        /// `BadSyntax`, a safe static label naming the parse failure.
-        field: String,
-        /// Categorisation of the failure.
-        kind: TemplateErrorKind,
-    },
 }

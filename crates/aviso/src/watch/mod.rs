@@ -140,7 +140,12 @@ pub use phase::{CloseReason, FatalKind, GapReason, ReplayPhase, ResumeStart};
 pub use request::WatchRequest;
 pub use state::WatchState;
 pub use stream::NotificationStream;
-pub use trigger::{TemplateErrorKind, Trigger, TriggerError, TriggerKindLabel};
+#[cfg(unix)]
+pub use trigger::CommandTriggerConfig;
+pub use trigger::{
+    DEFAULT_WEBHOOK_TIMEOUT, EchoConfig, HttpMethod, LogConfig, TemplateErrorKind, Trigger,
+    TriggerConfig, TriggerError, TriggerKindLabel, WebhookTriggerConfig,
+};
 
 pub(crate) use supervisor::{CHANNEL_CAPACITY, run_supervisor};
 pub(crate) use wire::WireWatchRequest;

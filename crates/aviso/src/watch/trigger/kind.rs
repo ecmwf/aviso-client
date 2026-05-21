@@ -5,12 +5,14 @@ use std::path::PathBuf;
 use super::TriggerKindLabel;
 #[cfg(unix)]
 use super::command::CommandConfig;
+use super::webhook::WebhookConfig;
 
 /// Internal description of which built-in trigger a [`super::Trigger`] runs.
 ///
 /// Crate-private; downstream callers configure a `Trigger` through the
-/// public [`super::Trigger::echo`], [`super::Trigger::log`], and
-/// [`super::Trigger::command`] constructors, never by naming this enum.
+/// public [`super::Trigger::echo`], [`super::Trigger::log`],
+/// [`super::Trigger::command`], and [`super::Trigger::webhook`]
+/// constructors, never by naming this enum.
 #[derive(Clone)]
 pub(super) enum TriggerKind {
     Echo,
@@ -19,6 +21,7 @@ pub(super) enum TriggerKind {
     },
     #[cfg(unix)]
     Command(Box<CommandConfig>),
+    Webhook(Box<WebhookConfig>),
     /// Test-only: fails the first `failures_remaining` attempts, then
     /// resolves per `eventual`. Used by unit tests to drive "fail K times
     /// then succeed/fail" patterns deterministically.
@@ -64,6 +67,7 @@ impl std::fmt::Debug for TriggerKind {
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
             #[cfg(unix)]
             Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
+            Self::Webhook(cfg) => f.debug_tuple("Webhook").field(&**cfg).finish(),
             #[cfg(test)]
             Self::TestFailing {
                 failures_remaining,
@@ -93,6 +97,7 @@ pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
         TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
         #[cfg(unix)]
         TriggerKind::Command(_) => TriggerKindLabel::Command,
+        TriggerKind::Webhook(_) => TriggerKindLabel::Webhook,
         #[cfg(test)]
         TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,
         #[cfg(test)]

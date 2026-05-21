@@ -23,6 +23,7 @@ finesse = { workspace = true }
 futures-core = { workspace = true }
 hex = { workspace = true }
 httpdate = { workspace = true }
+humantime-serde = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_jcs = { workspace = true }
