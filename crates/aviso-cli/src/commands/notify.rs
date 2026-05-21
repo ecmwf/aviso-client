@@ -28,7 +28,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use aviso::NotificationRequest;
 
 use crate::client_builder;
@@ -47,12 +47,58 @@ pub(crate) async fn run(resolved: &Resolved, parameters: &str) -> Result<()> {
     }
 
     let client = client_builder::build(resolved, None)?;
-    let response = client
-        .notify(&req)
-        .await
-        .with_context(|| format!("POST /api/v1/notification for event_type={event_type}"))?;
+    let response = match client.notify(&req).await {
+        Ok(r) => r,
+        Err(client_err) => {
+            let hint = hint_for_client_error(&client_err);
+            let mut err = anyhow::Error::from(client_err).context(format!(
+                "POST /api/v1/notification for event_type={event_type}"
+            ));
+            if let Some(h) = hint {
+                err = err.context(format!("suggestion: {h}"));
+            }
+            return Err(err);
+        }
+    };
 
     write_response(resolved, &event_type, &response)
+}
+
+/// Inspects a `ClientError` for known patterns that point to a
+/// specific operator mistake, and returns a one-line hint when a
+/// match is found. Patterns chosen are high-confidence (the server's
+/// own error body unambiguously names the cause); when no pattern
+/// matches we return `None` and the raw `Caused by:` line is left to
+/// speak for itself. The hint is appended as a `suggestion:` context
+/// so `error::format_chain` renders it as a discrete line under the
+/// summary.
+fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
+    let aviso::ClientError::Http { status, body, .. } = err else {
+        return None;
+    };
+    match *status {
+        401 => Some(
+            "credentials are missing, invalid, or expired. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars; verify auth wired up via `aviso config dump --redact` (provider should show `<set; redacted>`)."
+                .to_string(),
+        ),
+        403 => Some(
+            "credentials were accepted but may not have notify permission for this event_type. Contact the server admin; verify the event_type with `aviso schema list`."
+                .to_string(),
+        ),
+        400 if body.contains("missing for notify operation") => Some(
+            "the schema's `required: false` flag applies to listen/replay-time filtering only; for notify, every identifier listed in the schema is required. Run `aviso schema get <TYPE>` for the full identifier set."
+                .to_string(),
+        ),
+        400 if body.contains("Polygon coordinates must be in pairs")
+            || body.contains("Invalid latitude value") =>
+        {
+            Some(
+                "polygon values are a comma-separated list of `lat,lon` pairs (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`). Wrap the value in double quotes so the top-level commas are NOT parsed as parameter separators; the CLI strips the outer quotes before sending."
+                    .to_string(),
+            )
+        }
+        _ => None,
+    }
 }
 
 fn write_response(
@@ -70,7 +116,7 @@ fn write_response(
         output::write_stdout_line(&serde_json::to_string(&value)?)
     } else {
         let line = format!(
-            "notification accepted: event={event_type}, status={status}, request_id={rid}, at={ts}",
+            "notification accepted: event_type={event_type}, status={status}, request_id={rid}, processed_at={ts}",
             status = response.status,
             rid = response.request_id,
             ts = response.processed_at,
@@ -184,6 +230,11 @@ fn build_request_parts(
     for (key, value) in entries {
         match key.as_str() {
             "event" => {
+                if event_type.is_some() {
+                    return Err(usage_error(
+                        "parameter parse: duplicate `event=` key. Each notify accepts exactly one event_type.",
+                    ));
+                }
                 if value.is_empty() {
                     return Err(usage_error(
                         "parameter parse: `event=` requires a non-empty value",
@@ -192,6 +243,11 @@ fn build_request_parts(
                 event_type = Some(value.clone());
             }
             "data" => {
+                if payload.is_some() {
+                    return Err(usage_error(
+                        "parameter parse: duplicate `data=` key. Each notify accepts at most one payload; combine multiple values into a single JSON object or array.",
+                    ));
+                }
                 if value.is_empty() {
                     return Err(usage_error(
                         "parameter parse: `data=` is empty; use `data=\"\"` for an empty JSON string or `data=null` for an explicit null",
@@ -208,6 +264,11 @@ fn build_request_parts(
                 payload = Some(parsed);
             }
             _ => {
+                if identifier.contains_key(key) {
+                    return Err(usage_error(format!(
+                        "parameter parse: duplicate identifier key `{key}`. Each identifier may appear at most once."
+                    )));
+                }
                 identifier.insert(key.clone(), strip_outer_quotes(value));
             }
         }
@@ -390,5 +451,105 @@ mod tests {
             "a\"b",
             "inner quotes do not strip"
         );
+    }
+
+    #[test]
+    fn duplicate_event_key_rejected_with_explicit_diagnostic() {
+        let entries = split_parameters("event=mars,event=dissemination").unwrap();
+        let err = build_request_parts(&entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("duplicate `event="), "{msg}");
+        assert!(msg.contains("exactly one"), "{msg}");
+    }
+
+    #[test]
+    fn duplicate_data_key_rejected_with_combine_hint() {
+        let entries = split_parameters(r#"event=mars,data={"a":1},data={"b":2}"#).unwrap();
+        let err = build_request_parts(&entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("duplicate `data="), "{msg}");
+        assert!(
+            msg.contains("combine") || msg.contains("single JSON"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn duplicate_identifier_key_rejected_naming_the_key() {
+        let entries = split_parameters("event=mars,class=od,class=rd").unwrap();
+        let err = build_request_parts(&entries).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("duplicate identifier"), "{msg}");
+        assert!(msg.contains("class"), "{msg}");
+    }
+
+    #[test]
+    fn hint_for_401_points_at_credentials_setup() {
+        let err = aviso::ClientError::Http {
+            status: 401,
+            body: r#"{"code":"UNAUTHORIZED","message":"Invalid or expired token"}"#.to_string(),
+            request_id: Some("req-xyz".into()),
+        };
+        let hint = hint_for_client_error(&err).expect("401 must yield a hint");
+        assert!(hint.contains("credentials"), "{hint}");
+        assert!(
+            hint.contains("--token") || hint.contains("AVISO_TOKEN"),
+            "{hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_403_calls_out_notify_permission_specifically() {
+        let err = aviso::ClientError::Http {
+            status: 403,
+            body: r#"{"code":"FORBIDDEN"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("403 must yield a hint");
+        assert!(hint.contains("notify permission"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_400_required_field_links_listen_replay_semantics() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"message":"Required field 'date' missing for notify operation"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("400 required-missing must yield a hint");
+        assert!(
+            hint.contains("listen/replay") || hint.contains("filtering"),
+            "hint must explain the schema's `required: false` semantic: {hint}"
+        );
+        assert!(hint.contains("aviso schema get"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_400_polygon_format_calls_out_quoting() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("400 polygon must yield a hint");
+        assert!(hint.contains("polygon"), "{hint}");
+        assert!(hint.contains("double quotes"), "{hint}");
+        assert!(hint.contains("lat,lon"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_unknown_http_status_returns_none() {
+        let err = aviso::ClientError::Http {
+            status: 502,
+            body: "<html>...</html>".to_string(),
+            request_id: None,
+        };
+        assert!(hint_for_client_error(&err).is_none());
+    }
+
+    #[test]
+    fn hint_for_non_http_client_error_returns_none() {
+        let err = aviso::ClientError::Auth("test".into());
+        assert!(hint_for_client_error(&err).is_none());
     }
 }

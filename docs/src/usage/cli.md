@@ -22,7 +22,7 @@ Three workflows cover the bulk of operator usage.
 aviso \
   --base-url https://aviso.example.org \
   --token "$AVISO_TOKEN" \
-  notify "event=mars,class=od,stream=oper,type=fc,data={\"region\":\"north\"}"
+  notify 'event=mars,class=od,stream=oper,date=20260521,domain=g,expver=0001,step=0,time=1200,data={"region":"north"}'
 ```
 
 The single positional argument is a comma-separated `key=value` list (pyaviso parity). Only `event=<TYPE>` is mandatory at the parameter-parsing layer; the server's notify endpoint additionally requires every identifier key listed in the event-type's schema. The schema's `required: false` flag is a **`listen`/`replay`-time filter** semantic (when subscribing, optional identifiers act as wildcards); it does **not** make those identifiers optional for `notify`. Use `aviso schema get <TYPE>` to see the full identifier set the server will demand.
