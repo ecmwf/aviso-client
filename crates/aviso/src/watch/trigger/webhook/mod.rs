@@ -52,6 +52,9 @@ use super::template::{
     CompiledTemplate, TemplateError, TemplateErrorKind, compile, template_error_to_trigger_error,
 };
 
+mod builders;
+pub use builders::DEFAULT_WEBHOOK_TIMEOUT;
+
 #[cfg(test)]
 mod tests;
 
