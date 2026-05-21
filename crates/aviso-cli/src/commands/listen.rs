@@ -155,11 +155,10 @@ async fn drive(
             .unwrap_or_else(|| "<unknown>".to_string());
         match outcome {
             Ok(Ok(())) => {
-                tracing::debug!(
-                    event.name = "cli.listener.exit_clean",
-                    listener_name = %name,
-                    "listener exited cleanly"
-                );
+                // Clean exit is already logged by `cli.listener.end_of_stream`
+                // inside the per-listener task (`listener::spawn_listener_drain`).
+                // A second DEBUG event from the supervisor join point would
+                // be a duplicate of the same lifecycle transition.
             }
             Ok(Err(client_err)) => {
                 tracing::warn!(
