@@ -300,14 +300,6 @@ fn init_tracing(verbose: u8) -> Result<()> {
 }
 
 async fn run(cli: Cli) -> Result<()> {
-    tracing::info!(
-        service.name = "aviso-cli",
-        service.version = aviso::VERSION,
-        event.name = "cli.startup",
-        verbose = cli.verbose,
-        "aviso CLI started"
-    );
-
     let resolved = config::resolve(
         cli.config.as_ref(),
         cli.state_file.as_ref(),
