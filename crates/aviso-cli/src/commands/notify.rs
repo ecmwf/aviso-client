@@ -129,7 +129,7 @@ fn write_response(
             "notification accepted: event_type={event_type}, status={status}, request_id={rid}, processed_at={ts}",
             status = response.status,
             rid = response.request_id,
-            ts = response.processed_at,
+            ts = humanise_timestamp(&response.processed_at),
         );
         output::write_stdout_line(&line)
     }
@@ -210,6 +210,70 @@ fn push_kv(out: &mut Vec<(String, String)>, slice: &str) -> Result<()> {
     let value = slice[eq + 1..].to_string();
     out.push((key, value));
     Ok(())
+}
+
+/// Renders the server's RFC3339 `processed_at` timestamp in a
+/// human-readable shape for the TTY response line.
+///
+/// The server sends nanosecond-precision RFC3339 with a numeric
+/// timezone offset (e.g. `2026-05-21T21:13:45.558918505+00:00`),
+/// which is correct on the wire but visual noise on a terminal.
+/// This helper:
+///
+/// - drops the fractional-seconds component (sub-second precision
+///   is rarely actionable for human-eye verification),
+/// - replaces the `T` date/time separator with a space,
+/// - normalises the UTC notation (`+00:00` or `Z`) to ` UTC`,
+/// - leaves any non-UTC offset (`+02:00`, `-05:00`) verbatim.
+///
+/// Output for the example above: `2026-05-21 21:13:45 UTC`.
+///
+/// The pipe / `--json` form continues to emit the raw server
+/// timestamp unchanged; machine consumers depend on the full
+/// precision and explicit offset format.
+///
+/// Falls back to the raw input on any shape anomaly so the
+/// operator still sees the server's response if the wire format
+/// changes unexpectedly.
+fn humanise_timestamp(raw: &str) -> String {
+    let mut s = raw.to_string();
+    if let Some(dot_idx) = s.find('.') {
+        let tz_offset = s[dot_idx..].find(['+', '-', 'Z']).map(|i| dot_idx + i);
+        match tz_offset {
+            Some(tz_idx) => s = format!("{}{}", &s[..dot_idx], &s[tz_idx..]),
+            None => s.truncate(dot_idx),
+        }
+    }
+    // Replace ONLY the ISO 8601 date/time T separator (the T that
+    // sits between two ASCII digits). A naive `find('T')` would also
+    // match the T inside the "UTC" suffix this very function emits,
+    // breaking idempotency: humanise(humanise(x)) would corrupt the
+    // first T it sees in UTC. The digit-surrounded check anchors the
+    // replacement to the wire format's `YYYY-MM-DDTHH:MM:SS` shape.
+    let bytes = s.as_bytes();
+    let iso_t_idx = bytes.iter().enumerate().find_map(|(i, &b)| {
+        if b == b'T'
+            && i > 0
+            && i + 1 < bytes.len()
+            && bytes[i - 1].is_ascii_digit()
+            && bytes[i + 1].is_ascii_digit()
+        {
+            Some(i)
+        } else {
+            None
+        }
+    });
+    if let Some(i) = iso_t_idx {
+        s.replace_range(i..=i, " ");
+    }
+    if s.ends_with("+00:00") {
+        s.truncate(s.len() - "+00:00".len());
+        s.push_str(" UTC");
+    } else if s.ends_with('Z') {
+        s.truncate(s.len() - 1);
+        s.push_str(" UTC");
+    }
+    s
 }
 
 /// Strips a matched pair of outer `"..."` from an identifier
@@ -574,5 +638,50 @@ mod tests {
     fn hint_for_non_http_client_error_returns_none() {
         let err = aviso::ClientError::Auth("test".into());
         assert!(hint_for_client_error(&err).is_none());
+    }
+
+    #[test]
+    fn humanise_timestamp_standard_nano_precision_utc() {
+        assert_eq!(
+            humanise_timestamp("2026-05-21T21:13:45.558918505+00:00"),
+            "2026-05-21 21:13:45 UTC"
+        );
+    }
+
+    #[test]
+    fn humanise_timestamp_no_fractional_z_suffix() {
+        assert_eq!(
+            humanise_timestamp("2026-05-21T21:13:45Z"),
+            "2026-05-21 21:13:45 UTC"
+        );
+    }
+
+    #[test]
+    fn humanise_timestamp_milli_fractional_non_utc_offset_preserves_offset() {
+        assert_eq!(
+            humanise_timestamp("2026-05-21T21:13:45.5+02:00"),
+            "2026-05-21 21:13:45+02:00",
+            "non-UTC offsets must remain visible so operators in non-UTC environments are not confused about which clock the server is on"
+        );
+    }
+
+    #[test]
+    fn humanise_timestamp_no_timezone_marker_drops_fractional_only() {
+        assert_eq!(
+            humanise_timestamp("2026-05-21T21:13:45.123"),
+            "2026-05-21 21:13:45"
+        );
+    }
+
+    #[test]
+    fn humanise_timestamp_malformed_falls_back_to_raw() {
+        let raw = "not-a-timestamp";
+        assert_eq!(humanise_timestamp(raw), raw);
+    }
+
+    #[test]
+    fn humanise_timestamp_already_humanised_idempotent() {
+        let already = "2026-05-21 21:13:45 UTC";
+        assert_eq!(humanise_timestamp(already), already);
     }
 }
