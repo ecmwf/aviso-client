@@ -59,9 +59,13 @@ const ACCEPTED_FORMS: &str = "accepted forms: pure-digit sequence id (e.g. 42); 
 /// error message names the value and lists the accepted forms.
 pub(crate) fn parse(value: &str) -> anyhow::Result<ResumeStart> {
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
-        if let Ok(seq) = value.parse::<u64>() {
-            return Ok(ResumeStart::AfterSequence(seq));
-        }
+        return match value.parse::<u64>() {
+            Ok(seq) => Ok(ResumeStart::AfterSequence(seq)),
+            Err(_) => Err(usage_error(format!(
+                "parameter parse: --from value `{value}` is digit-only but does not fit in a 64-bit unsigned integer (max {}). Pass a smaller sequence id, or use one of the date forms. {ACCEPTED_FORMS}",
+                u64::MAX
+            ))),
+        };
     }
     if let Ok(date) = NaiveDate::parse_from_str(value, DATE_ONLY_FORMAT) {
         let dt = date
@@ -225,5 +229,20 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("not-a-date"), "{msg}");
         assert!(msg.contains("accepted forms"), "{msg}");
+    }
+
+    #[test]
+    fn digit_only_overflow_reports_out_of_range_not_unrecognised_form() {
+        let too_big = "99999999999999999999999999";
+        let err = parse(too_big).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(too_big),
+            "error should name the input value: {msg}"
+        );
+        assert!(
+            msg.contains("does not fit") && msg.contains("64-bit"),
+            "error should report u64 overflow, not generic 'did not match any accepted form': {msg}"
+        );
     }
 }

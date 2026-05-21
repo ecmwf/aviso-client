@@ -59,12 +59,15 @@ fn build_yaml(resolved: &Resolved, redact: bool) -> String {
         }));
     }
     out.push_str("tls:\n");
-    let _ = writeln!(
-        out,
-        "  ca_bundle_count: {} # from: {}",
-        resolved.tls_ca_bundle_paths.value.len(),
-        source_label(resolved.tls_ca_bundle_paths.source)
-    );
+    let bundle_source = source_label(resolved.tls_ca_bundle_paths.source);
+    if resolved.tls_ca_bundle_paths.value.is_empty() {
+        let _ = writeln!(out, "  ca_bundle: [] # from: {bundle_source}");
+    } else {
+        let _ = writeln!(out, "  ca_bundle: # from: {bundle_source}");
+        for path in &resolved.tls_ca_bundle_paths.value {
+            let _ = writeln!(out, "    - {}", path.display());
+        }
+    }
     let _ = writeln!(
         out,
         "  danger_accept_invalid_certs: {} # from: {}",
@@ -142,10 +145,16 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
             "source": source_label(s.source),
         })),
         "tls": {
-            "ca_bundle_count": resolved.tls_ca_bundle_paths.value.len(),
-            "ca_bundle_source": source_label(resolved.tls_ca_bundle_paths.source),
-            "danger_accept_invalid_certs": resolved.tls_danger_accept_invalid_certs.value,
-            "danger_source": source_label(resolved.tls_danger_accept_invalid_certs.source),
+            "ca_bundle": {
+                "value": resolved.tls_ca_bundle_paths.value.iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>(),
+                "source": source_label(resolved.tls_ca_bundle_paths.source),
+            },
+            "danger_accept_invalid_certs": {
+                "value": resolved.tls_danger_accept_invalid_certs.value,
+                "source": source_label(resolved.tls_danger_accept_invalid_certs.source),
+            },
         },
         "auth": {
             "provider_set": resolved.auth_provider.is_some(),
@@ -244,5 +253,67 @@ mod tests {
     fn redact_not_set_when_auth_absent() {
         let yaml = build_yaml(&fixture(false), true);
         assert!(yaml.contains("<unset>"));
+    }
+
+    #[test]
+    fn yaml_form_lists_ca_bundle_paths_inline_when_non_empty() {
+        let mut r = fixture(false);
+        r.tls_ca_bundle_paths = Sourced {
+            value: vec![
+                PathBuf::from("/etc/ssl/aviso-ca-a.pem"),
+                PathBuf::from("/etc/ssl/aviso-ca-b.pem"),
+            ],
+            source: Source::File,
+        };
+        let yaml = build_yaml(&r, false);
+        assert!(
+            yaml.contains("ca_bundle: # from: file"),
+            "header line: {yaml}"
+        );
+        assert!(
+            yaml.contains("- /etc/ssl/aviso-ca-a.pem"),
+            "first bundle: {yaml}"
+        );
+        assert!(
+            yaml.contains("- /etc/ssl/aviso-ca-b.pem"),
+            "second bundle: {yaml}"
+        );
+        assert!(
+            !yaml.contains("ca_bundle_count"),
+            "old count field should be gone: {yaml}"
+        );
+    }
+
+    #[test]
+    fn yaml_form_shows_empty_inline_list_when_no_bundles() {
+        let yaml = build_yaml(&fixture(false), false);
+        assert!(
+            yaml.contains("ca_bundle: [] # from: default"),
+            "empty bundle should render as inline empty list: {yaml}"
+        );
+    }
+
+    #[test]
+    fn json_form_exposes_ca_bundle_as_value_source_pair() {
+        let mut r = fixture(false);
+        r.tls_ca_bundle_paths = Sourced {
+            value: vec![PathBuf::from("/etc/ssl/aviso-ca.pem")],
+            source: Source::File,
+        };
+        let payload = build_json_payload(&r, false);
+        let tls = payload.get("tls").unwrap();
+        let bundle = tls.get("ca_bundle").unwrap();
+        assert_eq!(
+            bundle.get("source").and_then(serde_json::Value::as_str),
+            Some("file")
+        );
+        let paths: Vec<String> = bundle
+            .get("value")
+            .and_then(serde_json::Value::as_array)
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(paths, vec!["/etc/ssl/aviso-ca.pem".to_string()]);
     }
 }

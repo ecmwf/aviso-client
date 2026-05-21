@@ -61,7 +61,7 @@ The CLI spawns one task per listener; the trigger pipeline handles output. The C
 aviso --config ~/.config/aviso/config.yaml config dump --redact
 ```
 
-The dump shows every resolved field plus a `# from: flag|env|file|default` source-attribution comment. `--redact` masks tokens and passwords. `--json` forces JSON output (the source tags become `source: ...` fields).
+The dump shows the resolved configuration with `# from: flag|env|file|default` source-attribution comments on the layered scalar and list fields (`base_url`, `timeout`, `heartbeat_interval`, `tls.ca_bundle`, `tls.danger_accept_invalid_certs`, `config_path`, `state_file`). The `auth` block is summarised as `provider: <set>`, `<set; redacted>`, or `<unset>` rather than per-field source-tagged: the auth chain composes flag, env, and file layers into a single `Arc<dyn AuthProvider>` and does not surface a single winning source, and even un-redacted output should not name which secret store supplied the live credential. The `listeners` block is summarised by name, event, identifier count, and trigger count. `--redact` masks tokens and passwords. `--json` forces JSON output (the source tags become `source: ...` fields).
 
 ## Subcommand reference
 

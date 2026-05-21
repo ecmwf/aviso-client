@@ -1,6 +1,6 @@
 //! Cross-platform path resolution for the CLI's config and state files.
 //!
-//! User direction (verbatim from the design walk): "Just lets make it
+//! User direction (verbatim from the design walk): "Just let's make it
 //! ~/.config/aviso for the location of the config and the state". The
 //! same directory holds both files on every platform; one place to
 //! back up, consistent across Linux / macOS / Windows even where each
@@ -31,11 +31,14 @@ use crate::exit::usage_error;
 ///    snapshot at test time).
 /// 3. Default: `<home>/.config/aviso/config.yaml`.
 ///
-/// The returned path is rendered absolute via
-/// [`std::path::Path::canonicalize`] when it exists on disk, and
-/// otherwise via `home_dir().join(...)` so a not-yet-created default
-/// file still surfaces as absolute in error messages per Error UX
-/// rule 3.
+/// The returned path is guaranteed absolute. Absolute inputs are
+/// returned as-is (no symlink resolution or `..` normalisation).
+/// Relative inputs are joined with the current working directory
+/// and then best-effort canonicalised via
+/// [`std::path::Path::canonicalize`]; if canonicalisation fails
+/// (e.g. the file does not exist yet) the cwd-joined path is
+/// returned unchanged so a not-yet-created default file still
+/// surfaces as absolute in error messages per Error UX rule 3.
 ///
 /// # Errors
 ///
