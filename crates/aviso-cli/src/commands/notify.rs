@@ -76,6 +76,28 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
     let aviso::ClientError::Http { status, body, .. } = err else {
         return None;
     };
+    // Body-pattern hints are evaluated FIRST and are status-independent.
+    // The aviso-server classifies an operator format mistake as 400 if
+    // validation rejects it before processing, or 500 if processing
+    // surfaces the problem (e.g. PolygonHandler parsing). Both routes
+    // produce the same operator action, so we hint on the body string
+    // regardless of which status the server chose.
+    if body.contains("Polygon coordinates must be in pairs")
+        || body.contains("Invalid latitude value")
+    {
+        return Some(
+            "polygon values are a comma-separated list of `lat,lon` pairs (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`). Wrap the value in double quotes so the top-level commas are NOT parsed as parameter separators; the CLI strips the outer quotes before sending."
+                .to_string(),
+        );
+    }
+    if body.contains("missing for notify operation") {
+        return Some(
+            "the schema's `required: false` flag applies to listen/replay-time filtering only; for notify, every identifier listed in the schema is required. Run `aviso schema get <TYPE>` for the full identifier set."
+                .to_string(),
+        );
+    }
+    // Status-class hints handle auth failures, where the body may be
+    // HTML / empty / vendor-specific, so we rely on the HTTP semantics.
     match *status {
         401 => Some(
             "credentials are missing, invalid, or expired. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars; verify auth wired up via `aviso config dump --redact` (provider should show `<set; redacted>`)."
@@ -85,18 +107,6 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
             "credentials were accepted but may not have notify permission for this event_type. Contact the server admin; verify the event_type with `aviso schema list`."
                 .to_string(),
         ),
-        400 if body.contains("missing for notify operation") => Some(
-            "the schema's `required: false` flag applies to listen/replay-time filtering only; for notify, every identifier listed in the schema is required. Run `aviso schema get <TYPE>` for the full identifier set."
-                .to_string(),
-        ),
-        400 if body.contains("Polygon coordinates must be in pairs")
-            || body.contains("Invalid latitude value") =>
-        {
-            Some(
-                "polygon values are a comma-separated list of `lat,lon` pairs (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`). Wrap the value in double quotes so the top-level commas are NOT parsed as parameter separators; the CLI strips the outer quotes before sending."
-                    .to_string(),
-            )
-        }
         _ => None,
     }
 }
@@ -535,6 +545,19 @@ mod tests {
         assert!(hint.contains("polygon"), "{hint}");
         assert!(hint.contains("double quotes"), "{hint}");
         assert!(hint.contains("lat,lon"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_500_polygon_format_also_fires_status_independent() {
+        let err = aviso::ClientError::Http {
+            status: 500,
+            body: r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err)
+            .expect("polygon hint must fire on 500 too (server may classify as 500 when caught during processing rather than validation)");
+        assert!(hint.contains("polygon"), "{hint}");
+        assert!(hint.contains("double quotes"), "{hint}");
     }
 
     #[test]
