@@ -88,10 +88,16 @@ fn no_listeners_error(resolved: &Resolved, listener_files: &[PathBuf]) -> anyhow
             .collect::<Vec<_>>()
             .join(", ")
     };
-    usage_error(format!(
-        "no listeners to run.\nchecked positional arguments: {positional}\nchecked config file: {} (no `listeners:` section)\nfix: pass listener YAML files as positional arguments (e.g., `aviso listen my_listeners.yaml`), or add a `listeners:` block to the config file. See `aviso listen --help` for details.",
-        resolved.config_path.display()
-    ))
+    let at_line = format!(
+        "at: {} (no `listeners:` section)",
+        resolved.config_path.value.display()
+    );
+    let suggestion = format!(
+        "suggestion: pass listener YAML files as positional arguments (e.g., `aviso listen my_listeners.yaml`), or add a `listeners:` block to the config file. (Positional arguments checked: {positional}.) See `aviso listen --help` for details."
+    );
+    usage_error("no listeners to run")
+        .context(at_line)
+        .context(suggestion)
 }
 
 async fn drive(

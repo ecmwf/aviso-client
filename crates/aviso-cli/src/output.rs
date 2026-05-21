@@ -18,14 +18,18 @@ use std::io::{self, IsTerminal, Write};
 
 use anyhow::{Context, Result};
 
-/// Writes `line` to stdout followed by a newline, atomically.
+/// Writes `line` to stdout followed by a newline.
 ///
-/// The buffer-then-write shape (`Vec<u8>` carrying `line.as_bytes()`
-/// plus a trailing `\n`, then one `write_all` against a locked
-/// stdout handle) matches the Echo trigger's atomicity contract:
-/// the entire line lands in a single syscall on the happy path, so
-/// a broken pipe cannot leave a half-written line between the body
-/// and the terminator.
+/// Builds an owned `Vec<u8>` (`line.as_bytes()` plus a trailing
+/// `\n`), acquires a single locked stdout handle, then calls
+/// [`std::io::Write::write_all`]. The lock serialises this write
+/// against any other thread that also acquires the lock, so no
+/// other locked writer can interleave bytes between the body and
+/// the terminator. `write_all` itself does not guarantee a single
+/// underlying syscall: it loops internally as the OS reports
+/// partial writes, so the wire-level atomicity claim is "no other
+/// LOCKED writer interleaves with us", not "exactly one write(2)
+/// hits the FD".
 ///
 /// Returns an `anyhow::Result` rather than the raw `io::Result` so
 /// callers can attach context (`.context("writing notify response")`)
