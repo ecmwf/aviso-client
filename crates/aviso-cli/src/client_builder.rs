@@ -11,11 +11,13 @@
 //! branch. Each `--ca-bundle` path is read once, parsed via
 //! `reqwest::Certificate::from_pem`, and threaded into the
 //! builder; PEM read or parse failures surface as a usage error
-//! naming the offending file.
+//! naming the offending file (per Error UX rule 1: file-related
+//! input mistakes exit 2).
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use aviso::state::{JsonFileStore, MemoryStore, StateStore};
 use aviso::{AvisoClient, AvisoClientBuilder};
 
 use crate::config::Resolved;
@@ -27,7 +29,15 @@ use crate::exit::usage_error;
 /// Optional fields (`timeout`, `heartbeat_interval`, `auth_provider`,
 /// `ca_bundle`, `danger_accept_invalid_certs`) flow through to the
 /// matching builder setters only when set.
-pub(crate) fn build(resolved: &Resolved) -> Result<AvisoClient> {
+///
+/// `state_store` controls the supervisor's resume behaviour:
+/// `Some(store)` wires the JsonFileStore (or MemoryStore when
+/// `--no-state-store` is set); `None` leaves the supervisor without
+/// a state store (no persistent resume).
+pub(crate) fn build(
+    resolved: &Resolved,
+    state_store: Option<Arc<dyn StateStore>>,
+) -> Result<AvisoClient> {
     let base_url = resolved
         .base_url
         .as_ref()
@@ -51,15 +61,56 @@ pub(crate) fn build(resolved: &Resolved) -> Result<AvisoClient> {
         builder = builder.auth(Arc::clone(provider));
     }
     for path in &resolved.tls_ca_bundle_paths.value {
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("read --ca-bundle PEM file: {}", path.display()))?;
-        let cert = reqwest::Certificate::from_pem(&bytes)
-            .with_context(|| format!("parse --ca-bundle PEM file: {}", path.display()))?;
+        let bytes = std::fs::read(path).map_err(|e| {
+            usage_error(format!(
+                "could not read --ca-bundle PEM file `{}`: {e}",
+                path.display()
+            ))
+        })?;
+        let cert = reqwest::Certificate::from_pem(&bytes).map_err(|e| {
+            usage_error(format!(
+                "--ca-bundle PEM file `{}` did not parse as an X.509 certificate: {e}",
+                path.display()
+            ))
+        })?;
         builder = builder.ca_bundle(cert);
     }
     if resolved.tls_danger_accept_invalid_certs.value {
         builder = builder.danger_accept_invalid_certs(true);
     }
+    if let Some(store) = state_store {
+        builder = builder.state_store(store);
+    }
 
     builder.build().context("build aviso client")
+}
+
+/// Resolves the per-invocation [`StateStore`] for the listen / replay
+/// subcommands.
+///
+/// `--no-state-store` -> [`MemoryStore`].
+/// Otherwise [`JsonFileStore::open`] against the resolved state path;
+/// the parent directory is created via `std::fs::create_dir_all` on
+/// first call so an out-of-the-box `~/.config/aviso/` invocation
+/// succeeds without asking the operator to `mkdir -p` ahead of time.
+pub(crate) async fn build_state_store(
+    resolved: &Resolved,
+    no_state_store: bool,
+) -> Result<Arc<dyn StateStore>> {
+    if no_state_store {
+        return Ok(Arc::new(MemoryStore::new()) as Arc<dyn StateStore>);
+    }
+    let path = &resolved.state_path.value;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "create parent directory for state file: {}",
+                parent.display()
+            )
+        })?;
+    }
+    let store = JsonFileStore::open(path.clone())
+        .await
+        .with_context(|| format!("open JsonFileStore at {}", path.display()))?;
+    Ok(Arc::new(store) as Arc<dyn StateStore>)
 }

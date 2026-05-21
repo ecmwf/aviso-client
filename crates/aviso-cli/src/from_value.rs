@@ -58,8 +58,10 @@ const ACCEPTED_FORMS: &str = "accepted forms: pure-digit sequence id (e.g. 42); 
 /// when `value` matches none of the seven accepted forms; the
 /// error message names the value and lists the accepted forms.
 pub(crate) fn parse(value: &str) -> anyhow::Result<ResumeStart> {
-    if let Ok(seq) = value.parse::<u64>() {
-        return Ok(ResumeStart::AfterSequence(seq));
+    if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(seq) = value.parse::<u64>() {
+            return Ok(ResumeStart::AfterSequence(seq));
+        }
     }
     if let Ok(date) = NaiveDate::parse_from_str(value, DATE_ONLY_FORMAT) {
         let dt = date
@@ -197,6 +199,23 @@ mod tests {
         assert_eq!(
             parse_date("2024-01-15T14:30:45.123456789Z"),
             "2024-01-15T14:30:45.123456Z"
+        );
+    }
+
+    #[test]
+    fn leading_plus_sign_not_treated_as_pure_digit() {
+        let err = parse("+42").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("+42"), "{msg}");
+    }
+
+    #[test]
+    fn whitespace_padded_digit_not_treated_as_pure_digit() {
+        let err = parse(" 42").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("42") || msg.contains("accepted forms"),
+            "{msg}"
         );
     }
 

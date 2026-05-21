@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use aviso::watch::ResumeStart;
 
+use crate::cancel;
 use crate::client_builder;
 use crate::config::{ListenerSpec, Resolved};
 use crate::exit::usage_error;
@@ -41,25 +42,39 @@ pub(crate) async fn run(
     let spec = resolve_listener(resolved, listener_files, listener_name, event, identifiers)?;
     let req = listener::build_replay_request(&spec, cursor);
 
-    let client = client_builder::build(resolved)?;
+    let client = client_builder::build(resolved, None)?;
+    let mut cancel_rx = cancel::install();
     let mut stream = client.watch(req)?;
-    while let Some(item) = stream.recv().await {
-        match item {
-            Ok(notification) => {
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel_rx.changed() => {
                 tracing::info!(
-                    event.name = "cli.replay.notification",
+                    event.name = "cli.replay.cancelled",
                     listener_name = %spec.name.as_deref().unwrap_or(&spec.event),
-                    event_type = %notification.event_type,
-                    sequence = notification.sequence,
-                    "received replay notification"
+                    "replay cancelled by signal; exiting cleanly"
                 );
+                return Ok(());
             }
-            Err(e) => {
-                return Err(e).context("draining replay stream");
+            item = stream.recv() => {
+                match item {
+                    Some(Ok(notification)) => {
+                        tracing::info!(
+                            event.name = "cli.replay.notification",
+                            listener_name = %spec.name.as_deref().unwrap_or(&spec.event),
+                            event_type = %notification.event_type,
+                            sequence = notification.sequence,
+                            "received replay notification"
+                        );
+                    }
+                    Some(Err(e)) => {
+                        return Err(e).context("draining replay stream");
+                    }
+                    None => return Ok(()),
+                }
             }
         }
     }
-    Ok(())
 }
 
 fn resolve_listener(

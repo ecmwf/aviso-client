@@ -152,7 +152,7 @@ The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` i
 
 ## `--from <VALUE>` formats
 
-`aviso replay --from <VALUE>` accepts seven input forms, tried in this order:
+Both `aviso replay --from <VALUE>` (mandatory) and `aviso listen --from <VALUE>` (optional override; when set, applies uniformly to every resolved listener and overrides any per-YAML `from_id` / `from_date`) accept seven input forms, tried in this order:
 
 1. **Pure-digit `u64`** -> sequence id. Examples: `42`, `1234567`.
 2. `YYYY-MM-DD` -> midnight UTC. Example: `2024-01-15`.
@@ -286,9 +286,9 @@ The destructive admin commands require explicit confirmation. Add `--yes` to ack
 
 Either pass listener YAML files as positional arguments to `aviso listen`, or add a `listeners:` block to the global config (`~/.config/aviso/config.yaml` by default).
 
-**`error: parameter parse: --from value '20240115' did not match any accepted form` (when the operator meant the date)**
+**`--from 20240115` resolves as sequence id 20240115, not the date 15 January 2024**
 
-Pure-digit input is always a sequence id, not a date. Use the dashed form `--from 2024-01-15`.
+Pure-digit input is always treated as a sequence id (Amendment H ambiguity rule). The CLI accepts the compact eight-digit input without error, but routes it through `from_id`, not `from_date`. To pass a date, use the dashed form `--from 2024-01-15`. Verify the routed cursor by checking the tracing output at INFO level for `cli.replay.notification` events (sequence numbers near your starting id indicate id routing; events from the date you meant indicate date routing).
 
 **The CLI loops indefinitely on `aviso listen` against a finite SSE stream**
 

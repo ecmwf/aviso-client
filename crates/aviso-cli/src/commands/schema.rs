@@ -18,7 +18,7 @@ use crate::output;
 
 /// Runs `aviso schema list`.
 pub(crate) async fn run_list(resolved: &Resolved) -> Result<()> {
-    let client = client_builder::build(resolved)?;
+    let client = client_builder::build(resolved, None)?;
     let catalogue = client.schema().await.context("GET /api/v1/schema")?;
 
     if output::use_ndjson(resolved.force_json) {
@@ -40,7 +40,7 @@ pub(crate) async fn run_list(resolved: &Resolved) -> Result<()> {
 
 /// Runs `aviso schema get <EVENT_TYPE>`.
 pub(crate) async fn run_get(resolved: &Resolved, event_type: &str) -> Result<()> {
-    let client = client_builder::build(resolved)?;
+    let client = client_builder::build(resolved, None)?;
     let response = client
         .schema_for(event_type)
         .await

@@ -156,6 +156,13 @@ enum Commands {
         /// configured `state_file`.
         #[arg(long)]
         no_state_store: bool,
+
+        /// Listener-level cursor override applied uniformly to every
+        /// resolved listener. Accepts the same seven forms as
+        /// `aviso replay --from`. When set, the listener's per-YAML
+        /// `from_id` / `from_date` is overridden.
+        #[arg(long, value_name = "VALUE")]
+        from: Option<String>,
     },
 
     /// Replay historical notifications from a server-side cursor.
@@ -270,10 +277,16 @@ fn init_tracing(verbose: u8) -> Result<()> {
         _ => LevelFilter::TRACE,
     };
 
-    let filter = EnvFilter::builder()
-        .with_default_directive(default.into())
-        .with_env_var("AVISO_LOG")
-        .from_env_lossy();
+    let filter = if verbose > 0 {
+        EnvFilter::builder()
+            .with_default_directive(default.into())
+            .parse_lossy("")
+    } else {
+        EnvFilter::builder()
+            .with_default_directive(default.into())
+            .with_env_var("AVISO_LOG")
+            .from_env_lossy()
+    };
 
     fmt()
         .with_env_filter(filter)
@@ -331,7 +344,10 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Listen {
             listener_files,
             no_state_store,
-        } => commands::listen::run(&resolved, &listener_files, no_state_store).await,
+            from,
+        } => {
+            commands::listen::run(&resolved, &listener_files, no_state_store, from.as_deref()).await
+        }
         Commands::Replay {
             listener,
             event,
