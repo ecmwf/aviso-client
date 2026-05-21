@@ -122,6 +122,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "directories",
+ "humantime",
  "humantime-serde",
  "predicates",
  "reqwest",

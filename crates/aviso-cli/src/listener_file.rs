@@ -20,6 +20,7 @@ use serde::Deserialize;
 use serde_norway as yaml;
 
 use crate::config::ListenerSpec;
+use crate::paths;
 
 /// Top-level shape of a positional listener YAML file.
 #[derive(Debug, Clone, Deserialize)]
@@ -40,10 +41,15 @@ pub(crate) struct ListenerFile {
 /// I/O failure on any file (file not readable, permission denied,
 /// etc.), or YAML parse failure (with file:line:col surfaced via
 /// the serde_norway Display impl).
-pub(crate) fn load_concatenated(paths: &[std::path::PathBuf]) -> Result<Vec<ListenerSpec>> {
+pub(crate) fn load_concatenated(
+    listener_paths: &[std::path::PathBuf],
+) -> Result<Vec<ListenerSpec>> {
     let mut out = Vec::new();
-    for path in paths {
-        let listeners = load_one(path).with_context(|| format!("at: {}", path.display()))?;
+    for path in listener_paths {
+        let absolute =
+            paths::absolutize(path).with_context(|| format!("at: {}", path.display()))?;
+        let listeners =
+            load_one(&absolute).with_context(|| format!("at: {}", absolute.display()))?;
         out.extend(listeners);
     }
     Ok(out)
@@ -91,6 +97,22 @@ mod tests {
         assert!(
             msg.contains("bogus") || msg.contains("unknown field"),
             "{msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_listener_path_in_error_is_rendered_absolute() {
+        let rel = std::path::PathBuf::from("aviso-test-nonexistent-listener-xyz.yaml");
+        let err = load_concatenated(std::slice::from_ref(&rel)).unwrap_err();
+        let chain = err
+            .chain()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            chain.contains("/aviso-test-nonexistent-listener-xyz.yaml"),
+            "error chain should contain absolute path (cwd-joined), got: {chain}"
         );
     }
 }

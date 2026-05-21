@@ -22,6 +22,7 @@ use aviso::{AvisoClient, AvisoClientBuilder};
 
 use crate::config::Resolved;
 use crate::exit::usage_error;
+use crate::paths;
 
 /// Builds an `AvisoClient` from the resolved CLI configuration.
 ///
@@ -102,7 +103,7 @@ pub(crate) async fn build_state_store(
     }
     let path = &resolved.state_path.value;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| {
+        paths::ensure_secure_dir(parent).with_context(|| {
             format!(
                 "create parent directory for state file: {}",
                 parent.display()

@@ -29,6 +29,7 @@ use serde::Deserialize;
 use serde_norway as yaml;
 
 use crate::auth as cli_auth;
+use crate::exit::usage_error;
 use crate::paths;
 
 /// YAML schema for the CLI's config file.
@@ -160,9 +161,10 @@ pub(crate) struct Resolved {
 /// Walks the precedence layers and produces a [`Resolved`].
 ///
 /// The `cli_*` arguments come from the parsed clap `Cli`. The
-/// environment is read via `std::env::var`; non-UTF-8 env values
-/// surface as `ClientError::Config` from the underlying lib helpers
-/// and propagate verbatim.
+/// environment is read via [`read_env`], which surfaces a usage
+/// error (exit 2) when an `AVISO_*` env var is set but its value
+/// is not valid UTF-8 rather than silently falling back to a
+/// lower-precedence layer.
 ///
 /// # Errors
 ///
@@ -170,6 +172,8 @@ pub(crate) struct Resolved {
 ///   `<line>:<col>` location surfaced via the `serde_norway`
 ///   `Display` impl).
 /// - Invalid auth combination (empty `--token`, etc.).
+/// - Non-UTF-8 value in any `AVISO_*` env var (surfaced as a usage
+///   error naming the offending variable).
 /// - Home directory not resolvable AND no `--config` / env override
 ///   supplied (rare; needs to be a deliberate environment for the
 ///   home-dir lookup to fail).
@@ -190,9 +194,9 @@ pub(crate) fn resolve(
     cli_no_color: bool,
     cli_verbose: u8,
 ) -> Result<Resolved> {
-    let env_config_path = read_env("AVISO_CLIENT_CONFIG_FILE");
-    let env_state_path = read_env("AVISO_STATE_FILE");
-    let env_base_url = read_env("AVISO_BASE_URL");
+    let env_config_path = read_env("AVISO_CLIENT_CONFIG_FILE")?;
+    let env_state_path = read_env("AVISO_STATE_FILE")?;
+    let env_base_url = read_env("AVISO_BASE_URL")?;
 
     let config_path = {
         let value = paths::resolve_config_path(cli_config, env_config_path.as_deref())?;
@@ -332,10 +336,13 @@ fn resolve_tls(
     (ca_bundle, danger)
 }
 
-fn read_env(name: &str) -> Option<String> {
+fn read_env(name: &str) -> Result<Option<String>> {
     match std::env::var(name) {
-        Ok(v) if !v.is_empty() => Some(v),
-        _ => None,
+        Ok(v) if !v.is_empty() => Ok(Some(v)),
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(raw)) => Err(usage_error(format!(
+            "env var {name} is set but its value is not valid UTF-8 ({raw:?}); set a UTF-8 value or unset the variable"
+        ))),
     }
 }
 

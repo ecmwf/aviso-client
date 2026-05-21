@@ -12,6 +12,7 @@
 //! dumped output is safe to paste into an issue tracker.
 
 use std::fmt::Write as _;
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -51,12 +52,14 @@ fn build_yaml(resolved: &Resolved, redact: bool) -> String {
         out.push_str(&yaml_line("base_url", "<unset>", Source::Default));
     }
     if let Some(t) = &resolved.timeout {
-        out.push_str(&yaml_sourced("timeout", t, |d| format!("{}s", d.as_secs())));
+        out.push_str(&yaml_sourced("timeout", t, format_duration_lossless));
     }
     if let Some(h) = &resolved.heartbeat_interval {
-        out.push_str(&yaml_sourced("heartbeat_interval", h, |d| {
-            format!("{}s", d.as_secs())
-        }));
+        out.push_str(&yaml_sourced(
+            "heartbeat_interval",
+            h,
+            format_duration_lossless,
+        ));
     }
     out.push_str("tls:\n");
     let bundle_source = source_label(resolved.tls_ca_bundle_paths.source);
@@ -136,12 +139,12 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
             "value": s.value,
             "source": source_label(s.source),
         })),
-        "timeout_seconds": resolved.timeout.as_ref().map(|s| json!({
-            "value": s.value.as_secs(),
+        "timeout": resolved.timeout.as_ref().map(|s| json!({
+            "value": format_duration_lossless(&s.value),
             "source": source_label(s.source),
         })),
-        "heartbeat_interval_seconds": resolved.heartbeat_interval.as_ref().map(|s| json!({
-            "value": s.value.as_secs(),
+        "heartbeat_interval": resolved.heartbeat_interval.as_ref().map(|s| json!({
+            "value": format_duration_lossless(&s.value),
             "source": source_label(s.source),
         })),
         "tls": {
@@ -174,6 +177,14 @@ fn source_label(source: Source) -> &'static str {
         Source::File => "file",
         Source::Default => "default",
     }
+}
+
+/// Renders a `Duration` losslessly via `humantime::format_duration`,
+/// so sub-second values like `Duration::from_millis(1500)` surface
+/// as `"1s 500ms"` (round-trips through `humantime-serde`) instead
+/// of being truncated to `"1s"` by `as_secs()`.
+fn format_duration_lossless(d: &Duration) -> String {
+    humantime::format_duration(*d).to_string()
 }
 
 #[cfg(test)]
@@ -290,6 +301,52 @@ mod tests {
         assert!(
             yaml.contains("ca_bundle: [] # from: default"),
             "empty bundle should render as inline empty list: {yaml}"
+        );
+    }
+
+    #[test]
+    fn yaml_form_preserves_sub_second_duration_precision() {
+        let mut r = fixture(false);
+        r.timeout = Some(Sourced {
+            value: Duration::from_millis(1500),
+            source: Source::File,
+        });
+        r.heartbeat_interval = Some(Sourced {
+            value: Duration::from_micros(250),
+            source: Source::File,
+        });
+        let yaml = build_yaml(&r, false);
+        assert!(
+            yaml.contains("timeout: 1s 500ms"),
+            "1500ms should render as 1s 500ms (not 1s), got: {yaml}"
+        );
+        assert!(
+            yaml.contains("heartbeat_interval: 250us"),
+            "250us should render as 250us (not 0s), got: {yaml}"
+        );
+    }
+
+    #[test]
+    fn json_form_preserves_sub_second_duration_precision() {
+        let mut r = fixture(false);
+        r.timeout = Some(Sourced {
+            value: Duration::from_millis(1500),
+            source: Source::File,
+        });
+        let payload = build_json_payload(&r, false);
+        let timeout = payload.get("timeout").unwrap();
+        assert_eq!(
+            timeout.get("value").and_then(serde_json::Value::as_str),
+            Some("1s 500ms"),
+            "JSON timeout should be lossless humantime string, got: {payload}"
+        );
+        assert_eq!(
+            timeout.get("source").and_then(serde_json::Value::as_str),
+            Some("file")
+        );
+        assert!(
+            payload.get("timeout_seconds").is_none(),
+            "old timeout_seconds field should be gone: {payload}"
         );
     }
 
