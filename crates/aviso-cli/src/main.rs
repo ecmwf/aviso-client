@@ -17,6 +17,9 @@ mod commands;
 mod config;
 mod error;
 mod exit;
+mod from_value;
+mod listener;
+mod listener_file;
 mod output;
 mod paths;
 
@@ -323,15 +326,28 @@ async fn run(cli: Cli) -> Result<()> {
         "resolved configuration"
     );
 
-    let _cancel = cancel::install();
-
     match cli.command {
         Commands::Notify { parameters } => commands::notify::run(&resolved, &parameters).await,
-        Commands::Listen { .. } => {
-            anyhow::bail!("aviso listen is not yet implemented in this build")
-        }
-        Commands::Replay { .. } => {
-            anyhow::bail!("aviso replay is not yet implemented in this build")
+        Commands::Listen {
+            listener_files,
+            no_state_store,
+        } => commands::listen::run(&resolved, &listener_files, no_state_store).await,
+        Commands::Replay {
+            listener,
+            event,
+            identifiers,
+            from,
+            listener_files,
+        } => {
+            commands::replay::run(
+                &resolved,
+                &listener_files,
+                listener.as_deref(),
+                event.as_deref(),
+                identifiers.as_deref(),
+                &from,
+            )
+            .await
         }
         Commands::Schema(sub) => match sub {
             SchemaSubcommand::List => commands::schema::run_list(&resolved).await,

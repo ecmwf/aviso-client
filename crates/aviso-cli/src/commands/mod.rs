@@ -5,5 +5,7 @@
 
 pub(crate) mod completions;
 pub(crate) mod config_dump;
+pub(crate) mod listen;
 pub(crate) mod notify;
+pub(crate) mod replay;
 pub(crate) mod schema;
