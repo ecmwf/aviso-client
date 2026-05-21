@@ -67,20 +67,39 @@ pub(crate) fn provider_from_flags(
 
 /// Reads credentials from the process environment.
 ///
-/// Returns `Ok(None)` when neither `AVISO_TOKEN` nor
-/// `AVISO_USERNAME`+`AVISO_PASSWORD` is set (the lib's
-/// `from_process_env` returns `Err(ClientError::Auth)` in that
-/// case; this wrapper translates that into "no env tier available").
-/// Propagates all other errors verbatim: non-UTF-8 env values
-/// surface as `ClientError::Config` from the lib and DO propagate.
+/// Returns `Ok(None)` ONLY when none of `AVISO_TOKEN`,
+/// `AVISO_USERNAME`, `AVISO_PASSWORD` are set to non-empty values
+/// (true anonymous fallback). When at least one of those env vars
+/// is set but the combination is unusable (e.g. `AVISO_USERNAME`
+/// alone without `AVISO_PASSWORD`), the underlying
+/// `Env::from_process_env` returns `Err(ClientError::Auth)`; this
+/// wrapper converts that into a usage error (exit 2) naming the
+/// misconfiguration so the operator is NOT silently downgraded to
+/// the file or anonymous tier they did not ask for.
+///
+/// Propagates `ClientError::Config` (non-UTF-8 env values) verbatim.
 pub(crate) fn provider_from_env() -> Result<Option<Arc<dyn AuthProvider>>> {
+    let any_set = any_auth_env_var_set();
     match Env::from_process_env() {
         Ok(env) => Ok(Some(Arc::new(env))),
-        Err(ClientError::Auth(_)) => Ok(None),
+        Err(ClientError::Auth(_)) if !any_set => Ok(None),
+        Err(ClientError::Auth(reason)) => Err(crate::exit::usage_error(format!(
+            "env auth is misconfigured: {reason}. Set AVISO_TOKEN, OR set BOTH AVISO_USERNAME and AVISO_PASSWORD, OR unset all three to fall back to the config-file auth block."
+        ))),
         Err(other) => {
             Err(anyhow::Error::from(other)).context("read auth credentials from environment")
         }
     }
+}
+
+/// Returns `true` when at least one of the auth env vars is set to
+/// a non-empty value. The set-but-empty case is treated as unset
+/// because shells routinely render `unset X` and `X=` identically
+/// in scripts and operators expect equivalent semantics.
+fn any_auth_env_var_set() -> bool {
+    ["AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"]
+        .iter()
+        .any(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()))
 }
 
 /// Builds an auth provider from the file tier (a parsed `[auth]`

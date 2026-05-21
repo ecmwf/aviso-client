@@ -141,6 +141,28 @@ fn rule_6_no_listeners_includes_fix_guidance() {
 }
 
 #[test]
+fn rule_6_partial_auth_env_exits_2_with_misconfig_message() {
+    aviso()
+        .env("AVISO_USERNAME", "alice")
+        .args(["--base-url", "http://unused", "schema", "list"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("misconfigured").or(contains("AVISO_PASSWORD")));
+}
+
+#[test]
+fn rule_6_partial_auth_env_password_only_exits_2_with_misconfig_message() {
+    aviso()
+        .env("AVISO_PASSWORD", "wonderland")
+        .args(["--base-url", "http://unused", "schema", "list"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("misconfigured").or(contains("AVISO_USERNAME")));
+}
+
+#[test]
 fn rule_7_caused_by_chain_present_for_layered_errors() {
     let dir = tempdir().unwrap();
     let bad = dir.path().join("config.yaml");

@@ -34,6 +34,7 @@ use crate::exit::usage_error;
 use crate::from_value;
 use crate::listener;
 use crate::listener_file;
+use crate::paths;
 
 /// Runs the `aviso listen` subcommand.
 pub(crate) async fn run(
@@ -101,8 +102,16 @@ fn no_listeners_error(resolved: &Resolved, listener_files: &[PathBuf]) -> anyhow
         // this invocation, so the config file is intentionally not
         // consulted here. Attribute the empty resolution to the
         // positional files instead of mentioning the config path.
+        // Each path is rendered absolute via paths::absolutize so
+        // the resulting at: lines obey Error UX rule 3 regardless
+        // of whether the operator typed a relative or absolute path
+        // on the command line.
         for path in listener_files {
-            err = err.context(format!("at: {} (resolved to 0 entries)", path.display()));
+            let display_path = paths::absolutize(path).unwrap_or_else(|_| path.clone());
+            err = err.context(format!(
+                "at: {} (resolved to 0 entries)",
+                display_path.display()
+            ));
         }
         err = err.context(
             "suggestion: ensure each positional listener file contains a non-empty `listeners:` block, or omit the positional arguments to fall back to the global config's `listeners:` block. See `aviso listen --help` for details.",
