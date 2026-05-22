@@ -8,7 +8,89 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+/// Color output mode for the global `--color auto|always|never` flag.
+///
+/// Translated to a per-stream `bool` via [`color_enabled`]: tracing
+/// uses `stderr`'s TTY state; the echo trigger uses `stdout`'s. The
+/// `auto` variant honours the `NO_COLOR` env var; `always` overrides
+/// it (operator-supplied explicit override wins); `never` always
+/// suppresses ANSI escapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ColorMode {
+    /// Emit colors when the target output stream is a TTY and `NO_COLOR`
+    /// is unset.
+    Auto,
+    /// Emit colors regardless of TTY state. Overrides `NO_COLOR`.
+    Always,
+    /// Never emit colors. Default.
+    Never,
+}
+
+/// Pure helper that resolves a `ColorMode` to a `bool` for a specific
+/// output stream.
+///
+/// Inputs are explicit (no env access, no TTY probing) so the function
+/// is unit-testable without `std::env::set_var` (which is `unsafe` in
+/// Rust 2024 and unsound to call after worker threads have spawned).
+/// The CLI computes the inputs once at startup and passes the result
+/// to (a) the tracing subscriber's `.with_ansi(...)` and (b) the lib's
+/// [`aviso::set_echo_color_enabled`] before any listener spawns.
+fn color_enabled(mode: ColorMode, is_terminal: bool, no_color_present: bool) -> bool {
+    match mode {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => !no_color_present && is_terminal,
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code: unwrap on pure logic assertions is the expected diagnostic"
+)]
+mod tests {
+    use super::{ColorMode, color_enabled};
+
+    #[test]
+    fn always_emits_color_regardless_of_tty_and_no_color() {
+        assert!(color_enabled(ColorMode::Always, false, false));
+        assert!(color_enabled(ColorMode::Always, false, true));
+        assert!(color_enabled(ColorMode::Always, true, false));
+        assert!(color_enabled(ColorMode::Always, true, true));
+    }
+
+    #[test]
+    fn never_suppresses_color_regardless_of_tty_and_no_color() {
+        assert!(!color_enabled(ColorMode::Never, false, false));
+        assert!(!color_enabled(ColorMode::Never, false, true));
+        assert!(!color_enabled(ColorMode::Never, true, false));
+        assert!(!color_enabled(ColorMode::Never, true, true));
+    }
+
+    #[test]
+    fn auto_emits_color_only_when_tty_and_no_color_unset() {
+        assert!(color_enabled(ColorMode::Auto, true, false));
+        assert!(
+            !color_enabled(ColorMode::Auto, true, true),
+            "NO_COLOR set => suppressed in auto mode"
+        );
+        assert!(
+            !color_enabled(ColorMode::Auto, false, false),
+            "non-TTY => suppressed in auto mode"
+        );
+        assert!(!color_enabled(ColorMode::Auto, false, true));
+    }
+
+    #[test]
+    fn always_overrides_no_color_per_explicit_operator_choice() {
+        assert!(
+            color_enabled(ColorMode::Always, true, true),
+            "--color always must override NO_COLOR (explicit operator override wins)"
+        );
+    }
+}
 
 mod auth;
 mod cancel;
@@ -110,9 +192,22 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Disable ANSI colour codes in human-readable output.
-    #[arg(long, global = true)]
-    no_color: bool,
+    /// Color output mode. `never` (default) disables all ANSI escapes;
+    /// `always` emits colors regardless of TTY (overrides NO_COLOR);
+    /// `auto` emits colors when the target output stream is a TTY and
+    /// NO_COLOR is unset. Bare `--color` (no value) is treated as
+    /// `auto`. Per-stream: tracing checks stderr, echo trigger checks
+    /// stdout, so `aviso listen --color auto | jq` correctly keeps
+    /// stderr colored and stdout JSON.
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ColorMode::Never,
+        default_missing_value = "auto",
+        num_args = 0..=1,
+        global = true
+    )]
+    color: ColorMode,
 
     /// Increase verbosity. Repeatable: -v = DEBUG, -vv = TRACE.
     /// Affects the aviso crates only; third-party crates (hyper,
@@ -272,7 +367,7 @@ enum ConfigSubcommand {
     },
 }
 
-fn init_tracing(verbose: u8) -> Result<()> {
+fn init_tracing(verbose: u8, ansi: bool) -> Result<()> {
     use std::io::IsTerminal as _;
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::filter::LevelFilter;
@@ -316,6 +411,7 @@ fn init_tracing(verbose: u8) -> Result<()> {
             .with_writer(std::io::stderr)
             .with_target(false)
             .with_timer(tracing_format::ShortClockTimer)
+            .with_ansi(ansi)
             .compact()
             .try_init()
             .map_err(anyhow::Error::from_boxed)
@@ -344,7 +440,6 @@ async fn run(cli: Cli) -> Result<()> {
         &cli.ca_bundle,
         cli.danger_accept_invalid_certs,
         cli.json,
-        cli.no_color,
         cli.verbose,
     )?;
 
@@ -429,9 +524,14 @@ async fn run(cli: Cli) -> Result<()> {
 
 #[tokio::main]
 async fn main() {
+    use std::io::IsTerminal as _;
     use std::io::Write as _;
     let cli = Cli::parse();
-    if let Err(e) = init_tracing(cli.verbose) {
+    let no_color = std::env::var_os("NO_COLOR").is_some();
+    let stderr_color = color_enabled(cli.color, std::io::stderr().is_terminal(), no_color);
+    let stdout_color = color_enabled(cli.color, std::io::stdout().is_terminal(), no_color);
+    aviso::set_echo_color_enabled(stdout_color);
+    if let Err(e) = init_tracing(cli.verbose, stderr_color) {
         let stderr = std::io::stderr();
         let mut guard = stderr.lock();
         let _ = writeln!(guard, "error: failed to initialise tracing: {e:#}");

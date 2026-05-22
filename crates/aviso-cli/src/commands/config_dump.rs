@@ -106,8 +106,8 @@ fn build_yaml(resolved: &Resolved, redact: bool) -> String {
     }
     let _ = writeln!(
         out,
-        "verbose: {} # from: flag\nforce_json: {} # from: flag\nno_color: {} # from: flag",
-        resolved.verbose, resolved.force_json, resolved.no_color
+        "verbose: {} # from: flag\nforce_json: {} # from: flag",
+        resolved.verbose, resolved.force_json
     );
     out
 }
@@ -166,7 +166,6 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
         "listeners_count": resolved.listeners.len(),
         "verbose": resolved.verbose,
         "force_json": resolved.force_json,
-        "no_color": resolved.no_color,
     })
 }
 
@@ -227,7 +226,6 @@ mod tests {
             }),
             listeners: Vec::new(),
             force_json: false,
-            no_color: false,
             verbose: 0,
         }
     }

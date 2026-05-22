@@ -22,14 +22,16 @@ pub(super) fn dispatch_echo(notification: &Notification) -> Result<(), TriggerEr
     use std::io::Write as _;
     let stdout = std::io::stdout();
     let is_tty = stdout.is_terminal();
-    // Color output is opt-in only (off by default): keeps the
-    // output clean in environments where ANSI escapes leak through
-    // (basic shells, log files, CI capture). A future `--color
-    // auto|always|never` flag (or NO_COLOR env-var honour) can
-    // enable the colored branch; the `format_human(n, true)` path
-    // is exercised by tests so the wiring stays alive.
+    // Color choice is process-wide and set by the CLI before the
+    // first dispatch; `crate::echo_color_enabled()` reads the
+    // `AtomicBool` set by `crate::set_echo_color_enabled(bool)`.
+    // Library consumers that do NOT call the setter get the
+    // default `false` (no color). Detection precedence (TTY +
+    // NO_COLOR) lives in the CLI, not here, so the lib stays a
+    // pure mechanism with policy delegated to the caller.
+    let use_color = crate::echo_color_enabled();
     let mut buf: Vec<u8> = if is_tty {
-        format_human(notification, false)?.into_bytes()
+        format_human(notification, use_color)?.into_bytes()
     } else {
         serde_json::to_vec(notification)?
     };

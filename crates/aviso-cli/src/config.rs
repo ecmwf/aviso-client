@@ -154,7 +154,6 @@ pub(crate) struct Resolved {
     pub(crate) auth_provider: Option<Arc<dyn AuthProvider>>,
     pub(crate) listeners: Vec<ListenerSpec>,
     pub(crate) force_json: bool,
-    pub(crate) no_color: bool,
     pub(crate) verbose: u8,
 }
 
@@ -191,7 +190,6 @@ pub(crate) fn resolve(
     cli_ca_bundle: &[PathBuf],
     cli_danger_accept_invalid_certs: bool,
     cli_force_json: bool,
-    cli_no_color: bool,
     cli_verbose: u8,
 ) -> Result<Resolved> {
     let env_config_path = read_env("AVISO_CLIENT_CONFIG_FILE")?;
@@ -283,7 +281,6 @@ pub(crate) fn resolve(
         auth_provider,
         listeners: file.listeners,
         force_json: cli_force_json,
-        no_color: cli_no_color,
         verbose: cli_verbose,
     })
 }

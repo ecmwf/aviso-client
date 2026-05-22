@@ -51,7 +51,7 @@ tempfile = "3.10"
 thiserror = "2.0"
 tokio = { version = "1.45", default-features = false, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter", "ansi"] }
 url = "2.5"
 wiremock = "0.6"
 
