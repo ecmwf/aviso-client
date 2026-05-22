@@ -288,13 +288,23 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
-    if body.contains("Polygon coordinates must be in pairs")
-        || body.contains("Invalid latitude value")
-    {
-        return Some(
-            "polygon values must be a comma-separated list of `lat,lon` pairs (e.g. `polygon: \"46,8,46,9,47,9,47,8,46,8\"`)."
-                .to_string(),
-        );
+    if body.contains("must be a valid polygon") {
+        let specific = if body.contains("odd number of values") {
+            "coordinates must come in lat,lon pairs (even total count)"
+        } else if body.contains("could not parse latitude")
+            || body.contains("could not parse longitude")
+        {
+            "each coordinate must be a number; check for typos and confirm you're using comma (not semicolon) as the delimiter"
+        } else if body.contains("at least 4 coordinate pairs") {
+            "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
+        } else if body.contains("polygon coordinate string is empty") {
+            "polygon value cannot be empty"
+        } else {
+            "polygon must be a comma-separated list of lat,lon pairs"
+        };
+        return Some(format!(
+            "{specific}. In listener YAML, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` (the value wrapped as a single string)."
+        ));
     }
     match *status {
         401 => Some(
@@ -360,11 +370,26 @@ mod tests {
 
     #[test]
     fn hint_for_polygon_format_in_listener_yaml() {
-        let body = r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#;
+        let body = r#"{"details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)"}"#;
         let hint = hint_for_listener_error(&http_err(400, body))
             .expect("polygon format must yield a hint");
-        assert!(hint.contains("polygon"), "{hint}");
-        assert!(hint.contains("lat,lon"), "{hint}");
+        assert!(hint.contains("lat,lon pairs"), "{hint}");
+        assert!(
+            hint.contains("listener YAML") || hint.contains("polygon:"),
+            "the listener variant of the hint must explicitly point at YAML syntax: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_unknown_sub_message_in_listener_falls_back_to_generic() {
+        let body = r#"{"details":"field 'polygon' must be a valid polygon: brand new server validation we don't know about yet"}"#;
+        let hint = hint_for_listener_error(&http_err(400, body)).expect(
+            "listener polygon hint must always fire for any 'must be a valid polygon' body",
+        );
+        assert!(
+            hint.contains("comma-separated list of lat,lon pairs"),
+            "generic fallback must spell out the basic format: {hint}"
+        );
     }
 
     #[test]
