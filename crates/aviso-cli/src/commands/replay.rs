@@ -59,7 +59,7 @@ pub(crate) async fn run(
             item = stream.recv() => {
                 match item {
                     Some(Ok(notification)) => {
-                        tracing::info!(
+                        tracing::debug!(
                             event.name = "cli.replay.notification",
                             listener_name = %spec.name.as_deref().unwrap_or(&spec.event),
                             event_type = %notification.event_type,

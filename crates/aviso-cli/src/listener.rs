@@ -99,7 +99,7 @@ pub(crate) async fn spawn_listener_drain(
             item = stream.recv() => {
                 match item {
                     Some(Ok(notification)) => {
-                        tracing::info!(
+                        tracing::debug!(
                             event.name = "cli.listener.notification",
                             listener_name = %listener_name,
                             event_type = %notification.event_type,
