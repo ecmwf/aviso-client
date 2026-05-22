@@ -70,7 +70,7 @@ fn top_level_help_includes_global_flags() {
         .stdout(contains("--ca-bundle"))
         .stdout(contains("--danger-accept-invalid-certs"))
         .stdout(contains("--json"))
-        .stdout(contains("--no-color"))
+        .stdout(contains("--color"))
         .stdout(contains("--verbose"));
 }
 
