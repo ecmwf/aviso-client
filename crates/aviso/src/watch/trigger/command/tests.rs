@@ -24,7 +24,6 @@ fn make_notification() -> Notification {
         sequence: 42,
         identifier,
         payload: serde_json::json!({ "location": "south", "qty": 7 }),
-        request_id: Some("req-abc".to_string()),
     }
 }
 
@@ -131,13 +130,13 @@ async fn command_trigger_aviso_env_vars_injected_into_child() {
     let dir = tempfile::tempdir().expect("tempdir");
     let outfile = dir.path().join("out.txt");
     let cfg = build_command_config(format!(
-        "printf '%s|%s|%s|%s' \"$AVISO_EVENT_TYPE\" \"$AVISO_SEQUENCE\" \"$AVISO_IDENTIFIER_COUNTRY\" \"$AVISO_REQUEST_ID\" > '{}'",
+        "printf '%s|%s|%s' \"$AVISO_EVENT_TYPE\" \"$AVISO_SEQUENCE\" \"$AVISO_IDENTIFIER_COUNTRY\" > '{}'",
         outfile.display()
     ));
     let result = dispatch_command(&cfg, None, &make_notification()).await;
     assert!(matches!(result, Ok(())), "got: {result:?}");
     let contents = std::fs::read_to_string(&outfile).expect("read outfile");
-    assert_eq!(contents, "mars|42|uk|req-abc");
+    assert_eq!(contents, "mars|42|uk");
 }
 
 #[tokio::test]

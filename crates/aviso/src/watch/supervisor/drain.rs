@@ -90,7 +90,6 @@ pub(super) async fn drain_frames(
                             sequence,
                             identifier: wire.data.identifier,
                             payload: wire.data.payload,
-                            request_id: None,
                         };
                         // Commit-on-next-send: persist the *previous* notification
                         // before sending the current one, so pulling N implies the

@@ -89,7 +89,13 @@ impl NotificationRequest {
 ///
 /// `Serialize` is derived so trigger dispatchers (and any downstream consumer) can render the
 /// notification as JSON without bespoke serialisation code. The wire shape on serialisation is
-/// the public field layout: `event_type`, `sequence`, `identifier`, `payload`, `request_id`.
+/// the public field layout: `event_type`, `sequence`, `identifier`, `payload`.
+///
+/// The SSE watch stream does NOT carry a per-notification `request_id` correlation field; the
+/// `sequence` is the stream-level correlation identifier (monotonic, server-assigned, suitable
+/// for resume cursors). The session-level X-Request-ID returned when a watch is opened is
+/// emitted as a `client.watch.subscribed` tracing event from the supervisor; that is the value
+/// to quote in support tickets for a running watch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct Notification {
@@ -104,10 +110,6 @@ pub struct Notification {
 
     /// Payload as published. JSON `null` is preserved as [`serde_json::Value::Null`].
     pub payload: Value,
-
-    /// Server-supplied `X-Request-ID` if the notification was returned in a direct HTTP response;
-    /// `None` when received over the SSE stream.
-    pub request_id: Option<String>,
 }
 
 /// Parses a `CloudEvent` `id` field of the form `<event_type>@<sequence>` per D9.
@@ -297,7 +299,6 @@ mod tests {
                 sequence: 42,
                 identifier,
                 payload: serde_json::json!({ "location": "south" }),
-                request_id: Some("req-abc".to_string()),
             };
             let json = serde_json::to_value(&notification).unwrap();
             assert_eq!(
@@ -307,7 +308,6 @@ mod tests {
                     "sequence": 42,
                     "identifier": { "country": "uk" },
                     "payload": { "location": "south" },
-                    "request_id": "req-abc",
                 })
             );
         }
@@ -319,11 +319,28 @@ mod tests {
                 sequence: 7,
                 identifier: BTreeMap::new(),
                 payload: serde_json::Value::Null,
-                request_id: None,
             };
             let json = serde_json::to_value(&notification).unwrap();
             assert_eq!(json.get("payload"), Some(&serde_json::Value::Null));
-            assert_eq!(json.get("request_id"), Some(&serde_json::Value::Null));
+            assert!(
+                json.get("request_id").is_none(),
+                "Notification no longer has a request_id field; the session-level X-Request-ID is exposed via the `client.watch.subscribed` tracing event from the supervisor: {json}"
+            );
+        }
+
+        #[test]
+        fn no_request_id_field_in_serialized_form() {
+            let notification = Notification {
+                event_type: "mars".to_string(),
+                sequence: 7,
+                identifier: BTreeMap::new(),
+                payload: serde_json::Value::Null,
+            };
+            let json = serde_json::to_value(&notification).unwrap();
+            assert!(
+                json.get("request_id").is_none(),
+                "Notification.request_id was removed (the SSE protocol does not carry a per-notification request_id; the session-level X-Request-ID is emitted via `client.watch.subscribed` tracing): {json}"
+            );
         }
     }
 }

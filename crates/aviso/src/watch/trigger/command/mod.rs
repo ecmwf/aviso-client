@@ -278,9 +278,6 @@ fn env_injection(n: &Notification) -> Result<Vec<(String, String)>, TriggerError
     let mut out: Vec<(String, String)> = Vec::new();
     out.push(("AVISO_EVENT_TYPE".to_string(), n.event_type.clone()));
     out.push(("AVISO_SEQUENCE".to_string(), n.sequence.to_string()));
-    if let Some(rid) = &n.request_id {
-        out.push(("AVISO_REQUEST_ID".to_string(), rid.clone()));
-    }
     for (k, v) in &n.identifier {
         out.push((format!("AVISO_IDENTIFIER_{}", normalize_key(k)), v.clone()));
     }
