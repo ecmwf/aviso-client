@@ -296,7 +296,7 @@ Either pass listener YAML files as positional arguments to `aviso listen`, or ad
 
 **`--from 20240115` resolves as sequence id 20240115, not the date 15 January 2024**
 
-Pure-digit input is always treated as a sequence id (Amendment H ambiguity rule). The CLI accepts the compact eight-digit input without error, but routes it through `from_id`, not `from_date`. To pass a date, use the dashed form `--from 2024-01-15`. Verify the routed cursor by checking the tracing output at INFO level for `cli.replay.notification` events (sequence numbers near your starting id indicate id routing; events from the date you meant indicate date routing).
+Pure-digit input is always treated as a sequence id (Amendment H ambiguity rule). The CLI accepts the compact eight-digit input without error, but routes it through `from_id`, not `from_date`. To pass a date, use the dashed form `--from 2024-01-15`. Verify the routed cursor by running with `-v` (so the `aviso` crate's DEBUG events fire) and checking the tracing output for `cli.replay.notification` events: sequence numbers near your starting id indicate id routing; events from the date you meant indicate date routing.
 
 **The CLI loops indefinitely on `aviso listen` against a finite SSE stream**
 
