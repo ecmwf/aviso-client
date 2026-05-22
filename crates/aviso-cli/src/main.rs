@@ -193,20 +193,16 @@ pub(crate) struct Cli {
     json: bool,
 
     /// Color output mode. `never` (default) disables all ANSI escapes;
-    /// `always` emits colors regardless of TTY (overrides NO_COLOR);
-    /// `auto` emits colors when the target output stream is a TTY and
-    /// NO_COLOR is unset. Bare `--color` (no value) is treated as
-    /// `auto`. Per-stream: tracing checks stderr, echo trigger checks
-    /// stdout, so `aviso listen --color auto | jq` correctly keeps
-    /// stderr colored and stdout JSON.
-    #[arg(
-        long,
-        value_enum,
-        default_value_t = ColorMode::Never,
-        default_missing_value = "auto",
-        num_args = 0..=1,
-        global = true
-    )]
+    /// `always` emits colors in the human-readable output paths
+    /// regardless of TTY (overrides NO_COLOR); `auto` emits colors
+    /// in the human-readable paths when the target output stream is
+    /// a TTY and NO_COLOR is unset. A value is REQUIRED:
+    /// `--color auto|always|never`. ANSI is never emitted into JSON
+    /// (machine consumers via pipe/file) regardless of this flag.
+    /// Per-stream: tracing checks stderr, echo trigger checks stdout,
+    /// so `aviso listen --color auto | jq` correctly keeps stderr
+    /// colored (TTY) and stdout JSON (pipe).
+    #[arg(long, value_enum, default_value_t = ColorMode::Never, global = true)]
     color: ColorMode,
 
     /// Increase verbosity. Repeatable: -v = DEBUG, -vv = TRACE.
@@ -399,9 +395,11 @@ fn init_tracing(verbose: u8, ansi: bool) -> Result<()> {
     };
 
     // Output format is TTY-aware. Interactive operators see a
-    // compact, colored, human-readable line per event; headless
-    // deployments (piped stderr, systemd, CI) get OTel-JSON for log
-    // aggregators. Detection is on stderr (not stdout) so the common
+    // compact human-readable line per event (colored only when the
+    // operator opts in via `--color auto|always`, off by default);
+    // headless deployments (piped stderr, systemd, CI) get OTel-JSON
+    // for log aggregators (never colored regardless of the flag).
+    // Detection is on stderr (not stdout) so the common
     // `aviso listen | tee log.txt` pattern correctly keeps the
     // operator's terminal human-friendly while the file gets the
     // operator's chosen trigger output.

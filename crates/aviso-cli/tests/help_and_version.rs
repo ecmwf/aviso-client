@@ -70,7 +70,7 @@ fn top_level_help_includes_global_flags() {
         .stdout(contains("--ca-bundle"))
         .stdout(contains("--danger-accept-invalid-certs"))
         .stdout(contains("--json"))
-        .stdout(contains("--color"))
+        .stdout(contains("--color <COLOR>"))
         .stdout(contains("--verbose"));
 }
 
@@ -228,4 +228,39 @@ fn unknown_subcommand_exits_2() {
         .assert()
         .failure()
         .code(2);
+}
+
+#[test]
+fn color_flag_requires_a_value_and_does_not_swallow_subcommand() {
+    // Regression guard for the prior bug where `default_missing_value`
+    // + `num_args = 0..=1` made bare `--color` consume the next
+    // positional token (`listen`) as the color value, breaking
+    // `aviso --color listen --help`.
+    aviso()
+        .args(["--color", "auto", "listen", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("LISTENER_FILES").or(contains("listener_files")));
+}
+
+#[test]
+fn bare_color_flag_without_value_is_rejected() {
+    let assertion = aviso()
+        .args(["--color", "listen", "--help"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("invalid value")
+            || stderr.contains("requires a value")
+            || stderr.contains("possible values"),
+        "stderr should reject 'listen' as a color value: {stderr}"
+    );
+}
+
+#[test]
+fn color_accepts_each_explicit_mode_value() {
+    for mode in ["auto", "always", "never"] {
+        aviso().args(["--color", mode, "--help"]).assert().success();
+    }
 }
