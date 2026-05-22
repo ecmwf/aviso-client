@@ -23,13 +23,14 @@
 //! [ecmwf]: https://raw.githubusercontent.com/ecmwf/codex/refs/heads/main/Guidelines/Observability.md
 
 use std::fmt;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
+use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::registry::LookupSpan;
 
 /// Custom `FormatEvent` impl that emits OTel-shape JSON.
@@ -128,6 +129,29 @@ where
 /// otherwise grow the dep graph for one format call).
 fn now_rfc3339_micros() -> String {
     humantime::format_rfc3339_micros(SystemTime::now()).to_string()
+}
+
+/// `FormatTime` impl emitting a UTC `HH:MM:SS.mmm` time-only stamp
+/// for interactive operator use. Drops the date because operators
+/// running the CLI interactively know what day it is, and the
+/// full RFC3339 form `2026-05-22T12:19:15.333678Z` dwarfs the
+/// actual log body on a terminal. Headless output continues to
+/// emit full RFC3339 via the OTel JSON format; this timer is only
+/// installed on the TTY branch of [`crate::init_tracing`].
+pub(crate) struct ShortClockTimer;
+
+impl FormatTime for ShortClockTimer {
+    fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
+        let secs_today = now.as_secs() % 86_400;
+        let h = (secs_today / 3_600) % 24;
+        let m = (secs_today / 60) % 60;
+        let s = secs_today % 60;
+        let millis = now.subsec_millis();
+        write!(w, "{h:02}:{m:02}:{s:02}.{millis:03}")
+    }
 }
 
 /// Maps a `tracing::Level` to the matching `severityText` value
