@@ -167,6 +167,13 @@ async fn drive(
                     error = %client_err,
                     "listener errored; other listeners continue"
                 );
+                if let Some(hint) = hint_for_listener_error(&client_err) {
+                    tracing::warn!(
+                        event.name = "cli.listener.suggestion",
+                        listener_name = %name,
+                        "{hint}"
+                    );
+                }
                 any_failed = true;
             }
             Err(join_err) if join_err.is_panic() => {
@@ -201,6 +208,56 @@ async fn drive(
     }
 }
 
+/// Inspects a [`aviso::ClientError`] for known operator-mistake
+/// patterns specific to the watch / listener path and returns a
+/// one-line hint when a match is found. Parallel to
+/// [`crate::commands::notify::hint_for_client_error`] but with
+/// messages tuned to listener-YAML mistakes: the schema's
+/// `required: false` flag IS a wildcard at watch time, so the
+/// "you forgot a field" case has different semantics than the
+/// notify equivalent (only `required: true` fields are mandatory).
+///
+/// Patterns chosen are high-confidence (the server's own error
+/// body unambiguously names the cause); when no pattern matches we
+/// return `None` and let the raw `error` field on the
+/// `cli.listener.failed` event speak for itself.
+fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
+    let aviso::ClientError::Http { status, body, .. } = err else {
+        return None;
+    };
+    if body.contains("UNKNOWN_EVENT_TYPE") || body.contains("unknown event type") {
+        return Some(
+            "the event_type is not configured on the server. The response above includes a `configured_event_types` array listing every event_type the server accepts; run `aviso schema list` for the same list. Check for a typo in `event:` in your listener YAML."
+                .to_string(),
+        );
+    }
+    if body.contains("missing for watch operation") {
+        return Some(
+            "schema fields with `required: true` must appear in your listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+                .to_string(),
+        );
+    }
+    if body.contains("Polygon coordinates must be in pairs")
+        || body.contains("Invalid latitude value")
+    {
+        return Some(
+            "polygon values must be a comma-separated list of `lat,lon` pairs (e.g. `polygon: \"46,8,46,9,47,9,47,8,46,8\"`)."
+                .to_string(),
+        );
+    }
+    match *status {
+        401 => Some(
+            "credentials are missing, invalid, or expired. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars; verify auth wired up via `aviso config dump --redact`."
+                .to_string(),
+        ),
+        403 => Some(
+            "credentials were accepted but may not have watch permission for this event_type. Contact the server admin; verify the event_type with `aviso schema list`."
+                .to_string(),
+        ),
+        _ => None,
+    }
+}
+
 fn format_panic_payload(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&'static str>() {
         return (*s).to_string();
@@ -209,4 +266,80 @@ fn format_panic_payload(payload: &(dyn std::any::Any + Send)) -> String {
         return s.clone();
     }
     "<non-string panic payload>".to_string()
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: unwrap/expect on synthetic ClientError fixtures is the expected diagnostic"
+)]
+mod tests {
+    use super::*;
+
+    fn http_err(status: u16, body: &str) -> aviso::ClientError {
+        aviso::ClientError::Http {
+            status,
+            body: body.to_string(),
+            request_id: Some("req-test".into()),
+        }
+    }
+
+    #[test]
+    fn hint_for_unknown_event_type_points_at_event_field_in_yaml() {
+        let body = r#"{"code":"UNKNOWN_EVENT_TYPE","configured_event_types":["dissemination","mars","test_polygon"],"message":"unknown event type 'marse'"}"#;
+        let hint = hint_for_listener_error(&http_err(400, body))
+            .expect("UNKNOWN_EVENT_TYPE must yield a hint");
+        assert!(hint.contains("aviso schema list"), "{hint}");
+        assert!(hint.contains("listener YAML"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_missing_watch_field_calls_out_required_true_vs_false() {
+        let body = r#"{"code":"INVALID_WATCH_REQUEST","details":"Required field 'polygon' missing for watch operation"}"#;
+        let hint = hint_for_listener_error(&http_err(400, body))
+            .expect("missing watch field must yield a hint");
+        assert!(hint.contains("required: true"), "{hint}");
+        assert!(
+            hint.contains("required: false") && hint.contains("wildcard"),
+            "must contrast against required: false (which IS a wildcard at watch time): {hint}"
+        );
+        assert!(hint.contains("aviso schema get"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_polygon_format_in_listener_yaml() {
+        let body = r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#;
+        let hint = hint_for_listener_error(&http_err(400, body))
+            .expect("polygon format must yield a hint");
+        assert!(hint.contains("polygon"), "{hint}");
+        assert!(hint.contains("lat,lon"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_401_credentials_in_listener_path() {
+        let hint = hint_for_listener_error(&http_err(401, "{}")).expect("401 must yield a hint");
+        assert!(hint.contains("credentials"), "{hint}");
+        assert!(hint.contains("config dump"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_403_watch_permission_specific() {
+        let hint = hint_for_listener_error(&http_err(403, "{}")).expect("403 must yield a hint");
+        assert!(
+            hint.contains("watch permission"),
+            "must specifically name watch permission (not notify permission): {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_unknown_status_returns_none() {
+        assert!(hint_for_listener_error(&http_err(502, "<html>...</html>")).is_none());
+    }
+
+    #[test]
+    fn hint_for_non_http_client_error_returns_none() {
+        let err = aviso::ClientError::Auth("test".into());
+        assert!(hint_for_listener_error(&err).is_none());
+    }
 }
