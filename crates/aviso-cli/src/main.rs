@@ -273,6 +273,7 @@ enum ConfigSubcommand {
 }
 
 fn init_tracing(verbose: u8) -> Result<()> {
+    use std::io::IsTerminal as _;
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::fmt;
@@ -302,13 +303,31 @@ fn init_tracing(verbose: u8) -> Result<()> {
         EnvFilter::try_new(directive_str).context("constructing default tracing filter")?
     };
 
-    fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .event_format(tracing_format::OtelLogFormat::new())
-        .try_init()
-        .map_err(anyhow::Error::from_boxed)
-        .context("initialising tracing subscriber")?;
+    // Output format is TTY-aware. Interactive operators see a
+    // compact, colored, human-readable line per event; headless
+    // deployments (piped stderr, systemd, CI) get OTel-JSON for log
+    // aggregators. Detection is on stderr (not stdout) so the common
+    // `aviso listen | tee log.txt` pattern correctly keeps the
+    // operator's terminal human-friendly while the file gets the
+    // operator's chosen trigger output.
+    if std::io::stderr().is_terminal() {
+        fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .with_target(false)
+            .compact()
+            .try_init()
+            .map_err(anyhow::Error::from_boxed)
+            .context("initialising tracing subscriber (TTY format)")?;
+    } else {
+        fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .event_format(tracing_format::OtelLogFormat::new())
+            .try_init()
+            .map_err(anyhow::Error::from_boxed)
+            .context("initialising tracing subscriber (OTel JSON format)")?;
+    }
 
     Ok(())
 }
