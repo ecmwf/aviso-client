@@ -88,13 +88,23 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
-    if body.contains("Polygon coordinates must be in pairs")
-        || body.contains("Invalid latitude value")
-    {
-        return Some(
-            "polygon values are a comma-separated list of `lat,lon` pairs (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`). Wrap the value in double quotes so the top-level commas are NOT parsed as parameter separators; the CLI strips the outer quotes before sending."
-                .to_string(),
-        );
+    if body.contains("must be a valid polygon") {
+        let specific = if body.contains("odd number of values") {
+            "coordinates must come in lat,lon pairs (even total count)"
+        } else if body.contains("could not parse latitude")
+            || body.contains("could not parse longitude")
+        {
+            "each coordinate must be a number; check for typos and confirm you're using comma (not semicolon) as the delimiter"
+        } else if body.contains("at least 4 coordinate pairs") {
+            "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
+        } else if body.contains("polygon coordinate string is empty") {
+            "polygon value cannot be empty"
+        } else {
+            "polygon must be a comma-separated list of lat,lon pairs"
+        };
+        return Some(format!(
+            "{specific}. Wrap the entire value in double quotes so the top-level commas are not parsed as parameter separators (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`); the CLI strips the outer quotes before sending."
+        ));
     }
     if body.contains("missing for notify operation") {
         return Some(
@@ -605,16 +615,83 @@ mod tests {
     }
 
     #[test]
-    fn hint_for_400_polygon_format_calls_out_quoting() {
+    fn hint_for_polygon_odd_count_sub_message() {
         let err = aviso::ClientError::Http {
             status: 400,
-            body: r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#.to_string(),
+            body: r#"{"details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)"}"#.to_string(),
             request_id: None,
         };
-        let hint = hint_for_client_error(&err).expect("400 polygon must yield a hint");
-        assert!(hint.contains("polygon"), "{hint}");
-        assert!(hint.contains("double quotes"), "{hint}");
-        assert!(hint.contains("lat,lon"), "{hint}");
+        let hint = hint_for_client_error(&err).expect("odd-count polygon must yield a hint");
+        assert!(
+            hint.contains("lat,lon pairs") && hint.contains("even total count"),
+            "specific sub-hint for odd count must name 'lat,lon pairs' and 'even total count': {hint}"
+        );
+        assert!(
+            hint.contains("double quotes"),
+            "general CLI quoting advice must always be appended: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_non_numeric_sub_message() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: could not parse latitude 'abc' as a number"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("non-numeric polygon must yield a hint");
+        assert!(
+            hint.contains("must be a number") || hint.contains("semicolon"),
+            "specific sub-hint for non-numeric must call out the numeric requirement OR the comma-vs-semicolon delimiter trap: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_too_few_pairs_sub_message() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: polygon must have at least 4 coordinate pairs (3 unique vertices plus a closing repeat of the first vertex)"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("too-few-pairs polygon must yield a hint");
+        assert!(
+            hint.contains("at least 4 coordinate pairs"),
+            "specific sub-hint for too few pairs must restate the minimum: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_empty_sub_message() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: polygon coordinate string is empty"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("empty polygon must yield a hint");
+        assert!(
+            hint.contains("cannot be empty"),
+            "specific sub-hint for empty polygon must say so explicitly: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_unknown_sub_message_falls_back_to_generic_polygon_advice() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: brand new server validation we don't know about yet"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect(
+            "any polygon-related error MUST yield at least a generic hint; the canonical server prefix `must be a valid polygon` is the catch-all",
+        );
+        assert!(
+            hint.contains("comma-separated list of lat,lon pairs"),
+            "generic fallback must spell out the basic format: {hint}"
+        );
+        assert!(
+            hint.contains("double quotes"),
+            "general CLI quoting advice must always be appended: {hint}"
+        );
     }
 
     #[test]
@@ -640,12 +717,15 @@ mod tests {
     fn hint_for_500_polygon_format_also_fires_status_independent() {
         let err = aviso::ClientError::Http {
             status: 500,
-            body: r#"{"details":"Polygon coordinates must be in pairs (lat,lon)"}"#.to_string(),
+            body: r#"{"details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)"}"#.to_string(),
             request_id: None,
         };
         let hint = hint_for_client_error(&err)
             .expect("polygon hint must fire on 500 too (server may classify as 500 when caught during processing rather than validation)");
-        assert!(hint.contains("polygon"), "{hint}");
+        assert!(
+            hint.contains("polygon") || hint.contains("lat,lon"),
+            "{hint}"
+        );
         assert!(hint.contains("double quotes"), "{hint}");
     }
 
