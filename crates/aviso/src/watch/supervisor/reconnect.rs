@@ -65,7 +65,7 @@ pub(crate) async fn run_supervisor(
             };
             match get_result {
                 Ok(Some(cp)) => {
-                    tracing::info!(
+                    tracing::debug!(
                         event.name = "client.resume.applied",
                         resume_key = %resume_key.as_hex(),
                         sequence = cp.last_committed_sequence,

@@ -69,11 +69,14 @@ async fn handler_task(sender: watch::Sender<bool>, last_signal: Arc<Mutex<Option
                 }
                 *guard = Some(now);
                 drop(guard);
-                tracing::info!(
+                tracing::debug!(
                     event.name = "cli.sigint.received",
-                    "SIGINT received; draining gracefully. Press Ctrl+C again within {window}s to hard-exit.",
-                    window = DOUBLE_SIGINT_WINDOW.as_secs()
+                    "SIGINT received; draining gracefully",
                 );
+                let _ = crate::output::write_stderr_line(&format!(
+                    "Stopping listeners gracefully (Ctrl+C again within {window}s to force exit)...",
+                    window = DOUBLE_SIGINT_WINDOW.as_secs()
+                ));
                 if sender.send(true).is_err() {
                     return;
                 }

@@ -57,6 +57,27 @@ pub(crate) fn write_stdout_bytes(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Writes an operator-facing status line to stderr.
+///
+/// Distinct from the `tracing` subscriber: status messages are
+/// human-readable, default-visible, and have no level/timestamp/
+/// k=v decoration. Use this for lifecycle signals the operator
+/// wants to see by default (startup banner, "Stopping...",
+/// listener-error notice, "All listeners stopped"). For
+/// diagnostic events that an operator should only see under -v,
+/// use `tracing::debug!` instead.
+///
+/// The newline is appended; the body should not contain one.
+pub(crate) fn write_stderr_line(line: &str) -> Result<()> {
+    let mut buf = Vec::with_capacity(line.len() + 1);
+    buf.extend_from_slice(line.as_bytes());
+    buf.push(b'\n');
+    let stderr = io::stderr();
+    let mut guard = stderr.lock();
+    guard.write_all(&buf).context("write to stderr")?;
+    Ok(())
+}
+
 /// Returns `true` when stdout is connected to a terminal.
 ///
 /// Wraps `std::io::IsTerminal::is_terminal`. Subcommands consult
