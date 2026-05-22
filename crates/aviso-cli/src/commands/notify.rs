@@ -82,6 +82,12 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
     // surfaces the problem (e.g. PolygonHandler parsing). Both routes
     // produce the same operator action, so we hint on the body string
     // regardless of which status the server chose.
+    if body.contains("UNKNOWN_EVENT_TYPE") || body.contains("unknown event type") {
+        return Some(
+            "the event_type is not configured on the server. The response above includes a `configured_event_types` array listing every event_type the server accepts; run `aviso schema list` for the same list. Check for a typo in `event=<TYPE>`."
+                .to_string(),
+        );
+    }
     if body.contains("Polygon coordinates must be in pairs")
         || body.contains("Invalid latitude value")
     {
@@ -609,6 +615,25 @@ mod tests {
         assert!(hint.contains("polygon"), "{hint}");
         assert!(hint.contains("double quotes"), "{hint}");
         assert!(hint.contains("lat,lon"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_unknown_event_type_points_at_configured_list() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"code":"UNKNOWN_EVENT_TYPE","configured_event_types":["dissemination","mars","test_polygon"],"message":"unknown event type 'marse'"}"#.to_string(),
+            request_id: Some("req-xyz".into()),
+        };
+        let hint = hint_for_client_error(&err).expect("UNKNOWN_EVENT_TYPE must yield a hint");
+        assert!(
+            hint.contains("event_type") && hint.contains("not configured"),
+            "{hint}"
+        );
+        assert!(hint.contains("aviso schema list"), "{hint}");
+        assert!(
+            hint.contains("configured_event_types"),
+            "should point operator at the server's configured_event_types field for the authoritative list: {hint}"
+        );
     }
 
     #[test]
