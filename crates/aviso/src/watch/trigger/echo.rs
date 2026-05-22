@@ -10,110 +10,93 @@ use super::TriggerError;
 /// between the JSON body and the line terminator.
 ///
 /// TTY-aware output: when stdout is connected to a terminal, the
-/// notification is rendered as a compact human-readable line
-/// (`event_type#sequence  k=v k=v  =>  {payload}`) suitable for scanning
-/// during interactive listener sessions. When stdout is NOT a terminal
-/// (piped, redirected to file, captured by a downstream tool), the
-/// original single-line JSON shape is emitted so machine consumers
-/// (`aviso listen | jq`, file ingestion pipelines) continue to parse
-/// it unchanged.
+/// notification is rendered as a one-line dim leader
+/// (`new notification (trigger: echo):`) followed by the pretty-printed
+/// JSON object representing the whole `Notification`. When stdout is NOT
+/// a terminal (piped, redirected to file, captured by a downstream tool),
+/// the single-line NDJSON shape is emitted so machine consumers
+/// (`aviso listen | jq`, file ingestion pipelines) continue to parse it
+/// unchanged.
 pub(super) fn dispatch_echo(notification: &Notification) -> Result<(), TriggerError> {
     use std::io::IsTerminal as _;
     use std::io::Write as _;
     let stdout = std::io::stdout();
     let is_tty = stdout.is_terminal();
-    // Color choice is process-wide and set by the CLI before the
-    // first dispatch; `crate::echo_color_enabled()` reads the
-    // `AtomicBool` set by `crate::set_echo_color_enabled(bool)`.
-    // Library consumers that do NOT call the setter get the
-    // default `false` (no color). Detection precedence (TTY +
-    // NO_COLOR) lives in the CLI, not here, so the lib stays a
-    // pure mechanism with policy delegated to the caller.
     let use_color = crate::echo_color_enabled();
     let mut buf: Vec<u8> = if is_tty {
         format_human(notification, use_color)?.into_bytes()
     } else {
         serde_json::to_vec(notification)?
     };
-    // `format_human` already terminates with `\n`; the extra blank
-    // line below separates consecutive multi-line notification blocks
-    // visually. For the JSON branch, the single `\n` terminates one
-    // NDJSON record.
     buf.push(b'\n');
     let mut handle = stdout.lock();
     handle.write_all(&buf)?;
     Ok(())
 }
 
-/// Renders a [`Notification`] as a multi-line, kubectl-describe-style
-/// block intended for human reading. Returns a [`String`] terminated
-/// by a final `\n`; the caller (`dispatch_echo`) appends another `\n`
-/// so consecutive notifications are visually separated by a blank
-/// line.
+/// Leader line emitted above the pretty-printed JSON body for every TTY
+/// echo dispatch. Exposed at module scope so the unit tests can assert
+/// the exact wording without re-declaring it.
+const TTY_LEADER: &str = "new notification (trigger: echo):";
+
+/// Renders a [`Notification`] as a one-line dim leader followed by a
+/// multi-line pretty-printed JSON object, intended for human reading
+/// during an interactive `aviso listen` session.
 ///
-/// Output shape:
+/// Output shape (plain text, no color):
 /// ```text
-/// mars #15
-///   class:    od
-///   date:     20260521
-///   domain:   g
-///   expver:   0001
-///   step:     0
-///   stream:   oper
-///   time:     1200
-///   payload:  {"region":"north"}
+/// new notification (trigger: echo):
+/// {
+///   "event_type": "test_polygon",
+///   "sequence": 33,
+///   "identifier": {
+///     "date": "20260522",
+///     "time": "1200"
+///   },
+///   "payload": {
+///     "note": "should be picked up",
+///     "test": true
+///   }
+/// }
 /// ```
 ///
-/// Identifier keys are right-padded so the values column aligns, the
-/// payload (when present) appears as the last field with the same
-/// alignment, and the heading `<event_type> #<sequence>` is unindented
-/// so the eye finds the next event at a glance.
+/// The returned string terminates with a single `\n`; `dispatch_echo`
+/// appends another `\n` so consecutive notifications are visually
+/// separated by a blank line.
 ///
-/// When `use_color` is `true`, ANSI escape codes wrap the heading in
-/// cyan and the field labels in dim. Color is opt-in only via the CLI
+/// When `use_color` is `true`, the leader line is wrapped in ANSI dim
+/// escapes (the JSON body stays plain so it remains copy-paste-friendly
+/// into `jq` and other tools). Color is opt-in only via the CLI
 /// `--color auto|always` flag; the plain-text branch is the canonical
 /// form for tests and machine pipelines.
 pub(super) fn format_human(n: &Notification, use_color: bool) -> Result<String, TriggerError> {
-    use std::fmt::Write as _;
-    let (cyan, dim, reset) = if use_color {
-        ("\x1b[36m", "\x1b[2m", "\x1b[0m")
+    let (dim, reset) = if use_color {
+        ("\x1b[2m", "\x1b[0m")
     } else {
-        ("", "", "")
+        ("", "")
     };
 
-    let payload_present = !n.payload.is_null();
-    let key_width = n
-        .identifier
-        .keys()
-        .map(String::len)
-        .chain(payload_present.then_some("payload".len()))
-        .max()
-        .unwrap_or(0);
-
-    let mut s = format!("{cyan}{} #{}{reset}\n", n.event_type, n.sequence);
-    for (k, v) in &n.identifier {
-        let _ = writeln!(s, "  {dim}{k:key_width$}{reset}  {v}");
-    }
-    if payload_present {
-        let payload_json = serde_json::to_string(&n.payload)?;
-        let _ = writeln!(
-            s,
-            "  {dim}{:key_width$}{reset}  {}",
-            "payload", payload_json
-        );
-    }
+    let body = serde_json::to_string_pretty(n)?;
+    let mut s = String::with_capacity(TTY_LEADER.len() + body.len() + 32);
+    s.push_str(dim);
+    s.push_str(TTY_LEADER);
+    s.push_str(reset);
+    s.push('\n');
+    s.push_str(&body);
+    s.push('\n');
     Ok(s)
 }
 
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
-    reason = "test code: unwrap on format_human (which only fails on serde_json infallible-for-Value serialisation) is the expected diagnostic"
+    clippy::expect_used,
+    reason = "test code: unwrap/expect on format_human (which only fails on serde_json infallible-for-Value serialisation) and on string-slice helpers is the expected diagnostic"
 )]
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{dispatch_echo, format_human};
+    use super::{TTY_LEADER, dispatch_echo, format_human};
     use crate::Notification;
 
     fn make_notification() -> Notification {
@@ -132,42 +115,28 @@ mod tests {
     }
 
     #[test]
-    fn format_human_heading_only_when_no_identifiers_or_payload() {
+    fn format_human_starts_with_leader_line_then_pretty_json_body() {
         let s = format_human(&make_notification(), false).unwrap();
-        assert_eq!(s, "mars #1\n");
+        let first_line = s.lines().next().expect("output has at least one line");
+        assert_eq!(
+            first_line, TTY_LEADER,
+            "first line must be the dim leader announcing the notification + trigger; got {first_line:?}"
+        );
+        let body = s.strip_prefix(TTY_LEADER).and_then(|r| r.strip_prefix('\n')).expect(
+            "after the leader line and its newline, the rest must be the JSON body terminated by a final newline",
+        );
+        let body = body
+            .strip_suffix('\n')
+            .expect("format_human output must end with a single trailing newline");
+        let parsed: serde_json::Value = serde_json::from_str(body).expect(
+            "the body MUST parse as a JSON object (this is the contract jq-piping consumers rely on for the pipe-mode form; the TTY form is the same shape with whitespace)",
+        );
+        assert_eq!(parsed["event_type"], "mars");
+        assert_eq!(parsed["sequence"], 1);
     }
 
     #[test]
-    fn format_human_aligned_identifier_block() {
-        let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
-        identifier.insert("date".to_string(), "20260521".to_string());
-        let n = Notification {
-            event_type: "mars".to_string(),
-            sequence: 42,
-            identifier,
-            payload: serde_json::Value::Null,
-        };
-        let s = format_human(&n, false).unwrap();
-        let expected = "mars #42\n  class  od\n  date   20260521\n";
-        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
-    }
-
-    #[test]
-    fn format_human_payload_appears_as_last_field_with_same_alignment() {
-        let n = Notification {
-            event_type: "test_polygon".to_string(),
-            sequence: 7,
-            identifier: BTreeMap::new(),
-            payload: serde_json::json!({"region": "north"}),
-        };
-        let s = format_human(&n, false).unwrap();
-        let expected = "test_polygon #7\n  payload  {\"region\":\"north\"}\n";
-        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
-    }
-
-    #[test]
-    fn format_human_full_block_with_identifiers_and_payload() {
+    fn format_human_body_is_serde_json_to_string_pretty_of_the_whole_notification() {
         let mut identifier = BTreeMap::new();
         identifier.insert("class".to_string(), "od".to_string());
         identifier.insert("date".to_string(), "20260521".to_string());
@@ -178,42 +147,68 @@ mod tests {
             payload: serde_json::json!({"test": true}),
         };
         let s = format_human(&n, false).unwrap();
-        let expected = "mars #12\n  class    od\n  date     20260521\n  payload  {\"test\":true}\n";
-        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
+        let expected_body = serde_json::to_string_pretty(&n).unwrap();
+        let expected = format!("{TTY_LEADER}\n{expected_body}\n");
+        assert_eq!(
+            s, expected,
+            "TTY format must be the leader line then the SAME pretty JSON serde_json::to_string_pretty would produce; got:\n{s}\n---\nexpected:\n{expected}",
+        );
     }
 
     #[test]
-    fn format_human_omits_payload_line_when_payload_is_json_null() {
+    fn format_human_includes_identifier_keys_and_payload_in_pretty_json_block() {
+        let mut identifier = BTreeMap::new();
+        identifier.insert("date".to_string(), "20260522".to_string());
+        identifier.insert("time".to_string(), "1200".to_string());
+        let n = Notification {
+            event_type: "test_polygon".to_string(),
+            sequence: 33,
+            identifier,
+            payload: serde_json::json!({"note": "should be picked up", "test": true}),
+        };
+        let s = format_human(&n, false).unwrap();
+        for expected_fragment in &[
+            "\"event_type\": \"test_polygon\"",
+            "\"sequence\": 33",
+            "\"identifier\": {",
+            "\"date\": \"20260522\"",
+            "\"time\": \"1200\"",
+            "\"payload\": {",
+            "\"note\": \"should be picked up\"",
+            "\"test\": true",
+        ] {
+            assert!(
+                s.contains(expected_fragment),
+                "pretty JSON body must contain {expected_fragment:?}; full output:\n{s}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_human_with_null_payload_still_includes_payload_field_as_json_null() {
         let s = format_human(&make_notification(), false).unwrap();
         assert!(
-            !s.contains("payload"),
-            "JSON null payload must not produce a `payload` line in human output: {s}"
+            s.contains("\"payload\": null"),
+            "the whole-Notification JSON form must emit payload as JSON null (NOT silently drop the field as the previous kubectl-describe format did); without this, a downstream consumer that copy-pastes the TTY body into jq would see a different shape than what the pipe form produces. Got:\n{s}",
         );
     }
 
     #[test]
-    fn format_human_with_color_wraps_heading_in_cyan() {
+    fn format_human_with_color_wraps_leader_in_dim_and_leaves_json_body_uncoloured() {
         let s = format_human(&make_notification(), true).unwrap();
-        assert!(
-            s.starts_with("\x1b[36mmars #1\x1b[0m"),
-            "heading must be cyan-wrapped: {s:?}"
+        let expected_leader_line = format!("\x1b[2m{TTY_LEADER}\x1b[0m");
+        let first_line = s.lines().next().unwrap();
+        assert_eq!(
+            first_line, expected_leader_line,
+            "leader line must be dim-wrapped; got {first_line:?}",
         );
-    }
-
-    #[test]
-    fn format_human_with_color_dims_identifier_labels() {
-        let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
-        let n = Notification {
-            event_type: "mars".to_string(),
-            sequence: 12,
-            identifier,
-            payload: serde_json::Value::Null,
-        };
-        let s = format_human(&n, true).unwrap();
+        let body = s
+            .strip_prefix(&expected_leader_line)
+            .and_then(|r| r.strip_prefix('\n'))
+            .unwrap();
         assert!(
-            s.contains("\x1b[2mclass\x1b[0m"),
-            "identifier label `class` must be dim-wrapped: {s:?}"
+            !body.contains('\x1b'),
+            "JSON body must remain plain (no ANSI escapes) so it stays copy-paste-friendly into `jq` and similar tools even when --color always is set: {body:?}",
         );
     }
 
@@ -230,7 +225,17 @@ mod tests {
         let s = format_human(&n, false).unwrap();
         assert!(
             !s.contains('\x1b'),
-            "plain output must not contain any ANSI escape: {s:?}"
+            "plain output must not contain any ANSI escape: {s:?}",
+        );
+    }
+
+    #[test]
+    fn format_human_terminates_with_a_single_newline_so_dispatch_echo_blank_line_separator_works() {
+        let s = format_human(&make_notification(), false).unwrap();
+        assert!(
+            s.ends_with('\n') && !s.ends_with("\n\n"),
+            "format_human must end with EXACTLY one '\\n'; dispatch_echo appends a second '\\n' to produce the blank-line separator between consecutive notifications, so a trailing double-newline here would produce TRIPLE newlines in the rendered stream. Got tail: {:?}",
+            s.chars().rev().take(4).collect::<String>(),
         );
     }
 }
