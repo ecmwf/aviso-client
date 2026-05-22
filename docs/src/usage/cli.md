@@ -134,11 +134,24 @@ The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` i
 
 `aviso listen file1.yaml file2.yaml ...` accepts a variadic positional list of listener YAML files. Each carries its own top-level `listeners:` list. Positional files **REPLACE** (not merge with) the global config's `listeners:` for the invocation. With no positional files and no global `listeners:`, the CLI exits with code `2` and a stderr message naming both paths checked.
 
+### `--color auto|always|never`
+
+Global flag controlling ANSI color escapes in the human-readable output paths. The flag REQUIRES a value (`--color auto`, `--color always`, or `--color never`); bare `--color` would be ambiguous with subcommand parsing and is rejected.
+
+| Mode | stderr (tracing events) | stdout (echo trigger human form) | JSON paths (pipe/file) |
+|---|---|---|---|
+| `never` (default) | no color | no color | no color |
+| `auto` | colored when stderr is a TTY and `NO_COLOR` is unset | colored when stdout is a TTY and `NO_COLOR` is unset | no color |
+| `always` | colored regardless of TTY; overrides `NO_COLOR` | colored regardless of TTY; overrides `NO_COLOR` | no color |
+
+Per-stream: stderr (tracing) and stdout (echo trigger) are evaluated independently so `aviso listen --color auto | jq` correctly keeps stderr colored (TTY) and stdout JSON (pipe). ANSI is never emitted into JSON forms regardless of the flag value (`auto`/`always` only affect human-readable output; pipe/file consumers always get clean JSON).
+
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
 | `AVISO_LOG` | `tracing_subscriber` `EnvFilter` directive. When set, **overrides** `-v`/`-vv` and is the authoritative logging policy. Without it: the `aviso` crates honour `-v` (INFO/DEBUG/TRACE) while every other crate stays at WARN. Useful recipes: `AVISO_LOG=warn,aviso=debug` for app-only DEBUG, `AVISO_LOG=h2=debug,hyper=debug,aviso=debug` for transport-level diagnostics. |
+| `NO_COLOR` | When set (any value), suppresses ANSI color escapes in the `--color auto` mode. `--color always` explicitly overrides `NO_COLOR` per the convention at <https://no-color.org/>. `--color never` (and the default) are unaffected. |
 | `AVISO_CLIENT_CONFIG_FILE` | Config file path. Lower priority than `--config`. |
 | `AVISO_STATE_FILE` | State file path. Lower priority than `--state-file`. |
 | `AVISO_BASE_URL` | Base URL. Lower priority than `--base-url`. |
