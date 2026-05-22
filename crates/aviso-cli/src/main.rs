@@ -315,6 +315,7 @@ fn init_tracing(verbose: u8) -> Result<()> {
             .with_env_filter(filter)
             .with_writer(std::io::stderr)
             .with_target(false)
+            .with_timer(tracing_format::ShortClockTimer)
             .compact()
             .try_init()
             .map_err(anyhow::Error::from_boxed)
