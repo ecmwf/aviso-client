@@ -111,6 +111,11 @@ pub struct AvisoClient {
     /// so a downstream binary can emit a session-level `WARN` log when
     /// running in insecure-TLS mode.
     pub(super) danger_accept_invalid_certs: bool,
+    /// Snapshot of the [`AvisoClientBuilder::flush_cursor_on_exit`]
+    /// setting. Read by the watch supervisor at post-loop to decide
+    /// whether to persist the in-memory `pending_commit` cursor on
+    /// graceful exit. Default false; the `aviso` CLI sets it to true.
+    pub(super) flush_cursor_on_exit: bool,
 }
 
 impl std::fmt::Debug for AvisoClient {

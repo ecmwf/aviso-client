@@ -48,24 +48,36 @@ use crate::{ClientError, Notification};
 #[non_exhaustive]
 pub struct NotificationStream {
     receiver: mpsc::Receiver<Result<Notification, ClientError>>,
-    /// Sender side of the cancellation oneshot. Held only to drop it; the
-    /// supervisor owns the receiver side. Underscored to silence the
-    /// "field is never read" lint without hiding the intent.
-    _cancel: oneshot::Sender<()>,
+    /// Sender side of the cancellation oneshot. Optional so
+    /// [`NotificationStream::close`] can drop it BEFORE awaiting
+    /// `done_signal`, while still letting RAII drop work for callers
+    /// that never call `close`.
+    cancel: Option<oneshot::Sender<()>>,
+    /// Receiver side of the supervisor's done-signal oneshot. The
+    /// supervisor sends `()` on this channel immediately before its
+    /// task returns (via a `Drop` guard so the signal fires on every
+    /// exit path, including panics). Consumers that need to wait for
+    /// the supervisor's post-loop work (notably the
+    /// `flush_cursor_on_exit` path that writes the final checkpoint to
+    /// the [`crate::state::StateStore`]) call
+    /// [`NotificationStream::close`] which awaits this receiver.
+    done_signal: Option<oneshot::Receiver<()>>,
 }
 
 impl NotificationStream {
-    /// Construct a `NotificationStream` from its two halves. Only the
+    /// Construct a `NotificationStream` from its three halves. Only the
     /// supervisor-setup path in [`crate::client::AvisoClient::watch`]
     /// builds streams; this constructor is `pub(crate)` and not part of
     /// the public surface.
     pub(crate) fn new(
         receiver: mpsc::Receiver<Result<Notification, ClientError>>,
         cancel: oneshot::Sender<()>,
+        done_signal: oneshot::Receiver<()>,
     ) -> Self {
         Self {
             receiver,
-            _cancel: cancel,
+            cancel: Some(cancel),
+            done_signal: Some(done_signal),
         }
     }
 
@@ -81,6 +93,41 @@ impl NotificationStream {
     /// plain `await`.
     pub async fn recv(&mut self) -> Option<Result<Notification, ClientError>> {
         self.receiver.recv().await
+    }
+
+    /// Cancel the supervisor cooperatively and wait for it to fully
+    /// exit (including any post-loop work such as the
+    /// [`AvisoClientBuilder::flush_cursor_on_exit`](crate::AvisoClientBuilder::flush_cursor_on_exit)
+    /// checkpoint flush).
+    ///
+    /// Use this instead of plain RAII drop when the supervisor has
+    /// configured `flush_cursor_on_exit = true` AND the caller is about
+    /// to drop the runtime (typical for short-lived CLI processes): a
+    /// bare drop signals cancel but does NOT keep the runtime alive
+    /// long enough for the supervisor's final
+    /// [`StateStore::put`](crate::state::StateStore::put) (which uses
+    /// [`tokio::task::spawn_blocking`] internally) to land on disk, so
+    /// the next run silently re-delivers the last notification of the
+    /// previous run.
+    ///
+    /// Callers that only need at-least-once redelivery semantics
+    /// (`flush_cursor_on_exit = false`, the library default) get the
+    /// same behaviour from a plain drop and do not need to call this.
+    ///
+    /// `close` takes `self` by value so the supervisor is guaranteed to
+    /// observe the cancel (the cancel oneshot's sender is dropped here)
+    /// and so the await of `done_signal` cannot be raced against a
+    /// subsequent `recv`.
+    ///
+    /// Returns immediately (without awaiting) if the supervisor has
+    /// already signalled completion (e.g., the consumer drained the
+    /// stream to its natural end and the server emitted a
+    /// `connection-closing` frame before `close` was reached).
+    pub async fn close(mut self) {
+        self.cancel.take();
+        if let Some(done) = self.done_signal.take() {
+            let _ = done.await;
+        }
     }
 }
 

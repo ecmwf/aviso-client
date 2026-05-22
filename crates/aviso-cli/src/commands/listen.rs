@@ -57,7 +57,7 @@ pub(crate) async fn run(
     print_startup_banner(&listeners);
 
     let state_store = client_builder::build_state_store(resolved, no_state_store).await?;
-    let client = Arc::new(client_builder::build(resolved, Some(state_store))?);
+    let client = Arc::new(client_builder::build(resolved, Some(state_store), true)?);
     let cancel_rx = cancel::install();
     drive(client, listeners, cancel_rx).await
 }

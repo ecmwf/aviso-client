@@ -84,7 +84,7 @@ pub(crate) async fn spawn_listener_drain(
     event_type: String,
 ) -> Result<(), ClientError> {
     let mut stream = client.watch(request)?;
-    loop {
+    let result = loop {
         tokio::select! {
             biased;
             _ = cancel.changed() => {
@@ -94,7 +94,7 @@ pub(crate) async fn spawn_listener_drain(
                     event_type = %event_type,
                     "listener received cancellation signal; draining and exiting"
                 );
-                return Ok(());
+                break Ok(());
             }
             item = stream.recv() => {
                 match item {
@@ -108,7 +108,7 @@ pub(crate) async fn spawn_listener_drain(
                         );
                     }
                     Some(Err(e)) => {
-                        return Err(e);
+                        break Err(e);
                     }
                     None => {
                         tracing::debug!(
@@ -117,12 +117,14 @@ pub(crate) async fn spawn_listener_drain(
                             event_type = %event_type,
                             "listener stream ended cleanly"
                         );
-                        return Ok(());
+                        break Ok(());
                     }
                 }
             }
         }
-    }
+    };
+    stream.close().await;
+    result
 }
 
 #[cfg(test)]

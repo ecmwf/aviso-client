@@ -35,9 +35,19 @@ use crate::paths;
 /// `Some(store)` wires the JsonFileStore (or MemoryStore when
 /// `--no-state-store` is set); `None` leaves the supervisor without
 /// a state store (no persistent resume).
+///
+/// `flush_cursor_on_exit` opts the supervisor into the post-loop
+/// `pending_commit` flush. `aviso listen` (the only long-running,
+/// operator-interactive subcommand) sets this to `true` so the LAST
+/// notification of every session is durably persisted on graceful
+/// exit and the operator does not see the same notification again on
+/// the next run. Every other subcommand (notify, schema, admin,
+/// replay) passes `false`: they are one-shot, do not configure a
+/// state store, and have no `pending_commit` to flush.
 pub(crate) fn build(
     resolved: &Resolved,
     state_store: Option<Arc<dyn StateStore>>,
+    flush_cursor_on_exit: bool,
 ) -> Result<AvisoClient> {
     let base_url = resolved
         .base_url
@@ -81,6 +91,9 @@ pub(crate) fn build(
     }
     if let Some(store) = state_store {
         builder = builder.state_store(store);
+    }
+    if flush_cursor_on_exit {
+        builder = builder.flush_cursor_on_exit(true);
     }
 
     builder.build().context("build aviso client")

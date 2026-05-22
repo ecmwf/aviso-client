@@ -60,6 +60,7 @@ impl AvisoClient {
         };
         let (tx, rx) = mpsc::channel(capacity);
         let (cancel_tx, cancel_rx) = oneshot::channel();
+        let (done_tx, done_rx) = oneshot::channel();
         let parent_cancel = self.parent_drop.subscribe();
         let http = self.http.clone();
         let base_url = self.base_url.clone();
@@ -67,6 +68,7 @@ impl AvisoClient {
         let heartbeat_interval = self.heartbeat_interval;
         let state_store = self.state_store.clone();
         let active_resume_keys = self.active_resume_keys.clone();
+        let flush_cursor_on_exit = self.flush_cursor_on_exit;
         // Increment the active-resume-key refcount before spawning, and
         // emit a WARN log if the key was already in use. Refcount
         // semantics preserve the invariant that collisions are reported
@@ -87,8 +89,10 @@ impl AvisoClient {
             cancel_rx,
             parent_cancel,
             active_resume_keys,
+            flush_cursor_on_exit,
+            done_tx,
         ));
-        Ok(NotificationStream::new(rx, cancel_tx))
+        Ok(NotificationStream::new(rx, cancel_tx, done_rx))
     }
 
     /// Open a watch and drain it through a per-notification handler.

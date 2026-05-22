@@ -102,6 +102,48 @@ fn start_supervisor_with_store(
     tokio::task::JoinHandle<()>,
     tokio::sync::watch::Sender<bool>,
 ) {
+    start_supervisor_full(server, request, store, false)
+}
+
+/// Variant of [`start_supervisor_with_store`] that opts into the
+/// `flush_cursor_on_exit` post-loop flush. The flag is intentionally
+/// exposed only through this helper (not as a parameter on the
+/// commonly-used [`start_supervisor_with_store`]) so the default test
+/// path keeps exercising the at-least-once commit-on-next-send contract;
+/// only tests that specifically pin the flush-on-exit semantic reach
+/// for this variant.
+#[allow(
+    clippy::type_complexity,
+    reason = "test helper's return tuple matches the other start_supervisor variants"
+)]
+fn start_supervisor_with_store_and_flush(
+    server: &MockServer,
+    request: WatchRequest,
+    store: Arc<dyn StateStore>,
+) -> (
+    mpsc::Receiver<Result<Notification, ClientError>>,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+    tokio::sync::watch::Sender<bool>,
+) {
+    start_supervisor_full(server, request, Some(store), true)
+}
+
+#[allow(
+    clippy::type_complexity,
+    reason = "internal test-helper plumbing for the three public variants above"
+)]
+fn start_supervisor_full(
+    server: &MockServer,
+    request: WatchRequest,
+    store: Option<Arc<dyn StateStore>>,
+    flush_cursor_on_exit: bool,
+) -> (
+    mpsc::Receiver<Result<Notification, ClientError>>,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+    tokio::sync::watch::Sender<bool>,
+) {
     let capacity = if store.is_some() {
         1
     } else {
@@ -119,6 +161,7 @@ fn start_supervisor_with_store(
         ResumeKey,
         usize,
     >::new()));
+    let (done_tx, _done_rx) = tokio::sync::oneshot::channel();
     let handle = tokio::spawn(run_supervisor(
         request,
         http,
@@ -131,6 +174,8 @@ fn start_supervisor_with_store(
         cancel_rx,
         parent_cancel,
         active_resume_keys,
+        flush_cursor_on_exit,
+        done_tx,
     ));
     (rx, cancel_tx, handle, drop_sender)
 }

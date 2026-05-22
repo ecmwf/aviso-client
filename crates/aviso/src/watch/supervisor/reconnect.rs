@@ -6,7 +6,7 @@ use url::Url;
 use super::connection::run_one_connection;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
-use crate::state::{ResumeKey, StateStore};
+use crate::state::{Checkpoint, ResumeKey, StateStore};
 use crate::watch::backoff;
 use crate::watch::{
     ConnectionLossReason, ConnectionStatus, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent,
@@ -44,7 +44,18 @@ pub(crate) async fn run_supervisor(
     mut cancel: oneshot::Receiver<()>,
     mut parent_cancel: watch::Receiver<bool>,
     active_resume_keys: Arc<std::sync::Mutex<std::collections::HashMap<ResumeKey, usize>>>,
+    flush_cursor_on_exit: bool,
+    done_signal: oneshot::Sender<()>,
 ) {
+    struct DoneOnDrop(Option<oneshot::Sender<()>>);
+    impl Drop for DoneOnDrop {
+        fn drop(&mut self) {
+            if let Some(s) = self.0.take() {
+                let _ = s.send(());
+            }
+        }
+    }
+    let _done_on_drop = DoneOnDrop(Some(done_signal));
     let _decrement_on_exit = ActiveKeyGuard {
         active: active_resume_keys.clone(),
         key: resume_key.clone(),
@@ -353,6 +364,32 @@ pub(crate) async fn run_supervisor(
             ConnectionOutcome::Fatal(err) => {
                 let _ = send_or_cancel(&tx, Err(err), &mut cancel, &mut parent_cancel).await;
                 break;
+            }
+        }
+    }
+
+    if flush_cursor_on_exit {
+        if let (Some(pending), Some(store)) = (pending_commit.as_ref(), state_store.as_ref()) {
+            let checkpoint = Checkpoint::new(pending.sequence, Some(pending.event_id.clone()));
+            match store.put(&resume_key, checkpoint).await {
+                Ok(()) => {
+                    tracing::debug!(
+                        event.name = "client.resume.flushed_on_exit",
+                        resume_key = %resume_key.as_hex(),
+                        sequence = pending.sequence,
+                        event_id = %pending.event_id,
+                        "flushed pending commit to state store on supervisor exit",
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        event.name = "client.resume.flush_on_exit_failed",
+                        resume_key = %resume_key.as_hex(),
+                        sequence = pending.sequence,
+                        error = %e,
+                        "failed to flush pending commit on supervisor exit; the next run may redeliver this notification",
+                    );
+                }
             }
         }
     }
