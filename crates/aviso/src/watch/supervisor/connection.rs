@@ -177,7 +177,18 @@ pub(super) async fn run_one_connection(
     *retry_counter = 0;
 
     let mut parser = finesse::Parser::new();
-    let mut gap_guard = GapGuard::starting_from(wire_from);
+    // Strict gap detection assumes consecutive sequence numbers and
+    // fires `ClientError::HistoryGap` on any jump. That contract
+    // holds only for UNFILTERED listeners: when a filter is present,
+    // the server applies it server-side and silently skips
+    // non-matching events, so observed sequences naturally jump from
+    // the client's perspective. Relaxed mode logs gaps at DEBUG but
+    // does not terminate the watch.
+    let mut gap_guard = if request.filter().is_empty() {
+        GapGuard::starting_from(wire_from)
+    } else {
+        GapGuard::relaxed_starting_from(wire_from)
+    };
 
     loop {
         // The heartbeat budget measures time waiting for the next wire
