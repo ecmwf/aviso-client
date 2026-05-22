@@ -42,7 +42,7 @@ pub(crate) async fn run(
     let spec = resolve_listener(resolved, listener_files, listener_name, event, identifiers)?;
     let req = listener::build_replay_request(&spec, cursor);
 
-    let client = client_builder::build(resolved, None)?;
+    let client = client_builder::build(resolved, None, false)?;
     let mut cancel_rx = cancel::install();
     let mut stream = client.watch(req)?;
     loop {

@@ -16,7 +16,7 @@ use crate::output;
 
 /// Runs `aviso admin wipe-stream <EVENT_TYPE> --yes`.
 pub(crate) async fn run_wipe_stream(resolved: &Resolved, event_type: &str) -> Result<()> {
-    let client = client_builder::build(resolved, None)?;
+    let client = client_builder::build(resolved, None, false)?;
     client
         .wipe_stream(event_type)
         .await
@@ -26,7 +26,7 @@ pub(crate) async fn run_wipe_stream(resolved: &Resolved, event_type: &str) -> Re
 
 /// Runs `aviso admin wipe-all --yes`.
 pub(crate) async fn run_wipe_all(resolved: &Resolved) -> Result<()> {
-    let client = client_builder::build(resolved, None)?;
+    let client = client_builder::build(resolved, None, false)?;
     client
         .wipe_all()
         .await
@@ -36,7 +36,7 @@ pub(crate) async fn run_wipe_all(resolved: &Resolved) -> Result<()> {
 
 /// Runs `aviso admin delete <NOTIFICATION_ID> --yes`.
 pub(crate) async fn run_delete(resolved: &Resolved, notification_id: &str) -> Result<()> {
-    let client = client_builder::build(resolved, None)?;
+    let client = client_builder::build(resolved, None, false)?;
     client
         .delete_notification(notification_id)
         .await

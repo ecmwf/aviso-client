@@ -22,6 +22,7 @@ pub struct AvisoClientBuilder {
     state_store: Option<Arc<dyn StateStore>>,
     extra_root_certs: Vec<reqwest::Certificate>,
     danger_accept_invalid_certs: bool,
+    flush_cursor_on_exit: bool,
 }
 
 impl std::fmt::Debug for AvisoClientBuilder {
@@ -38,6 +39,7 @@ impl std::fmt::Debug for AvisoClientBuilder {
                 "danger_accept_invalid_certs",
                 &self.danger_accept_invalid_certs,
             )
+            .field("flush_cursor_on_exit", &self.flush_cursor_on_exit)
             .finish()
     }
 }
@@ -123,6 +125,43 @@ impl AvisoClientBuilder {
         self
     }
 
+    /// Opt into flushing the supervisor's in-memory `pending_commit` cursor
+    /// to the configured [`StateStore`] when the watch supervisor exits.
+    ///
+    /// The supervisor's default contract is **commit-on-next-send**: a
+    /// notification `N` is persisted to the store only when `N+1` is
+    /// about to be delivered, so pulling `N+1` implies `N` is durable.
+    /// This preserves at-least-once on a crash: if the consumer dies
+    /// after receiving `N` but before processing, the next run resumes
+    /// at `N` and re-delivers it.
+    ///
+    /// The cost is that the LAST notification of every session stays
+    /// uncommitted (no `N+1` ever arrives to promote it), so the next
+    /// run sees it again. For an interactive operator who has already
+    /// observed `N` on their terminal and presses Ctrl+C, that redelivery
+    /// is noise.
+    ///
+    /// When this flag is `true`, the supervisor performs one final
+    /// `store.put(pending_commit)` after its reconnect loop exits (for
+    /// any reason: cancel signal, fatal error, natural terminal state).
+    /// `pending_commit` reflects the LAST notification successfully
+    /// delivered through the user-facing channel, so persisting it on
+    /// exit is strictly safe: we never claim to have committed more
+    /// than was actually sent.
+    ///
+    /// At-least-once is preserved for **hard** failures (panic, OOM,
+    /// SIGKILL) which skip the post-loop flush entirely; only graceful
+    /// supervisor exit triggers it.
+    ///
+    /// Default `false`, preserving the existing contract for library
+    /// users that rely on at-least-once redelivery across graceful
+    /// restarts. The `aviso` CLI sets this to `true` for `aviso listen`
+    /// so operators do not see the same notification on every restart.
+    pub fn flush_cursor_on_exit(mut self, flush: bool) -> Self {
+        self.flush_cursor_on_exit = flush;
+        self
+    }
+
     /// Wires a persistent state store for resume across process restarts.
     ///
     /// When set, `AvisoClient::watch()` consults the store at watch
@@ -190,6 +229,7 @@ impl AvisoClientBuilder {
             state_store: self.state_store,
             active_resume_keys: Arc::new(Mutex::new(HashMap::new())),
             danger_accept_invalid_certs: self.danger_accept_invalid_certs,
+            flush_cursor_on_exit: self.flush_cursor_on_exit,
         })
     }
 }
