@@ -155,6 +155,16 @@ pub(super) async fn run_one_connection(
         };
     }
 
+    let session_request_id = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .map(String::from);
+    tracing::info!(
+        event.name = "client.watch.subscribed",
+        request_id = session_request_id.as_deref().unwrap_or("<absent>"),
+        "watch session opened"
+    );
     let connected = state.transition(WatchEvent::ConnectionEstablished);
     apply_outcome(last_reconnect_policy, connected);
     // Reset the retry counter as soon as the HTTP handshake succeeds.
