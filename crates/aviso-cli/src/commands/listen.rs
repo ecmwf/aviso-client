@@ -34,6 +34,7 @@ use crate::exit::usage_error;
 use crate::from_value;
 use crate::listener;
 use crate::listener_file;
+use crate::output;
 use crate::paths;
 
 /// Runs the `aviso listen` subcommand.
@@ -53,10 +54,54 @@ pub(crate) async fn run(
         apply_cursor_override(&mut listeners, &cursor);
     }
 
+    print_startup_banner(&listeners);
+
     let state_store = client_builder::build_state_store(resolved, no_state_store).await?;
     let client = Arc::new(client_builder::build(resolved, Some(state_store))?);
     let cancel_rx = cancel::install();
     drive(client, listeners, cancel_rx).await
+}
+
+/// Emits a user-facing one-line summary of what each listener is
+/// subscribed to, BEFORE the supervisor starts connecting. Operators
+/// see this at default verbosity (no `-v`); it replaces what would
+/// otherwise be a series of structured `tracing` events the operator
+/// would have to parse to figure out which listeners are active.
+fn print_startup_banner(listeners: &[ListenerSpec]) {
+    let mut summaries: Vec<String> = Vec::with_capacity(listeners.len());
+    for spec in listeners {
+        let name = spec.name.as_deref().unwrap_or(&spec.event);
+        let filters = if spec.identifiers.is_empty() {
+            String::new()
+        } else {
+            let mut parts: Vec<String> = spec
+                .identifiers
+                .iter()
+                .map(|(k, v)| format!("{k}={}", render_identifier_value(v)))
+                .collect();
+            parts.sort();
+            format!(" ({})", parts.join(", "))
+        };
+        summaries.push(format!("{name} [{}]{filters}", spec.event));
+    }
+    let _ = output::write_stderr_line(&format!(
+        "Listening for {}. Press Ctrl+C to stop.",
+        summaries.join(", ")
+    ));
+}
+
+/// Renders an identifier value for the startup banner WITHOUT the
+/// JSON quoting that `serde_json::Value::Display` produces for
+/// string values. The `BTreeMap<String, serde_json::Value>` storage
+/// is for schema flexibility (numeric / bool values are possible);
+/// for the operator-visible banner we want `class=od` not
+/// `class="od"`. Non-string values fall through to the normal JSON
+/// Display.
+fn render_identifier_value(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn apply_cursor_override(listeners: &mut [ListenerSpec], cursor: &ResumeStart) {
@@ -161,25 +206,26 @@ async fn drive(
                 // be a duplicate of the same lifecycle transition.
             }
             Ok(Err(client_err)) => {
-                tracing::warn!(
+                let _ =
+                    output::write_stderr_line(&format!("Error in listener {name}: {client_err}"));
+                if let Some(hint) = hint_for_listener_error(&client_err) {
+                    let _ = output::write_stderr_line(&format!("  Hint: {hint}"));
+                }
+                let _ = output::write_stderr_line("  Other listeners continue.");
+                tracing::debug!(
                     event.name = "cli.listener.failed",
                     listener_name = %name,
                     error = %client_err,
                     "listener errored; other listeners continue"
                 );
-                if let Some(hint) = hint_for_listener_error(&client_err) {
-                    tracing::warn!(
-                        event.name = "cli.listener.suggestion",
-                        listener_name = %name,
-                        "{hint}"
-                    );
-                }
                 any_failed = true;
             }
             Err(join_err) if join_err.is_panic() => {
                 let panic_box = join_err.into_panic();
                 let payload = format_panic_payload(panic_box.as_ref());
-                tracing::error!(
+                let _ = output::write_stderr_line(&format!("Listener {name} panicked: {payload}"));
+                let _ = output::write_stderr_line("  Other listeners continue.");
+                tracing::debug!(
                     event.name = "cli.listener.panic",
                     listener_name = %name,
                     %payload,
@@ -188,7 +234,10 @@ async fn drive(
                 any_failed = true;
             }
             Err(join_err) => {
-                tracing::error!(
+                let _ = output::write_stderr_line(&format!(
+                    "Listener {name} task was cancelled unexpectedly: {join_err}"
+                ));
+                tracing::debug!(
                     event.name = "cli.listener.task_cancelled",
                     listener_name = %name,
                     error = %join_err,
@@ -200,10 +249,12 @@ async fn drive(
     }
 
     if any_failed {
-        Err(anyhow::anyhow!(
-            "at least one listener errored or panicked; see WARN/ERROR events above"
-        ))
+        let _ = output::write_stderr_line(
+            "Some listeners stopped with errors (see messages above). Exiting with non-zero status.",
+        );
+        Err(anyhow::anyhow!("one or more listeners errored or panicked"))
     } else {
+        let _ = output::write_stderr_line("All listeners stopped.");
         Ok(())
     }
 }

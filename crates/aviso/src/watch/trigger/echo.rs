@@ -35,46 +35,72 @@ pub(super) fn dispatch_echo(notification: &Notification) -> Result<(), TriggerEr
     } else {
         serde_json::to_vec(notification)?
     };
+    // `format_human` already terminates with `\n`; the extra blank
+    // line below separates consecutive multi-line notification blocks
+    // visually. For the JSON branch, the single `\n` terminates one
+    // NDJSON record.
     buf.push(b'\n');
     let mut handle = stdout.lock();
     handle.write_all(&buf)?;
     Ok(())
 }
 
-/// Renders a [`Notification`] as one human-readable line.
+/// Renders a [`Notification`] as a multi-line, kubectl-describe-style
+/// block intended for human reading. Returns a [`String`] terminated
+/// by a final `\n`; the caller (`dispatch_echo`) appends another `\n`
+/// so consecutive notifications are visually separated by a blank
+/// line.
 ///
-/// Shape:
-/// - `<event_type>#<sequence>` always.
-/// - identifier `k=v` pairs separated by spaces, when non-empty.
-/// - `  =>  <payload-json>` when payload is not JSON null.
+/// Output shape:
+/// ```text
+/// mars #15
+///   class:    od
+///   date:     20260521
+///   domain:   g
+///   expver:   0001
+///   step:     0
+///   stream:   oper
+///   time:     1200
+///   payload:  {"region":"north"}
+/// ```
 ///
-/// When `use_color` is `true`, ANSI escape codes wrap each section:
-/// cyan for `event_type#sequence` (the primary identifier), dim grey
-/// for identifier `k=v` pairs (often redundant for a listener that
-/// filtered by them), bold for the `=>` separator. The plain-text
-/// branch is the canonical machine form and is what tests pin.
+/// Identifier keys are right-padded so the values column aligns, the
+/// payload (when present) appears as the last field with the same
+/// alignment, and the heading `<event_type> #<sequence>` is unindented
+/// so the eye finds the next event at a glance.
 ///
-/// Identifier values are written verbatim; values containing spaces or
-/// `=` are unusual in aviso schemas in practice and any operator who
-/// hits one can fall back to piping the listener through `jq` and
-/// reading the JSON form.
+/// When `use_color` is `true`, ANSI escape codes wrap the heading in
+/// cyan and the field labels in dim. Color is opt-in only via the CLI
+/// `--color auto|always` flag; the plain-text branch is the canonical
+/// form for tests and machine pipelines.
 pub(super) fn format_human(n: &Notification, use_color: bool) -> Result<String, TriggerError> {
     use std::fmt::Write as _;
-    let (cyan, dim, bold, reset) = if use_color {
-        ("\x1b[36m", "\x1b[2m", "\x1b[1m", "\x1b[0m")
+    let (cyan, dim, reset) = if use_color {
+        ("\x1b[36m", "\x1b[2m", "\x1b[0m")
     } else {
-        ("", "", "", "")
+        ("", "", "")
     };
-    let mut s = format!("{cyan}{}#{}{reset}", n.event_type, n.sequence);
-    if !n.identifier.is_empty() {
-        s.push(' ');
-        for (k, v) in &n.identifier {
-            let _ = write!(s, " {dim}{k}={v}{reset}");
-        }
+
+    let payload_present = !n.payload.is_null();
+    let key_width = n
+        .identifier
+        .keys()
+        .map(String::len)
+        .chain(payload_present.then_some("payload".len()))
+        .max()
+        .unwrap_or(0);
+
+    let mut s = format!("{cyan}{} #{}{reset}\n", n.event_type, n.sequence);
+    for (k, v) in &n.identifier {
+        let _ = writeln!(s, "  {dim}{k:key_width$}{reset}  {v}");
     }
-    if !n.payload.is_null() {
-        let _ = write!(s, "  {bold}=>{reset}  ");
-        s.push_str(&serde_json::to_string(&n.payload)?);
+    if payload_present {
+        let payload_json = serde_json::to_string(&n.payload)?;
+        let _ = writeln!(
+            s,
+            "  {dim}{:key_width$}{reset}  {}",
+            "payload", payload_json
+        );
     }
     Ok(s)
 }
@@ -106,13 +132,13 @@ mod tests {
     }
 
     #[test]
-    fn format_human_event_type_and_sequence_always_present() {
-        let line = format_human(&make_notification(), false).unwrap();
-        assert_eq!(line, "mars#1");
+    fn format_human_heading_only_when_no_identifiers_or_payload() {
+        let s = format_human(&make_notification(), false).unwrap();
+        assert_eq!(s, "mars #1\n");
     }
 
     #[test]
-    fn format_human_includes_identifiers_when_non_empty() {
+    fn format_human_aligned_identifier_block() {
         let mut identifier = BTreeMap::new();
         identifier.insert("class".to_string(), "od".to_string());
         identifier.insert("date".to_string(), "20260521".to_string());
@@ -122,76 +148,72 @@ mod tests {
             identifier,
             payload: serde_json::Value::Null,
         };
-        let line = format_human(&n, false).unwrap();
-        assert_eq!(line, "mars#42  class=od date=20260521");
+        let s = format_human(&n, false).unwrap();
+        let expected = "mars #42\n  class  od\n  date   20260521\n";
+        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
     }
 
     #[test]
-    fn format_human_includes_payload_when_non_null() {
+    fn format_human_payload_appears_as_last_field_with_same_alignment() {
         let n = Notification {
             event_type: "test_polygon".to_string(),
             sequence: 7,
             identifier: BTreeMap::new(),
             payload: serde_json::json!({"region": "north"}),
         };
-        let line = format_human(&n, false).unwrap();
-        assert_eq!(line, r#"test_polygon#7  =>  {"region":"north"}"#);
+        let s = format_human(&n, false).unwrap();
+        let expected = "test_polygon #7\n  payload  {\"region\":\"north\"}\n";
+        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
     }
 
     #[test]
-    fn format_human_with_identifiers_and_payload() {
+    fn format_human_full_block_with_identifiers_and_payload() {
         let mut identifier = BTreeMap::new();
         identifier.insert("class".to_string(), "od".to_string());
+        identifier.insert("date".to_string(), "20260521".to_string());
         let n = Notification {
             event_type: "mars".to_string(),
             sequence: 12,
             identifier,
             payload: serde_json::json!({"test": true}),
         };
-        let line = format_human(&n, false).unwrap();
-        assert_eq!(line, r#"mars#12  class=od  =>  {"test":true}"#);
+        let s = format_human(&n, false).unwrap();
+        let expected = "mars #12\n  class    od\n  date     20260521\n  payload  {\"test\":true}\n";
+        assert_eq!(s, expected, "actual:\n{s}\nexpected:\n{expected}");
     }
 
     #[test]
-    fn format_human_omits_payload_arrow_when_payload_is_json_null() {
-        let line = format_human(&make_notification(), false).unwrap();
+    fn format_human_omits_payload_line_when_payload_is_json_null() {
+        let s = format_human(&make_notification(), false).unwrap();
         assert!(
-            !line.contains("=>"),
-            "JSON null payload must not produce a `=>` arrow in human output: {line}"
+            !s.contains("payload"),
+            "JSON null payload must not produce a `payload` line in human output: {s}"
         );
     }
 
     #[test]
-    fn format_human_with_color_wraps_primary_id_in_cyan() {
-        let line = format_human(&make_notification(), true).unwrap();
+    fn format_human_with_color_wraps_heading_in_cyan() {
+        let s = format_human(&make_notification(), true).unwrap();
         assert!(
-            line.starts_with("\x1b[36m"),
-            "colored output must begin with cyan ANSI escape: {line:?}"
-        );
-        assert!(
-            line.contains("mars#1\x1b[0m"),
-            "primary id `mars#1` must be cyan-wrapped: {line:?}"
+            s.starts_with("\x1b[36mmars #1\x1b[0m"),
+            "heading must be cyan-wrapped: {s:?}"
         );
     }
 
     #[test]
-    fn format_human_with_color_dims_identifier_pairs_and_bolds_arrow() {
+    fn format_human_with_color_dims_identifier_labels() {
         let mut identifier = BTreeMap::new();
         identifier.insert("class".to_string(), "od".to_string());
         let n = Notification {
             event_type: "mars".to_string(),
             sequence: 12,
             identifier,
-            payload: serde_json::json!({"test": true}),
+            payload: serde_json::Value::Null,
         };
-        let line = format_human(&n, true).unwrap();
+        let s = format_human(&n, true).unwrap();
         assert!(
-            line.contains("\x1b[2mclass=od\x1b[0m"),
-            "identifier pair must be dim-wrapped: {line:?}"
-        );
-        assert!(
-            line.contains("\x1b[1m=>\x1b[0m"),
-            "arrow separator must be bold-wrapped: {line:?}"
+            s.contains("\x1b[2mclass\x1b[0m"),
+            "identifier label `class` must be dim-wrapped: {s:?}"
         );
     }
 
@@ -205,10 +227,10 @@ mod tests {
             identifier,
             payload: serde_json::json!({"test": true}),
         };
-        let line = format_human(&n, false).unwrap();
+        let s = format_human(&n, false).unwrap();
         assert!(
-            !line.contains('\x1b'),
-            "plain output must not contain any ANSI escape: {line:?}"
+            !s.contains('\x1b'),
+            "plain output must not contain any ANSI escape: {s:?}"
         );
     }
 }
