@@ -322,6 +322,9 @@ async fn drive(
 /// return `None` and let the raw `error` field on the
 /// `cli.listener.failed` event speak for itself.
 fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
+    if let aviso::ClientError::TriggerFailed { kind, source } = err {
+        return hint_for_trigger_failed(kind, source);
+    }
     let aviso::ClientError::Http { status, body, .. } = err else {
         return None;
     };
@@ -351,6 +354,37 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
         403 => Some(
             "credentials were accepted but may not have watch permission for this event_type. Contact the server admin; verify the event_type with `aviso schema list`."
                 .to_string(),
+        ),
+        _ => None,
+    }
+}
+
+/// Per-trigger-kind hint for `ClientError::TriggerFailed`. The
+/// underlying `TriggerError` variants (Io, Command, Template,
+/// Webhook, WebhookBuild, Timeout) each have characteristic
+/// operator-facing diagnoses. The error chain already explains
+/// WHAT happened; the hint adds WHAT TO CHECK FIRST.
+fn hint_for_trigger_failed(
+    kind: &aviso::watch::TriggerKindLabel,
+    source: &aviso::watch::TriggerError,
+) -> Option<String> {
+    use aviso::watch::{TriggerError, TriggerKindLabel};
+    match (kind, source) {
+        (TriggerKindLabel::Log { path }, TriggerError::Io(e)) => Some(format!(
+            "log trigger could not open `{}`: {e}. Common causes: the parent directory does not exist (the log trigger does NOT create directories), or the path is not writable by the aviso user. Verify the parent exists and the user can write to it: `ls -ld $(dirname '{}')`",
+            path.display(), path.display(),
+        )),
+        (TriggerKindLabel::Command, TriggerError::Command { .. }) => Some(
+            "command trigger exited non-zero. Non-zero exits are treated as TERMINAL (no retries) under the default `fail_fast: true` semantics because the shell exit code is deterministic w.r.t. the current notification; the next attempt would produce the same exit. Check the command's stderr in the error above; set `retries: N` AND `fail_fast: false` in the trigger YAML to override.".to_string(),
+        ),
+        (TriggerKindLabel::Command, TriggerError::Template { context: _, field, kind }) => Some(format!(
+            "command template render failed at `{field}` ({kind:?}). The template engine supports ONLY `{{{{ notification.<dotted.path> }}}}` and `{{{{ env.<NAME> }}}}` expressions; Jinja-style filters like `| default(...)` are NOT supported. For optional fields, guard the dotted path so it always resolves, or move conditional logic into the shell command body.",
+        )),
+        (TriggerKindLabel::Webhook, TriggerError::Webhook { status: Some(s), .. }) if s.as_u16() >= 400 && s.as_u16() < 500 => Some(format!(
+            "webhook returned 4xx ({s}) which is TERMINAL (no retries) per the dispatcher contract: 4xx means the receiver rejected the request, retrying with the same notification will fail identically. Check the webhook URL, headers, and body_template; the receiver's response body is included above and may name the specific field that failed validation.",
+        )),
+        (TriggerKindLabel::Webhook, TriggerError::Webhook { status: None, .. }) => Some(
+            "webhook transport failed (DNS, TCP, TLS, or mid-stream interrupt). The receiver never returned a response. Check the URL host/port resolves and is reachable; if behind a TLS proxy with a private CA, supply --ca-bundle.".to_string(),
         ),
         _ => None,
     }
