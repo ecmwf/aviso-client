@@ -49,16 +49,24 @@ pub(crate) async fn run_delete(resolved: &Resolved, notification_id: &str) -> Re
 }
 
 fn augment_admin_error(err: ClientError, operation: &str) -> anyhow::Error {
-    let augmented = match &err {
-        ClientError::Http { status: 401, .. } => {
-            "auth failed: admin endpoints require valid credentials with admin role. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars."
+    if let ClientError::Http { status, body, .. } = &err {
+        let hint = match *status {
+            401 => Some(
+                "auth failed: admin endpoints require valid credentials with admin role. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars.".to_string(),
+            ),
+            403 => Some(
+                "forbidden: credentials valid but lack admin role. Ask the aviso-server operator to grant the admin role on this principal.".to_string(),
+            ),
+            404 if body.contains("Notification not found") => Some(
+                "notification id not found. The id format is `<event_type>@<sequence>`; check for typos in either part. Run `aviso schema list` for valid event_types; note the server returns the same 404 whether the event_type is wrong or the sequence does not exist on that stream.".to_string(),
+            ),
+            _ => None,
+        };
+        if let Some(suggestion) = hint {
+            return anyhow::Error::from(err).context(format!("suggestion: {suggestion}"));
         }
-        ClientError::Http { status: 403, .. } => {
-            "forbidden: credentials valid but lack admin role. Ask the aviso-server operator to grant the admin role on this principal."
-        }
-        _ => return anyhow::Error::from(err).context(format!("admin {operation}")),
-    };
-    anyhow::Error::from(err).context(augmented.to_string())
+    }
+    anyhow::Error::from(err).context(format!("admin {operation}"))
 }
 
 fn write_ok(resolved: &Resolved, operation: &str, fields: &[(&str, &str)]) -> Result<()> {
