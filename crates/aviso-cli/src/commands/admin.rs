@@ -57,8 +57,14 @@ fn augment_admin_error(err: ClientError, operation: &str) -> anyhow::Error {
             403 => Some(
                 "forbidden: credentials valid but lack admin role. Ask the aviso-server operator to grant the admin role on this principal.".to_string(),
             ),
+            400 if body.contains("'<stream>@<sequence>' format") || body.contains("must be in") => Some(
+                "the notification id is malformed. The id format is `<event_type>@<sequence>` (example: `mars@72`).".to_string(),
+            ),
             404 if body.contains("Notification not found") => Some(
-                "notification id not found. The id format is `<event_type>@<sequence>`; check for typos in either part. Run `aviso schema list` for valid event_types; note the server returns the same 404 whether the event_type is wrong or the sequence does not exist on that stream.".to_string(),
+                "the event_type in the notification id is not registered on this server. The id format is `<event_type>@<sequence>`; run `aviso schema list` for valid event_types.".to_string(),
+            ),
+            500 if body.contains("Failed to delete sequence") => Some(
+                "the server accepted the event_type but could not find the sequence number. The id format is `<event_type>@<sequence>`; verify the sequence number references a notification that currently exists on the server.".to_string(),
             ),
             _ => None,
         }
@@ -123,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn augment_admin_error_404_notification_not_found_appends_hint() {
+    fn augment_admin_error_404_notification_not_found_appends_event_type_hint() {
         let err = http_err(
             404,
             r#"{"success":false,"message":"Notification not found"}"#,
@@ -137,14 +143,14 @@ mod tests {
             "404 + Notification not found MUST produce a suggestion: context naming the id format. Chain: {chain:?}",
         );
         assert!(
-            chain.iter().any(|s| s.contains("aviso schema list")),
-            "the hint MUST point at `aviso schema list` for the authoritative event_type list: {chain:?}",
-        );
-        assert!(
             chain
                 .iter()
-                .any(|s| s.contains("the same 404") || s.contains("indistinguishable")),
-            "the hint MUST tell the operator that wrong-event_type and wrong-sequence produce the SAME 404 (the disambiguation is the operator's responsibility): {chain:?}",
+                .any(|s| s.contains("event_type") && s.contains("not registered")),
+            "the hint MUST identify the event_type as the specific failing part (the server returns 404 specifically when the stream does not exist; missing sequences on a valid stream produce 500 instead, so the hint must NOT lump both cases together): {chain:?}",
+        );
+        assert!(
+            chain.iter().any(|s| s.contains("aviso schema list")),
+            "the hint MUST point at `aviso schema list` for the authoritative event_type list: {chain:?}",
         );
         assert!(
             chain.iter().any(|s| s == "admin delete"),
@@ -158,6 +164,58 @@ mod tests {
         assert!(
             chain_with_suggestion_idx < chain_with_op_idx,
             "the suggestion MUST be added AFTER the operation context (so it appears closer to the chain head); chain order: {chain:?}",
+        );
+    }
+
+    #[test]
+    fn augment_admin_error_500_missing_sequence_appends_sequence_hint() {
+        let err = http_err(
+            500,
+            r#"{"success":false,"message":"Failed to delete notification: Failed to delete sequence 99999999 from stream MARS","notification_id":"mars@99999999"}"#,
+        );
+        let chain: Vec<String> = augment_admin_error(err, "delete")
+            .chain()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            chain
+                .iter()
+                .any(|s| s.contains("suggestion:") && s.contains("sequence")),
+            "500 + 'Failed to delete sequence' MUST produce a sequence-focused suggestion: {chain:?}",
+        );
+        assert!(
+            chain
+                .iter()
+                .any(|s| s.contains("event_type") && s.contains("accepted")),
+            "the hint MUST clarify that the event_type IS valid (the server accepted it) so the operator focuses on the sequence rather than the event_type: {chain:?}",
+        );
+        assert!(
+            !chain.iter().any(|s| s.contains("aviso schema list")),
+            "the 500-sequence hint MUST NOT point at `aviso schema list` (the event_type is valid; the operator's problem is the sequence number, not the schema): {chain:?}",
+        );
+    }
+
+    #[test]
+    fn augment_admin_error_400_malformed_id_appends_format_hint() {
+        let err = http_err(
+            400,
+            r#"{"success":false,"message":"notification_id must be in '<stream>@<sequence>' format"}"#,
+        );
+        let chain: Vec<String> = augment_admin_error(err, "delete")
+            .chain()
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            chain
+                .iter()
+                .any(|s| s.contains("suggestion:") && s.contains("malformed")),
+            "400 + 'must be in <stream>@<sequence>' MUST produce a format-focused suggestion: {chain:?}",
+        );
+        assert!(
+            chain
+                .iter()
+                .any(|s| s.contains("`mars@72`") || s.contains("example:")),
+            "the hint MUST include a copy-pasteable example so the operator sees the expected shape concretely: {chain:?}",
         );
     }
 
