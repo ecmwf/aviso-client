@@ -163,6 +163,9 @@ fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
+    if let Some(hint) = crate::commands::notify::polygon_violation_hint(body, "replay") {
+        return Some(hint);
+    }
     if let Some(hint) =
         crate::commands::notify::constraint_violation_hint(body, "replay")
     {

@@ -337,28 +337,11 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
-    if let Some(hint) = crate::commands::notify::constraint_violation_hint(body, "listen") {
+    if let Some(hint) = crate::commands::notify::polygon_violation_hint(body, "listen") {
         return Some(hint);
     }
-    if body.contains("must be a valid polygon") {
-        let specific = if body.contains("odd number of values") {
-            "coordinates must come in lat,lon pairs (even total count)"
-        } else if body.contains("could not parse latitude")
-            || body.contains("could not parse longitude")
-        {
-            "each coordinate must be a number; check for typos and confirm you're using comma (not semicolon) as the delimiter"
-        } else if body.contains("at least 4 coordinate pairs") {
-            "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
-        } else if body.contains("polygon coordinate string is empty") {
-            "polygon value cannot be empty"
-        } else if body.contains("outside the valid range") {
-            "latitude must be in [-90, 90] and longitude in [-180, 180] (note the order: each pair is `lat,lon`, not `lon,lat`)"
-        } else {
-            "polygon must be a comma-separated list of lat,lon pairs"
-        };
-        return Some(format!(
-            "{specific}. In listener YAML, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` (the value wrapped as a single string)."
-        ));
+    if let Some(hint) = crate::commands::notify::constraint_violation_hint(body, "listen") {
+        return Some(hint);
     }
     match *status {
         401 => Some(
