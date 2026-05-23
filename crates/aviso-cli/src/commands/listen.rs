@@ -299,6 +299,8 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
             "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
         } else if body.contains("polygon coordinate string is empty") {
             "polygon value cannot be empty"
+        } else if body.contains("outside the valid range") {
+            "latitude must be in [-90, 90] and longitude in [-180, 180] (note the order: each pair is `lat,lon`, not `lon,lat`)"
         } else {
             "polygon must be a comma-separated list of lat,lon pairs"
         };
@@ -389,6 +391,25 @@ mod tests {
         assert!(
             hint.contains("comma-separated list of lat,lon pairs"),
             "generic fallback must spell out the basic format: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_lat_lon_out_of_range_in_listener_yaml() {
+        let body = r#"{"details":"field 'polygon' must be a valid polygon: latitude 91 is outside the valid range [-90, 90]"}"#;
+        let hint = hint_for_listener_error(&http_err(400, body))
+            .expect("listener polygon out-of-range MUST yield a hint");
+        assert!(
+            hint.contains("[-90, 90]") && hint.contains("[-180, 180]"),
+            "the listener variant of the out-of-range hint must restate both ranges so the operator does not need to re-check the orthogonal axis manually: {hint}"
+        );
+        assert!(
+            hint.contains("not `lon,lat`"),
+            "the `lat,lon` order mnemonic must appear in the listener variant too: this is the most common operator mistake regardless of subcommand: {hint}"
+        );
+        assert!(
+            hint.contains("listener YAML") || hint.contains("polygon:"),
+            "the listener variant must explicitly point at YAML syntax: {hint}"
         );
     }
 

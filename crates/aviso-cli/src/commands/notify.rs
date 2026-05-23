@@ -99,6 +99,8 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
             "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
         } else if body.contains("polygon coordinate string is empty") {
             "polygon value cannot be empty"
+        } else if body.contains("outside the valid range") {
+            "latitude must be in [-90, 90] and longitude in [-180, 180] (note the order: each pair is `lat,lon`, not `lon,lat`)"
         } else {
             "polygon must be a comma-separated list of lat,lon pairs"
         };
@@ -671,6 +673,57 @@ mod tests {
         assert!(
             hint.contains("cannot be empty"),
             "specific sub-hint for empty polygon must say so explicitly: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_lat_out_of_range_sub_message() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: latitude 91 is outside the valid range [-90, 90]"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("lat-out-of-range MUST yield a hint");
+        assert!(
+            hint.contains("[-90, 90]"),
+            "specific sub-hint for lat-out-of-range must restate the valid latitude range: {hint}"
+        );
+        assert!(
+            hint.contains("[-180, 180]"),
+            "specific sub-hint MUST also restate the longitude range (the same kind of mistake commonly applies in the other axis): {hint}"
+        );
+        assert!(
+            hint.contains("lat,lon") && hint.contains("not `lon,lat`"),
+            "the LAT/LON ORDER mnemonic must be in the hint; this is the single most common cause of an apparent out-of-range value (operator wrote `lon,lat` and the server interpreted the lon as lat): {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_lon_out_of_range_sub_message_uses_same_hint_as_lat() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: longitude 181 is outside the valid range [-180, 180]"}"#.to_string(),
+            request_id: None,
+        };
+        let hint = hint_for_client_error(&err).expect("lon-out-of-range MUST yield a hint");
+        assert!(
+            hint.contains("[-90, 90]") && hint.contains("[-180, 180]"),
+            "lat-out-of-range and lon-out-of-range MUST share the same hint variant: the message reads naturally in either direction AND the `lat,lon` order mnemonic is the actionable advice for both: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_polygon_lat_negative_out_of_range_sub_message() {
+        let err = aviso::ClientError::Http {
+            status: 400,
+            body: r#"{"details":"field 'polygon' must be a valid polygon: latitude -91 is outside the valid range [-90, 90]"}"#.to_string(),
+            request_id: None,
+        };
+        let hint =
+            hint_for_client_error(&err).expect("negative-lat-out-of-range MUST yield a hint");
+        assert!(
+            hint.contains("[-90, 90]"),
+            "the negative-axis case must produce the same range-restating hint as the positive case: {hint}"
         );
     }
 
