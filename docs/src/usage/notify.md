@@ -42,7 +42,7 @@ The shipped static-credential providers (`Basic`, `Bearer`) treat refresh as a n
 
 ## Retry policy on transport errors
 
-Per the project's error design, `notify` does not retry on a transport error after the request body has been sent. The server may have processed the publish, so a blind retry would risk a duplicate. The decision is recorded in [D16](../internals/decisions.md). When a server-side idempotency-key contract becomes available the policy will be revisited.
+`notify` does not retry on a transport error after the request body has been sent. The server may have processed the publish, so a blind retry would risk a duplicate. When a server-side idempotency-key contract becomes available the policy will be revisited.
 
 ## Error variants
 

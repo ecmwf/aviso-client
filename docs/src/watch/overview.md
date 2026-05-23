@@ -122,7 +122,7 @@ If two concurrent `watch()` calls on the same client compute the same resume key
 
 `aviso-server` deliberately closes connections after `connection_max_duration_sec` (default 3600 s). The supervisor reconnects automatically; a watch outlives an arbitrary number of routine server-driven reconnects without ever surfacing a terminal error.
 
-The reconnect classifier (per ADR D2):
+The reconnect classifier:
 
 - `connection-closing { reason: max_duration_reached }`: immediate reconnect, no backoff. The routine path.
 - `connection-closing { reason: server_shutdown }`: short backoff (~5 s) then reconnect.
@@ -318,7 +318,3 @@ annotations:
 The buffering knob is mandatory: without it nginx buffers the SSE response body until "complete" and the client receives nothing until the connection closes. The two timeouts must meet or exceed the server's `connection_max_duration_sec` so nginx does not impose an earlier cutoff than the server.
 
 Operators using a different ingress controller (HAProxy, Traefik, Envoy, AWS ALB) should look up the equivalent of these three knobs; the heartbeat watchdog defends against silent failures across any ingress, but minimising routine reconnects keeps the operational picture cleaner.
-
-## Architectural references
-
-- `docs/src/internals/decisions.md` D2 (reconnect-as-norm, state machine sketch, reconnect classifier), D3 (resume key derivation), D4 (`StateStore` trait), D8 (`AuthProvider` and refresh-on-401), D9 (CloudEvent envelope hidden, malformed id terminal), D15 (state machine as `ReplayPhase x ConnectionStatus`), D17 (`from_date` bootstrap-only), D19 (watch API shape and single-consumer mpsc), D20 (multi-listener as `AvisoClient` property).

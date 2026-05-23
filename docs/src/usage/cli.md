@@ -101,7 +101,7 @@ auth:
     password: "..."
 timeout: 30s                    # optional
 heartbeat_interval: 30s         # optional
-state_file: "/path/to/state.json"  # optional; default ~/.config/aviso/state.json
+state_file: "/path/to/state.json"  # optional; default ~/.config/aviso/state.json (see docs: Resume & state / The state file)
 tls:
   ca_bundle: ["/path/to/ca.pem"]
   danger_accept_invalid_certs: false
@@ -186,6 +186,19 @@ Both `aviso replay --from <VALUE>` (mandatory) and `aviso listen --from <VALUE>`
 All six date forms normalise to the wire format `YYYY-MM-DDTHH:MM:SS.ffffffZ` (exactly six fractional digits, microsecond precision) before being sent to the server. Inputs with fewer fractional digits are zero-padded; nine-digit input is truncated to six.
 
 **Important ambiguity rule**: pure digits are ALWAYS routed as sequence id. The compact `YYYYMMDD` form (`20240115`) is therefore a sequence id, NOT a date. To pass a date, use the dashed form: `--from 2024-01-15`.
+
+### Precedence vs. the persisted state cursor
+
+When `--from <VALUE>` is supplied AND a state-store cursor exists for the same listener:
+
+- **`--from` always wins for the initial seek.** The supervisor uses your value and ignores the stored cursor.
+- **The state file is protected from regression.** As the rewind redelivers notifications, the monotonic-merge rule discards any `put` whose sequence is less than or equal to what is already on disk. The file's high-water mark is preserved; you cannot accidentally rewind the cursor by passing an early `--from`.
+- **Once the run advances past the previous high-water mark, the file resumes normal updates.**
+- **Restarting without `--from` honours the stored cursor again.**
+
+The implied operator workflow is: pass `--from` as a *one-shot* manual rewind, then remove it from subsequent invocations. Leaving `--from <date>` in a systemd unit will redeliver from that date on every restart, because the supervisor re-evaluates precedence at every process start.
+
+See [The state file: `--from` interaction](../resume/state-file.md#-from-interaction) for the full breakdown with worked sequences.
 
 ## TLS configuration
 
@@ -327,4 +340,5 @@ They shouldn't. The lib's `Bearer::Debug` and `Basic::Debug` redact secrets, and
 
 - [Watch streams overview](../watch/overview.md): the streaming architecture the `listen` and `replay` subcommands consume.
 - [Authentication](./auth.md): how the lib's auth providers work; the CLI composes `Bearer` / `Basic` from the layered config.
-- [Architecture](../internals/architecture.md) and [Architectural decisions](../internals/decisions.md) (D8 auth refresh, D12 logging, D17 from-date contract, D19 watch API, D20 multi-listener semantics).
+- [Architecture](../internals/architecture.md): the layering of the CLI on top of the core library.
+- [The state file](../resume/state-file.md): annotated on-disk format and `--from` interaction.

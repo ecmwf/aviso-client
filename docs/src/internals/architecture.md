@@ -31,5 +31,3 @@
 ```
 
 The CLI and the Python extension are *peer consumers* of the core library and never depend on each other. The core library never depends on PyO3, on actix, or on any CLI machinery.
-
-See [Architectural decisions](./decisions.md) for the rationale behind every load-bearing choice.
