@@ -73,18 +73,19 @@ fn leader_text(label: Option<&str>) -> String {
 /// appends another `\n` so consecutive notifications are visually
 /// separated by a blank line.
 ///
-/// When `use_color` is `true`, the leader line is wrapped in ANSI dim
-/// escapes (the JSON body stays plain so it remains copy-paste-friendly
-/// into `jq` and other tools). Color is opt-in only via the CLI
-/// `--color auto|always` flag; the plain-text branch is the canonical
-/// form for tests and machine pipelines.
+/// When `use_color` is `true`, the leader line is wrapped in
+/// `\x1b[90m` (bright-black / dark gray), a muted-text color
+/// rendered distinctly by essentially every terminal theme. The
+/// JSON body stays plain so it remains copy-paste-friendly into
+/// `jq` and other tools. Color is opt-in only via the CLI
+/// `--color auto|always` flag.
 pub(super) fn format_human(
     n: &Notification,
     use_color: bool,
     listener_label: Option<&str>,
 ) -> Result<String, TriggerError> {
     let (dim, reset) = if use_color {
-        ("\x1b[2m", "\x1b[0m")
+        ("\x1b[90m", "\x1b[0m")
     } else {
         ("", "")
     };
@@ -210,7 +211,7 @@ mod tests {
     #[test]
     fn format_human_with_color_wraps_leader_in_dim_and_leaves_json_body_uncoloured() {
         let s = format_human(&make_notification(), true, None).unwrap();
-        let expected_leader_line = format!("\x1b[2m{TTY_LEADER}\x1b[0m");
+        let expected_leader_line = format!("\x1b[90m{TTY_LEADER}\x1b[0m");
         let first_line = s.lines().next().unwrap();
         assert_eq!(
             first_line, expected_leader_line,
@@ -258,8 +259,8 @@ mod tests {
         let s = format_human(&make_notification(), true, Some("alpha")).unwrap();
         let first_line = s.lines().next().unwrap();
         assert_eq!(
-            first_line, "\x1b[2mnew notification (listener: alpha, trigger: echo):\x1b[0m",
-            "the entire labelled leader (including the parenthetical) must be wrapped in dim ANSI escapes when color is on; got {first_line:?}",
+            first_line, "\x1b[90mnew notification (listener: alpha, trigger: echo):\x1b[0m",
+            "the entire labelled leader (including the parenthetical) must be wrapped in the muted-text ANSI escape (bright-black/dark-gray, more universally rendered than the dim attribute that the original design used) when color is on; got {first_line:?}",
         );
     }
 
