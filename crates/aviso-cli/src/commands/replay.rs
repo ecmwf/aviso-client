@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use aviso::watch::{ResumeStart, Trigger};
 
 use crate::cancel;
@@ -82,7 +82,12 @@ pub(crate) async fn run(
                         );
                     }
                     Some(Err(e)) => {
-                        break Err(e).context("draining replay stream");
+                        let hint = hint_for_replay_error(&e);
+                        let mut err = anyhow::Error::from(e).context("draining replay stream");
+                        if let Some(h) = hint {
+                            err = err.context(format!("suggestion: {h}"));
+                        }
+                        break Err(err);
                     }
                     None => {
                         let _ = output::write_stderr_line(&format!(
@@ -118,9 +123,62 @@ fn print_replay_banner(spec: &ListenerSpec, from: &str) {
         format!(" ({})", parts.join(", "))
     };
     let _ = output::write_stderr_line(&format!(
-        "Replaying {name} [{}]{filters} from {from}. Press Ctrl+C to stop.",
-        spec.event
+        "Replaying {name} [{}]{filters} from {}. Press Ctrl+C to stop.",
+        spec.event,
+        render_from_value(from),
     ));
+}
+
+/// Disambiguates the raw `--from` string for the operator-visible
+/// banner. Plain digits always render as `sequence #N` (the parser
+/// rule that pure-digit input is always a sequence id, never a
+/// YYYYMMDD compact date). Any other input renders verbatim because
+/// it is a date string that already speaks for itself.
+fn render_from_value(raw: &str) -> String {
+    if !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()) {
+        format!("sequence #{raw}")
+    } else {
+        raw.to_string()
+    }
+}
+
+/// Maps a `ClientError` from the replay supervisor into a one-line
+/// hint pointing at the operator's likely root cause. Mirrors the
+/// notify and listen hint dispatchers so the same error class
+/// produces the same hint regardless of which subcommand the
+/// operator ran (UX consistency contract).
+fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
+    let aviso::ClientError::Http { status, body, .. } = err else {
+        return None;
+    };
+    if body.contains("UNKNOWN_EVENT_TYPE") || body.contains("unknown event type") {
+        return Some(
+            "the event_type is not configured on the server. The response above includes a `configured_event_types` array; run `aviso schema list` for the same list. Check the `event:` value in your listener YAML or the `--event` argument for a typo."
+                .to_string(),
+        );
+    }
+    if body.contains("missing for watch operation") || body.contains("missing for replay operation") {
+        return Some(
+            "schema fields with `required: true` must appear in the listener YAML's `identifiers:` block (or in the `--identifiers` JSON for ad-hoc replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+                .to_string(),
+        );
+    }
+    if let Some(hint) =
+        crate::commands::notify::constraint_violation_hint(body, "replay")
+    {
+        return Some(hint);
+    }
+    match *status {
+        401 => Some(
+            "credentials are missing, invalid, or expired. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars; verify auth wired up via `aviso config dump --redact`."
+                .to_string(),
+        ),
+        403 => Some(
+            "credentials were accepted but may not have replay permission for this event_type. Contact the server admin; verify the event_type with `aviso schema list`."
+                .to_string(),
+        ),
+        _ => None,
+    }
 }
 
 /// Renders an identifier value for the banner WITHOUT the JSON quoting
@@ -259,6 +317,27 @@ mod tests {
             2,
             "when the listener spec declares triggers, replay must use exactly those (no echo default appended): {triggers:?}",
         );
+    }
+
+    #[test]
+    fn render_from_value_pure_digits_render_as_sequence_id_to_disambiguate_from_yyyymmdd() {
+        assert_eq!(
+            render_from_value("42"),
+            "sequence #42",
+            "pure-digit input MUST render as `sequence #N` so an operator who typed `20260522` expecting a date sees `sequence #20260522` in the banner and immediately notices the misinterpretation (the parser rule that pure-digits always win is documented in `from_value::parse`): got {got:?}",
+            got = render_from_value("42"),
+        );
+        assert_eq!(
+            render_from_value("20260522"),
+            "sequence #20260522",
+            "the YYYYMMDD-trap case: the operator probably meant a date but the parser interprets it as a sequence id; the banner must spell this out so the operator catches the misinterpretation",
+        );
+    }
+
+    #[test]
+    fn render_from_value_date_forms_render_verbatim() {
+        assert_eq!(render_from_value("2026-05-22"), "2026-05-22");
+        assert_eq!(render_from_value("2026-05-22T12:34:56Z"), "2026-05-22T12:34:56Z");
     }
 
     #[test]
