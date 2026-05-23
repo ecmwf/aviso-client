@@ -101,3 +101,74 @@ fn write_ok(resolved: &Resolved, operation: &str, fields: &[(&str, &str)]) -> Re
         output::write_stdout_line(&line)
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: unwrap/expect on synthetic ClientError fixtures is the expected diagnostic"
+)]
+mod tests {
+    use super::*;
+
+    fn http_err(status: u16, body: &str) -> ClientError {
+        ClientError::Http {
+            status,
+            body: body.to_string(),
+            request_id: Some("req-test".into()),
+        }
+    }
+
+    #[test]
+    fn augment_admin_error_404_notification_not_found_appends_hint() {
+        let err = http_err(404, r#"{"success":false,"message":"Notification not found"}"#);
+        let augmented = augment_admin_error(err, "delete");
+        let chain: Vec<String> = augmented.chain().map(|e| e.to_string()).collect();
+        assert!(
+            chain.iter().any(|s| s.contains("suggestion:") && s.contains("`<event_type>@<sequence>`")),
+            "404 + Notification not found MUST produce a suggestion: context naming the id format. Chain: {chain:?}",
+        );
+        assert!(
+            chain.iter().any(|s| s.contains("aviso schema list")),
+            "the hint MUST point at `aviso schema list` for the authoritative event_type list: {chain:?}",
+        );
+        assert!(
+            chain.iter().any(|s| s.contains("the same 404") || s.contains("indistinguishable")),
+            "the hint MUST tell the operator that wrong-event_type and wrong-sequence produce the SAME 404 (the disambiguation is the operator's responsibility): {chain:?}",
+        );
+    }
+
+    #[test]
+    fn augment_admin_error_401_auth_hint() {
+        let err = http_err(401, r#"{}"#);
+        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(|e| e.to_string()).collect();
+        assert!(
+            chain.iter().any(|s| s.contains("admin role")),
+            "401 hint MUST specifically mention admin role (NOT generic 'credentials' which is the notify/listen wording for non-admin endpoints): {chain:?}",
+        );
+    }
+
+    #[test]
+    fn augment_admin_error_403_admin_role_hint() {
+        let err = http_err(403, r#"{}"#);
+        let chain: Vec<String> = augment_admin_error(err, "wipe-stream").chain().map(|e| e.to_string()).collect();
+        assert!(
+            chain.iter().any(|s| s.contains("admin role")),
+            "403 hint MUST specifically mention admin role: {chain:?}",
+        );
+    }
+
+    #[test]
+    fn augment_admin_error_404_unrelated_body_falls_through_to_operation_context() {
+        let err = http_err(404, r#"{"something else entirely":"true"}"#);
+        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(|e| e.to_string()).collect();
+        assert!(
+            chain.iter().any(|s| s.contains("admin delete")),
+            "404 with unrelated body MUST fall through to the generic `admin {{operation}}` context (no spurious suggestion): {chain:?}",
+        );
+        assert!(
+            !chain.iter().any(|s| s.contains("suggestion:")),
+            "no `suggestion:` context expected for unrecognised 404 body: {chain:?}",
+        );
+    }
+}
