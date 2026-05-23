@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-commit hook for aviso-client.
+#
+# Purpose: refuse commits whose staged Rust files are not formatted.
+# This is the same `cargo fmt --all -- --check` that CI runs; running it
+# at commit time prevents the "I forgot to re-stage after cargo fmt --all"
+# class of failures that surface in CI minutes after a push.
+#
+# Speed: rustfmt runs in well under a second on this workspace; the hook
+# adds no perceptible delay to a normal commit cycle.
+#
+# Skip (NOT recommended) with `git commit --no-verify`.
+#
+# Enable via `git config core.hooksPath .githooks` (one-time per clone).
+# See CONTRIBUTING.md "Pre-commit / pre-push hooks" for details.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# `cargo fmt --all -- --check` returns 0 if every file is formatted, non-zero
+# otherwise. Use it (not plain `cargo fmt --all`, which silently reformats);
+# the operator must see the failure AND re-stage the formatted files so the
+# next commit attempt sees clean files.
+if ! cargo fmt --all -- --check >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+
+aviso-client pre-commit hook: Rust files are not formatted.
+
+To fix:
+    cargo fmt --all
+    git add -u
+    git commit            # re-run the commit you just attempted
+
+To see the exact diff rustfmt would apply:
+    cargo fmt --all -- --check
+
+To skip this hook (NOT recommended; CI will fail on push):
+    git commit --no-verify
+
+EOF
+    exit 1
+fi
+
+exit 0

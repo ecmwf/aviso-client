@@ -35,6 +35,28 @@ docker compose -f tests/e2e/docker-compose.yml config --quiet
 
 This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation).
 
+## Pre-commit / pre-push hooks
+
+The repo ships two git hooks under [`.githooks/`](.githooks/) that automate the gates above:
+
+- **`pre-commit`** runs `cargo fmt --all -- --check` only (sub-second). Refuses to record a commit whose staged Rust files would be rewritten by `cargo fmt --all`. This is the load-bearing gate that prevents the most common CI failure on this repo: editing code, committing, then running `cargo fmt --all` "as a final sanity pass" without re-staging the resulting changes (the working tree ends up formatted but the committed files do not, and the push fails CI minutes later).
+- **`pre-push`** runs the full check set above (the same one CI runs). Cold ~30-90s; warm ~5-15s. Optional tooling (`cargo-deny`, `mdbook`, `docker`) is skipped with a notice if absent.
+
+Enable both hooks with a one-time:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To skip a single invocation (rarely needed; CI will catch what you skip):
+
+```bash
+git commit --no-verify     # skip pre-commit
+git push   --no-verify     # skip pre-push
+```
+
+`AGENTS.md` requires this gate to be enabled (or the equivalent commands run by hand) before every push. See the [agent rulebook](AGENTS.md#commit-conventions) for the policy text.
+
 Python toolchain (once `python/aviso/` carries code):
 
 ```bash
