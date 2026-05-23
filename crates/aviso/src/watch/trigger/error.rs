@@ -116,7 +116,13 @@ pub enum TriggerError {
     /// every received response that the dispatcher then classified
     /// as a failure. `body_tail` is the last 4 KiB of the response
     /// body, lossily UTF-8 decoded; empty on transport failures.
-    #[error("webhook: status={status:?} body_tail={body_tail}")]
+    ///
+    /// Display format uses operator-friendly rendering for both
+    /// fields: `status=500` (not `Some(500)`) when the response
+    /// arrived; `status=<transport error>` when the HTTP client
+    /// reported a connect/TLS/mid-stream failure; `body_tail=<empty>`
+    /// when the response body was empty or never received.
+    #[error("webhook: status={} body_tail={}", render_webhook_status(*status), render_webhook_body(body_tail))]
     Webhook {
         /// HTTP status code if the response made it back from the
         /// server. `None` on transport errors.
@@ -179,4 +185,29 @@ pub enum TriggerError {
         /// Categorisation of the failure.
         kind: TemplateErrorKind,
     },
+}
+
+/// Render an `Option<reqwest::StatusCode>` for the `TriggerError::Webhook`
+/// `Display` impl. The raw `Debug` form (`Some(500)` / `None`) leaks
+/// into operator-facing error messages and reads as a Rust type rather
+/// than an HTTP status; this helper produces `500` (set) and
+/// `<transport error>` (unset), so the resulting message reads naturally.
+fn render_webhook_status(status: Option<reqwest::StatusCode>) -> String {
+    match status {
+        Some(s) => s.as_u16().to_string(),
+        None => "<transport error>".to_string(),
+    }
+}
+
+/// Render the captured response body tail for the `TriggerError::Webhook`
+/// `Display` impl. An empty `body_tail` (transport error or genuinely
+/// empty response body) is rendered as `<empty>` so the operator's
+/// stderr line is not a dangling `body_tail=` with nothing after the
+/// equals sign.
+fn render_webhook_body(body_tail: &str) -> String {
+    if body_tail.is_empty() {
+        "<empty>".to_string()
+    } else {
+        body_tail.to_string()
+    }
 }
