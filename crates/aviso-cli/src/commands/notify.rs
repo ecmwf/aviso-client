@@ -114,6 +114,9 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
+    if let Some(hint) = constraint_violation_hint(body, "notify") {
+        return Some(hint);
+    }
     // Status-class hints handle auth failures, where the body may be
     // HTML / empty / vendor-specific, so we rely on the HTTP semantics.
     match *status {
@@ -127,6 +130,53 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
         ),
         _ => None,
     }
+}
+
+/// Per-handler-type validation hint for the server-side schema
+/// constraint errors that aviso-server emits (StringHandler max_length,
+/// EnumHandler allowed values, IntHandler range, DateHandler format,
+/// TimeHandler format).
+///
+/// The hint repeats the constraint as a self-contained tip AND always
+/// suggests `aviso schema get <TYPE>` for the authoritative shape.
+/// The `subcommand` parameter scopes the closing suggestion to the
+/// caller's idiom: `"notify"` says "check the value you sent",
+/// `"listen"` / `"watch"` says "check the YAML identifier", etc.
+pub(crate) fn constraint_violation_hint(body: &str, subcommand: &str) -> Option<String> {
+    let action_suffix = match subcommand {
+        "listen" | "watch" => {
+            "Check the identifier value in your listener YAML; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
+        }
+        _ => {
+            "Check the value you supplied for this identifier; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
+        }
+    };
+    if body.contains("exceeds maximum length") {
+        return Some(format!(
+            "string identifier value exceeds the schema's max_length constraint (the server names the exact field and limit above). {action_suffix}"
+        ));
+    }
+    if body.contains("Allowed: [") || body.contains("has invalid value") {
+        return Some(format!(
+            "enum identifier value is not in the schema's allowed set (the server lists the allowed values inline above). {action_suffix}"
+        ));
+    }
+    if body.contains("outside allowed range") {
+        return Some(format!(
+            "integer identifier value is outside the schema's allowed range (the server lists [min, max] inline above). {action_suffix}"
+        ));
+    }
+    if body.contains("contains invalid date") || body.contains("Failed to parse date") {
+        return Some(format!(
+            "date identifier value did not parse. The server accepts `YYYY-MM-DD`, `YYYYMMDD`, or `YYYY-DDD` (ISO 8601 ordinal date). {action_suffix}"
+        ));
+    }
+    if body.contains("invalid hours") || body.contains("invalid minutes") {
+        return Some(format!(
+            "time identifier value out of range. The server expects 4-digit `HHMM` in 24-hour format (e.g. `1200` for noon). {action_suffix}"
+        ));
+    }
+    None
 }
 
 fn write_response(
@@ -614,6 +664,70 @@ mod tests {
             "hint must explain the schema's `required: false` semantic: {hint}"
         );
         assert!(hint.contains("aviso schema get"), "{hint}");
+    }
+
+    #[test]
+    fn constraint_hint_string_max_length_notify() {
+        let err = http_err_for_constraint("Field 'class' exceeds maximum length of 2 characters, got: 3");
+        let hint = hint_for_client_error(&err).expect("max_length MUST yield a hint");
+        assert!(hint.contains("max_length"), "{hint}");
+        assert!(hint.contains("aviso schema get"), "{hint}");
+        assert!(
+            hint.contains("value you supplied"),
+            "notify-form hint must address the value the operator supplied, not the YAML: {hint}"
+        );
+    }
+
+    #[test]
+    fn constraint_hint_enum_invalid_value_notify() {
+        let err = http_err_for_constraint("Field 'domain' has invalid value 'zz'. Allowed: [a, b, c]");
+        let hint = hint_for_client_error(&err).expect("enum invalid MUST yield a hint");
+        assert!(hint.contains("enum") || hint.contains("allowed set"), "{hint}");
+        assert!(hint.contains("aviso schema get"), "{hint}");
+    }
+
+    #[test]
+    fn constraint_hint_int_range_notify() {
+        let err = http_err_for_constraint("Field 'step' value 100001 is outside allowed range [0, 100000]");
+        let hint = hint_for_client_error(&err).expect("int range MUST yield a hint");
+        assert!(hint.contains("integer") && hint.contains("range"), "{hint}");
+    }
+
+    #[test]
+    fn constraint_hint_date_format_notify() {
+        let err = http_err_for_constraint("Field 'date' contains invalid date 'not-a-date'. Expected: YYYY-MM-DD, YYYYMMDD, or YYYY-DDD");
+        let hint = hint_for_client_error(&err).expect("date format MUST yield a hint");
+        assert!(
+            hint.contains("YYYY-MM-DD") && hint.contains("YYYYMMDD") && hint.contains("YYYY-DDD"),
+            "the date-format hint MUST restate all three accepted forms (the server's wording is authoritative; restating it client-side keeps the hint self-contained even when the operator pipes stderr through grep): {hint}"
+        );
+    }
+
+    #[test]
+    fn constraint_hint_time_invalid_hours_notify() {
+        let err = http_err_for_constraint("Field 'time' has invalid hours: 25. Hours must be 0-23 in 24-hour format");
+        let hint = hint_for_client_error(&err).expect("time invalid MUST yield a hint");
+        assert!(hint.contains("HHMM"), "{hint}");
+        assert!(hint.contains("24-hour"), "{hint}");
+    }
+
+    #[test]
+    fn constraint_hint_returns_none_for_unknown_body() {
+        let err = http_err_for_constraint("some unrelated 400 error");
+        assert!(
+            hint_for_client_error(&err).is_none(),
+            "constraint hint dispatcher must NOT fire on unrelated bodies; the generic 'no hint' fall-through is the operator's signal that the error body is the authoritative diagnostic"
+        );
+    }
+
+    fn http_err_for_constraint(details: &str) -> aviso::ClientError {
+        aviso::ClientError::Http {
+            status: 400,
+            body: format!(
+                r#"{{"code":"INVALID_NOTIFICATION_REQUEST","details":"{details}","message":"{details}"}}"#
+            ),
+            request_id: None,
+        }
     }
 
     #[test]
