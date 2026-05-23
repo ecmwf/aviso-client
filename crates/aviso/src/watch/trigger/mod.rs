@@ -65,6 +65,10 @@ mod http_method;
 mod kind;
 /// Log trigger dispatch.
 mod log;
+/// Post trigger dispatch (HTTP POST with CloudEvent-shaped body).
+mod post;
+/// Teams trigger dispatch (sugar over webhook with auto-built Adaptive Card body).
+mod teams;
 /// Template substitution engine shared by command and webhook triggers.
 mod template;
 /// Webhook trigger dispatch.
@@ -190,11 +194,11 @@ impl Trigger {
     /// # Environment variable injection
     ///
     /// The dispatcher injects `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
-    /// `AVISO_REQUEST_ID` (when present), `AVISO_IDENTIFIER_<KEY>`
-    /// per identifier entry (uppercased, non-alphanumerics replaced
-    /// with `_`), `AVISO_PAYLOAD_JSON` (full payload as compact JSON),
-    /// and `AVISO_NOTIFICATION_JSON` (full notification as compact
-    /// JSON). User-supplied env vars via [`Self::env`] are applied
+    /// `AVISO_IDENTIFIER_<KEY>` per identifier entry (uppercased,
+    /// non-alphanumerics replaced with `_`), `AVISO_PAYLOAD_JSON`
+    /// (full payload as compact JSON), and `AVISO_NOTIFICATION_JSON`
+    /// (full notification as compact JSON). User-supplied env vars
+    /// via [`Self::env`] are applied
     /// AFTER the dispatcher-injected vars, so user keys override
     /// dispatcher keys when both are present.
     ///

@@ -377,12 +377,22 @@ fn hint_for_trigger_failed(
         (TriggerKindLabel::Command, TriggerError::Template { context: _, field, kind }) => Some(format!(
             "command template render failed at `{field}` ({kind:?}). The template engine supports ONLY `{{{{ notification.<dotted.path> }}}}` and `{{{{ env.<NAME> }}}}` expressions; Jinja-style filters like `| default(...)` are NOT supported. For optional fields, guard the dotted path so it always resolves, or move conditional logic into the shell command body.",
         )),
-        (TriggerKindLabel::Webhook, TriggerError::Webhook { status: Some(s), .. }) if s.as_u16() >= 400 && s.as_u16() < 500 => Some(format!(
-            "webhook returned 4xx ({s}) which is TERMINAL (no retries) per the dispatcher contract: 4xx means the receiver rejected the request, retrying with the same notification will fail identically. Check the webhook URL, headers, and body_template; the receiver's response body is included above and may name the specific field that failed validation.",
+        // 4xx HTTP error: identical operator action regardless of which
+        // HTTP-style trigger kind dispatched. Teams and Post reuse the
+        // webhook machinery internally, so their failures surface as
+        // TriggerError::Webhook with the matching status.
+        (
+            TriggerKindLabel::Webhook | TriggerKindLabel::Teams | TriggerKindLabel::Post,
+            TriggerError::Webhook { status: Some(s), .. },
+        ) if s.as_u16() >= 400 && s.as_u16() < 500 => Some(format!(
+            "{kind} returned 4xx ({s}) which is TERMINAL (no retries) per the dispatcher contract: 4xx means the receiver rejected the request, retrying with the same notification will fail identically. Check the URL, headers, and body shape; the receiver's response body is included above and may name the specific field that failed validation.",
         )),
-        (TriggerKindLabel::Webhook, TriggerError::Webhook { status: None, .. }) => Some(
-            "webhook transport failed (DNS, TCP, TLS, or mid-stream interrupt). The receiver never returned a response. Check the URL host/port resolves and is reachable; if behind a TLS proxy with a private CA, supply --ca-bundle.".to_string(),
-        ),
+        (
+            TriggerKindLabel::Webhook | TriggerKindLabel::Teams | TriggerKindLabel::Post,
+            TriggerError::Webhook { status: None, .. },
+        ) => Some(format!(
+            "{kind} transport failed (DNS, TCP, TLS, or mid-stream interrupt). The receiver never returned a response. Check the URL host/port resolves and is reachable; if behind a TLS proxy with a private CA, supply --ca-bundle.",
+        )),
         _ => None,
     }
 }

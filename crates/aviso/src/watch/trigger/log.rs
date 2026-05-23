@@ -61,6 +61,7 @@ mod tests {
             sequence: 1,
             identifier: BTreeMap::new(),
             payload: serde_json::Value::Null,
+            cloudevent: None,
         }
     }
 

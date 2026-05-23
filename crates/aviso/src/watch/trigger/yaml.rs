@@ -62,6 +62,16 @@ pub enum TriggerConfig {
     /// Webhook trigger: sends an HTTP request per notification to a
     /// user-configured URL.
     Webhook(WebhookTriggerConfig),
+    /// Teams trigger: sugar over [`Self::Webhook`] that auto-builds an
+    /// Adaptive Card body for Microsoft Teams Workflows endpoints.
+    /// Operators wanting richer card customisation use [`Self::Webhook`]
+    /// directly with a hand-written `body_template`.
+    Teams(TeamsTriggerConfig),
+    /// Post trigger: HTTP POST with a CloudEvent-shaped body
+    /// reconstructed from the notification. Custom headers supported;
+    /// body shape is fixed (no `body_template` field). For arbitrary
+    /// body shapes, use [`Self::Webhook`] directly.
+    Post(PostTriggerConfig),
 }
 
 /// YAML payload for [`TriggerConfig::Echo`].
@@ -179,6 +189,68 @@ pub struct WebhookTriggerConfig {
     pub fail_fast: bool,
 }
 
+/// YAML payload for [`TriggerConfig::Teams`]. Sugar over the webhook
+/// trigger targeting Microsoft Teams Workflows endpoints; desugars to
+/// a [`TriggerConfig::Webhook`] at `into_trigger` time.
+#[non_exhaustive]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TeamsTriggerConfig {
+    /// Workflow URL. Template-rendered at dispatch time;
+    /// `{{ env.TEAMS_WEBHOOK_URL }}` is the canonical secret-bearing pattern.
+    pub url: String,
+    /// Optional title template for the Adaptive Card's first TextBlock.
+    /// Defaults to `aviso {{ notification.event_type }} #{{ notification.sequence }}`.
+    #[serde(default = "default_teams_title")]
+    pub title_template: String,
+    /// Per-trigger timeout. Parsed as a humantime duration string.
+    #[serde(default, with = "humantime_serde::option")]
+    pub timeout: Option<Duration>,
+    /// Retry count; default `0`.
+    #[serde(default)]
+    pub retries: u32,
+    /// Required flag; default `true`.
+    #[serde(default = "default_required")]
+    pub required: bool,
+    /// Fail-fast policy; default `true`. Inherits the webhook classifier.
+    #[serde(default = "default_fail_fast")]
+    pub fail_fast: bool,
+}
+
+fn default_teams_title() -> String {
+    super::teams::DEFAULT_TEAMS_TITLE_TEMPLATE.to_string()
+}
+
+/// YAML payload for [`TriggerConfig::Post`]. Migration-friendly shape
+/// for operators coming from pyaviso's `post` trigger: URL plus
+/// optional custom headers; the body is a fixed CloudEvent envelope
+/// built from the notification at dispatch time (no `body_template`
+/// field).
+#[non_exhaustive]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PostTriggerConfig {
+    /// URL template; rendered through the in-crate template engine at
+    /// dispatch time.
+    pub url: String,
+    /// Headers to attach to the request. Header names are taken
+    /// literally; header values are template-rendered at dispatch.
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    /// Per-trigger timeout. Parsed as a humantime duration string.
+    #[serde(default, with = "humantime_serde::option")]
+    pub timeout: Option<Duration>,
+    /// Retry count; default `0`.
+    #[serde(default)]
+    pub retries: u32,
+    /// Required flag; default `true`.
+    #[serde(default = "default_required")]
+    pub required: bool,
+    /// Fail-fast policy; default `true`. Inherits the webhook classifier.
+    #[serde(default = "default_fail_fast")]
+    pub fail_fast: bool,
+}
+
 impl TriggerConfig {
     /// Convert the declarative config into a strongly-typed
     /// [`Trigger`] builder, applying all per-variant defaults.
@@ -215,6 +287,27 @@ impl TriggerConfig {
                 }
                 if let Some(b) = cfg.body_template {
                     t = t.body_template(b);
+                }
+                if let Some(d) = cfg.timeout {
+                    t = t.timeout(d);
+                }
+                t.retries(cfg.retries)
+                    .required(cfg.required)
+                    .fail_fast(cfg.fail_fast)
+            }
+            Self::Teams(cfg) => {
+                let mut t = Trigger::teams(cfg.url).title_template(cfg.title_template);
+                if let Some(d) = cfg.timeout {
+                    t = t.timeout(d);
+                }
+                t.retries(cfg.retries)
+                    .required(cfg.required)
+                    .fail_fast(cfg.fail_fast)
+            }
+            Self::Post(cfg) => {
+                let mut t = Trigger::post(cfg.url);
+                for (k, v) in cfg.headers {
+                    t = t.post_header(k, v);
                 }
                 if let Some(d) = cfg.timeout {
                     t = t.timeout(d);
@@ -479,5 +572,64 @@ retries: 1
         assert!(trigger.required);
         assert_eq!(trigger.timeout, Some(std::time::Duration::from_secs(5)));
         assert!(matches!(trigger.kind, TriggerKind::Webhook(_)));
+    }
+
+    #[test]
+    fn yaml_deserialise_teams_with_defaults() {
+        let cfg = parse("type: teams\nurl: \"https://example/workflow\"\n");
+        match cfg {
+            TriggerConfig::Teams(teams) => {
+                assert_eq!(teams.url, "https://example/workflow");
+                assert!(
+                    teams.title_template.contains("notification.event_type"),
+                    "default title template must reference notification.event_type: {}",
+                    teams.title_template
+                );
+                assert_eq!(teams.retries, 0);
+                assert!(teams.required);
+            }
+            other => panic!("expected Teams, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn yaml_deserialise_teams_with_explicit_title_template() {
+        let yaml = r#"
+type: teams
+url: "{{ env.TEAMS_WEBHOOK_URL }}"
+title_template: "custom: {{ notification.event_type }} #{{ notification.sequence }}"
+retries: 2
+timeout: 10s
+"#;
+        let cfg = parse(yaml);
+        match cfg {
+            TriggerConfig::Teams(teams) => {
+                assert_eq!(teams.url, "{{ env.TEAMS_WEBHOOK_URL }}");
+                assert_eq!(
+                    teams.title_template,
+                    "custom: {{ notification.event_type }} #{{ notification.sequence }}"
+                );
+                assert_eq!(teams.retries, 2);
+                assert_eq!(teams.timeout, Some(std::time::Duration::from_secs(10)));
+            }
+            other => panic!("expected Teams, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn yaml_teams_to_trigger_produces_teams_kind() {
+        let yaml = r#"
+type: teams
+url: "https://example/workflow"
+title_template: "aviso fires"
+"#;
+        let cfg = parse(yaml);
+        let trigger = cfg.into_trigger();
+        assert!(
+            matches!(trigger.kind, TriggerKind::Teams(_)),
+            "type: teams must produce TriggerKind::Teams (was a webhook desugaring before; now a proper kind that builds the Adaptive Card from the notification at dispatch time)"
+        );
+        assert_eq!(trigger.retries, 0);
+        assert!(trigger.required);
     }
 }
