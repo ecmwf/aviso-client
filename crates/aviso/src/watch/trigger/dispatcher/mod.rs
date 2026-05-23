@@ -154,7 +154,7 @@ async fn dispatch_one_attempt(
     http: &reqwest::Client,
 ) -> Result<(), TriggerError> {
     match &trigger.kind {
-        TriggerKind::Echo => dispatch_echo(notification),
+        TriggerKind::Echo { label } => dispatch_echo(notification, label.as_deref()),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
         #[cfg(unix)]
         TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,

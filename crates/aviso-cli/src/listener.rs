@@ -43,12 +43,7 @@ pub(crate) fn build_watch_request(spec: &ListenerSpec) -> Result<WatchRequest> {
     };
 
     let req = req.with_filter(spec.identifiers.clone().into_iter().collect());
-    let triggers: Vec<aviso::watch::Trigger> = spec
-        .triggers
-        .iter()
-        .cloned()
-        .map(aviso::watch::TriggerConfig::into_trigger)
-        .collect();
+    let triggers = triggers_for_listener(spec);
     Ok(req.with_triggers(triggers))
 }
 
@@ -57,13 +52,21 @@ pub(crate) fn build_watch_request(spec: &ListenerSpec) -> Result<WatchRequest> {
 pub(crate) fn build_replay_request(spec: &ListenerSpec, cursor: ResumeStart) -> WatchRequest {
     let req = WatchRequest::replay_only(spec.event.clone(), cursor);
     let req = req.with_filter(spec.identifiers.clone().into_iter().collect());
-    let triggers: Vec<aviso::watch::Trigger> = spec
-        .triggers
+    let triggers = triggers_for_listener(spec);
+    req.with_triggers(triggers)
+}
+
+pub(crate) fn triggers_for_listener(spec: &ListenerSpec) -> Vec<aviso::watch::Trigger> {
+    let label = spec.name.as_deref();
+    spec.triggers
         .iter()
         .cloned()
         .map(aviso::watch::TriggerConfig::into_trigger)
-        .collect();
-    req.with_triggers(triggers)
+        .map(|t| match label {
+            Some(name) => t.label(name),
+            None => t,
+        })
+        .collect()
 }
 
 /// Drives one listener to completion.
