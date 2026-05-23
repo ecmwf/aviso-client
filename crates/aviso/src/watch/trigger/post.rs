@@ -57,12 +57,12 @@ impl std::fmt::Debug for PostConfig {
     }
 }
 
-/// CloudEvent `type` value emitted by the post trigger. Constant
+/// `CloudEvent` `type` value emitted by the post trigger. Constant
 /// for v1; operators wanting customisation can use the webhook
 /// trigger with a hand-written `body_template`.
 pub(super) const POST_CLOUDEVENT_TYPE: &str = "co.ecmwf.aviso.event";
 
-/// CloudEvent `source` value emitted by the post trigger. Constant
+/// `CloudEvent` `source` value emitted by the post trigger. Constant
 /// for v1.
 pub(super) const POST_CLOUDEVENT_SOURCE: &str = "aviso-client";
 
@@ -75,7 +75,7 @@ pub(super) const POST_CLOUDEVENT_SOURCE: &str = "aviso-client";
 /// reconstruction is best-effort (synthesised `specversion`, `type`,
 /// `source`; no `time` since the server's emission time is not
 /// preserved through the parser) and exists only so test fixtures
-/// without a real wire envelope still produce a valid CloudEvent
+/// without a real wire envelope still produce a valid `CloudEvent`
 /// body.
 pub(super) async fn dispatch_post(
     cfg: &PostConfig,

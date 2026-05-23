@@ -199,7 +199,7 @@ pub struct TeamsTriggerConfig {
     /// Workflow URL. Template-rendered at dispatch time;
     /// `{{ env.TEAMS_WEBHOOK_URL }}` is the canonical secret-bearing pattern.
     pub url: String,
-    /// Optional title template for the Adaptive Card's first TextBlock.
+    /// Optional title template for the Adaptive Card's first `TextBlock`.
     /// Defaults to `aviso {{ notification.event_type }} #{{ notification.sequence }}`.
     #[serde(default = "default_teams_title")]
     pub title_template: String,
@@ -223,7 +223,7 @@ fn default_teams_title() -> String {
 
 /// YAML payload for [`TriggerConfig::Post`]. Migration-friendly shape
 /// for operators coming from pyaviso's `post` trigger: URL plus
-/// optional custom headers; the body is a fixed CloudEvent envelope
+/// optional custom headers; the body is a fixed `CloudEvent` envelope
 /// built from the notification at dispatch time (no `body_template`
 /// field).
 #[non_exhaustive]
