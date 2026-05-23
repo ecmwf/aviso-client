@@ -88,25 +88,8 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
-    if body.contains("must be a valid polygon") {
-        let specific = if body.contains("odd number of values") {
-            "coordinates must come in lat,lon pairs (even total count)"
-        } else if body.contains("could not parse latitude")
-            || body.contains("could not parse longitude")
-        {
-            "each coordinate must be a number; check for typos and confirm you're using comma (not semicolon) as the delimiter"
-        } else if body.contains("at least 4 coordinate pairs") {
-            "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
-        } else if body.contains("polygon coordinate string is empty") {
-            "polygon value cannot be empty"
-        } else if body.contains("outside the valid range") {
-            "latitude must be in [-90, 90] and longitude in [-180, 180] (note the order: each pair is `lat,lon`, not `lon,lat`)"
-        } else {
-            "polygon must be a comma-separated list of lat,lon pairs"
-        };
-        return Some(format!(
-            "{specific}. Wrap the entire value in double quotes so the top-level commas are not parsed as parameter separators (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`); the CLI strips the outer quotes before sending."
-        ));
+    if let Some(hint) = polygon_violation_hint(body, "notify") {
+        return Some(hint);
     }
     if body.contains("missing for notify operation") {
         return Some(
@@ -130,6 +113,47 @@ fn hint_for_client_error(err: &aviso::ClientError) -> Option<String> {
         ),
         _ => None,
     }
+}
+
+/// Per-sub-message polygon validation hint. Hoisted out of the
+/// per-subcommand dispatchers so notify, listen, AND replay share
+/// the SAME polygon advice for the same six canonical server
+/// error variants (odd count, non-numeric coord, < 4 pairs, empty,
+/// out-of-range lat/lon, fallback). The subcommand-specific closing
+/// suffix (CLI quoting advice vs YAML syntax vs replay --identifiers
+/// JSON) is keyed on `subcommand` so the hint reads naturally in
+/// each caller without diverging on the core diagnosis.
+pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<String> {
+    if !body.contains("must be a valid polygon") {
+        return None;
+    }
+    let specific = if body.contains("odd number of values") {
+        "coordinates must come in lat,lon pairs (even total count)"
+    } else if body.contains("could not parse latitude")
+        || body.contains("could not parse longitude")
+    {
+        "each coordinate must be a number; check for typos and confirm you're using comma (not semicolon) as the delimiter"
+    } else if body.contains("at least 4 coordinate pairs") {
+        "a polygon needs at least 4 coordinate pairs: 3 unique vertices plus a closing repeat of the first vertex"
+    } else if body.contains("polygon coordinate string is empty") {
+        "polygon value cannot be empty"
+    } else if body.contains("outside the valid range") {
+        "latitude must be in [-90, 90] and longitude in [-180, 180] (note the order: each pair is `lat,lon`, not `lon,lat`)"
+    } else {
+        "polygon must be a comma-separated list of lat,lon pairs"
+    };
+    let suffix = match subcommand {
+        "listen" | "watch" => {
+            "In listener YAML, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` (the value wrapped as a single string)."
+        }
+        "replay" => {
+            "For ad-hoc replay, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven replay, use the same `polygon:` shape as listener YAML."
+        }
+        _ => {
+            "Wrap the entire value in double quotes so the top-level commas are not parsed as parameter separators (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`); the CLI strips the outer quotes before sending."
+        }
+    };
+    Some(format!("{specific}. {suffix}"))
 }
 
 /// Per-handler-type validation hint for the server-side schema
