@@ -49,8 +49,8 @@ pub(crate) async fn run_delete(resolved: &Resolved, notification_id: &str) -> Re
 }
 
 fn augment_admin_error(err: ClientError, operation: &str) -> anyhow::Error {
-    if let ClientError::Http { status, body, .. } = &err {
-        let hint = match *status {
+    let hint: Option<String> = if let ClientError::Http { status, body, .. } = &err {
+        match *status {
             401 => Some(
                 "auth failed: admin endpoints require valid credentials with admin role. Check --token / --username / --password or the AVISO_TOKEN / AVISO_USERNAME / AVISO_PASSWORD env vars.".to_string(),
             ),
@@ -61,12 +61,15 @@ fn augment_admin_error(err: ClientError, operation: &str) -> anyhow::Error {
                 "notification id not found. The id format is `<event_type>@<sequence>`; check for typos in either part. Run `aviso schema list` for valid event_types; note the server returns the same 404 whether the event_type is wrong or the sequence does not exist on that stream.".to_string(),
             ),
             _ => None,
-        };
-        if let Some(suggestion) = hint {
-            return anyhow::Error::from(err).context(format!("suggestion: {suggestion}"));
         }
+    } else {
+        None
+    };
+    let mut augmented = anyhow::Error::from(err).context(format!("admin {operation}"));
+    if let Some(suggestion) = hint {
+        augmented = augmented.context(format!("suggestion: {suggestion}"));
     }
-    anyhow::Error::from(err).context(format!("admin {operation}"))
+    augmented
 }
 
 fn write_ok(resolved: &Resolved, operation: &str, fields: &[(&str, &str)]) -> Result<()> {
@@ -135,6 +138,16 @@ mod tests {
         assert!(
             chain.iter().any(|s| s.contains("the same 404") || s.contains("indistinguishable")),
             "the hint MUST tell the operator that wrong-event_type and wrong-sequence produce the SAME 404 (the disambiguation is the operator's responsibility): {chain:?}",
+        );
+        assert!(
+            chain.iter().any(|s| s == "admin delete"),
+            "the operation context `admin delete` MUST be present in the chain alongside the suggestion so `format_chain` renders `error: admin delete` (not `error: http 404 ...`) as the summary, matching the notify/listen pattern: {chain:?}",
+        );
+        let chain_with_suggestion_idx = chain.iter().position(|s| s.starts_with("suggestion: ")).unwrap();
+        let chain_with_op_idx = chain.iter().position(|s| s == "admin delete").unwrap();
+        assert!(
+            chain_with_suggestion_idx < chain_with_op_idx,
+            "the suggestion MUST be added AFTER the operation context (so it appears closer to the chain head); chain order: {chain:?}",
         );
     }
 
