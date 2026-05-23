@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use super::TriggerKindLabel;
 #[cfg(unix)]
 use super::command::CommandConfig;
+use super::post::PostConfig;
+use super::teams::TeamsConfig;
 use super::webhook::WebhookConfig;
 
 /// Internal description of which built-in trigger a [`super::Trigger`] runs.
@@ -27,6 +29,8 @@ pub(super) enum TriggerKind {
     #[cfg(unix)]
     Command(Box<CommandConfig>),
     Webhook(Box<WebhookConfig>),
+    Teams(Box<TeamsConfig>),
+    Post(Box<PostConfig>),
     /// Test-only: fails the first `failures_remaining` attempts, then
     /// resolves per `eventual`. Used by unit tests to drive "fail K times
     /// then succeed/fail" patterns deterministically.
@@ -73,6 +77,8 @@ impl std::fmt::Debug for TriggerKind {
             #[cfg(unix)]
             Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
             Self::Webhook(cfg) => f.debug_tuple("Webhook").field(&**cfg).finish(),
+            Self::Teams(cfg) => f.debug_tuple("Teams").field(&**cfg).finish(),
+            Self::Post(cfg) => f.debug_tuple("Post").field(&**cfg).finish(),
             #[cfg(test)]
             Self::TestFailing {
                 failures_remaining,
@@ -103,6 +109,8 @@ pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
         #[cfg(unix)]
         TriggerKind::Command(_) => TriggerKindLabel::Command,
         TriggerKind::Webhook(_) => TriggerKindLabel::Webhook,
+        TriggerKind::Teams(_) => TriggerKindLabel::Teams,
+        TriggerKind::Post(_) => TriggerKindLabel::Post,
         #[cfg(test)]
         TriggerKind::TestFailing { .. } => TriggerKindLabel::Echo,
         #[cfg(test)]

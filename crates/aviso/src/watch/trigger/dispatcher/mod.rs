@@ -161,6 +161,14 @@ async fn dispatch_one_attempt(
         TriggerKind::Webhook(cfg) => {
             dispatch_webhook(cfg, http, trigger.timeout, notification).await
         }
+        TriggerKind::Teams(cfg) => {
+            crate::watch::trigger::teams::dispatch_teams(cfg, http, trigger.timeout, notification)
+                .await
+        }
+        TriggerKind::Post(cfg) => {
+            crate::watch::trigger::post::dispatch_post(cfg, http, trigger.timeout, notification)
+                .await
+        }
         #[cfg(test)]
         TriggerKind::TestFailing {
             failures_remaining,

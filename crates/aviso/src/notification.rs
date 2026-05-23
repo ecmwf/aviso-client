@@ -110,6 +110,31 @@ pub struct Notification {
 
     /// Payload as published. JSON `null` is preserved as [`serde_json::Value::Null`].
     pub payload: Value,
+
+    /// Raw `CloudEvent` envelope as the server emitted it on the SSE wire,
+    /// preserved verbatim (parsed as JSON, never re-serialised through a
+    /// schema-narrowing intermediate). `Some` in the production watch path
+    /// (the supervisor captures the envelope before narrowing to the lib's
+    /// internal fields); `None` when the notification was synthesised
+    /// outside the watch path (test fixtures, library callers building
+    /// notifications directly).
+    ///
+    /// Triggers needing the exact server-emitted envelope (post trigger,
+    /// any future CloudEvent-aware forwarder) MUST read this field rather
+    /// than reconstructing one from the other fields, because the lib
+    /// otherwise discards envelope metadata (D9: CloudEvent envelope
+    /// hidden) and a reconstruction would synthesise values for `time`,
+    /// `source`, `type` that do not match the server's actual emission.
+    ///
+    /// The field is `#[serde(skip)]` so the published serialisation of
+    /// `Notification` (echo trigger output, log trigger lines, default
+    /// webhook body, the `AVISO_NOTIFICATION_JSON` env var the command
+    /// trigger injects) keeps the historical 4-field shape. Consumers
+    /// reading this field by name on the public Rust struct are the
+    /// supported access path; JSON consumers should not expect to see
+    /// it on the wire.
+    #[serde(skip)]
+    pub cloudevent: Option<Value>,
 }
 
 /// Parses a `CloudEvent` `id` field of the form `<event_type>@<sequence>` per D9.
@@ -299,6 +324,7 @@ mod tests {
                 sequence: 42,
                 identifier,
                 payload: serde_json::json!({ "location": "south" }),
+                cloudevent: None,
             };
             let json = serde_json::to_value(&notification).unwrap();
             assert_eq!(
@@ -319,6 +345,7 @@ mod tests {
                 sequence: 7,
                 identifier: BTreeMap::new(),
                 payload: serde_json::Value::Null,
+                cloudevent: None,
             };
             let json = serde_json::to_value(&notification).unwrap();
             assert_eq!(json.get("payload"), Some(&serde_json::Value::Null));
@@ -335,6 +362,7 @@ mod tests {
                 sequence: 7,
                 identifier: BTreeMap::new(),
                 payload: serde_json::Value::Null,
+                cloudevent: None,
             };
             let json = serde_json::to_value(&notification).unwrap();
             assert!(

@@ -49,6 +49,15 @@ pub enum TriggerKindLabel {
     /// response status and a 4 KiB body tail surface to the
     /// operator via [`TriggerError::Webhook`].
     Webhook,
+    /// The Teams trigger (HTTP request to a Microsoft Teams Workflows
+    /// endpoint, with auto-built Adaptive Card body). Same redaction
+    /// discipline as `Webhook`: the URL may carry a SAS token in its
+    /// query string; the label displays as the bare string `"teams"`.
+    Teams,
+    /// The post trigger (HTTP POST with a CloudEvent-shaped body
+    /// reconstructed from the notification). Same redaction
+    /// discipline as `Webhook`. The label displays as `"post"`.
+    Post,
 }
 
 impl std::fmt::Display for TriggerKindLabel {
@@ -59,6 +68,8 @@ impl std::fmt::Display for TriggerKindLabel {
             #[cfg(unix)]
             Self::Command => f.write_str("command"),
             Self::Webhook => f.write_str("webhook"),
+            Self::Teams => f.write_str("teams"),
+            Self::Post => f.write_str("post"),
         }
     }
 }

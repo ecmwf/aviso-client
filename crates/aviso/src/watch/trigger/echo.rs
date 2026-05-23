@@ -120,6 +120,7 @@ mod tests {
             sequence: 1,
             identifier: BTreeMap::new(),
             payload: serde_json::Value::Null,
+            cloudevent: None,
         }
     }
 
@@ -160,6 +161,7 @@ mod tests {
             sequence: 12,
             identifier,
             payload: serde_json::json!({"test": true}),
+            cloudevent: None,
         };
         let s = format_human(&n, false, None).unwrap();
         let expected_body = serde_json::to_string_pretty(&n).unwrap();
@@ -180,6 +182,7 @@ mod tests {
             sequence: 33,
             identifier,
             payload: serde_json::json!({"note": "should be picked up", "test": true}),
+            cloudevent: None,
         };
         let s = format_human(&n, false, None).unwrap();
         for expected_fragment in &[
@@ -236,6 +239,7 @@ mod tests {
             sequence: 12,
             identifier,
             payload: serde_json::json!({"test": true}),
+            cloudevent: None,
         };
         let s = format_human(&n, false, None).unwrap();
         assert!(

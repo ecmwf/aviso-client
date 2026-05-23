@@ -68,6 +68,7 @@ pub(super) async fn drain_frames(
                     );
                     continue;
                 }
+                let raw_envelope = raw.clone();
                 let wire: WireCloudEvent = serde_json::from_value(raw)?;
                 let (event_type, sequence) = match parse_cloudevent_id(&wire.id) {
                     Ok(v) => v,
@@ -90,6 +91,7 @@ pub(super) async fn drain_frames(
                             sequence,
                             identifier: wire.data.identifier,
                             payload: wire.data.payload,
+                            cloudevent: Some(raw_envelope),
                         };
                         // Commit-on-next-send: persist the *previous* notification
                         // before sending the current one, so pulling N implies the
