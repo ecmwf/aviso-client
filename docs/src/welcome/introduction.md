@@ -9,6 +9,5 @@
 ## Where to start
 
 - **Understanding what aviso does**: read [Key concepts](./key-concepts.md).
-- **Looking at the design**: read [Architectural decisions](../internals/decisions.md).
 - **Tracking the plan**: see [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) at the repo root.
 - **Contributing**: read [Contributing](../internals/contributing.md) and [`AGENTS.md`](https://github.com/ecmwf/aviso-client/blob/main/AGENTS.md) at the repo root.

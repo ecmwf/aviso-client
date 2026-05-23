@@ -44,6 +44,7 @@
 # Resume & state
 
 - [Overview](./resume/overview.md)
+- [The state file](./resume/state-file.md)
 
 ---
 
@@ -64,5 +65,4 @@
 # Internals
 
 - [Architecture](./internals/architecture.md)
-- [Architectural decisions](./internals/decisions.md)
 - [Contributing](./internals/contributing.md)
