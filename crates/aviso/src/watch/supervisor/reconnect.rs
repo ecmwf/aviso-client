@@ -354,6 +354,10 @@ pub(crate) async fn run_supervisor(
                 }
             },
             ConnectionOutcome::TransportError(e) => {
+                let lost = state.transition(WatchEvent::ConnectionLost {
+                    reason: ConnectionLossReason::TransportError,
+                });
+                apply_outcome(&mut last_reconnect_policy, lost);
                 tracing::debug!(
                     event.name = "client.connection.lost",
                     reason = "transport_error",
@@ -361,10 +365,6 @@ pub(crate) async fn run_supervisor(
                     retry_attempt = retry_counter,
                     "connection lost; will reconnect with exponential backoff"
                 );
-                let lost = state.transition(WatchEvent::ConnectionLost {
-                    reason: ConnectionLossReason::TransportError,
-                });
-                apply_outcome(&mut last_reconnect_policy, lost);
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
