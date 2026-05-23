@@ -319,6 +319,74 @@ mod tests {
         );
     }
 
+    fn http_err(status: u16, body: &str) -> aviso::ClientError {
+        aviso::ClientError::Http {
+            status,
+            body: body.to_string(),
+            request_id: Some("req-test".into()),
+        }
+    }
+
+    #[test]
+    fn hint_for_replay_unknown_event_type_fires_with_typo_pointer() {
+        let body = r#"{"code":"UNKNOWN_EVENT_TYPE","configured_event_types":["mars"],"message":"unknown event type 'xx'"}"#;
+        let hint = hint_for_replay_error(&http_err(400, body))
+            .expect("UNKNOWN_EVENT_TYPE MUST yield a hint in replay (consistent with notify and listen)");
+        assert!(hint.contains("aviso schema list"), "{hint}");
+        assert!(
+            hint.contains("listener YAML") || hint.contains("--event"),
+            "the replay-specific hint must mention BOTH listener YAML (file mode) AND --event (ad-hoc mode): {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_replay_missing_required_field_fires_with_required_true_pointer() {
+        let body = r#"{"details":"Required field 'polygon' missing for watch operation"}"#;
+        let hint = hint_for_replay_error(&http_err(400, body))
+            .expect("missing required field MUST yield a hint");
+        assert!(hint.contains("required: true"), "{hint}");
+        assert!(hint.contains("aviso schema get"), "{hint}");
+        assert!(
+            hint.contains("--identifiers JSON") || hint.contains("ad-hoc replay"),
+            "the replay variant must also call out the ad-hoc form's --identifiers JSON option: {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_replay_constraint_violation_delegates_to_shared_helper() {
+        let body = r#"{"details":"Field 'class' exceeds maximum length of 2 characters, got: 3"}"#;
+        let hint = hint_for_replay_error(&http_err(400, body))
+            .expect("constraint violation MUST yield a hint in replay (consistent with notify and listen via shared helper)");
+        assert!(hint.contains("aviso schema get"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_replay_401_credentials() {
+        let hint = hint_for_replay_error(&http_err(401, "{}")).expect("401 MUST yield a hint");
+        assert!(hint.contains("credentials"), "{hint}");
+        assert!(hint.contains("config dump"), "{hint}");
+    }
+
+    #[test]
+    fn hint_for_replay_403_specifically_names_replay_permission() {
+        let hint = hint_for_replay_error(&http_err(403, "{}")).expect("403 MUST yield a hint");
+        assert!(
+            hint.contains("replay permission"),
+            "403 hint MUST specifically name `replay permission` (NOT `watch` or `notify` which would mislead): {hint}"
+        );
+    }
+
+    #[test]
+    fn hint_for_replay_unknown_status_returns_none() {
+        assert!(hint_for_replay_error(&http_err(502, "<html>...</html>")).is_none());
+    }
+
+    #[test]
+    fn hint_for_replay_non_http_client_error_returns_none() {
+        let err = aviso::ClientError::Auth("test".into());
+        assert!(hint_for_replay_error(&err).is_none());
+    }
+
     #[test]
     fn render_from_value_pure_digits_render_as_sequence_id_to_disambiguate_from_yyyymmdd() {
         assert_eq!(
