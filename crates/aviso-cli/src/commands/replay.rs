@@ -160,7 +160,7 @@ fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
     if body.contains("missing for watch operation") || body.contains("missing for replay operation")
     {
         return Some(
-            "schema fields with `required: true` must appear in the listener YAML's `identifiers:` block (or in the `--identifiers` JSON for ad-hoc replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+            "schema fields with `required: true` must be supplied in your replay identifiers (`--identifiers '{...}'` for ad-hoc replay, or the listener YAML's `identifiers:` block for YAML-driven replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
         );
     }
