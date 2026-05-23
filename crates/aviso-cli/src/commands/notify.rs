@@ -150,7 +150,7 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
             "For ad-hoc replay, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven replay, use the same `polygon:` shape as listener YAML."
         }
         _ => {
-            "Wrap the entire value in double quotes so the top-level commas are not parsed as parameter separators (e.g. `polygon=\"46,8,46,9,47,9,47,8,46,8\"`); the CLI strips the outer quotes before sending."
+            "Example: `polygon=\"46,8,46,9,47,9,47,8,46,8\"` (4 vertices, closed polygon; the surrounding double quotes prevent the inner commas from being parsed as parameter separators)."
         }
     };
     Some(format!("{specific}. {suffix}"))
@@ -778,8 +778,8 @@ mod tests {
             "specific sub-hint for odd count must name 'lat,lon pairs' and 'even total count': {hint}"
         );
         assert!(
-            hint.contains("double quotes"),
-            "general CLI quoting advice must always be appended: {hint}"
+            hint.contains("Example:") && hint.contains("polygon=\"46,8,46,9,47,9,47,8,46,8\""),
+            "the notify suffix must end with a copy-pasteable Example using the canonical 4-vertex closed polygon: {hint}"
         );
     }
 
@@ -891,8 +891,8 @@ mod tests {
             "generic fallback must spell out the basic format: {hint}"
         );
         assert!(
-            hint.contains("double quotes"),
-            "general CLI quoting advice must always be appended: {hint}"
+            hint.contains("Example:") && hint.contains("polygon=\"46,8,46,9,47,9,47,8,46,8\""),
+            "the notify suffix must end with a copy-pasteable Example using the canonical 4-vertex closed polygon: {hint}"
         );
     }
 
