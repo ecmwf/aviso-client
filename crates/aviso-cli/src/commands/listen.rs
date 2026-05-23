@@ -54,6 +54,8 @@ pub(crate) async fn run(
         apply_cursor_override(&mut listeners, &cursor);
     }
 
+    warn_about_listeners_with_no_triggers(&listeners);
+    warn_about_duplicate_listener_names(&listeners);
     print_startup_banner(&listeners);
 
     let state_store = client_builder::build_state_store(resolved, no_state_store).await?;
@@ -88,6 +90,53 @@ fn print_startup_banner(listeners: &[ListenerSpec]) {
         "Listening for {}. Press Ctrl+C to stop.",
         summaries.join(", ")
     ));
+}
+
+/// Emits a stderr WARN for every listener whose `triggers:` list is
+/// empty (either `triggers: []` or the key was omitted entirely).
+/// Such a listener silently subscribes to the wire AND silently
+/// discards every notification it receives because no trigger fires,
+/// which looks identical to a broken subscription from the operator's
+/// terminal. The warning runs BEFORE the startup banner so the
+/// operator sees the warning attached to the listener it concerns
+/// rather than buried later in the stream.
+fn warn_about_listeners_with_no_triggers(listeners: &[ListenerSpec]) {
+    for spec in listeners {
+        if spec.triggers.is_empty() {
+            let name = spec.name.as_deref().unwrap_or(&spec.event);
+            let _ = output::write_stderr_line(&format!(
+                "warning: listener `{name}` has no triggers; notifications will be received but silently discarded. Add `triggers: [{{ type: echo }}]` (or another trigger type) to your listener YAML to see them.",
+            ));
+        }
+    }
+}
+
+/// Emits a stderr WARN when two or more listeners share the same
+/// `name:` value (or default to the same event_type when `name:` is
+/// omitted). Duplicate names propagate into error messages,
+/// per-listener tracing events, and the startup banner, making it
+/// impossible for the operator to tell which listener is talking
+/// when one of them fails or fires. The CLI does not REJECT
+/// duplicates because the underlying lib happily runs multiple
+/// supervisors with distinct resume_keys regardless of the
+/// listener-side label, so the warning is advisory.
+fn warn_about_duplicate_listener_names(listeners: &[ListenerSpec]) {
+    use std::collections::HashMap;
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for spec in listeners {
+        let name = spec.name.as_deref().unwrap_or(&spec.event);
+        *counts.entry(name.to_string()).or_insert(0) += 1;
+    }
+    let mut dups: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, n)| *n > 1)
+        .collect();
+    dups.sort();
+    for (name, count) in dups {
+        let _ = output::write_stderr_line(&format!(
+            "warning: listener name `{name}` appears {count} times; per-listener errors and tracing events will be indistinguishable. Give each listener a unique `name:` in the YAML to disambiguate.",
+        ));
+    }
 }
 
 /// Renders an identifier value for the startup banner WITHOUT the
@@ -287,6 +336,9 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
             "schema fields with `required: true` must appear in your listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
         );
+    }
+    if let Some(hint) = crate::commands::notify::constraint_violation_hint(body, "listen") {
+        return Some(hint);
     }
     if body.contains("must be a valid polygon") {
         let specific = if body.contains("odd number of values") {
