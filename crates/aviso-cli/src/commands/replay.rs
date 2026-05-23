@@ -203,13 +203,13 @@ fn render_identifier_value(v: &serde_json::Value) -> String {
 /// it exists to serve.
 fn collect_triggers(spec: &ListenerSpec) -> Vec<Trigger> {
     if spec.triggers.is_empty() {
-        return vec![Trigger::echo()];
+        let default = match spec.name.as_deref() {
+            Some(name) => Trigger::echo().label(name),
+            None => Trigger::echo(),
+        };
+        return vec![default];
     }
-    spec.triggers
-        .iter()
-        .cloned()
-        .map(aviso::watch::TriggerConfig::into_trigger)
-        .collect()
+    listener::triggers_for_listener(spec)
 }
 
 fn resolve_listener(

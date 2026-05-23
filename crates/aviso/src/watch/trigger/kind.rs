@@ -15,7 +15,12 @@ use super::webhook::WebhookConfig;
 /// constructors, never by naming this enum.
 #[derive(Clone)]
 pub(super) enum TriggerKind {
-    Echo,
+    Echo {
+        /// Optional listener-attribution label. When `Some`, prepended
+        /// to the TTY leader as `(listener: <label>, trigger: echo)`.
+        /// The CLI auto-populates from the listener's YAML `name:`.
+        label: Option<String>,
+    },
     Log {
         path: PathBuf,
     },
@@ -63,7 +68,7 @@ pub(super) enum TestEventual {
 impl std::fmt::Debug for TriggerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Echo => f.debug_struct("Echo").finish(),
+            Self::Echo { label } => f.debug_struct("Echo").field("label", label).finish(),
             Self::Log { path } => f.debug_struct("Log").field("path", path).finish(),
             #[cfg(unix)]
             Self::Command(cfg) => f.debug_tuple("Command").field(&**cfg).finish(),
@@ -93,7 +98,7 @@ impl std::fmt::Debug for TriggerKind {
 /// Map an internal kind to its public-facing diagnostic label.
 pub(super) fn trigger_kind_label(kind: &TriggerKind) -> TriggerKindLabel {
     match kind {
-        TriggerKind::Echo => TriggerKindLabel::Echo,
+        TriggerKind::Echo { .. } => TriggerKindLabel::Echo,
         TriggerKind::Log { path } => TriggerKindLabel::Log { path: path.clone() },
         #[cfg(unix)]
         TriggerKind::Command(_) => TriggerKindLabel::Command,
@@ -117,7 +122,7 @@ mod tests {
 
     #[test]
     fn trigger_kind_debug_includes_log_path() {
-        let echo_dbg = format!("{:?}", TriggerKind::Echo);
+        let echo_dbg = format!("{:?}", TriggerKind::Echo { label: None });
         assert!(echo_dbg.contains("Echo"));
 
         let log_dbg = format!(

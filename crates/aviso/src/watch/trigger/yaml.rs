@@ -458,7 +458,7 @@ fail_fast: false
         let trigger = cfg.into_trigger();
         assert_eq!(trigger.retries, 3);
         assert!(!trigger.required);
-        assert!(matches!(trigger.kind, TriggerKind::Echo));
+        assert!(matches!(trigger.kind, TriggerKind::Echo { .. }));
     }
 
     #[test]

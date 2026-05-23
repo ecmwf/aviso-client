@@ -17,14 +17,17 @@ use super::TriggerError;
 /// the single-line NDJSON shape is emitted so machine consumers
 /// (`aviso listen | jq`, file ingestion pipelines) continue to parse it
 /// unchanged.
-pub(super) fn dispatch_echo(notification: &Notification) -> Result<(), TriggerError> {
+pub(super) fn dispatch_echo(
+    notification: &Notification,
+    listener_label: Option<&str>,
+) -> Result<(), TriggerError> {
     use std::io::IsTerminal as _;
     use std::io::Write as _;
     let stdout = std::io::stdout();
     let is_tty = stdout.is_terminal();
     let use_color = crate::echo_color_enabled();
     let mut buf: Vec<u8> = if is_tty {
-        format_human(notification, use_color)?.into_bytes()
+        format_human(notification, use_color, listener_label)?.into_bytes()
     } else {
         serde_json::to_vec(notification)?
     };
@@ -34,10 +37,16 @@ pub(super) fn dispatch_echo(notification: &Notification) -> Result<(), TriggerEr
     Ok(())
 }
 
-/// Leader line emitted above the pretty-printed JSON body for every TTY
-/// echo dispatch. Exposed at module scope so the unit tests can assert
-/// the exact wording without re-declaring it.
+/// Leader emitted above the pretty-printed JSON body when no listener
+/// label is attached; the labelled form is built by `leader_text`.
 const TTY_LEADER: &str = "new notification (trigger: echo):";
+
+fn leader_text(label: Option<&str>) -> String {
+    match label {
+        Some(name) => format!("new notification (listener: {name}, trigger: echo):"),
+        None => TTY_LEADER.to_string(),
+    }
+}
 
 /// Renders a [`Notification`] as a one-line dim leader followed by a
 /// multi-line pretty-printed JSON object, intended for human reading
@@ -69,7 +78,11 @@ const TTY_LEADER: &str = "new notification (trigger: echo):";
 /// into `jq` and other tools). Color is opt-in only via the CLI
 /// `--color auto|always` flag; the plain-text branch is the canonical
 /// form for tests and machine pipelines.
-pub(super) fn format_human(n: &Notification, use_color: bool) -> Result<String, TriggerError> {
+pub(super) fn format_human(
+    n: &Notification,
+    use_color: bool,
+    listener_label: Option<&str>,
+) -> Result<String, TriggerError> {
     let (dim, reset) = if use_color {
         ("\x1b[2m", "\x1b[0m")
     } else {
@@ -77,9 +90,10 @@ pub(super) fn format_human(n: &Notification, use_color: bool) -> Result<String, 
     };
 
     let body = serde_json::to_string_pretty(n)?;
-    let mut s = String::with_capacity(TTY_LEADER.len() + body.len() + 32);
+    let leader = leader_text(listener_label);
+    let mut s = String::with_capacity(leader.len() + body.len() + 32);
     s.push_str(dim);
-    s.push_str(TTY_LEADER);
+    s.push_str(&leader);
     s.push_str(reset);
     s.push('\n');
     s.push_str(&body);
@@ -110,13 +124,13 @@ mod tests {
 
     #[test]
     fn echo_trigger_succeeds_without_retry() {
-        let result = dispatch_echo(&make_notification());
+        let result = dispatch_echo(&make_notification(), None);
         assert!(matches!(result, Ok(())));
     }
 
     #[test]
     fn format_human_starts_with_leader_line_then_pretty_json_body() {
-        let s = format_human(&make_notification(), false).unwrap();
+        let s = format_human(&make_notification(), false, None).unwrap();
         let first_line = s.lines().next().expect("output has at least one line");
         assert_eq!(
             first_line, TTY_LEADER,
@@ -146,7 +160,7 @@ mod tests {
             identifier,
             payload: serde_json::json!({"test": true}),
         };
-        let s = format_human(&n, false).unwrap();
+        let s = format_human(&n, false, None).unwrap();
         let expected_body = serde_json::to_string_pretty(&n).unwrap();
         let expected = format!("{TTY_LEADER}\n{expected_body}\n");
         assert_eq!(
@@ -166,7 +180,7 @@ mod tests {
             identifier,
             payload: serde_json::json!({"note": "should be picked up", "test": true}),
         };
-        let s = format_human(&n, false).unwrap();
+        let s = format_human(&n, false, None).unwrap();
         for expected_fragment in &[
             "\"event_type\": \"test_polygon\"",
             "\"sequence\": 33",
@@ -186,7 +200,7 @@ mod tests {
 
     #[test]
     fn format_human_with_null_payload_still_includes_payload_field_as_json_null() {
-        let s = format_human(&make_notification(), false).unwrap();
+        let s = format_human(&make_notification(), false, None).unwrap();
         assert!(
             s.contains("\"payload\": null"),
             "the whole-Notification JSON form must emit payload as JSON null (NOT silently drop the field as the previous kubectl-describe format did); without this, a downstream consumer that copy-pastes the TTY body into jq would see a different shape than what the pipe form produces. Got:\n{s}",
@@ -195,7 +209,7 @@ mod tests {
 
     #[test]
     fn format_human_with_color_wraps_leader_in_dim_and_leaves_json_body_uncoloured() {
-        let s = format_human(&make_notification(), true).unwrap();
+        let s = format_human(&make_notification(), true, None).unwrap();
         let expected_leader_line = format!("\x1b[2m{TTY_LEADER}\x1b[0m");
         let first_line = s.lines().next().unwrap();
         assert_eq!(
@@ -222,7 +236,7 @@ mod tests {
             identifier,
             payload: serde_json::json!({"test": true}),
         };
-        let s = format_human(&n, false).unwrap();
+        let s = format_human(&n, false, None).unwrap();
         assert!(
             !s.contains('\x1b'),
             "plain output must not contain any ANSI escape: {s:?}",
@@ -230,8 +244,28 @@ mod tests {
     }
 
     #[test]
+    fn format_human_with_listener_label_names_the_listener_inline_in_leader() {
+        let s = format_human(&make_notification(), false, Some("mars-od")).unwrap();
+        let first_line = s.lines().next().unwrap();
+        assert_eq!(
+            first_line, "new notification (listener: mars-od, trigger: echo):",
+            "labelled leader must inline the listener name in the parenthetical so multi-listener configs disambiguate; got {first_line:?}",
+        );
+    }
+
+    #[test]
+    fn format_human_with_label_and_color_dims_the_labelled_leader_line() {
+        let s = format_human(&make_notification(), true, Some("alpha")).unwrap();
+        let first_line = s.lines().next().unwrap();
+        assert_eq!(
+            first_line, "\x1b[2mnew notification (listener: alpha, trigger: echo):\x1b[0m",
+            "the entire labelled leader (including the parenthetical) must be wrapped in dim ANSI escapes when color is on; got {first_line:?}",
+        );
+    }
+
+    #[test]
     fn format_human_terminates_with_a_single_newline_so_dispatch_echo_blank_line_separator_works() {
-        let s = format_human(&make_notification(), false).unwrap();
+        let s = format_human(&make_notification(), false, None).unwrap();
         assert!(
             s.ends_with('\n') && !s.ends_with("\n\n"),
             "format_human must end with EXACTLY one '\\n'; dispatch_echo appends a second '\\n' to produce the blank-line separator between consecutive notifications, so a trailing double-newline here would produce TRIPLE newlines in the rendered stream. Got tail: {:?}",

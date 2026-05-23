@@ -143,12 +143,25 @@ impl Trigger {
     #[must_use]
     pub fn echo() -> Self {
         Self {
-            kind: TriggerKind::Echo,
+            kind: TriggerKind::Echo { label: None },
             retries: 0,
             required: true,
             timeout: None,
             fail_fast: true,
         }
+    }
+
+    /// Attach a listener-attribution label to an echo trigger. When the
+    /// label is present, the TTY echo dispatch prepends
+    /// `(listener: <label>, trigger: echo)` to the leader line so
+    /// multi-listener configurations identify which listener produced
+    /// each delivery. No-op for non-echo trigger kinds.
+    #[must_use]
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        if let TriggerKind::Echo { label } = &mut self.kind {
+            *label = Some(name.into());
+        }
+        self
     }
 
     /// Build a log trigger that appends each notification as a single
