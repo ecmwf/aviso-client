@@ -157,7 +157,8 @@ fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
                 .to_string(),
         );
     }
-    if body.contains("missing for watch operation") || body.contains("missing for replay operation") {
+    if body.contains("missing for watch operation") || body.contains("missing for replay operation")
+    {
         return Some(
             "schema fields with `required: true` must appear in the listener YAML's `identifiers:` block (or in the `--identifiers` JSON for ad-hoc replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
@@ -166,9 +167,7 @@ fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
     if let Some(hint) = crate::commands::notify::polygon_violation_hint(body, "replay") {
         return Some(hint);
     }
-    if let Some(hint) =
-        crate::commands::notify::constraint_violation_hint(body, "replay")
-    {
+    if let Some(hint) = crate::commands::notify::constraint_violation_hint(body, "replay") {
         return Some(hint);
     }
     match *status {
@@ -333,8 +332,9 @@ mod tests {
     #[test]
     fn hint_for_replay_unknown_event_type_fires_with_typo_pointer() {
         let body = r#"{"code":"UNKNOWN_EVENT_TYPE","configured_event_types":["mars"],"message":"unknown event type 'xx'"}"#;
-        let hint = hint_for_replay_error(&http_err(400, body))
-            .expect("UNKNOWN_EVENT_TYPE MUST yield a hint in replay (consistent with notify and listen)");
+        let hint = hint_for_replay_error(&http_err(400, body)).expect(
+            "UNKNOWN_EVENT_TYPE MUST yield a hint in replay (consistent with notify and listen)",
+        );
         assert!(hint.contains("aviso schema list"), "{hint}");
         assert!(
             hint.contains("listener YAML") || hint.contains("--event"),
@@ -408,7 +408,10 @@ mod tests {
     #[test]
     fn render_from_value_date_forms_render_verbatim() {
         assert_eq!(render_from_value("2026-05-22"), "2026-05-22");
-        assert_eq!(render_from_value("2026-05-22T12:34:56Z"), "2026-05-22T12:34:56Z");
+        assert_eq!(
+            render_from_value("2026-05-22T12:34:56Z"),
+            "2026-05-22T12:34:56Z"
+        );
     }
 
     #[test]
