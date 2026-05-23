@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Pre-push hook for aviso-client.
+#
+# Purpose: run the full CI gate locally BEFORE the push leaves the machine,
+# matching exactly the check set in .github/workflows/ci.yml. The pre-commit
+# hook already catches the fastest (formatting) class of failures; this hook
+# catches the slower clippy / build / test / deny / mdbook / compose cases.
+#
+# Speed: cold ~30-90s, warm ~5-15s (cargo + mdbook caches do most of the work).
+# Network access may be needed if cargo-deny needs to refresh advisory dbs.
+#
+# Skip (NOT recommended) with `git push --no-verify`.
+#
+# Enable via `git config core.hooksPath .githooks` (one-time per clone).
+# Optional tools (cargo-deny, mdbook, docker) are checked at the top and
+# their corresponding gates are skipped (with a notice) if absent, so a
+# fresh clone without the full toolchain still gets the Rust gates.
+#
+# See CONTRIBUTING.md "Pre-commit / pre-push hooks" for details.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Set CI=true so any downstream tools that branch on it adopt their
+# strictest behaviour, matching the GitHub Actions environment.
+export CI=true
+
+fail() {
+    cat >&2 <<EOF
+
+aviso-client pre-push hook: $1
+
+To skip this hook (NOT recommended; CI will fail when the push reaches
+GitHub Actions):
+    git push --no-verify
+
+EOF
+    exit 1
+}
+
+step() {
+    printf "  > %s\n" "$1"
+}
+
+echo "aviso-client pre-push hook: running full CI gate ..."
+
+step "cargo fmt --all -- --check"
+cargo fmt --all -- --check >/dev/null 2>&1 \
+    || fail "Rust files are not formatted. Run \`cargo fmt --all\` and re-stage / amend."
+
+step "cargo clippy --locked --workspace --all-targets -- -D warnings"
+cargo clippy --locked --workspace --all-targets -- -D warnings \
+    || fail "clippy failed. Fix the warnings (or apply the suggested fix) and re-commit."
+
+step "cargo build --locked --workspace --all-targets"
+cargo build --locked --workspace --all-targets \
+    || fail "build failed."
+
+step "cargo test --locked --workspace --all-targets"
+cargo test --locked --workspace --all-targets \
+    || fail "tests failed."
+
+step "cargo test --locked --workspace --doc"
+cargo test --locked --workspace --doc \
+    || fail "doc tests failed."
+
+step "git diff --exit-code Cargo.lock"
+git diff --exit-code Cargo.lock \
+    || fail "Cargo.lock has unstaged changes. Stage them in the commit that changed dependencies."
+
+if command -v cargo-deny >/dev/null 2>&1; then
+    step "cargo deny check"
+    cargo deny check 2>&1 | tail -5
+    cargo deny check >/dev/null 2>&1 \
+        || fail "cargo-deny check failed (advisories, bans, licenses, or sources)."
+else
+    step "cargo-deny not installed; skipping (install: \`cargo install cargo-deny --locked\`)"
+fi
+
+if command -v mdbook >/dev/null 2>&1; then
+    step "mdbook build docs"
+    mdbook build docs >/dev/null 2>&1 \
+        || fail "mdbook build failed."
+    step "mdbook test docs"
+    mdbook test docs >/dev/null 2>&1 \
+        || fail "mdbook test failed."
+else
+    step "mdbook not installed; skipping (install: \`cargo install mdbook --locked\`)"
+fi
+
+if command -v docker >/dev/null 2>&1; then
+    step "docker compose -f tests/e2e/docker-compose.yml config --quiet"
+    docker compose -f tests/e2e/docker-compose.yml config --quiet \
+        || fail "docker-compose validation failed."
+else
+    step "docker not installed; skipping compose validation"
+fi
+
+echo "aviso-client pre-push hook: all gates pass."
+exit 0
