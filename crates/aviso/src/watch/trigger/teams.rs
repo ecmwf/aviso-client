@@ -94,7 +94,7 @@ fn render_title(cfg: &TeamsConfig, notification: &Notification) -> Result<String
         .as_ref()
         .map_err(|e| template_error_to_trigger_error(e.clone(), "teams title"))?;
     title_template
-        .render_with_env(notification, &env_resolver)
+        .render_with_env(notification, env_resolver)
         .map_err(|e| template_error_to_trigger_error(e, "teams title"))
 }
 

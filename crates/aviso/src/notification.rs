@@ -120,9 +120,9 @@ pub struct Notification {
     /// notifications directly).
     ///
     /// Triggers needing the exact server-emitted envelope (post trigger,
-    /// any future CloudEvent-aware forwarder) MUST read this field rather
+    /// any future `CloudEvent`-aware forwarder) MUST read this field rather
     /// than reconstructing one from the other fields, because the lib
-    /// otherwise discards envelope metadata (D9: CloudEvent envelope
+    /// otherwise discards envelope metadata (D9: `CloudEvent` envelope
     /// hidden) and a reconstruction would synthesise values for `time`,
     /// `source`, `type` that do not match the server's actual emission.
     ///
