@@ -123,7 +123,7 @@ mod tests {
     fn augment_admin_error_404_notification_not_found_appends_hint() {
         let err = http_err(404, r#"{"success":false,"message":"Notification not found"}"#);
         let augmented = augment_admin_error(err, "delete");
-        let chain: Vec<String> = augmented.chain().map(|e| e.to_string()).collect();
+        let chain: Vec<String> = augmented.chain().map(ToString::to_string).collect();
         assert!(
             chain.iter().any(|s| s.contains("suggestion:") && s.contains("`<event_type>@<sequence>`")),
             "404 + Notification not found MUST produce a suggestion: context naming the id format. Chain: {chain:?}",
@@ -140,8 +140,8 @@ mod tests {
 
     #[test]
     fn augment_admin_error_401_auth_hint() {
-        let err = http_err(401, r#"{}"#);
-        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(|e| e.to_string()).collect();
+        let err = http_err(401, "{}");
+        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(ToString::to_string).collect();
         assert!(
             chain.iter().any(|s| s.contains("admin role")),
             "401 hint MUST specifically mention admin role (NOT generic 'credentials' which is the notify/listen wording for non-admin endpoints): {chain:?}",
@@ -150,8 +150,8 @@ mod tests {
 
     #[test]
     fn augment_admin_error_403_admin_role_hint() {
-        let err = http_err(403, r#"{}"#);
-        let chain: Vec<String> = augment_admin_error(err, "wipe-stream").chain().map(|e| e.to_string()).collect();
+        let err = http_err(403, "{}");
+        let chain: Vec<String> = augment_admin_error(err, "wipe-stream").chain().map(ToString::to_string).collect();
         assert!(
             chain.iter().any(|s| s.contains("admin role")),
             "403 hint MUST specifically mention admin role: {chain:?}",
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn augment_admin_error_404_unrelated_body_falls_through_to_operation_context() {
         let err = http_err(404, r#"{"something else entirely":"true"}"#);
-        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(|e| e.to_string()).collect();
+        let chain: Vec<String> = augment_admin_error(err, "delete").chain().map(ToString::to_string).collect();
         assert!(
             chain.iter().any(|s| s.contains("admin delete")),
             "404 with unrelated body MUST fall through to the generic `admin {{operation}}` context (no spurious suggestion): {chain:?}",
