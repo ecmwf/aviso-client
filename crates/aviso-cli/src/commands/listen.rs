@@ -127,10 +127,7 @@ fn warn_about_duplicate_listener_names(listeners: &[ListenerSpec]) {
         let name = spec.name.as_deref().unwrap_or(&spec.event);
         *counts.entry(name.to_string()).or_insert(0) += 1;
     }
-    let mut dups: Vec<(String, usize)> = counts
-        .into_iter()
-        .filter(|(_, n)| *n > 1)
-        .collect();
+    let mut dups: Vec<(String, usize)> = counts.into_iter().filter(|(_, n)| *n > 1).collect();
     dups.sort();
     for (name, count) in dups {
         let _ = output::write_stderr_line(&format!(

@@ -692,7 +692,8 @@ mod tests {
 
     #[test]
     fn constraint_hint_string_max_length_notify() {
-        let err = http_err_for_constraint("Field 'class' exceeds maximum length of 2 characters, got: 3");
+        let err =
+            http_err_for_constraint("Field 'class' exceeds maximum length of 2 characters, got: 3");
         let hint = hint_for_client_error(&err).expect("max_length MUST yield a hint");
         assert!(hint.contains("max_length"), "{hint}");
         assert!(hint.contains("aviso schema get"), "{hint}");
@@ -704,22 +705,30 @@ mod tests {
 
     #[test]
     fn constraint_hint_enum_invalid_value_notify() {
-        let err = http_err_for_constraint("Field 'domain' has invalid value 'zz'. Allowed: [a, b, c]");
+        let err =
+            http_err_for_constraint("Field 'domain' has invalid value 'zz'. Allowed: [a, b, c]");
         let hint = hint_for_client_error(&err).expect("enum invalid MUST yield a hint");
-        assert!(hint.contains("enum") || hint.contains("allowed set"), "{hint}");
+        assert!(
+            hint.contains("enum") || hint.contains("allowed set"),
+            "{hint}"
+        );
         assert!(hint.contains("aviso schema get"), "{hint}");
     }
 
     #[test]
     fn constraint_hint_int_range_notify() {
-        let err = http_err_for_constraint("Field 'step' value 100001 is outside allowed range [0, 100000]");
+        let err = http_err_for_constraint(
+            "Field 'step' value 100001 is outside allowed range [0, 100000]",
+        );
         let hint = hint_for_client_error(&err).expect("int range MUST yield a hint");
         assert!(hint.contains("integer") && hint.contains("range"), "{hint}");
     }
 
     #[test]
     fn constraint_hint_date_format_notify() {
-        let err = http_err_for_constraint("Field 'date' contains invalid date 'not-a-date'. Expected: YYYY-MM-DD, YYYYMMDD, or YYYY-DDD");
+        let err = http_err_for_constraint(
+            "Field 'date' contains invalid date 'not-a-date'. Expected: YYYY-MM-DD, YYYYMMDD, or YYYY-DDD",
+        );
         let hint = hint_for_client_error(&err).expect("date format MUST yield a hint");
         assert!(
             hint.contains("YYYY-MM-DD") && hint.contains("YYYYMMDD") && hint.contains("YYYY-DDD"),
@@ -729,7 +738,9 @@ mod tests {
 
     #[test]
     fn constraint_hint_time_invalid_hours_notify() {
-        let err = http_err_for_constraint("Field 'time' has invalid hours: 25. Hours must be 0-23 in 24-hour format");
+        let err = http_err_for_constraint(
+            "Field 'time' has invalid hours: 25. Hours must be 0-23 in 24-hour format",
+        );
         let hint = hint_for_client_error(&err).expect("time invalid MUST yield a hint");
         assert!(hint.contains("HHMM"), "{hint}");
         assert!(hint.contains("24-hour"), "{hint}");
