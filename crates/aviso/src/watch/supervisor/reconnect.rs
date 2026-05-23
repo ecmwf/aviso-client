@@ -266,6 +266,10 @@ pub(crate) async fn run_supervisor(
 
         match outcome {
             ConnectionOutcome::ServerClosed => {
+                tracing::debug!(
+                    event.name = "client.connection.server_closed",
+                    "server emitted connection-closing frame; reconnect cycle reset",
+                );
                 retry_counter = 0;
                 refreshed_for_current_attempt = false;
             }
@@ -349,7 +353,14 @@ pub(crate) async fn run_supervisor(
                     break;
                 }
             },
-            ConnectionOutcome::TransportError(_e) => {
+            ConnectionOutcome::TransportError(e) => {
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "transport_error",
+                    error = %e,
+                    retry_attempt = retry_counter,
+                    "connection lost; will reconnect with exponential backoff"
+                );
                 let lost = state.transition(WatchEvent::ConnectionLost {
                     reason: ConnectionLossReason::TransportError,
                 });
@@ -357,7 +368,23 @@ pub(crate) async fn run_supervisor(
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
-            ConnectionOutcome::UnexpectedEof | ConnectionOutcome::HeartbeatStarved => {
+            ConnectionOutcome::UnexpectedEof => {
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "unexpected_eof",
+                    retry_attempt = retry_counter,
+                    "connection ended without close frame; will reconnect with exponential backoff"
+                );
+                retry_counter = retry_counter.saturating_add(1);
+                refreshed_for_current_attempt = false;
+            }
+            ConnectionOutcome::HeartbeatStarved => {
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "heartbeat_starved",
+                    retry_attempt = retry_counter,
+                    "no SSE event observed within the heartbeat-starvation budget; will reconnect"
+                );
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
