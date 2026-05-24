@@ -4,38 +4,21 @@ A bird's-eye view of how aviso is built.
 
 ## The four crates
 
-```text
-+--------------------------------------------------------------------+
-|  consumers                                                         |
-|                                                                    |
-|   +--------------------+      +--------------------------------+   |
-|   |  aviso-cli         |      |  aviso (Python package, when   |   |
-|   |  (Rust binary,     |      |   it ships)                    |   |
-|   |   installed as     |      |    +-------------------------+ |   |
-|   |   `aviso`)         |      |    |  aviso-py (PyO3 cdylib  | |   |
-|   +---------+----------+      |    |   once bindings land)   | |   |
-|             |                 |    +-----------+-------------+ |   |
-|             |                 +----------------+----------------+   |
-|             |                                  |                    |
-|             +-----------------+----------------+                    |
-|                               |                                     |
-|                               v                                     |
-|              +---------------------------------------+              |
-|              |  aviso  (core Rust library)           |              |
-|              |   - HTTP via reqwest + rustls         |              |
-|              |   - SSE parser (finesse crate)        |              |
-|              |   - Reconnect supervisor              |              |
-|              |   - State store + checkpoints         |              |
-|              |   - AuthProvider trait                |              |
-|              |   - Trigger dispatcher                |              |
-|              +-------------------+-------------------+              |
-+----------------------------------+-----------------------------------+
-                                   |
-                                   v
-                          HTTP + SSE over the wire
-                                   |
-                                   v
-                          aviso-server (separate repo)
+```mermaid
+flowchart TB
+    subgraph consumers["consumers"]
+        direction LR
+        cli["aviso-cli<br/>Rust binary<br/>installed as <tt>aviso</tt>"]
+        py["aviso-py<br/>PyO3 cdylib<br/>(when bindings land)"]
+    end
+
+    core["aviso<br/>(core Rust library)<br/><br/>HTTP via reqwest + rustls<br/>SSE parser (finesse crate)<br/>Reconnect supervisor<br/>State store + checkpoints<br/>AuthProvider trait<br/>Trigger dispatcher"]
+
+    server["aviso-server<br/>(separate repo)"]
+
+    cli --> core
+    py --> core
+    core -- HTTP + SSE --> server
 ```
 
 The CLI and the future Python extension are peer consumers of the core library. They never depend on each other. The core library never depends on PyO3, the CLI, or any binding machinery.
