@@ -59,9 +59,11 @@ where
 
 /// Build a fresh reqwest client for dispatcher tests. The test
 /// triggers (`TestFailing`, `TestFailOnCall`) and the production
-/// echo/log/command dispatchers do not use the client; webhook
-/// tests live in `webhook/tests.rs` against a real wiremock
-/// server. The dispatcher loop just threads `&Client` through.
+/// echo, log, and command dispatchers do not use the client; the
+/// HTTP-based triggers (webhook, teams, post) do, and those tests
+/// live alongside each dispatcher (e.g. `webhook/tests.rs`)
+/// against a real wiremock server. The dispatcher loop just
+/// threads `&Client` through.
 fn test_http_client() -> reqwest::Client {
     reqwest::Client::new()
 }

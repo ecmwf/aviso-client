@@ -83,8 +83,9 @@ impl Trigger {
     }
 
     /// Override the HTTP method on a webhook trigger. Silently
-    /// ignored on echo, log, and command triggers (the method only
-    /// applies to webhook).
+    /// ignored on non-webhook triggers (the method only applies to
+    /// webhook; teams and post both build their own request shape
+    /// internally rather than reading this field).
     #[must_use]
     pub fn method(mut self, method: HttpMethod) -> Self {
         if let TriggerKind::Webhook(cfg) = &mut self.kind {
@@ -96,8 +97,11 @@ impl Trigger {
     /// Add an HTTP header to a webhook trigger. Repeatable; the
     /// same key may be added multiple times to send the header
     /// twice. Header NAMES are taken literally; header VALUES are
-    /// template-rendered at dispatch. Silently ignored on echo,
-    /// log, and command triggers.
+    /// template-rendered at dispatch. Silently ignored on
+    /// non-webhook triggers (teams sends a Microsoft Teams
+    /// Workflows envelope with its own `Content-Type` and no
+    /// operator-controlled headers; post inherits the webhook
+    /// shape but consumes headers through its own builder).
     #[must_use]
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         if let TriggerKind::Webhook(cfg) = &mut self.kind {
@@ -107,9 +111,11 @@ impl Trigger {
     }
 
     /// Override the request body with a template string. Silently
-    /// ignored on echo, log, and command triggers. When unset, the
-    /// body defaults to the notification serialised as compact JSON
-    /// (matching the echo trigger's output shape).
+    /// ignored on non-webhook triggers (teams builds its Adaptive
+    /// Card from runtime notification data; post forwards the raw
+    /// `CloudEvent` envelope; neither honors this setter). When
+    /// unset, the body defaults to the notification serialised as
+    /// compact JSON (matching the echo trigger's output shape).
     #[must_use]
     pub fn body_template(mut self, body: impl Into<String>) -> Self {
         if let TriggerKind::Webhook(cfg) = &mut self.kind {
