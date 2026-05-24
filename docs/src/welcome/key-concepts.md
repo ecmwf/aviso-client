@@ -16,7 +16,7 @@ A watch/replay request carries an `identifier` map. The server returns only the 
 
 ## SSE, but not Last-Event-ID
 
-`aviso-server` streams notifications as SSE but does **not** emit the SSE `id:` line. Instead, every CloudEvent payload carries an `id` field of the form `<event_type>@<sequence>`, and the client extracts the integer sequence from there. To resume, the client re-issues the watch/replay request with `from_id = last_committed_sequence + 1` (sequence-based) or `from_date = ...` (timestamp-based). The full design lives in [ADR D2](../internals/decisions.md#d2-reconnect-as-norm-at-least-once-checkpointing).
+`aviso-server` streams notifications as SSE but does **not** emit the SSE `id:` line. Instead, every CloudEvent payload carries an `id` field of the form `<event_type>@<sequence>`, and the client extracts the integer sequence from there. To resume, the client re-issues the watch/replay request with `from_id = last_committed_sequence + 1` (sequence-based) or `from_date = ...` (timestamp-based).
 
 ## Connection lifetime
 
@@ -24,4 +24,4 @@ The server deliberately closes watch connections after a configured maximum dura
 
 ## At-least-once delivery
 
-The client guarantees at-least-once delivery: every notification it successfully processes (and where applicable, hands to a trigger) is checkpointed; after a crash or reconnect, the client resumes from the last *committed* sequence. Triggers may therefore see the same notification more than once and should be designed to be idempotent. See [ADR D2](../internals/decisions.md#d2-reconnect-as-norm-at-least-once-checkpointing).
+The client guarantees at-least-once delivery: every notification it successfully processes (and where applicable, hands to a trigger) is checkpointed; after a crash or reconnect, the client resumes from the last *committed* sequence. Triggers may therefore see the same notification more than once and should be designed to be idempotent. See [The state file](../resume/state-file.md) for the operator-facing on-disk format.

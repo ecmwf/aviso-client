@@ -154,12 +154,20 @@ async fn dispatch_one_attempt(
     http: &reqwest::Client,
 ) -> Result<(), TriggerError> {
     match &trigger.kind {
-        TriggerKind::Echo => dispatch_echo(notification),
+        TriggerKind::Echo { label } => dispatch_echo(notification, label.as_deref()),
         TriggerKind::Log { path } => dispatch_log(path, state, notification).await,
         #[cfg(unix)]
         TriggerKind::Command(cfg) => dispatch_command(cfg, trigger.timeout, notification).await,
         TriggerKind::Webhook(cfg) => {
             dispatch_webhook(cfg, http, trigger.timeout, notification).await
+        }
+        TriggerKind::Teams(cfg) => {
+            crate::watch::trigger::teams::dispatch_teams(cfg, http, trigger.timeout, notification)
+                .await
+        }
+        TriggerKind::Post(cfg) => {
+            crate::watch::trigger::post::dispatch_post(cfg, http, trigger.timeout, notification)
+                .await
         }
         #[cfg(test)]
         TriggerKind::TestFailing {

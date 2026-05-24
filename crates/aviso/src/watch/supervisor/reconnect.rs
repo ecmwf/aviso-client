@@ -6,7 +6,7 @@ use url::Url;
 use super::connection::run_one_connection;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
-use crate::state::{ResumeKey, StateStore};
+use crate::state::{Checkpoint, ResumeKey, StateStore};
 use crate::watch::backoff;
 use crate::watch::{
     ConnectionLossReason, ConnectionStatus, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent,
@@ -44,7 +44,18 @@ pub(crate) async fn run_supervisor(
     mut cancel: oneshot::Receiver<()>,
     mut parent_cancel: watch::Receiver<bool>,
     active_resume_keys: Arc<std::sync::Mutex<std::collections::HashMap<ResumeKey, usize>>>,
+    flush_cursor_on_exit: bool,
+    done_signal: oneshot::Sender<()>,
 ) {
+    struct DoneOnDrop(Option<oneshot::Sender<()>>);
+    impl Drop for DoneOnDrop {
+        fn drop(&mut self) {
+            if let Some(s) = self.0.take() {
+                let _ = s.send(());
+            }
+        }
+    }
+    let _done_on_drop = DoneOnDrop(Some(done_signal));
     let _decrement_on_exit = ActiveKeyGuard {
         active: active_resume_keys.clone(),
         key: resume_key.clone(),
@@ -65,6 +76,13 @@ pub(crate) async fn run_supervisor(
             };
             match get_result {
                 Ok(Some(cp)) => {
+                    // INFO level per D2 + Q9 (plans/v0.3.md and
+                    // docs/src/internals/decisions.md): a successful
+                    // resume from stored state is operator-visible
+                    // information. The no-checkpoint-found path stays
+                    // silent because starting fresh is the default.
+                    // A previous refactor downgraded this to DEBUG by
+                    // accident; restored here.
                     tracing::info!(
                         event.name = "client.resume.applied",
                         resume_key = %resume_key.as_hex(),
@@ -255,6 +273,10 @@ pub(crate) async fn run_supervisor(
 
         match outcome {
             ConnectionOutcome::ServerClosed => {
+                tracing::debug!(
+                    event.name = "client.connection.server_closed",
+                    "server emitted connection-closing frame; reconnect cycle reset",
+                );
                 retry_counter = 0;
                 refreshed_for_current_attempt = false;
             }
@@ -338,21 +360,70 @@ pub(crate) async fn run_supervisor(
                     break;
                 }
             },
-            ConnectionOutcome::TransportError(_e) => {
+            ConnectionOutcome::TransportError(e) => {
                 let lost = state.transition(WatchEvent::ConnectionLost {
                     reason: ConnectionLossReason::TransportError,
                 });
                 apply_outcome(&mut last_reconnect_policy, lost);
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "transport_error",
+                    error = %e,
+                    retry_attempt = retry_counter,
+                    "connection lost; will reconnect with exponential backoff"
+                );
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
-            ConnectionOutcome::UnexpectedEof | ConnectionOutcome::HeartbeatStarved => {
+            ConnectionOutcome::UnexpectedEof => {
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "unexpected_eof",
+                    retry_attempt = retry_counter,
+                    "connection ended without close frame; will reconnect with exponential backoff"
+                );
+                retry_counter = retry_counter.saturating_add(1);
+                refreshed_for_current_attempt = false;
+            }
+            ConnectionOutcome::HeartbeatStarved => {
+                tracing::debug!(
+                    event.name = "client.connection.lost",
+                    reason = "heartbeat_starved",
+                    retry_attempt = retry_counter,
+                    "no SSE event observed within the heartbeat-starvation budget; will reconnect"
+                );
                 retry_counter = retry_counter.saturating_add(1);
                 refreshed_for_current_attempt = false;
             }
             ConnectionOutcome::Fatal(err) => {
                 let _ = send_or_cancel(&tx, Err(err), &mut cancel, &mut parent_cancel).await;
                 break;
+            }
+        }
+    }
+
+    if flush_cursor_on_exit {
+        if let (Some(pending), Some(store)) = (pending_commit.as_ref(), state_store.as_ref()) {
+            let checkpoint = Checkpoint::new(pending.sequence, Some(pending.event_id.clone()));
+            match store.put(&resume_key, checkpoint).await {
+                Ok(()) => {
+                    tracing::debug!(
+                        event.name = "client.resume.flushed_on_exit",
+                        resume_key = %resume_key.as_hex(),
+                        sequence = pending.sequence,
+                        event_id = %pending.event_id,
+                        "flushed pending commit to state store on supervisor exit",
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        event.name = "client.resume.flush_on_exit_failed",
+                        resume_key = %resume_key.as_hex(),
+                        sequence = pending.sequence,
+                        error = %e,
+                        "failed to flush pending commit on supervisor exit; the next run may redeliver this notification",
+                    );
+                }
             }
         }
     }

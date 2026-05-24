@@ -49,6 +49,18 @@ pub enum TriggerKindLabel {
     /// response status and a 4 KiB body tail surface to the
     /// operator via [`TriggerError::Webhook`].
     Webhook,
+    /// The Teams trigger (HTTP request to a Microsoft Teams Workflows
+    /// endpoint, with auto-built Adaptive Card body). Same redaction
+    /// discipline as `Webhook`: the URL may carry a SAS token in its
+    /// query string; the label displays as the bare string `"teams"`.
+    Teams,
+    /// The post trigger (HTTP POST that forwards the raw
+    /// server-emitted `CloudEvent` envelope in the production watch
+    /// path, falling back to a minimal reconstructed envelope only
+    /// for test fixtures where [`crate::Notification::cloudevent`]
+    /// is `None`). Same redaction discipline as `Webhook`. The
+    /// label displays as `"post"`.
+    Post,
 }
 
 impl std::fmt::Display for TriggerKindLabel {
@@ -59,6 +71,8 @@ impl std::fmt::Display for TriggerKindLabel {
             #[cfg(unix)]
             Self::Command => f.write_str("command"),
             Self::Webhook => f.write_str("webhook"),
+            Self::Teams => f.write_str("teams"),
+            Self::Post => f.write_str("post"),
         }
     }
 }
@@ -102,11 +116,13 @@ pub enum TriggerError {
 
     /// A trigger attempt exceeded its configured per-trigger timeout.
     ///
-    /// Surfaced on triggers that have a meaningful timeout
-    /// (currently the command trigger and the webhook trigger; echo
-    /// and log silently ignore the [`super::Trigger::timeout`]
-    /// setter). The carried duration is the timeout that was set,
-    /// not the actual elapsed time.
+    /// Surfaced on triggers that have a meaningful timeout: the
+    /// command trigger and the HTTP-based triggers (webhook, teams,
+    /// post). Teams and post seed [`super::DEFAULT_WEBHOOK_TIMEOUT`]
+    /// from their constructors and honor [`super::Trigger::timeout`]
+    /// overrides exactly as webhook does. Echo and log silently
+    /// ignore the setter. The carried duration is the timeout that
+    /// was set, not the actual elapsed time.
     #[error("trigger timed out after {0:?}")]
     Timeout(std::time::Duration),
 
@@ -116,7 +132,13 @@ pub enum TriggerError {
     /// every received response that the dispatcher then classified
     /// as a failure. `body_tail` is the last 4 KiB of the response
     /// body, lossily UTF-8 decoded; empty on transport failures.
-    #[error("webhook: status={status:?} body_tail={body_tail}")]
+    ///
+    /// Display format uses operator-friendly rendering for both
+    /// fields: `status=500` (not `Some(500)`) when the response
+    /// arrived; `status=<transport error>` when the HTTP client
+    /// reported a connect/TLS/mid-stream failure; `body_tail=<empty>`
+    /// when the response body was empty or never received.
+    #[error("webhook: status={} body_tail={}", render_webhook_status(*status), render_webhook_body(body_tail))]
     Webhook {
         /// HTTP status code if the response made it back from the
         /// server. `None` on transport errors.
@@ -179,4 +201,29 @@ pub enum TriggerError {
         /// Categorisation of the failure.
         kind: TemplateErrorKind,
     },
+}
+
+/// Render an `Option<reqwest::StatusCode>` for the `TriggerError::Webhook`
+/// `Display` impl. The raw `Debug` form (`Some(500)` / `None`) leaks
+/// into operator-facing error messages and reads as a Rust type rather
+/// than an HTTP status; this helper produces `500` (set) and
+/// `<transport error>` (unset), so the resulting message reads naturally.
+fn render_webhook_status(status: Option<reqwest::StatusCode>) -> String {
+    match status {
+        Some(s) => s.as_u16().to_string(),
+        None => "<transport error>".to_string(),
+    }
+}
+
+/// Render the captured response body tail for the `TriggerError::Webhook`
+/// `Display` impl. An empty `body_tail` (transport error or genuinely
+/// empty response body) is rendered as `<empty>` so the operator's
+/// stderr line is not a dangling `body_tail=` with nothing after the
+/// equals sign.
+fn render_webhook_body(body_tail: &str) -> String {
+    if body_tail.is_empty() {
+        "<empty>".to_string()
+    } else {
+        body_tail.to_string()
+    }
 }

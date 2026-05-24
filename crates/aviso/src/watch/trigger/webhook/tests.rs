@@ -33,7 +33,7 @@ fn make_notification() -> Notification {
         sequence: 42,
         identifier,
         payload: serde_json::json!({ "location": "south", "qty": 7 }),
-        request_id: Some("req-abc".to_string()),
+        cloudevent: None,
     }
 }
 

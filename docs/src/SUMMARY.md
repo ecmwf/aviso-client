@@ -17,7 +17,7 @@
 - [Publishing notifications](./usage/notify.md)
 - [Discovering schemas](./usage/schema.md)
 - [Admin operations](./usage/admin.md)
-- [CLI quick start]()
+- [Command-line interface](./usage/cli.md)
 - [Python quick start]()
 
 ---
@@ -31,7 +31,14 @@
 
 # Triggers
 
-- [Overview]()
+- [Overview](./triggers/overview.md)
+- [Echo](./triggers/echo.md)
+- [Log](./triggers/log.md)
+- [Command](./triggers/command.md)
+- [Webhook](./triggers/webhook.md)
+- [Teams](./triggers/teams.md)
+- [Post](./triggers/post.md)
+- [Template engine](./triggers/template-engine.md)
 
 ---
 
@@ -44,6 +51,7 @@
 # Resume & state
 
 - [Overview](./resume/overview.md)
+- [The state file](./resume/state-file.md)
 
 ---
 
@@ -64,5 +72,4 @@
 # Internals
 
 - [Architecture](./internals/architecture.md)
-- [Architectural decisions](./internals/decisions.md)
 - [Contributing](./internals/contributing.md)

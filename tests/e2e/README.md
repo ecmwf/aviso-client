@@ -3,10 +3,10 @@
 E2E tests run against a real `aviso-server` instance pulled from ECMWF's container registry, pinned by manifest digest for reproducibility:
 
 ```text
-eccr.ecmwf.int/aviso/aviso_server:0.5@sha256:68f2a8e57b386f85f30676b8c772d89d7d496fb26f5d46c1427dab844e978a04
+eccr.ecmwf.int/aviso/aviso_server:0.6.2@sha256:2c2607d1ba4d9b4bf55e52bf9b08793d8ca1959843a3efaa3d6f6922d5fdc60c
 ```
 
-The tag (`0.5`) is a human-readable label; the digest is what Docker resolves and verifies. A re-published tag cannot silently change CI or local runs, because the digest will no longer match. The harness mounts [`aviso-server.config.yaml`](./aviso-server.config.yaml) into the container as the server's config file (via `AVISOSERVER_CONFIG_FILE`), so the test environment runs unauthenticated, in-memory-only, with short heartbeat and connection-lifetime settings tuned for fast tests.
+The tag (`0.6.2`) is a human-readable label; the digest is what Docker resolves and verifies. A re-published tag cannot silently change CI or local runs, because the digest will no longer match. The harness mounts [`aviso-server.config.yaml`](./aviso-server.config.yaml) into the container as the server's config file (via `AVISOSERVER_CONFIG_FILE`), so the test environment runs unauthenticated, in-memory-only, with short heartbeat and connection-lifetime settings tuned for fast tests.
 
 ## Run locally
 
@@ -51,4 +51,4 @@ CI validates this file with `docker compose config --quiet` so misconfigurations
 
 ## Registry access
 
-`eccr.ecmwf.int` is ECMWF's container registry. GitHub-hosted runners pull from it without credentials for public images; if `aviso_server:0.5` is published privately, configure the appropriate `docker login` step in CI or run e2e tests on a self-hosted runner with registry access.
+`eccr.ecmwf.int` is ECMWF's container registry. GitHub-hosted runners pull from it without credentials for public images; if `aviso_server:0.6.2` is published privately, configure the appropriate `docker login` step in CI or run e2e tests on a self-hosted runner with registry access.

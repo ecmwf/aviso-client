@@ -36,7 +36,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use aviso::state::{Checkpoint, JsonFileStore, ResumeKey, StateStore};
 use serde_json::json;
@@ -48,8 +48,21 @@ const FUZZ_FLAG: &str = "--fuzz-writer-mode";
 const FUZZ_ENV: &str = "AVISO_FUZZ_CHILD";
 const FUZZ_ENV_VALUE: &str = "1";
 const NUM_CHILDREN: u8 = 4;
-const FIRST_WAVE_MS: u64 = 500;
-const SECOND_WAVE_MS: u64 = 200;
+/// How long the parent watches journals for the first child write to
+/// appear before declaring an infrastructure failure. Generous because
+/// CI runners under contention can take several seconds for the first
+/// child to acquire the file lock and complete a put-cycle (read,
+/// flock, re-read, merge, atomic rename, release).
+const FIRST_WRITE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Observation window held open once at least one child has written.
+/// During this window every child gets a fair shot at writing more
+/// entries, exercising the multi-process lock contention this test
+/// targets, before the SIGKILL wave fires.
+const OBSERVATION_WINDOW: Duration = Duration::from_millis(200);
+/// Poll cadence for the journal-progress watcher. 25 ms is fast
+/// enough that the per-poll cost is invisible on a CI runner yet
+/// slow enough that the watcher itself does not starve the children.
+const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 fn main() {
     let argv: Vec<OsString> = std::env::args_os().collect();
@@ -125,8 +138,7 @@ fn run_kill_fuzz_test() {
         .map(|i| dir.path().join(format!("child_{i}_wave1.journal")))
         .collect();
     let mut children = spawn_wave(&state_path, &first_journals, 0);
-    thread::sleep(Duration::from_millis(FIRST_WAVE_MS));
-    assert_all_still_running(&mut children, "first wave");
+    wait_for_progress_then_observe(&mut children, &first_journals, "first wave");
     kill_all(&mut children);
 
     let after_first = read_store(&state_path);
@@ -146,13 +158,15 @@ fn run_kill_fuzz_test() {
             );
         }
         // Empty journal means the child was killed before its first
-        // successful put. Allowed for individual children, but the
-        // wave-level progress check below fails if no child made
-        // progress (test would otherwise pass vacuously).
+        // successful put. Allowed for individual children; the
+        // wave-level progress check below is satisfied by
+        // wait_for_progress_then_observe having returned (which
+        // requires at least one child to have flushed at least one
+        // entry before the observation window starts).
     }
     assert!(
         first_wave_progress > 0,
-        "first wave: no child made any progress; assertions would be vacuous",
+        "first wave: no child made any progress within {FIRST_WRITE_TIMEOUT:?}; the test infra polled journals before SIGKILL and observed none with content. Either CI is exceptionally slow or the multi-process lock is genuinely starving every child.",
     );
 
     // ---- Second wave: children start at seq 0 ----------------------------
@@ -160,8 +174,7 @@ fn run_kill_fuzz_test() {
         .map(|i| dir.path().join(format!("child_{i}_wave2.journal")))
         .collect();
     let mut children = spawn_wave(&state_path, &second_journals, 0);
-    thread::sleep(Duration::from_millis(SECOND_WAVE_MS));
-    assert_all_still_running(&mut children, "second wave");
+    wait_for_progress_then_observe(&mut children, &second_journals, "second wave");
     kill_all(&mut children);
 
     let after_second = read_store(&state_path);
@@ -190,8 +203,60 @@ fn run_kill_fuzz_test() {
     }
     assert!(
         second_wave_progress > 0,
-        "second wave: no child made any progress; assertions would be vacuous",
+        "second wave: no child made any progress within {FIRST_WRITE_TIMEOUT:?}; see the first-wave message above for the diagnostic shape.",
     );
+}
+
+/// Adaptive wait that replaces a fixed-wall-clock sleep with a poll
+/// loop on the children's journal files.
+///
+/// The function blocks until ONE of the journals has been observed to
+/// contain at least one line (proves at least one child completed a
+/// put-cycle including its journal flush), then holds open an
+/// observation window so siblings get a fair chance to write more
+/// entries before the SIGKILL wave fires. Caps the first-write wait
+/// at [`FIRST_WRITE_TIMEOUT`]; if no child has written by then the
+/// caller's assertion surfaces a genuine infrastructure failure.
+///
+/// Why adaptive: a fixed 500 ms wall-clock window was vacuous on
+/// slow CI runners where the four children all serialise through the
+/// single `fd-lock` on `state.json.lock`. With four children
+/// competing for one flock, the per-put-cycle wall time (open the
+/// data file, acquire flock, re-read disk state, merge the in-memory
+/// state, write the temp file, fsync, rename, release flock) under
+/// CI contention can exceed 500 ms for every child, so the kill wave
+/// fires before anyone has flushed. Polling the journals makes the
+/// test robust to slow runners while keeping the contention-real
+/// invariant the original window aimed at.
+fn wait_for_progress_then_observe(children: &mut [Child], journals: &[PathBuf], wave_label: &str) {
+    let start = Instant::now();
+    let mut first_progress_at: Option<Instant> = None;
+
+    loop {
+        thread::sleep(POLL_INTERVAL);
+
+        // Fail loudly if any child died early (panic, OOM, race in
+        // the dispatch loop). Without this guard a dead child leaves
+        // an empty journal and the per-child progress assertions
+        // silently skip it.
+        assert_all_still_running(children, wave_label);
+
+        if first_progress_at.is_none() && any_journal_nonempty(journals) {
+            first_progress_at = Some(Instant::now());
+        }
+
+        match first_progress_at {
+            Some(t) if t.elapsed() >= OBSERVATION_WINDOW => return,
+            None if start.elapsed() >= FIRST_WRITE_TIMEOUT => return,
+            _ => {}
+        }
+    }
+}
+
+fn any_journal_nonempty(journals: &[PathBuf]) -> bool {
+    journals
+        .iter()
+        .any(|p| std::fs::metadata(p).is_ok_and(|m| m.len() > 0))
 }
 
 fn assert_all_still_running(children: &mut [Child], wave_label: &str) {

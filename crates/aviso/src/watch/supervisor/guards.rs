@@ -50,20 +50,50 @@ pub(crate) async fn send_or_cancel(
 /// every observation; reports a gap when the observed sequence is strictly
 /// greater than expected.
 ///
-/// Sequence going backwards (observed less than expected) is treated as a
-/// duplicate or server-side anomaly and ignored at this layer; a future
-/// commit may surface it as a structured WARN log.
+/// Two modes:
+///
+/// - **Strict** (default): a sequence jump (observed > expected) is a
+///   fatal [`GapReason::SequenceJump`] that terminates the watch with
+///   [`crate::ClientError::HistoryGap`]. Use for UNFILTERED listeners
+///   where every event on the stream MUST be delivered.
+///
+/// - **Relaxed**: a sequence jump is treated as expected behaviour and
+///   the cursor is advanced to the observed sequence. Use for FILTERED
+///   listeners (identifier filter present) where the server applies
+///   the filter server-side and silently skips non-matching events,
+///   leaving the client unable to distinguish "filtered out" from
+///   "lost". Gaps are logged at DEBUG (visible under `-v`) so
+///   operators can still see them when diagnosing.
+///
+/// Sequence going backwards (observed less than expected) is treated as
+/// a duplicate or server-side anomaly and ignored at this layer; a
+/// future commit may surface it as a structured WARN log.
 pub(crate) struct GapGuard {
     expected: Option<u64>,
+    relaxed: bool,
 }
 
 impl GapGuard {
     pub(super) fn starting_from(from: Option<&ResumeStart>) -> Self {
+        Self::new(from, false)
+    }
+
+    /// Relaxed variant for filtered listeners. The server filters
+    /// identifier-mismatched events server-side, so observed sequence
+    /// numbers naturally jump from the client's perspective; treating
+    /// every jump as fatal data loss would make filtered listeners
+    /// unusable. The supervisor calls this constructor when the
+    /// `WatchRequest`'s filter map is non-empty.
+    pub(super) fn relaxed_starting_from(from: Option<&ResumeStart>) -> Self {
+        Self::new(from, true)
+    }
+
+    fn new(from: Option<&ResumeStart>, relaxed: bool) -> Self {
         let expected = match from {
             Some(ResumeStart::AfterSequence(n)) => n.checked_add(1),
             _ => None,
         };
-        Self { expected }
+        Self { expected, relaxed }
     }
 
     pub(super) fn observe(&mut self, observed: u64) -> Result<(), GapReason> {
@@ -77,7 +107,18 @@ impl GapGuard {
                 Ok(())
             }
             Some(expected) if observed > expected => {
-                Err(GapReason::SequenceJump { expected, observed })
+                if self.relaxed {
+                    tracing::debug!(
+                        event.name = "client.watch.filtered_gap",
+                        expected,
+                        observed,
+                        "sequence jump observed; treating as filtered-out events (filtered listener)"
+                    );
+                    self.expected = observed.checked_add(1);
+                    Ok(())
+                } else {
+                    Err(GapReason::SequenceJump { expected, observed })
+                }
             }
             Some(_) => Ok(()),
         }
