@@ -50,7 +50,7 @@ A placeholder today (`rlib`, not a Python `cdylib`). When the PyO3 bindings land
 
 ### `finesse`
 
-The SSE parser, kept separate so the protocol can evolve without churning the rest of the library. It owns no transport, no async runtime, and no aviso semantics, so any consumer that needs to parse SSE bytes can depend on it directly.
+The SSE parser, kept separate so the protocol can evolve without churning the rest of the library. It owns no transport, no async runtime, and no aviso semantics: the caller drives the parser by feeding bytes in and draining typed frames out.
 
 ## Data flow at runtime
 

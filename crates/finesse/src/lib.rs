@@ -25,9 +25,9 @@
 //! assert!(parser.next_frame().is_none());
 //! ```
 //!
-//! The crate is reusable: it owns no transport, no async runtime,
-//! and no aviso semantics, so any consumer that needs to parse SSE
-//! bytes from any source can depend on it directly.
+//! finesse owns no transport, no async runtime, and no aviso
+//! semantics. It is a state machine the caller drives with `feed`
+//! and drains with `next_frame`.
 
 #![forbid(unsafe_code)]
 
