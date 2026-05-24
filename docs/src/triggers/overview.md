@@ -49,14 +49,14 @@ Field meanings:
 - `retries`: additional attempts after the first failure. Total attempts = `retries + 1`. Backoff between attempts uses the supervisor's standard exponential schedule with full jitter.
 - `required`: when `true`, a final failure terminates the listener with `ClientError::TriggerFailed`. When `false`, the failure is logged at `WARN` and the listener continues.
 - `timeout`: per-trigger wall clock. Parsed as a humantime string (`30s`, `2m`, `1h30m`, `500ms`).
-- `fail_fast`: when `true`, terminal failure modes bypass the retry budget. When `false`, every failure is retryable up to the `retries` budget.
+- `fail_fast`: when `true`, deterministic failures bypass the retry budget. When `false`, every failure is retryable up to the `retries` budget.
 
-A terminal failure is one retrying is unlikely to fix:
+A deterministic failure is one that produces the same outcome on every retry with the same notification and environment:
 
 - For `command`: non-zero exit code, template render error.
 - For `webhook`, `teams`, and `post`: 4xx HTTP status, template render error, invalid request setup.
 
-Transient failures, such as 5xx responses, transport errors, timeouts, and I/O errors, use the retry budget regardless of `fail_fast`.
+Transient failures (5xx responses, transport errors, timeouts, I/O errors) use the retry budget regardless of `fail_fast` because they can succeed on a retry.
 
 ## Order, atomicity, and failure semantics
 
