@@ -48,10 +48,22 @@ use anyhow::Error;
 /// Any context entry whose message begins with `"at: "` is treated
 /// similarly: rendered as a leading `at: <PATH>` line under the
 /// summary.
+///
+/// [`crate::exit::UsageErrorTag`] is filtered out of the displayed
+/// chain. The tag is an exit-code marker only (it routes the process
+/// to exit `2` via [`crate::exit::exit_code_for_anyhow`]); it carries
+/// no actionable detail for the user and rendering its Display
+/// (`"usage error"`) as a trailing `Caused by:` entry adds noise
+/// without information. The tag still lives in the underlying
+/// `anyhow::Error` so the exit-code routing keeps working unchanged.
 pub(crate) fn format_chain(err: &Error) {
     let mut stderr = io::stderr().lock();
 
-    let entries: Vec<String> = err.chain().map(ToString::to_string).collect();
+    let entries: Vec<String> = err
+        .chain()
+        .filter(|e| !e.is::<crate::exit::UsageErrorTag>())
+        .map(ToString::to_string)
+        .collect();
     let mut summary: Option<&str> = None;
     let mut prefix_lines: Vec<String> = Vec::new();
     let mut caused_by: Vec<&str> = Vec::new();
@@ -121,5 +133,35 @@ mod tests {
             .context("at: /home/alice/.config/aviso/config.yaml");
         let chain: Vec<String> = err.chain().map(ToString::to_string).collect();
         assert!(chain.iter().any(|s| s.starts_with("at: ")));
+    }
+
+    #[test]
+    fn usage_error_tag_is_filtered_from_displayed_chain() {
+        let err = crate::exit::usage_error("missing --yes for destructive admin command")
+            .context("running `aviso admin wipe-all`");
+        let displayed: Vec<String> = err
+            .chain()
+            .filter(|e| !e.is::<crate::exit::UsageErrorTag>())
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            !displayed.iter().any(|s| s == "usage error"),
+            "the `usage error` tag string MUST NOT appear in the user-visible chain (it is an internal exit-code marker, not an actionable cause); got: {displayed:?}",
+        );
+        assert!(
+            displayed.iter().any(|s| s.contains("missing --yes")),
+            "filter must keep the actual user-facing messages: {displayed:?}",
+        );
+    }
+
+    #[test]
+    fn usage_error_tag_filter_does_not_break_exit_code_routing() {
+        let err = crate::exit::usage_error("missing --yes for destructive admin command")
+            .context("running `aviso admin wipe-all`");
+        assert_eq!(
+            crate::exit::exit_code_for_anyhow(&err),
+            crate::exit::USAGE_ERROR,
+            "filtering the tag from the DISPLAYED chain must not remove it from the underlying anyhow::Error; exit-code routing relies on downcast and must still see the tag",
+        );
     }
 }
