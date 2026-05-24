@@ -20,8 +20,19 @@ crate-type = ["cdylib", "rlib"]
 [lints]
 workspace = true
 
+[features]
+# `extension-module` tells PyO3 NOT to link against libpython at compile
+# time, because the resulting cdylib gets loaded INTO a running Python
+# interpreter that already provides the symbols. Maturin enables this
+# feature for wheel builds via `[tool.maturin] features`. Plain
+# `cargo test` and `cargo build` leave the feature off so PyO3 links
+# against libpython normally and Rust-side unit tests can call into the
+# Python runtime via `Python::attach`.
+default = []
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
-pyo3 = { workspace = true, features = ["extension-module", "abi3-py310"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
 pyo3-log = { workspace = true }
 tracing = { workspace = true }
