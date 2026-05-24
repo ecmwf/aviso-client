@@ -7,20 +7,22 @@ For today's workflows, the command-line tool covers the main jobs: publish, list
 ## Publish a notification from Python
 
 ```python
-import json, subprocess
+import subprocess
+
+params = (
+    "event=mars,class=od,stream=oper,date=20260601,"
+    "domain=g,expver=0001,step=0,time=1200,"
+    'data={"location":"s3://bucket/path"}'
+)
 
 result = subprocess.run(
-    [
-        "aviso", "--base-url", "https://aviso.example",
-        "notify",
-        'event=mars,class=od,stream=oper,date=20260601,'
-        'domain=g,expver=0001,step=0,time=1200,'
-        'data={"location":"s3://bucket/path"}',
-    ],
+    ["aviso", "--base-url", "https://aviso.example", "notify", params],
     capture_output=True, text=True, check=True,
 )
 print(result.stdout)
 ```
+
+`aviso notify` takes one positional `<PARAMETERS>` argument; `params` is one string built by Python's adjacent-literal concatenation, then passed as the single argv item the CLI expects.
 
 Pass the bearer token through `--token` or set `AVISO_TOKEN` in the environment.
 
