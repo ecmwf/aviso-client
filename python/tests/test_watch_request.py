@@ -43,6 +43,12 @@ def test_from_rejects_negative_sequence() -> None:
         aviso.WatchRequest.watch_from("mars", -1)
 
 
+def test_from_rejects_int_larger_than_u64() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        aviso.WatchRequest.watch_from("mars", 2**200)
+    assert "u64" in str(excinfo.value) or "too large" in str(excinfo.value)
+
+
 def test_with_filter() -> None:
     req = aviso.WatchRequest.watch("mars").with_filter({"class": "od", "stream": "oper"})
     assert req.event_type == "mars"
