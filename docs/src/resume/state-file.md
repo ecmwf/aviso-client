@@ -16,7 +16,7 @@ A sibling lockfile sits next to it:
 ~/.config/aviso/state.json.lock
 ```
 
-Both are created lazily on the first successful checkpoint commit. If you have never run `aviso listen` or `aviso replay`, neither file will exist yet, and that is correct.
+Both are created lazily on the first successful checkpoint commit. If you have never run `aviso listen`, neither file will exist yet, and that is correct. `aviso replay` does not touch the state file at all; see [`aviso replay` and the state file](#aviso-replay-and-the-state-file) below.
 
 ### Changing the location
 
@@ -31,7 +31,19 @@ or pass `--state-file <path>` on the command line (the flag overrides the config
 
 ### Disabling persistence entirely
 
-Pass `--no-state-store` to drop straight into an in-memory store for the lifetime of the command. The cursor is lost when the process exits, so the next run starts from the server's `from_id`/`from_date` you specified (or from "now" if you specified neither).
+Pass `--no-state-store` to `aviso listen` to drop straight into an in-memory store for the lifetime of the command. The cursor is lost when the process exits, so the next run starts from the server's `from_id`/`from_date` you specified (or from "now" if you specified neither).
+
+The flag is `aviso listen`-only. `aviso replay` does not use the state file at all and has no `--no-state-store` flag; see the next section.
+
+## `aviso replay` and the state file
+
+`aviso replay` deliberately does NOT touch the state file. A replay run never reads a checkpoint from it, never writes one to it, and never opens the lockfile. The `--state-file` / `AVISO_STATE_FILE` settings are silently ignored by `aviso replay`.
+
+### Why?
+
+A replay run shares the same `ResumeKey` derivation with `aviso listen` (`server URL + event type + filter`; see [Resume and state](./overview.md#the-key-resumekey)). If both commands wrote to the same state file against the same listener YAML, they would collide on the key, and the monotonic-merge rule (higher candidate wins) would let replay advance listen's cursor past events listen has not actually processed. That would break listen's at-least-once delivery guarantee.
+
+Keeping replay stateless avoids the hazard entirely. The trade-off is that an interrupted replay (Ctrl+C, network drop) is not auto-resumable: the next `aviso replay` invocation needs an explicit `--from <VALUE>` pointing at the desired resume cursor, computed manually from the most recent delivered notification. A future release may add resumable replays via a separate state namespace; for now, replay is one-shot by design.
 
 ## A worked example
 
@@ -184,7 +196,7 @@ Three options, depending on how far back you need to go and how concurrent the w
 rm ~/.config/aviso/state.json ~/.config/aviso/state.json.lock
 ```
 
-Do this only when no `aviso listen` or `aviso replay` is running. The next run starts with no cursor, so:
+Do this only when no `aviso listen` is running (replay does not hold the lock or open the file, so it is irrelevant to this rule). The next run starts with no cursor, so:
 
 - If your YAML or command-line set `--from <sequence-or-date>`, the run resumes from there.
 - Otherwise the run starts from "now" (the server's current tip).

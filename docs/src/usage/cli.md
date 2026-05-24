@@ -77,7 +77,7 @@ The dump shows the resolved configuration with `# from: flag|env|file|default` s
 |---|---|---|
 | `aviso notify <PARAMS>` | POST one notification | TTY: human line; pipe / `--json`: NDJSON with `NotifyResponse` |
 | `aviso listen [FILES...]` | Run one or more listeners concurrently | Empty stdout; triggers handle output |
-| `aviso replay --from <VALUE> [FILES...]` | Replay historical notifications from a cursor (positional listener YAMLs, `--listener <NAME>` to pick one from the resolved set, or `--event <TYPE> --identifiers <JSON>` for ad-hoc) | Empty stdout; triggers handle output |
+| `aviso replay --from <VALUE> [FILES...]` | Replay historical notifications from a cursor (positional listener YAMLs, `--listener <NAME>` to pick one from the resolved set, or `--event <TYPE> --identifiers <JSON>` for ad-hoc). Stateless: never reads or writes the state file (see [`aviso replay` and the state file](../resume/state-file.md#aviso-replay-and-the-state-file)) | Empty stdout; triggers handle output |
 | `aviso schema list` | GET `/api/v1/schema` (index of registered event-type names) | TTY: bullet list; pipe / `--json`: NDJSON. Same content, different rendering. Use `aviso schema get <TYPE>` for the full schema of one entry, or `aviso schema list \| xargs -I{} aviso schema get {}` for all. |
 | `aviso schema get <TYPE>` | GET single schema | Pretty-printed JSON (always) |
 | `aviso admin wipe-stream <EVENT> --yes` | DELETE one event-type stream | TTY: `ok:` line; `--json`: NDJSON |
@@ -188,6 +188,8 @@ All six date forms normalise to the wire format `YYYY-MM-DDTHH:MM:SS.ffffffZ` (e
 **Important ambiguity rule**: pure digits are ALWAYS routed as sequence id. The compact `YYYYMMDD` form (`20240115`) is therefore a sequence id, NOT a date. To pass a date, use the dashed form: `--from 2024-01-15`.
 
 ### Precedence vs. the persisted state cursor
+
+This subsection applies to `aviso listen` only. `aviso replay` is stateless (it never reads or writes the state file) and always honors the operator-supplied `--from <VALUE>` verbatim; the listener YAML's `from_id` / `from_date` defaults are ignored when `--from` is set on the command line.
 
 When `--from <VALUE>` is supplied AND a state-store cursor exists for the same listener:
 
