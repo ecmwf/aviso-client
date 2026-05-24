@@ -55,7 +55,7 @@ No required fields. Writes the notification to stdout (pretty JSON on a TTY, NDJ
 
 | Field | Required | Description |
 |---|---|---|
-| `path` | yes | Absolute path to a file. The parent directory must exist. |
+| `path` | yes | Path to a file. Resolves relative to the working directory of the `aviso` process when not absolute. The parent directory must exist; the trigger does not create directories. |
 
 Appends one line of compact JSON per notification.
 
