@@ -25,10 +25,9 @@
 //! assert!(parser.next_frame().is_none());
 //! ```
 //!
-//! The crate is reusable in principle but, while it remains a private
-//! workspace member of `aviso-client`, it is not published to
-//! crates.io. The first external consumer makes that decision worth
-//! revisiting.
+//! The crate is reusable: it owns no transport, no async runtime,
+//! and no aviso semantics, so any consumer that needs to parse SSE
+//! bytes from any source can depend on it directly.
 
 #![forbid(unsafe_code)]
 
