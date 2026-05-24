@@ -75,29 +75,18 @@ jobs:
           rustup show
           rustc --version
 
-      - name: Cache cargo registry and bin
+      - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
-            ~/.cargo/bin
-          key: mdbook-${{ runner.os }}-tools-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: mdbook-registry-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
 
-      - name: Install mdBook
-        run: |
-          if mdbook --version >/dev/null 2>&1; then
-            echo "mdbook already installed (cache hit): $(mdbook --version)"
-          else
-            cargo install mdbook --locked
-          fi
+      - name: Install mdBook (latest stable)
+        run: cargo install mdbook --locked --force
 
-      - name: Install mdbook-mermaid
-        run: |
-          if mdbook-mermaid --version >/dev/null 2>&1; then
-            echo "mdbook-mermaid already installed (cache hit): $(mdbook-mermaid --version)"
-          else
-            cargo install mdbook-mermaid --locked
-          fi
+      - name: Install mdbook-mermaid (latest stable)
+        run: cargo install mdbook-mermaid --locked --force
 
       - name: Build docs
         run: mdbook build docs
