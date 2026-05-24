@@ -46,7 +46,7 @@ except aviso.HttpError as e:
 
 ```python
 try:
-    for n in client.listen("mars"):
+    for n in client.listen("mars", filter={"class": "od"}):
         ...
 except aviso.HistoryGapError as e:
     if e.reason == "replay_limit_reached":

@@ -8,10 +8,14 @@ Attach triggers to a `WatchRequest`:
 import aviso
 
 client = aviso.AvisoClient(base_url="https://aviso.example.org")
-req = aviso.WatchRequest.watch("mars").with_triggers([
-    aviso.Trigger.echo(),
-    aviso.Trigger.log("/var/log/aviso/mars.log"),
-])
+req = (
+    aviso.WatchRequest.watch("mars")
+    .with_filter({"class": "od"})
+    .with_triggers([
+        aviso.Trigger.echo(),
+        aviso.Trigger.log("/var/log/aviso/mars.log"),
+    ])
+)
 
 for notification in client.listen(request=req):
     ...

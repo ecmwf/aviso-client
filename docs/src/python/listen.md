@@ -23,7 +23,7 @@ import aviso
 
 async def main() -> None:
     client = aviso.AsyncAvisoClient(base_url="https://aviso.example.org")
-    async for notification in client.listen("mars"):
+    async for notification in client.listen("mars", filter={"class": "od"}):
         print(notification.sequence)
 
 asyncio.run(main())
@@ -55,19 +55,21 @@ client = aviso.AvisoClient(
     state_store=aviso.JsonFileStore("~/.config/aviso/state.json"),
 )
 
-for notification in client.listen("mars"):
+for notification in client.listen("mars", filter={"class": "od"}):
     ...
 ```
 
 The supervisor commits the last delivered notification's sequence before sending the next one. After a restart, iteration picks up at the committed cursor.
 
+A note on filters: many aviso streams require at least one identifier value at the server (for example `mars` requires `class`, `test_polygon` requires `polygon`). Call `client.schema_for(event_type)` to discover which identifier fields the stream you target requires; supply at least those in `filter=`.
+
 ## Explicit from-position
 
 ```python
-for notification in client.listen("mars", from_=42):
+for notification in client.listen("mars", filter={"class": "od"}, from_=42):
     ...
 
-for notification in client.listen("mars", from_="2026-01-01T00:00:00Z"):
+for notification in client.listen("mars", filter={"class": "od"}, from_="2026-01-01T00:00:00Z"):
     ...
 ```
 
@@ -76,7 +78,7 @@ for notification in client.listen("mars", from_="2026-01-01T00:00:00Z"):
 ## Replay only
 
 ```python
-for notification in client.listen("mars", from_=100, mode="replay_only"):
+for notification in client.listen("mars", filter={"class": "od"}, from_=100, mode="replay_only"):
     ...
 ```
 
@@ -106,7 +108,7 @@ client = aviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-iterator = client.listen("mars")
+iterator = client.listen("mars", filter={"class": "od"})
 try:
     for notification in iterator:
         process(notification)
