@@ -308,7 +308,7 @@ async fn drive(
 /// Inspects a [`aviso::ClientError`] for known operator-mistake
 /// patterns specific to the watch / listener path and returns a
 /// one-line hint when a match is found. Parallel to
-/// [`crate::commands::notify::hint_for_client_error`] but with
+/// `hint_for_client_error` in `commands/notify.rs` but with
 /// messages tuned to listener-YAML mistakes: the schema's
 /// `required: false` flag IS a wildcard at watch time, so the
 /// "you forgot a field" case has different semantics than the

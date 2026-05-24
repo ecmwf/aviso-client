@@ -226,10 +226,10 @@ pub(super) fn teams_set_title_template(cfg: &mut TeamsConfig, title: impl Into<S
 impl super::Trigger {
     /// Build a Teams trigger that posts an auto-generated Adaptive
     /// Card to a Microsoft Teams Workflows webhook URL. The default
-    /// title is [`DEFAULT_TEAMS_TITLE_TEMPLATE`]; override via
-    /// [`Self::title_template`]. URL is template-rendered at dispatch.
-    /// Inherits the webhook default timeout
-    /// ([`super::DEFAULT_WEBHOOK_TIMEOUT`]).
+    /// title is `"aviso {{ notification.event_type }} #{{ notification.sequence }}"`;
+    /// override via [`Self::title_template`]. URL is template-rendered
+    /// at dispatch. Inherits the webhook default timeout
+    /// ([`crate::watch::DEFAULT_WEBHOOK_TIMEOUT`], 30 seconds).
     #[must_use]
     pub fn teams(url: impl Into<String>) -> Self {
         Self {
