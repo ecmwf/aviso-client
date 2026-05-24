@@ -40,7 +40,7 @@ aviso schema get mars
 aviso listen --event mars --identifiers '{}'
 ```
 
-This asks for every notification of type `mars` regardless of identifier. The server accepts it only when the schema's `required: true` fields are all marked as missing-is-ok, which is rare. For most schemas, you will need to set the required fields.
+This asks for every notification of type `mars` regardless of identifier. The server accepts it only when the schema declares no `required: true` identifier fields. For schemas that have any (which is most of them, including `mars`), the server rejects the request with `400 Required field '<name>' missing for watch operation` and you must include each required field in the filter.
 
 ## Spatial filters
 
