@@ -18,6 +18,8 @@ from importlib.metadata import PackageNotFoundError, version
 
 from aviso._native import (
     VERSION,
+    AsyncAvisoClient,
+    AsyncNotificationIterator,
     AuthError,
     AvisoClient,
     AvisoError,
@@ -34,6 +36,7 @@ from aviso._native import (
     MalformedEventError,
     MemoryStore,
     Notification,
+    NotificationIterator,
     NotifyResponse,
     SchemaCatalog,
     SchemaResponse,
@@ -42,6 +45,7 @@ from aviso._native import (
     TransportError,
     Trigger,
     TriggerError,
+    WatchRequest,
 )
 
 AuthProvider = Bearer | Basic | Env | ConfigFile | Chain
@@ -73,6 +77,8 @@ except PackageNotFoundError:
 
 __all__ = [
     "VERSION",
+    "AsyncAvisoClient",
+    "AsyncNotificationIterator",
     "AuthError",
     "AuthProvider",
     "AvisoClient",
@@ -91,6 +97,7 @@ __all__ = [
     "MalformedEventError",
     "MemoryStore",
     "Notification",
+    "NotificationIterator",
     "NotifyResponse",
     "SchemaCatalog",
     "SchemaResponse",
@@ -101,5 +108,6 @@ __all__ = [
     "Trigger",
     "TriggerError",
     "WatchMode",
+    "WatchRequest",
     "__version__",
 ]

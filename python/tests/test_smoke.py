@@ -30,6 +30,8 @@ def test_native_version_matches_rust_crate() -> None:
 def test_public_surface_in_this_commit() -> None:
     assert set(aviso.__all__) == {
         "VERSION",
+        "AsyncAvisoClient",
+        "AsyncNotificationIterator",
         "AuthError",
         "AuthProvider",
         "AvisoClient",
@@ -48,6 +50,7 @@ def test_public_surface_in_this_commit() -> None:
         "MalformedEventError",
         "MemoryStore",
         "Notification",
+        "NotificationIterator",
         "NotifyResponse",
         "SchemaCatalog",
         "SchemaResponse",
@@ -58,5 +61,6 @@ def test_public_surface_in_this_commit() -> None:
         "Trigger",
         "TriggerError",
         "WatchMode",
+        "WatchRequest",
         "__version__",
     }

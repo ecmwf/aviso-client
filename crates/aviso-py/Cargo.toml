@@ -33,6 +33,7 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
+futures-util = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
 pyo3-async-runtimes = { workspace = true }
 pyo3-log = { workspace = true }
