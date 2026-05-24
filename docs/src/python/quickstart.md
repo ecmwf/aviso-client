@@ -42,7 +42,7 @@ import aviso
 
 async def main() -> None:
     client = aviso.AsyncAvisoClient(base_url="https://aviso.example.org")
-    async for notification in client.listen("mars"):
+    async for notification in client.listen("mars", filter={"class": "od"}):
         print(notification.sequence, notification.payload)
 
 asyncio.run(main())
@@ -58,8 +58,10 @@ client = aviso.AvisoClient(
     state_store=aviso.JsonFileStore("~/.config/aviso/state.json"),
 )
 
-for notification in client.listen("mars"):
+for notification in client.listen("mars", filter={"class": "od"}):
     print(notification.sequence)
 ```
 
 The first run reads from the live edge. Subsequent runs pick up from the last committed sequence. The file is locked across cooperating processes on local filesystems.
+
+Most aviso streams require at least one identifier field in `filter=` (for example `mars` requires `class`). Run `client.schema_for("mars").schema["identifier"]` to see what each stream requires.

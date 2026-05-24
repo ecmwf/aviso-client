@@ -72,7 +72,7 @@ client = aviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-iterator = client.listen("mars")
+iterator = client.listen("mars", filter={"class": "od"})
 try:
     for n in iterator:
         process(n)
