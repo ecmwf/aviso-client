@@ -87,7 +87,17 @@ async fn handler_task(sender: watch::Sender<bool>, last_signal: Arc<Mutex<Option
                     error = %e,
                     "could not install Ctrl+C handler; graceful shutdown unavailable"
                 );
-                return;
+                // Park the handler task forever so the watch::Sender stays
+                // alive. Dropping the Sender would close the channel and
+                // downstream `.changed().await` would resolve as a
+                // cancellation signal, causing every listen / replay
+                // subcommand to exit immediately on platforms where signal
+                // installation fails (Windows without a console, restricted
+                // sandboxes, no-TTY container init). Operators lose graceful
+                // shutdown there but the workload itself keeps running; OS-
+                // level SIGKILL remains the fallback stop mechanism.
+                std::future::pending::<()>().await;
+                unreachable!("std::future::pending never resolves");
             }
         }
     }

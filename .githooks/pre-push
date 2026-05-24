@@ -71,9 +71,15 @@ git diff --exit-code Cargo.lock \
 
 if command -v cargo-deny >/dev/null 2>&1; then
     step "cargo deny check"
-    cargo deny check 2>&1 | tail -5
-    cargo deny check >/dev/null 2>&1 \
-        || fail "cargo-deny check failed (advisories, bans, licenses, or sources)."
+    # `if !` allows the pipeline to fail without tripping `set -e`. The
+    # pipeline's exit status (preserved by `pipefail`) is cargo-deny's
+    # status; `tail -5` always succeeds and only shapes the output. This
+    # runs cargo-deny EXACTLY ONCE; the earlier two-call form would
+    # silently fall through to set-e on the first call's failure and
+    # bypass the friendly `fail` message entirely.
+    if ! cargo deny check 2>&1 | tail -5; then
+        fail "cargo-deny check failed (advisories, bans, licenses, or sources)."
+    fi
 else
     step "cargo-deny not installed; skipping (install: \`cargo install cargo-deny --locked\`)"
 fi
