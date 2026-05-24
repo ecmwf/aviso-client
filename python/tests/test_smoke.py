@@ -1,8 +1,8 @@
 """Smoke tests for the aviso Python package.
 
 These tests run on every CI cell and the pre-push hook. They verify that
-the extension imports, that the public surface in this commit is the
-expected shape, and that the version string is consistent across the
+the extension imports, that the documented public surface is the expected
+shape, and that the version string is consistent across the Python
 package and the underlying Rust crate.
 """
 
@@ -27,7 +27,7 @@ def test_native_version_matches_rust_crate() -> None:
     assert re.match(r"^\d+\.\d+\.\d+", aviso.VERSION)
 
 
-def test_public_surface_in_this_commit() -> None:
+def test_public_surface_matches_documented_set() -> None:
     assert set(aviso.__all__) == {
         "VERSION",
         "AsyncAvisoClient",

@@ -30,6 +30,7 @@ use pyo3_log::{Caching, Logger};
 mod auth;
 mod clients;
 mod error;
+mod error_test_helper;
 mod paths;
 mod runtime;
 mod state_stores;
@@ -57,7 +58,7 @@ static LOGGER_INSTALLED: OnceLock<()> = OnceLock::new();
 fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     install_logging_bridge(py)?;
     error::register_exceptions(py, m)?;
-    error::register_provoke_error(m)?;
+    error_test_helper::register_provoke_error(m)?;
     values::register_value_types(m)?;
     auth::register_auth(m)?;
     state_stores::register_state_stores(m)?;

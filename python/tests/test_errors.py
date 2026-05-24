@@ -5,8 +5,6 @@ The Rust ``map_client_error`` function maps every variant of
 each variant via the private ``_provoke_error`` helper and assert the
 resulting Python exception has the right class and the documented
 structured attributes.
-
-Subsequent commits extend this file as more variants land.
 """
 
 from __future__ import annotations
