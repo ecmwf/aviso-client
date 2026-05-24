@@ -7,10 +7,11 @@
 //! ending does not drop the last client clone and trigger the
 //! parent-drop cascade for the remaining listeners.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use aviso::watch::{ResumeStart, WatchRequest};
+use aviso::watch::{EchoConfig, ResumeStart, TriggerConfig, WatchRequest};
 use aviso::{AvisoClient, ClientError};
 use tokio::sync::watch;
 
@@ -54,6 +55,50 @@ pub(crate) fn build_replay_request(spec: &ListenerSpec, cursor: ResumeStart) -> 
     let req = req.with_filter(spec.identifiers.clone().into_iter().collect());
     let triggers = triggers_for_listener(spec);
     req.with_triggers(triggers)
+}
+
+/// Builds a single-listener [`ListenerSpec`] from inline CLI
+/// arguments. Used by both `aviso listen --event ... --identifiers
+/// ...` and the equivalent `aviso replay` path so the two commands
+/// stay in sync on inline ad-hoc listener semantics.
+///
+/// The returned spec carries:
+///
+/// - `name = Some("ad-hoc")` so the startup banner and echo
+///   leader produce predictable, identifying output regardless of
+///   which command invoked the path.
+/// - No `from_id` / `from_date` defaults; the operator supplies
+///   the cursor via `--from` (mandatory for replay, optional for
+///   listen).
+/// - A single default echo trigger
+///   ([`TriggerConfig::Echo`] built from
+///   [`EchoConfig::default`]) so the operator sees notifications
+///   on stdout without any extra YAML or flags. To customise
+///   triggers (log, command, webhook, teams, post) for an ad-hoc
+///   run, use a YAML file with a `listeners:` block instead.
+///
+/// Errors are wrapped via [`usage_error`] (exit code `2`) when
+/// the supplied `identifiers_json` does not parse as a JSON
+/// object; the error message names the expected shape
+/// (`'{"class":"od"}'`) so the operator sees the fix inline.
+pub(crate) fn build_inline_listener_spec(
+    event: &str,
+    identifiers_json: &str,
+) -> Result<ListenerSpec> {
+    let identifiers: BTreeMap<String, serde_json::Value> = serde_json::from_str(identifiers_json)
+        .map_err(|e| {
+            usage_error(format!(
+                "parse --identifiers as JSON object: {e}; expected something like '{{\"class\":\"od\"}}'"
+            ))
+        })?;
+    Ok(ListenerSpec {
+        name: Some("ad-hoc".into()),
+        event: event.to_string(),
+        identifiers,
+        from_id: None,
+        from_date: None,
+        triggers: vec![TriggerConfig::Echo(EchoConfig::default())],
+    })
 }
 
 pub(crate) fn triggers_for_listener(spec: &ListenerSpec) -> Vec<aviso::watch::Trigger> {
@@ -167,6 +212,72 @@ mod tests {
     fn from_date_yields_watch_from_date() {
         let req = build_watch_request(&spec(None, Some("2024-01-15T00:00:00.000000Z"))).unwrap();
         assert_eq!(req.event_type(), "mars");
+    }
+
+    #[test]
+    fn build_inline_listener_spec_with_class_od_identifier_builds_ad_hoc_spec_with_default_echo() {
+        let spec = build_inline_listener_spec("mars", r#"{"class":"od"}"#).unwrap();
+        assert_eq!(
+            spec.name.as_deref(),
+            Some("ad-hoc"),
+            "inline specs are named `ad-hoc` so the startup banner and echo leader produce predictable, identifying output regardless of whether listen or replay invoked the helper",
+        );
+        assert_eq!(spec.event, "mars");
+        assert_eq!(
+            spec.identifiers.get("class").map(serde_json::Value::as_str),
+            Some(Some("od")),
+            "identifiers JSON `{{\"class\":\"od\"}}` must produce the same BTreeMap entry the YAML deserialiser produces for `identifiers: {{ class: od }}`; otherwise inline and YAML modes would not be substitutable",
+        );
+        assert!(
+            spec.from_id.is_none() && spec.from_date.is_none(),
+            "inline specs carry no per-listener cursor; the operator supplies the cursor via --from (optional for listen, mandatory for replay): from_id={:?}, from_date={:?}",
+            spec.from_id,
+            spec.from_date,
+        );
+        assert_eq!(
+            spec.triggers.len(),
+            1,
+            "inline specs carry exactly one default echo trigger so the operator sees notifications on stdout without any extra YAML or flags; without this default the inline command silently discards everything and looks broken",
+        );
+        assert!(
+            matches!(spec.triggers.first(), Some(TriggerConfig::Echo(_))),
+            "the default trigger MUST be Echo specifically (not Log/Command/Webhook/etc.) because Echo is the only trigger whose default behavior is operator-visible without further configuration",
+        );
+    }
+
+    #[test]
+    fn build_inline_listener_spec_invalid_json_identifiers_returns_usage_error_naming_expected_shape()
+     {
+        let err = build_inline_listener_spec("mars", "{not valid json").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("parse --identifiers"),
+            "error message must name the failing flag so the operator knows which argument to fix; got: {msg}",
+        );
+        assert!(
+            msg.contains(r#"'{"class":"od"}'"#),
+            "error message must include a canonical example of valid input so the operator sees the expected shape inline; got: {msg}",
+        );
+    }
+
+    #[test]
+    fn build_inline_listener_spec_with_empty_identifiers_object_is_a_valid_wildcard_listener() {
+        let spec = build_inline_listener_spec("mars", "{}").unwrap();
+        assert!(
+            spec.identifiers.is_empty(),
+            "an empty JSON object must produce an empty identifiers map; this is the valid `tail everything for event_type` shape",
+        );
+    }
+
+    #[test]
+    fn build_inline_listener_spec_propagates_the_event_type_argument_unchanged() {
+        for ev in &["mars", "test_polygon", "int.ecmwf.aviso.mars"] {
+            let spec = build_inline_listener_spec(ev, "{}").unwrap();
+            assert_eq!(
+                spec.event, *ev,
+                "event_type must round-trip from CLI arg to spec verbatim so the operator sees what they typed; ev={ev}",
+            );
+        }
     }
 
     #[test]

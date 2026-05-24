@@ -2,6 +2,17 @@
 
 Writes the notification to standard output. Format adapts to whether stdout is a TTY or a pipe; this is the canonical dual-mode shape every other interactive aviso surface follows.
 
+## Quick start without a YAML file
+
+`aviso listen --event <TYPE> --identifiers <JSON>` runs a single ad-hoc listener with a default echo trigger, no YAML required:
+
+```bash
+aviso listen --event mars --identifiers '{"class":"od"}'
+aviso listen --event mars --identifiers '{"class":"od"}' | jq -r '.payload'
+```
+
+See [Listening without a YAML file (inline mode)](../usage/cli.md#listening-without-a-yaml-file-inline-mode) for the full inline-mode reference (flag pairing, precedence with positional YAML, state store interaction, `--from` semantics, when to switch to YAML for multi-trigger setups).
+
 ## YAML
 
 ```yaml
@@ -31,7 +42,11 @@ new notification (listener: my-listener, trigger: echo):
 
 The leader line is rendered in dark gray (ANSI `\x1b[90m`, bright-black) when color is enabled. The JSON body is plain text so it stays copy-paste-friendly into `jq` and similar tools even with `--color always`.
 
-The `(listener: <name>, ...)` segment appears when the listener has an explicit `name:` in its YAML. Multi-listener configurations watching the same event_type can interleave deliveries on shared stdout; the leader names the listener so operators can attribute each line. A single-listener config or a listener without `name:` shows the bare leader `new notification (trigger: echo):`.
+The `(listener: <name>, ...)` segment appears when the listener carries a name. Multi-listener configurations watching the same event_type can interleave deliveries on shared stdout; the leader names the listener so operators can attribute each line. The label comes from three places, in priority order:
+
+- An explicit `name:` field on the listener in its YAML (`name: mars-od` → `(listener: mars-od, trigger: echo)`).
+- The fixed string `ad-hoc` when the listener was built via inline mode (`aviso listen --event ... --identifiers ...`). The startup banner reads `Listening for ad-hoc [mars] (class=od). Press Ctrl+C to stop.` and every echo leader carries `(listener: ad-hoc, trigger: echo)`.
+- Nothing (the bare leader `new notification (trigger: echo):`) when the listener has no `name:` in its YAML.
 
 ## Pipe output (machine consumers)
 
@@ -51,9 +66,9 @@ The CLI's global `--color` flag selects from three modes (interacts with the [`N
 
 | Mode | Behavior |
 |---|---|
-| `--color auto` (default) | Color enabled on TTY, disabled in pipe; respects `NO_COLOR=1` |
+| `--color never` (default) | No color anywhere; no ANSI escapes emitted |
+| `--color auto` | Color enabled on TTY, disabled in pipe; respects `NO_COLOR=1` |
 | `--color always` | Color enabled always (still no color in pipe-mode body since pipe mode emits compact NDJSON, not the human format) |
-| `--color never` | No color anywhere |
 
 Note: `--color always` does **not** force the human format on pipe-mode output. Pipe mode unconditionally emits compact NDJSON because the JSON body would be corrupted by ANSI escapes for any downstream `jq`-style consumer. If you want to force human format despite stdout being a pipe, redirect `stderr` instead (and have the trigger write there) - but no such feature exists in aviso today; pipe mode is for machine consumers.
 

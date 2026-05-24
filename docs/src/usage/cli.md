@@ -76,8 +76,8 @@ The dump shows the resolved configuration with `# from: flag|env|file|default` s
 | Subcommand | Purpose | Output discipline |
 |---|---|---|
 | `aviso notify <PARAMS>` | POST one notification | TTY: human line; pipe / `--json`: NDJSON with `NotifyResponse` |
-| `aviso listen [FILES...]` | Run one or more listeners concurrently | Empty stdout; triggers handle output |
-| `aviso replay --from <VALUE> [FILES...]` | Replay historical notifications from a cursor (positional listener YAMLs, `--listener <NAME>` to pick one from the resolved set, or `--event <TYPE> --identifiers <JSON>` for ad-hoc). Stateless: never reads or writes the state file (see [`aviso replay` and the state file](../resume/state-file.md#aviso-replay-and-the-state-file)) | Empty stdout; triggers handle output |
+| `aviso listen [FILES...]` | Run one or more listeners concurrently. With `--event <TYPE> --identifiers <JSON>` runs a single ad-hoc listener without a YAML file (default echo trigger; same `--from` and state-store semantics as YAML mode). See [Listening without a YAML file (inline mode)](#listening-without-a-yaml-file-inline-mode) | The CLI itself emits no stdout; configured triggers do. `echo` (the inline-mode default) writes NDJSON on pipe / pretty JSON on TTY. `log` writes to a file. Other triggers reach their own sinks |
+| `aviso replay --from <VALUE> [FILES...]` | Replay historical notifications from a cursor (positional listener YAMLs, `--listener <NAME>` to pick one from the resolved set, or `--event <TYPE> --identifiers <JSON>` for ad-hoc). Stateless: never reads or writes the state file (see [`aviso replay` and the state file](../resume/state-file.md#aviso-replay-and-the-state-file)) | Same as `aviso listen`: the CLI emits no stdout; triggers do. Ad-hoc replay defaults to a single `echo` trigger for the same pipe-friendly behavior |
 | `aviso schema list` | GET `/api/v1/schema` (index of registered event-type names) | TTY: bullet list; pipe / `--json`: NDJSON. Same content, different rendering. Use `aviso schema get <TYPE>` for the full schema of one entry, or `aviso schema list \| xargs -I{} aviso schema get {}` for all. |
 | `aviso schema get <TYPE>` | GET single schema | Pretty-printed JSON (always) |
 | `aviso admin wipe-stream <EVENT> --yes` | DELETE one event-type stream | TTY: `ok:` line; `--json`: NDJSON |
@@ -133,6 +133,67 @@ The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` i
 ### Positional listener files
 
 `aviso listen file1.yaml file2.yaml ...` accepts a variadic positional list of listener YAML files. Each carries its own top-level `listeners:` list. Positional files **REPLACE** (not merge with) the global config's `listeners:` for the invocation. With no positional files and no global `listeners:`, the CLI exits with code `2` and a stderr message naming both paths checked.
+
+### Listening without a YAML file (inline mode)
+
+For quick shell-driven peeks at a stream you can skip the YAML file entirely:
+
+```bash
+aviso listen --event mars --identifiers '{"class":"od"}'
+```
+
+This runs a single ad-hoc listener with a default `echo` trigger. On a TTY (interactive shell) the echo trigger emits a multi-line pretty-printed JSON block per notification preceded by a `new notification (listener: ad-hoc, trigger: echo):` leader; when stdout is a pipe or redirected to a file (`> out.ndjson`, `| jq`) it emits one compact NDJSON line per notification, the same shape `aviso notify` produces. Pipe to `jq` (or any line-based tool) the same way:
+
+```bash
+aviso listen --event mars --identifiers '{"class":"od"}' | jq -r '.payload'
+```
+
+#### When to use inline vs YAML
+
+| Concern | Inline (`--event`/`--identifiers`) | YAML (`listeners:` block) |
+|---|---|---|
+| Quick exploration, ad-hoc piping to a shell tool | Best fit | Overkill (file just to print events) |
+| Multiple listeners concurrent | Not supported (inline is single-listener) | Use YAML; supervisor spawns each in its own task |
+| Triggers other than `echo` (`log`, `command`, `webhook`, `teams`, `post`) | Not supported (inline is echo-only) | Required |
+| Per-listener `from_id` / `from_date` defaults | Use `--from` (optional; defaults to state-file cursor or "now") | YAML can carry the default |
+| Production deployment, long-running service | Discouraged (single hard-coded `echo` trigger, generic `ad-hoc` listener name → not auditable, no operator-attached identity) | Recommended (auditable config, named listeners, full trigger surface) |
+
+#### Flag pairing
+
+`--event` and `--identifiers` are a required pair: passing one without the other exits `2` with a clap-generated message naming the missing flag. The `--identifiers` value must be a JSON object literal; the canonical shape is `'{"key":"value", ...}'`. An empty object `{}` is a valid wildcard listener (every notification for the given event type, regardless of identifier).
+
+#### Precedence with positional YAML files
+
+When both inline flags AND a positional YAML file are supplied, **inline wins**. The YAML file is silently ignored on that invocation. This matches `aviso replay`'s existing behavior so operators using either subcommand follow one mental model. The startup banner names `ad-hoc` (not the YAML's listener names) when inline mode takes precedence, so it is always visible which path resolved.
+
+#### State store and resumability
+
+Inline mode is still `aviso listen`: the supervisor checkpoints to the state file with the at-least-once delivery contract intact. Two inline invocations with the same `--base-url` + `--event` + `--identifiers` share a [`ResumeKey`](../resume/overview.md#the-key-resumekey), so the second run resumes from where the first left off. Pass `--no-state-store` for throwaway runs where the cursor should not persist (the in-memory store is dropped on exit; the next run starts from `--from`, or from "now" if `--from` is absent).
+
+#### Cursor
+
+`--from <VALUE>` accepts the same seven forms documented under [`--from` value formats](#from-value-formats) and applies to the inline listener exactly as it would to a YAML one. `--from` is **optional** on listen (default: resume from the state file if available, otherwise start at "now") and **mandatory** on `aviso replay --event ... --identifiers ...`.
+
+#### Custom triggers
+
+To use any trigger other than `echo` (or to mix multiple triggers) on an ad-hoc subscription, write a YAML file and use that instead. The YAML adds about five lines and unlocks the full trigger surface:
+
+```yaml
+# inline-with-log.yaml
+listeners:
+  - name: mars-od-peek
+    event: mars
+    identifiers:
+      class: od
+    triggers:
+      - type: echo
+      - type: log
+        path: /tmp/mars-od-peek.log
+```
+
+```bash
+aviso listen inline-with-log.yaml
+```
 
 ### `--color auto|always|never`
 

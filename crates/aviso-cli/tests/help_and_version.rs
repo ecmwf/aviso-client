@@ -110,7 +110,9 @@ fn listen_subcommand_help() {
         .assert()
         .success()
         .stdout(contains("LISTENER_FILES").or(contains("listener_files")))
-        .stdout(contains("--no-state-store"));
+        .stdout(contains("--no-state-store"))
+        .stdout(contains("--event"))
+        .stdout(contains("--identifiers"));
 }
 
 #[test]
