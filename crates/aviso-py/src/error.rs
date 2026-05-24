@@ -96,18 +96,24 @@ fn http_error(py: Python<'_>, status: u16, body: &str, request_id: Option<&str>)
         None => format!("http {status}: {body}"),
     };
     let err = HttpError::new_err(message);
-    if let Err(set_err) = attach_setattrs(
-        py,
-        &err,
-        &[
-            ("status", status.into_py_any(py).ok()),
-            ("body", body.into_py_any(py).ok()),
-            ("request_id", request_id.into_py_any(py).ok()),
-        ],
-    ) {
-        return set_err;
+    match build_http_attrs(py, &err, status, body, request_id) {
+        Ok(()) => err,
+        Err(e) => e,
     }
-    err
+}
+
+fn build_http_attrs(
+    py: Python<'_>,
+    err: &PyErr,
+    status: u16,
+    body: &str,
+    request_id: Option<&str>,
+) -> PyResult<()> {
+    let instance = err.value(py);
+    instance.setattr("status", status)?;
+    instance.setattr("body", body)?;
+    instance.setattr("request_id", request_id.into_py_any(py)?)?;
+    Ok(())
 }
 
 fn history_gap_error(py: Python<'_>, reason: GapReason) -> PyErr {
@@ -121,19 +127,26 @@ fn history_gap_error(py: Python<'_>, reason: GapReason) -> PyErr {
         _ => ("unknown", None, None, None),
     };
     let err = HistoryGapError::new_err(format!("history gap: {reason_str}"));
-    if let Err(set_err) = attach_setattrs(
-        py,
-        &err,
-        &[
-            ("reason", reason_str.into_py_any(py).ok()),
-            ("max_allowed", max_allowed.into_py_any(py).ok()),
-            ("expected", expected.into_py_any(py).ok()),
-            ("observed", observed.into_py_any(py).ok()),
-        ],
-    ) {
-        return set_err;
+    match build_history_gap_attrs(py, &err, reason_str, max_allowed, expected, observed) {
+        Ok(()) => err,
+        Err(e) => e,
     }
-    err
+}
+
+fn build_history_gap_attrs(
+    py: Python<'_>,
+    err: &PyErr,
+    reason: &str,
+    max_allowed: Option<u64>,
+    expected: Option<u64>,
+    observed: Option<u64>,
+) -> PyResult<()> {
+    let instance = err.value(py);
+    instance.setattr("reason", reason)?;
+    instance.setattr("max_allowed", max_allowed.into_py_any(py)?)?;
+    instance.setattr("expected", expected.into_py_any(py)?)?;
+    instance.setattr("observed", observed.into_py_any(py)?)?;
+    Ok(())
 }
 
 fn stream_protocol_error(py: Python<'_>, message: &str, request_id: Option<&str>) -> PyErr {
@@ -142,17 +155,22 @@ fn stream_protocol_error(py: Python<'_>, message: &str, request_id: Option<&str>
         None => format!("stream protocol: {message}"),
     };
     let err = StreamProtocolError::new_err(rendered);
-    if let Err(set_err) = attach_setattrs(
-        py,
-        &err,
-        &[
-            ("message", message.into_py_any(py).ok()),
-            ("request_id", request_id.into_py_any(py).ok()),
-        ],
-    ) {
-        return set_err;
+    match build_stream_protocol_attrs(py, &err, message, request_id) {
+        Ok(()) => err,
+        Err(e) => e,
     }
-    err
+}
+
+fn build_stream_protocol_attrs(
+    py: Python<'_>,
+    err: &PyErr,
+    message: &str,
+    request_id: Option<&str>,
+) -> PyResult<()> {
+    let instance = err.value(py);
+    instance.setattr("message", message)?;
+    instance.setattr("request_id", request_id.into_py_any(py)?)?;
+    Ok(())
 }
 
 fn state_store_error(inner: &StoreError) -> PyErr {
@@ -171,27 +189,36 @@ fn trigger_error(py: Python<'_>, kind: &TriggerKindLabel, source: CoreTriggerErr
         detail.error_kind, detail.summary
     );
     let err = TriggerError::new_err(rendered);
-    let attrs: &[(&str, Option<Py<PyAny>>)] = &[
-        ("trigger_kind", trigger_kind.into_py_any(py).ok()),
-        ("error_kind", detail.error_kind.into_py_any(py).ok()),
-        ("path", log_path.into_py_any(py).ok()),
-        ("exit_code", detail.exit_code.into_py_any(py).ok()),
-        ("stderr_tail", detail.stderr_tail.into_py_any(py).ok()),
-        ("status", detail.status.into_py_any(py).ok()),
-        ("body_tail", detail.body_tail.into_py_any(py).ok()),
-        ("reason", detail.reason.into_py_any(py).ok()),
-        (
-            "timeout_seconds",
-            detail.timeout_seconds.into_py_any(py).ok(),
-        ),
-        ("context", detail.context.into_py_any(py).ok()),
-        ("field", detail.field.into_py_any(py).ok()),
-        ("template_kind", detail.template_kind.into_py_any(py).ok()),
-    ];
-    if let Err(set_err) = attach_setattrs(py, &err, attrs) {
-        return set_err;
+    match build_trigger_attrs(py, &err, trigger_kind, log_path.as_deref(), &detail) {
+        Ok(()) => err,
+        Err(e) => e,
     }
-    err
+}
+
+fn build_trigger_attrs(
+    py: Python<'_>,
+    err: &PyErr,
+    trigger_kind: &'static str,
+    path: Option<&str>,
+    detail: &TriggerErrorDetail,
+) -> PyResult<()> {
+    let instance = err.value(py);
+    instance.setattr("trigger_kind", trigger_kind)?;
+    instance.setattr("error_kind", detail.error_kind)?;
+    instance.setattr("path", path.into_py_any(py)?)?;
+    instance.setattr("exit_code", detail.exit_code.into_py_any(py)?)?;
+    instance.setattr(
+        "stderr_tail",
+        detail.stderr_tail.as_deref().into_py_any(py)?,
+    )?;
+    instance.setattr("status", detail.status.into_py_any(py)?)?;
+    instance.setattr("body_tail", detail.body_tail.as_deref().into_py_any(py)?)?;
+    instance.setattr("reason", detail.reason.as_deref().into_py_any(py)?)?;
+    instance.setattr("timeout_seconds", detail.timeout_seconds.into_py_any(py)?)?;
+    instance.setattr("context", detail.context.as_deref().into_py_any(py)?)?;
+    instance.setattr("field", detail.field.as_deref().into_py_any(py)?)?;
+    instance.setattr("template_kind", detail.template_kind.into_py_any(py)?)?;
+    Ok(())
 }
 
 fn trigger_kind_label_str(label: &TriggerKindLabel) -> &'static str {
@@ -303,21 +330,6 @@ fn template_kind_str(kind: TemplateErrorKind) -> &'static str {
         TemplateErrorKind::NotificationEncode => "notification_encode",
         _ => "unknown",
     }
-}
-
-fn attach_setattrs(
-    py: Python<'_>,
-    err: &PyErr,
-    attrs: &[(&str, Option<Py<PyAny>>)],
-) -> PyResult<()> {
-    let instance = err.value(py);
-    for (name, value) in attrs {
-        match value {
-            Some(v) => instance.setattr(*name, v)?,
-            None => instance.setattr(*name, py.None())?,
-        }
-    }
-    Ok(())
 }
 
 /// Test-only helper exposed for cross-language round-trip tests in the
