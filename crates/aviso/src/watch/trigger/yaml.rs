@@ -96,6 +96,22 @@ pub struct EchoConfig {
     pub required: bool,
 }
 
+impl Default for EchoConfig {
+    /// Constructs an [`EchoConfig`] with the same field values
+    /// serde fills in for omitted YAML fields: `retries = 0`,
+    /// `required = true`. Programmatic constructors (the CLI's
+    /// inline-listen path that builds a `ListenerSpec` without
+    /// parsing YAML) need this so a `TriggerConfig::Echo(...)`
+    /// value can be created from outside the `aviso` crate
+    /// despite `EchoConfig` being `#[non_exhaustive]`.
+    fn default() -> Self {
+        Self {
+            retries: 0,
+            required: true,
+        }
+    }
+}
+
 /// YAML payload for [`TriggerConfig::Log`].
 #[non_exhaustive]
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -345,7 +361,7 @@ fn default_fail_fast() -> bool {
     reason = "test code: unwrap on YAML deserialisation success and panic on unexpected variant are the standard test diagnostics"
 )]
 mod tests {
-    use super::{HttpMethod, TriggerConfig};
+    use super::{EchoConfig, HttpMethod, TriggerConfig};
     use crate::watch::trigger::kind::TriggerKind;
 
     fn parse(yaml: &str) -> TriggerConfig {
@@ -354,6 +370,28 @@ mod tests {
 
     fn parse_err(yaml: &str) -> serde_norway::Error {
         serde_norway::from_str::<TriggerConfig>(yaml).unwrap_err()
+    }
+
+    #[test]
+    fn echo_config_default_matches_yaml_serde_defaults_field_for_field() {
+        let from_default = EchoConfig::default();
+        let from_yaml: EchoConfig = serde_norway::from_str("{}").unwrap();
+        assert_eq!(
+            from_default.retries, 0,
+            "Default::default must produce retries = 0 to match the serde default for an omitted field",
+        );
+        assert!(
+            from_default.required,
+            "Default::default must produce required = true to match the YAML default; without this, programmatic constructors of EchoConfig (the CLI inline-listen path) silently get a non-required trigger when the YAML deserialiser would have produced a required one, breaking the at-least-once contract",
+        );
+        assert_eq!(
+            from_default.retries, from_yaml.retries,
+            "Default::default and serde::from_str(\"{{}}\") MUST agree on retries; if they diverge, switching between YAML and programmatic construction silently changes operator-observable behavior",
+        );
+        assert_eq!(
+            from_default.required, from_yaml.required,
+            "Default::default and serde::from_str(\"{{}}\") MUST agree on required; if they diverge, switching between YAML and programmatic construction silently changes operator-observable behavior",
+        );
     }
 
     #[test]

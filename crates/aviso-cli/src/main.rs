@@ -246,7 +246,9 @@ enum Commands {
         /// Listener YAML files. Each file's `listeners:` list is
         /// concatenated in argv order; positional files REPLACE
         /// (not merge with) the global config's `listeners:`
-        /// section for this invocation.
+        /// section for this invocation. Ignored when `--event` and
+        /// `--identifiers` are both supplied (inline mode takes
+        /// precedence, matching `aviso replay`).
         listener_files: Vec<PathBuf>,
 
         /// Force MemoryStore for the invocation. Ignores any
@@ -260,6 +262,19 @@ enum Commands {
         /// `from_id` / `from_date` is overridden.
         #[arg(long, value_name = "VALUE")]
         from: Option<String>,
+
+        /// Inline ad-hoc listener: event type to listen for, without
+        /// a YAML file. Requires `--identifiers`. The inline pair
+        /// takes precedence over any positional YAML files.
+        #[arg(long, value_name = "TYPE", requires = "identifiers")]
+        event: Option<String>,
+
+        /// Inline ad-hoc listener: identifiers filter as a JSON
+        /// object (e.g. `'{"class":"od"}'`). Requires `--event`.
+        /// The inline listener runs with a single default echo
+        /// trigger; for other triggers, use a YAML file instead.
+        #[arg(long, value_name = "JSON", requires = "event")]
+        identifiers: Option<String>,
     },
 
     /// Replay historical notifications from a server-side cursor.
@@ -464,8 +479,18 @@ async fn run(cli: Cli) -> Result<()> {
             listener_files,
             no_state_store,
             from,
+            event,
+            identifiers,
         } => {
-            commands::listen::run(&resolved, &listener_files, no_state_store, from.as_deref()).await
+            commands::listen::run(
+                &resolved,
+                &listener_files,
+                no_state_store,
+                from.as_deref(),
+                event.as_deref(),
+                identifiers.as_deref(),
+            )
+            .await
         }
         Commands::Replay {
             listener,

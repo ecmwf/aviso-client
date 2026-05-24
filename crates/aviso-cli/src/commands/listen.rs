@@ -38,16 +38,37 @@ use crate::output;
 use crate::paths;
 
 /// Runs the `aviso listen` subcommand.
+///
+/// Two resolution paths:
+///
+/// 1. **Inline mode**: when both `event` and `identifiers` are
+///    supplied, build a single ad-hoc [`ListenerSpec`] via
+///    [`listener::build_inline_listener_spec`] and skip YAML
+///    resolution entirely. Positional `listener_files` are silently
+///    ignored on the inline path so the precedence rule matches
+///    `aviso replay`'s existing behavior (inline wins; one mental
+///    model for operators using either subcommand).
+/// 2. **YAML mode**: when either `event` or `identifiers` is
+///    absent (or both), resolve listeners via the Amendment C
+///    positional-replaces-config rule. An empty resolution exits
+///    `2` with the helpful no-listeners error.
 pub(crate) async fn run(
     resolved: &Resolved,
     listener_files: &[PathBuf],
     no_state_store: bool,
     from: Option<&str>,
+    event: Option<&str>,
+    identifiers: Option<&str>,
 ) -> Result<()> {
-    let mut listeners = resolve_listeners(resolved, listener_files)?;
-    if listeners.is_empty() {
-        return Err(no_listeners_error(resolved, listener_files));
-    }
+    let mut listeners = if let (Some(ev), Some(idents_json)) = (event, identifiers) {
+        vec![listener::build_inline_listener_spec(ev, idents_json)?]
+    } else {
+        let resolved_list = resolve_listeners(resolved, listener_files)?;
+        if resolved_list.is_empty() {
+            return Err(no_listeners_error(resolved, listener_files));
+        }
+        resolved_list
+    };
 
     if let Some(value) = from {
         let cursor = from_value::parse(value)?;
@@ -327,13 +348,13 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
     };
     if body.contains("UNKNOWN_EVENT_TYPE") || body.contains("unknown event type") {
         return Some(
-            "the event_type is not configured on the server. The response above includes a `configured_event_types` array listing every event_type the server accepts; run `aviso schema list` for the same list. Check for a typo in `event:` in your listener YAML."
+            "the event_type is not configured on the server. The response above includes a `configured_event_types` array listing every event_type the server accepts; run `aviso schema list` for the same list. Check for a typo in `--event` or in `event:` in your listener YAML."
                 .to_string(),
         );
     }
     if body.contains("missing for watch operation") {
         return Some(
-            "schema fields with `required: true` must appear in your listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+            "schema fields with `required: true` must appear in your `--identifiers` JSON or in the listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
         );
     }
@@ -425,12 +446,19 @@ mod tests {
     }
 
     #[test]
-    fn hint_for_unknown_event_type_points_at_event_field_in_yaml() {
+    fn hint_for_unknown_event_type_points_at_event_field_in_yaml_or_inline_flag() {
         let body = r#"{"code":"UNKNOWN_EVENT_TYPE","configured_event_types":["dissemination","mars","test_polygon"],"message":"unknown event type 'marse'"}"#;
         let hint = hint_for_listener_error(&http_err(400, body))
             .expect("UNKNOWN_EVENT_TYPE must yield a hint");
         assert!(hint.contains("aviso schema list"), "{hint}");
-        assert!(hint.contains("listener YAML"), "{hint}");
+        assert!(
+            hint.contains("--event"),
+            "the hint must name the inline `--event` flag so an operator running `aviso listen --event mars` (without a YAML file) sees the correct path to fix the typo; got: {hint}",
+        );
+        assert!(
+            hint.contains("event:"),
+            "the hint must also name the `event:` YAML key so an operator using a YAML file sees the correct fix; both inline and YAML modes must be covered because the same hint dispatches for both code paths; got: {hint}",
+        );
     }
 
     #[test]
@@ -444,6 +472,14 @@ mod tests {
             "must contrast against required: false (which IS a wildcard at watch time): {hint}"
         );
         assert!(hint.contains("aviso schema get"), "{hint}");
+        assert!(
+            hint.contains("--identifiers"),
+            "the hint must name the inline `--identifiers` flag so an operator running `aviso listen --event ... --identifiers ...` (without a YAML file) sees the correct path to add the missing field; got: {hint}",
+        );
+        assert!(
+            hint.contains("identifiers:"),
+            "the hint must also name the `identifiers:` YAML key so an operator using a YAML file sees the correct fix; both inline and YAML modes must be covered because the same hint dispatches for both code paths; got: {hint}",
+        );
     }
 
     #[test]

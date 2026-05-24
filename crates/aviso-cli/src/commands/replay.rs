@@ -15,7 +15,6 @@
 //! `--from <VALUE>` is mandatory and parsed via
 //! [`crate::from_value`].
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -231,20 +230,7 @@ fn resolve_listener(
     identifiers: Option<&str>,
 ) -> Result<ListenerSpec> {
     if let (Some(ev), Some(idents_json)) = (event, identifiers) {
-        let identifiers: BTreeMap<String, serde_json::Value> = serde_json::from_str(idents_json)
-            .map_err(|e| {
-                usage_error(format!(
-                    "parse --identifiers as JSON object: {e}; expected something like '{{\"class\":\"od\"}}'"
-                ))
-            })?;
-        return Ok(ListenerSpec {
-            name: Some("ad-hoc".into()),
-            event: ev.to_string(),
-            identifiers,
-            from_id: None,
-            from_date: None,
-            triggers: Vec::new(),
-        });
+        return listener::build_inline_listener_spec(ev, idents_json);
     }
 
     let candidates = if listener_files.is_empty() {
@@ -294,6 +280,7 @@ fn resolve_listener(
 mod tests {
     use super::*;
     use aviso::watch::TriggerConfig;
+    use std::collections::BTreeMap;
 
     fn spec(triggers: Vec<TriggerConfig>) -> ListenerSpec {
         ListenerSpec {
