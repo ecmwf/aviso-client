@@ -93,10 +93,15 @@ Two surfaces, one supervisor underneath.
 ### Stream surface
 
 ```rust,ignore
+use std::collections::BTreeMap;
 use aviso::{watch::WatchRequest, AvisoClient};
 
 let client = AvisoClient::builder().base_url("https://aviso.example").build()?;
-let mut stream = client.watch(WatchRequest::watch("mars"))?;
+
+let mut filter = BTreeMap::new();
+filter.insert("class".to_string(), serde_json::json!("od"));
+
+let mut stream = client.watch(WatchRequest::watch("mars").with_filter(filter))?;
 
 while let Some(item) = stream.recv().await {
     let notification = item?;
@@ -106,14 +111,24 @@ while let Some(item) = stream.recv().await {
 
 The stream is an async `Stream<Item = Result<Notification, ClientError>>`. Drop it to cancel.
 
+The filter must include every identifier the event type's schema marks `required: true`. Omitting one returns `400 Required field '<name>' missing for watch operation`. Run `aviso schema get <TYPE>` to see which fields are required.
+
 ### Callback surface
 
 ```rust,ignore
+use std::collections::BTreeMap;
+
+let mut filter = BTreeMap::new();
+filter.insert("class".to_string(), serde_json::json!("od"));
+
 client
-    .watch_with_handler(WatchRequest::watch("mars"), |notification| async move {
-        println!("got sequence {}", notification.sequence);
-        Ok(())
-    })
+    .watch_with_handler(
+        WatchRequest::watch("mars").with_filter(filter),
+        |notification| async move {
+            println!("got sequence {}", notification.sequence);
+            Ok(())
+        },
+    )
     .await?;
 ```
 

@@ -35,4 +35,3 @@ edit-url-template = "https://github.com/ecmwf/aviso-client/edit/main/docs/{path}
 "troubleshooting/overview.html" = "../cli/troubleshooting.html"
 "internals/architecture.html" = "../developers/architecture.html"
 "internals/contributing.html" = "../developers/contributing.html"
-"internals/decisions.html" = "../developers/architecture.html"

@@ -70,6 +70,7 @@ The full Python pattern, including environment variables and graceful shutdown, 
 ## Calling aviso from a Rust program
 
 ```rust,ignore
+use std::collections::BTreeMap;
 use aviso::{
     watch::{Trigger, WatchRequest},
     AvisoClient,
@@ -81,7 +82,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url("https://aviso.example")
         .build()?;
 
+    let mut filter = BTreeMap::new();
+    filter.insert("class".to_string(), serde_json::json!("od"));
+
     let req = WatchRequest::watch("mars")
+        .with_filter(filter)
         .with_triggers(vec![Trigger::echo()]);
 
     let mut stream = client.watch(req)?;
@@ -92,6 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+The filter must include any identifier the event type's schema marks `required: true` (run `aviso schema get <TYPE>` to see which).
 
 The full library walkthrough is in the [library guide](../developers/lib-guide.md).
 

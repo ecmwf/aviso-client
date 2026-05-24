@@ -23,12 +23,10 @@ aviso listen --event mars --identifiers '{"class":"od","stream":"oper"}'
 
 ## Required vs optional identifiers
 
-The schema for each event type declares which identifier fields are `required: true` and which are `required: false`.
+The schema for each event type declares which identifier fields are `required: true` and which are `required: false`. The flag means different things on the listen side and on the notify side.
 
-- `required: true` fields are mandatory. When you listen, you must include them in the filter (with an explicit value or a placeholder the schema allows). When you publish, you must include them in the notification.
-- `required: false` fields can be omitted. On the listen side, omitted optional fields act as wildcards (the server returns every value).
-
-For `aviso notify`, every required field must be there. The `required: false` flag is a listen-time wildcard semantic; it does not make the field optional when publishing.
+- **When you listen**: `required: true` fields must appear in the filter. `required: false` fields can be omitted; an omitted field acts as a wildcard so the server returns every value.
+- **When you publish**: every identifier in the schema is required, regardless of the flag. Omitting any of them returns `400` with a `Required field '<name>' missing for notify operation` message. The `required: false` flag is a listen-time wildcard semantic only; it does not relax `notify` validation.
 
 To see which fields are required for an event type:
 
