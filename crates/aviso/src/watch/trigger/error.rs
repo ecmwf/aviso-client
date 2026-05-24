@@ -54,9 +54,12 @@ pub enum TriggerKindLabel {
     /// discipline as `Webhook`: the URL may carry a SAS token in its
     /// query string; the label displays as the bare string `"teams"`.
     Teams,
-    /// The post trigger (HTTP POST with a CloudEvent-shaped body
-    /// reconstructed from the notification). Same redaction
-    /// discipline as `Webhook`. The label displays as `"post"`.
+    /// The post trigger (HTTP POST that forwards the raw
+    /// server-emitted `CloudEvent` envelope in the production watch
+    /// path, falling back to a minimal reconstructed envelope only
+    /// for test fixtures where [`crate::Notification::cloudevent`]
+    /// is `None`). Same redaction discipline as `Webhook`. The
+    /// label displays as `"post"`.
     Post,
 }
 
@@ -113,11 +116,13 @@ pub enum TriggerError {
 
     /// A trigger attempt exceeded its configured per-trigger timeout.
     ///
-    /// Surfaced on triggers that have a meaningful timeout
-    /// (currently the command trigger and the webhook trigger; echo
-    /// and log silently ignore the [`super::Trigger::timeout`]
-    /// setter). The carried duration is the timeout that was set,
-    /// not the actual elapsed time.
+    /// Surfaced on triggers that have a meaningful timeout: the
+    /// command trigger and the HTTP-based triggers (webhook, teams,
+    /// post). Teams and post seed [`super::DEFAULT_WEBHOOK_TIMEOUT`]
+    /// from their constructors and honor [`super::Trigger::timeout`]
+    /// overrides exactly as webhook does. Echo and log silently
+    /// ignore the setter. The carried duration is the timeout that
+    /// was set, not the actual elapsed time.
     #[error("trigger timed out after {0:?}")]
     Timeout(std::time::Duration),
 

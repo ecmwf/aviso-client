@@ -128,7 +128,7 @@ Every field is resolved in this order: `flag > env > file > default`. Layering i
 
 ### Listener YAML shape
 
-The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` is `identifiers:` here (matching the lib's `Notification::identifier` field). Trigger configs reuse the library's `TriggerConfig` deserialiser so all four shipped trigger kinds (`echo`, `log`, `command` on Unix, `webhook`) work from YAML unchanged.
+The listeners list is pyaviso-compatible with one rename: pyaviso's `request:` is `identifiers:` here (matching the lib's `Notification::identifier` field). Trigger configs reuse the library's `TriggerConfig` deserialiser so all six shipped trigger kinds (`echo`, `log`, `command` on Unix, `webhook`, `teams`, `post`) work from YAML unchanged.
 
 ### Positional listener files
 

@@ -92,9 +92,9 @@ pub(crate) struct TlsConfig {
 /// `request:` key is `identifiers:` here per Amendment B (matching
 /// the lib's `Notification::identifier` field name).
 ///
-/// Triggers reuse the lib's `TriggerConfig` deserialiser so all four
-/// shipped trigger kinds (echo / log / command / webhook) are
-/// available from YAML unchanged.
+/// Triggers reuse the lib's `TriggerConfig` deserialiser so all six
+/// shipped trigger kinds (echo, log, command, webhook, teams, post)
+/// are available from YAML unchanged.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ListenerSpec {
