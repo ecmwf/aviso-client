@@ -11,8 +11,6 @@ A notification is one event that the server has published. aviso receives them o
 | `identifier` | A map of named fields that describe which event it is. |
 | `payload` | A JSON value the publisher attached. Often the location of a file. May be `null`. |
 
-The exact wire shape (where these come from in the server's payload) is in [the developers section](../developers/architecture.md). You do not need that to use aviso.
-
 ## Reading a notification
 
 ```json
