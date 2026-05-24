@@ -8,10 +8,10 @@ The compiled extension was not built. From a checkout:
 
 ```bash
 uv sync --locked --group dev
-uv run maturin develop --release
+uv run maturin develop --release --locked
 ```
 
-The `--group dev` flag is what makes `maturin` available in the environment; without it `uv run maturin` will not find the executable.
+The `--group dev` flag is what makes `maturin` available in the environment; without it `uv run maturin` will not find the executable. `--locked` on both commands matches the CI workflow and avoids unexpected `Cargo.lock` modifications during local builds.
 
 If the build itself fails, check that you have Rust installed (`rustc --version`) and a C compiler on the path.
 
