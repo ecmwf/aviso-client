@@ -124,12 +124,6 @@ impl PyNotification {
 }
 
 impl PyNotification {
-    #[allow(
-        dead_code,
-        reason = "consumed by the watch supervisor wrapper that ships in a follow-up \
-                  commit; defining it here keeps PyNotification's construction surface \
-                  symmetric with the other value types"
-    )]
     pub(crate) fn from_core(notification: Notification) -> Self {
         Self {
             event_type: notification.event_type,

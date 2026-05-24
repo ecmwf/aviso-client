@@ -24,16 +24,18 @@ impl PyWatchRequest {
     }
 
     #[staticmethod]
-    fn watch_from(event_type: String, from: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let resume = parse_resume_start(from)?;
+    #[pyo3(signature = (event_type, from_))]
+    fn watch_from(event_type: String, from_: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let resume = parse_resume_start(from_)?;
         Ok(Self {
             inner: WatchRequest::watch_from(event_type, resume),
         })
     }
 
     #[staticmethod]
-    fn replay_only(event_type: String, from: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let resume = parse_resume_start(from)?;
+    #[pyo3(signature = (event_type, from_))]
+    fn replay_only(event_type: String, from_: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let resume = parse_resume_start(from_)?;
         Ok(Self {
             inner: WatchRequest::replay_only(event_type, resume),
         })
@@ -97,7 +99,7 @@ impl PyWatchRequest {
 pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeStart> {
     if let Ok(b) = value.extract::<bool>() {
         return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "from must be an int sequence or a string date, got bool ({b})"
+            "from_ must be an int sequence or a string date, got bool ({b})"
         )));
     }
     if let Ok(n) = value.extract::<u64>() {
@@ -106,11 +108,11 @@ pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeSta
     if let Ok(n) = value.extract::<i128>() {
         if n < 0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "from sequence must be non-negative",
+                "from_ sequence must be non-negative",
             ));
         }
         let unsigned = u64::try_from(n).map_err(|_| {
-            pyo3::exceptions::PyValueError::new_err("from sequence exceeds u64::MAX")
+            pyo3::exceptions::PyValueError::new_err("from_ sequence exceeds u64::MAX")
         })?;
         return Ok(ResumeStart::AfterSequence(unsigned));
     }
@@ -118,7 +120,7 @@ pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeSta
         return Ok(ResumeStart::Date(s));
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
-        "from must be an int sequence or a string date",
+        "from_ must be an int sequence or a string date",
     ))
 }
 

@@ -18,6 +18,11 @@ def test_watch_from_with_sequence() -> None:
     assert req.mode == "watch"
 
 
+def test_watch_from_accepts_from_underscore_kwarg() -> None:
+    req = aviso.WatchRequest.watch_from("mars", from_=42)
+    assert req.event_type == "mars"
+
+
 def test_watch_from_with_date_string() -> None:
     req = aviso.WatchRequest.watch_from("mars", "2026-01-01T00:00:00Z")
     assert req.event_type == "mars"
