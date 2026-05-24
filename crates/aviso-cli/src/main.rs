@@ -116,8 +116,9 @@ mod tracing_format;
     long_about = "The `aviso` command-line client for ECMWF's aviso-server notification service. \
                   Configuration lives in ~/.config/aviso/config.yaml by default; flag and env \
                   overrides take precedence per the documented config-layering rule. See \
-                  `aviso <SUBCOMMAND> --help` for per-command details and docs/src/cli/ \
-                  in the source tree for full operator documentation.",
+                  `aviso <SUBCOMMAND> --help` for per-command details, or \
+                  https://github.com/ecmwf/aviso-client/tree/main/docs/src/cli for the full \
+                  operator documentation.",
 )]
 pub(crate) struct Cli {
     /// Path to the YAML config file. Default:
@@ -168,9 +169,10 @@ pub(crate) struct Cli {
                      trust store (private deployments behind corporate roots, self-hosted \
                      clusters with their own ACME setup, similar). The system root store stays \
                      in effect; --ca-bundle only adds, never replaces. Repeatable: pass \
-                     --ca-bundle multiple times for multiple certificates. See \
-                     docs/src/cli/configuration.md 'TLS' for end-to-end setup steps \
-                     including how to fetch a PEM cert from a running server."
+                     --ca-bundle multiple times for multiple certificates. The 'TLS' section at \
+                     https://github.com/ecmwf/aviso-client/blob/main/docs/src/cli/configuration.md \
+                     has end-to-end setup steps including how to fetch a PEM cert from a \
+                     running server."
     )]
     ca_bundle: Vec<PathBuf>,
 
@@ -184,7 +186,8 @@ pub(crate) struct Cli {
                      cert via --ca-bundle is not practical. Logs WARN \
                      `event.name=cli.tls.insecure_mode` once per invocation so log scrapers can \
                      flag misuse. The right production move is always --ca-bundle, never this. \
-                     See docs/src/cli/configuration.md 'TLS'."
+                     See the 'TLS' section at \
+                     https://github.com/ecmwf/aviso-client/blob/main/docs/src/cli/configuration.md."
     )]
     danger_accept_invalid_certs: bool,
 
@@ -295,9 +298,9 @@ enum Commands {
         identifiers: Option<String>,
 
         /// Required cursor. Accepts a u64 sequence id OR one of
-        /// six date forms; see docs/src/cli/configuration.md
-        /// '`--from` value formats' for the full list and the
-        /// pure-digit-always-id ambiguity rule.
+        /// six date forms; see the '`--from` value formats' section
+        /// at https://github.com/ecmwf/aviso-client/blob/main/docs/src/cli/configuration.md
+        /// for the full list and the pure-digit-always-id ambiguity rule.
         #[arg(long, value_name = "VALUE", required = true)]
         from: String,
 
