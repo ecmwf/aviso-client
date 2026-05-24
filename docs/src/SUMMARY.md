@@ -1,31 +1,34 @@
 # Summary
 
-[Introduction](./welcome/introduction.md)
+[aviso](./index.md)
 
 ---
 
-# Welcome
+# Getting started
 
-- [Installation](./welcome/installation.md)
-- [Quick start](./welcome/quick-start.md)
-- [Key concepts](./welcome/key-concepts.md)
-
----
-
-# Usage
-
-- [Publishing notifications](./usage/notify.md)
-- [Discovering schemas](./usage/schema.md)
-- [Admin operations](./usage/admin.md)
-- [Command-line interface](./usage/cli.md)
-- [Python quick start]()
+- [What aviso is](./getting-started/overview.md)
+- [Install](./getting-started/install.md)
+- [Quickstart](./getting-started/quickstart.md)
+- [Concepts in five minutes](./getting-started/concepts.md)
 
 ---
 
-# Configuration
+# CLI
 
-- [Overview]()
-- [Authentication](./usage/auth.md)
+- [Overview](./cli/overview.md)
+- [Install](./cli/install.md)
+- [Quickstart](./cli/quickstart.md)
+- [Publish and listen](./cli/publish-and-listen.md)
+- [Replay history](./cli/replay.md)
+- [Operations](./cli/operations.md)
+- [Configuration](./cli/configuration.md)
+- [Troubleshooting](./cli/troubleshooting.md)
+
+---
+
+# Python
+
+- [Python](./python/status.md)
 
 ---
 
@@ -42,34 +45,30 @@
 
 ---
 
-# Watch streams
+# Concepts
 
-- [Overview](./watch/overview.md)
-
----
-
-# Resume & state
-
-- [Overview](./resume/overview.md)
-- [The state file](./resume/state-file.md)
+- [Notifications](./concepts/notifications.md)
+- [Streams and reconnects](./concepts/streams.md)
+- [Resume and state](./concepts/resume-and-state.md)
+- [Filters](./concepts/filters.md)
+- [Authentication providers](./concepts/auth-providers.md)
+- [Glossary](./concepts/glossary.md)
 
 ---
 
-# Troubleshooting
+# Reference
 
-- [Overview](./troubleshooting/overview.md)
-
----
-
-# Integration
-
-- [Rust API]()
-- [Python API]()
-- [CLI reference]()
+- [CLI flags](./reference/cli-flags.md)
+- [Listener YAML](./reference/listener-yaml.md)
+- [State file](./reference/state-file.md)
+- [Rust API](./reference/rust-api.md)
 
 ---
 
-# Internals
+# Developers
 
-- [Architecture](./internals/architecture.md)
-- [Contributing](./internals/contributing.md)
+- [Overview](./developers/overview.md)
+- [Architecture](./developers/architecture.md)
+- [Library guide](./developers/lib-guide.md)
+- [Contributing](./developers/contributing.md)
+- [Docs style](./developers/docs-style.md)

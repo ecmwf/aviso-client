@@ -7,7 +7,7 @@ This crate carries the foundation: low-level types, transport, authentication, r
 - [`aviso-cli`](https://crates.io/crates/aviso-cli): command-line tool.
 - [`aviso-py`](https://crates.io/crates/aviso-py): PyO3 bindings for the [`aviso` Python distribution](https://pypi.org/project/aviso/).
 
-See the [workspace repository](https://github.com/ecmwf/aviso-client) and the [docs](https://github.com/ecmwf/aviso-client/tree/main/docs) for full documentation. Architectural decisions live in [`docs/src/internals/decisions.md`](https://github.com/ecmwf/aviso-client/blob/main/docs/src/internals/decisions.md).
+See the [workspace repository](https://github.com/ecmwf/aviso-client) and the [docs](https://github.com/ecmwf/aviso-client/tree/main/docs) for full documentation. Architectural decisions live in [`plans/decisions.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/decisions.md).
 
 ## License
 

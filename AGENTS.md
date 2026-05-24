@@ -51,6 +51,7 @@
 ## Writing style
 - **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
 - **Humanize user-facing prose.** Short sentences. Plain words. Avoid list-of-three flourishes (`X, Y, and Z`), reflexive intensifiers like `notably` or `importantly`, and the `X is the Y that does Z` pattern. If you cannot picture saying the sentence aloud to a colleague, rewrite it.
+- **Diagrams use mermaid.** Architecture, flow, sequence, and relationship diagrams go in ` ```mermaid ` blocks. Do not draw them in ASCII. Plain preformatted text (file trees, error-message samples, JSON output, log lines) stays in ` ```text ` blocks. The `mdbook-mermaid` preprocessor renders them in the book's active theme (light or dark, switched automatically with the book's theme picker) and the project CSS centers them. Authors do not pick mermaid theme variables by hand; the auto-switching handles both modes.
 - Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, planning docs under `plans/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
 
 ## Commit conventions
@@ -59,7 +60,8 @@
 - Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(plans): …`, `ci(deny): …`, `test(e2e): …`).
 - Breaking changes append `!` after the type/scope and explain in the body: `feat(api)!: rename AvisoClient::watch`. Add a `BREAKING CHANGE:` footer when downstream callers must act.
 - **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update; not a mix. If the subject would naturally use "and", split.
-- **Sensibly sized.** Aim for the smallest commit that still leaves the tree green. A 5-file commit that fixes one thing is better than a 40-file commit that does ten. Bootstrap-scale work splits across multiple commits (layout, build config, docs, CI, harness), each one buildable on its own.
+- **Reasonably sized, clean, easy to follow.** A reviewer should be able to read the diff top-to-bottom and understand the change without a map. Aim for the smallest commit that still leaves the tree green. A 5-file commit that does one thing is better than a 40-file commit that does ten. As a rule of thumb, a commit whose `git diff --stat` covers more than ~15 files or ~500 added lines (pure file renames excluded) is a smell and should split; if you cannot summarise the change in one sentence without "and", split.
+- **Restructures, renames, and reorganisations split.** Directory moves, section renames, and audience-segment rewrites are never one commit. Split per section, per audience, or per migration step: one commit per top-level directory move or page rewritten; a final small commit deleting the old paths after every new path has landed; cross-repo path-reference updates in their own commit. A single 60-file "docs: restructure" commit is the wrong shape; a series of focused commits of a handful of files each is the right one. Each commit in the series must build and pass tests on its own.
 - **Every commit on `main` builds and passes all checks.** The full acceptance set is `cargo fmt --check`, `cargo clippy --locked -D warnings`, `cargo test --locked`, `mdbook build`, `mdbook test`, `cargo deny check`. Don't merge a series where intermediate commits are broken.
 - **Run `cargo fmt --all` BEFORE every `git add` / `git commit`, not after.** The CI gate uses `cargo fmt --all -- --check` which fails (does not auto-fix). A common failure mode is: edit code, commit, then run `cargo fmt --all` later as a "final sanity pass"; the formatter rewrites the working tree but the COMMITTED files still carry the unformatted versions, the push succeeds, and CI fails minutes later. Order matters: format FIRST, stage, commit. The `.githooks/pre-commit` hook (see CONTRIBUTING.md) enforces this by refusing to record any commit whose staged files would be rewritten by `cargo fmt --all -- --check`.
 - **Before every `git push`, run the full CI gate locally.** Either use the `.githooks/pre-push` hook (one-time setup: `git config core.hooksPath .githooks`) which runs `cargo fmt --check`, `cargo clippy -D warnings`, `cargo build`, `cargo test`, `cargo test --doc`, `git diff --exit-code Cargo.lock`, `cargo deny check`, `mdbook build`, `mdbook test`, and `docker compose config --quiet` in that order; OR run them by hand from the list in CONTRIBUTING.md's "Running the checks locally" section. Skipping the local gate and relying on CI to catch issues wastes a minimum of two minutes per failure (GitHub Actions queue + setup time) and produces a noisy commit history of "fix(ci): ..." fix-forward commits that mask the real change history.
@@ -67,6 +69,54 @@
 - Never amend or force-push branches that others may have pulled. On private branches, amend freely.
 - "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
 - Never add `Co-authored-by:` commit trailers. Real contributors are tracked through the repository's contributor history and the `authors` field in each crate's `Cargo.toml`; commit metadata should not name tools, assistants, or pairing partners.
+
+## Copilot review loop
+
+When the user asks for a "copilot review", a "copilot review loop", or any equivalent phrase, run the loop below. The loop is the contract; one round is not enough.
+
+### Requesting a review
+
+The only request form that works is the literal-bot-suffix form of the REST API:
+
+```bash
+gh api --method POST \
+  /repos/<owner>/<repo>/pulls/<pr>/requested_reviewers \
+  -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+```
+
+`copilot-pull-request-reviewer` (without the `[bot]` suffix) returns `422 Reviews may only be requested from collaborators`. `Copilot` returns 200 but silently drops the request. `requestReviews` GraphQL mutation returns `NOT_FOUND` for the bot's node id. None of those work. The literal `[bot]` suffix on the reviewer name is the only path; the successful response shows `requested_reviewers: [{login: "Copilot", type: "Bot"}]` and the bot posts a review within a few minutes.
+
+### The loop
+
+1. **Request a review** using the command above.
+2. **Watch for the review.** Poll BOTH endpoints in tandem: `gh api repos/<owner>/<repo>/pulls/<pr>/reviews` for the review count, and `gh api repos/<owner>/<repo>/pulls/<pr>/requested_reviewers` for the bot's state. After the request, `requested_reviewers` shows `[{login: "Copilot", type: "Bot"}]` (the bot has the request queued); it clears back to `[]` when the bot finishes processing. Two outcomes from there:
+   - **A new review IS posted** (`reviews` count rises): continue to step 3.
+   - **`requested_reviewers` cleared and no new review was posted**: the bot processed the request and had nothing to add. Stop the loop now. **Do not run a confirmation pass**; the cleared `requested_reviewers` is itself the terminating signal.
+
+   Five minutes is a reasonable cap for the bot to process a request. If `requested_reviewers` has not cleared after that, request again.
+3. **Read every comment in the new review.** For each thread, either fix or reject:
+   - **Fix** if the finding is correct. Use the AGENTS.md commit-size rule: one focused commit per concern; restructures, renames, and reorganisations split per the same rule.
+   - **Reject** if the finding is a false positive, a misreading of the code, a misinterpretation of a deliberate decision, or otherwise does not warrant a change. Do NOT silently apply suggestions that would degrade the code, contradict documented design, or revert deliberate work. A rejected finding gets a reply that names the reason in one sentence (examples below).
+4. **Reply to each comment** with `gh api repos/<owner>/<repo>/pulls/<pr>/comments -f body=... -F in_reply_to=<comment_database_id>` and **resolve each thread** via the GraphQL `resolveReviewThread` mutation against the thread node id.
+5. **Push the fix commits** before requesting the next round so Copilot reviews the new state, not the stale one.
+6. **Request another review** and repeat from step 2.
+7. **Stop the loop** when one of these holds: Copilot processed a request without posting a new review (`requested_reviewers` cycled `[Copilot] → []` and the reviews count did not rise); or the latest posted review surfaces no new actionable findings (review body says "no issues", or every comment is a duplicate of one already resolved, or every comment is a false positive already rejected with reasoning). The loop terminates on Copilot's behaviour, not on a fixed count, and a single round meeting either condition is enough; no confirmation pass.
+
+### Rejection discipline
+
+A rejection is a reply that names the reason. Phrasing patterns:
+
+- "False positive: <one-sentence reason that points at evidence>."
+- "Not applicable: <why the suggestion does not match the code's actual behaviour>; verified by <test / production check / source location>."
+- "Out of scope: <pointer to the rule or doc that places this concern elsewhere>."
+
+After rejection the thread is still resolved. A rejected finding does not count toward "actionable items" for the loop's stopping condition. Multiple Copilot rounds that resurface the same already-rejected position also do not extend the loop.
+
+### When the loop should not run
+
+- Drafts. Open the PR for review first.
+- PRs with currently-failing CI. Resolve CI first; Copilot reads the same diff regardless of CI status, so a loop run against a broken state wastes a round.
+- PRs explicitly marked "do not review" or "skip Copilot" by the user.
 
 # Rust rules
 ## Style
@@ -81,7 +131,9 @@
 
 ## Dependencies
 
-- **Pin minor versions** (`tokio = "1.45"` not `"1"`). Lockfile committed.
+- **Always use the latest stable version.** For workspace deps in `Cargo.toml`, pin the minor (`tokio = "1.45"` not `"1"`) so cargo resolves the newest compatible patch on every build; the pin is the minimum supported version. Bump the minor whenever a newer one ships and the gates stay green; do not sit on stale pins.
+- **Build-time tools install at their latest stable version.** `cargo install` invocations in CI workflows and contributor docs (`mdbook`, `mdbook-mermaid`, `cargo-deny`, ...) MUST NOT carry `--version <X.Y.Z>`. The cache key keeps a recent binary warm; cache misses install the latest. Hard-pin only when a documented incompatibility forbids the newer version, and cite the reason inline.
+- **Lockfile committed.**
 - **Justify every dep** in the PR description if it's the first of its kind.
 - **Default features off** for heavy crates: `tokio = { version = "1.40", default-features = false, features = ["..."] }`.
 

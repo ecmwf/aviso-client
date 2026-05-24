@@ -1,0 +1,18 @@
+/* Center mermaid diagrams. mdbook-mermaid wraps each block in
+   <pre class="mermaid">; mermaid.js replaces the inner contents with
+   an SVG. Without these rules the SVG sits flush-left and inherits
+   the mdbook <pre> background, which looks like a stray code block. */
+pre.mermaid {
+    text-align: center;
+    margin: 1.5em auto;
+    background: transparent;
+    padding: 0;
+    border: none;
+}
+
+.mermaid svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+}

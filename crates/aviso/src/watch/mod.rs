@@ -107,7 +107,7 @@
 //!
 //! # Cross-references
 //!
-//! - D2 (`docs/src/internals/decisions.md`): reconnect-as-norm,
+//! - D2 (`plans/decisions.md`): reconnect-as-norm,
 //!   at-least-once delivery, state-machine sketch, reconnect classifier.
 //! - D15: state machine is the orthogonal product `ReplayPhase x
 //!   ConnectionStatus`, single reducer, fields private.

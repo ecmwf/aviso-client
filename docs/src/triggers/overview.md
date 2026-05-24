@@ -49,28 +49,28 @@ Field meanings:
 - `retries`: additional attempts after the first failure. Total attempts = `retries + 1`. Backoff between attempts uses the supervisor's standard exponential schedule with full jitter.
 - `required`: when `true`, a final failure terminates the listener with `ClientError::TriggerFailed`. When `false`, the failure is logged at `WARN` and the listener continues.
 - `timeout`: per-trigger wall clock. Parsed as a humantime string (`30s`, `2m`, `1h30m`, `500ms`).
-- `fail_fast`: when `true`, terminal failure modes bypass the retry budget. When `false`, every failure is retryable up to the `retries` budget.
+- `fail_fast`: when `true`, deterministic failures bypass the retry budget. When `false`, every failure is retryable up to the `retries` budget.
 
-A "terminal failure" is a deterministic failure that retrying will not fix:
+A deterministic failure is one that produces the same outcome on every retry with the same notification and environment:
 
 - For `command`: non-zero exit code, template render error.
-- For `webhook` / `teams` / `post`: 4xx HTTP status, template render error, HTTP-client request-build error.
+- For `webhook`, `teams`, and `post`: 4xx HTTP status, template render error, invalid request setup.
 
-Transient failures (5xx, transport errors, timeouts, I/O errors) are always retryable through the `retries` budget regardless of `fail_fast`.
+Transient failures (5xx responses, transport errors, timeouts, I/O errors) use the retry budget regardless of `fail_fast` because they can succeed on a retry.
 
 ## Order, atomicity, and failure semantics
 
-Triggers run **sequentially** in declaration order. The dispatcher does not run them in parallel.
+Triggers run **sequentially** in declaration order. aviso does not run triggers for the same notification in parallel.
 
-A trigger attempt runs to completion as an atomic unit; the dispatcher does **not** race the attempt against cancellation. Between attempts (during the retry-backoff sleep) and between triggers, the dispatcher honours `Ctrl+C` (or any parent-task cancellation) and exits cleanly.
+During retry waits and between triggers, aviso honours Ctrl+C and exits cleanly. It does not interrupt a trigger halfway through its current attempt.
 
-A `required: true` trigger that fails terminates the listener after exhausting retries. Other listeners on the same `aviso listen` invocation **continue running**; this is the multi-listener at-least-once contract. The terminated listener's error surfaces on `cli.listener.failed` (DEBUG tracing) and a final summary line prints to stderr.
+A `required: true` trigger that fails terminates that listener after exhausting retries. Other listeners in the same `aviso listen` invocation continue running.
 
-A `required: false` trigger that fails logs a `WARN` event with `event.name = "client.trigger.failed"` and the listener continues.
+A `required: false` trigger that fails logs a warning and the listener continues.
 
 ## At-least-once delivery and trigger ordering
 
-The supervisor advances the resume cursor (`last_committed_sequence` in [the state file](../resume/state-file.md)) **only after all required triggers for a notification succeed**. This means:
+The supervisor advances the resume cursor (`last_committed_sequence` in [the state file](../reference/state-file.md)) **only after all required triggers for a notification succeed**. This means:
 
 - If a notification has 3 triggers and only the first succeeds when the listener crashes, the cursor does NOT advance. On restart, the listener redelivers the notification, and ALL THREE triggers run again. Operators must design triggers to be idempotent.
 - Optional triggers (`required: false`) do not block cursor advancement. A failed optional trigger does not cause redelivery.

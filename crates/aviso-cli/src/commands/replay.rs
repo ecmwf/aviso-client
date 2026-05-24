@@ -57,7 +57,7 @@ pub(crate) async fn run(
     // listen's at-least-once delivery. The trade-off is that an
     // interrupted replay is not auto-resumable; the operator passes
     // `--from <VALUE>` to seed the cursor on the next invocation.
-    // See `docs/src/resume/state-file.md` "aviso replay and the state
+    // See `docs/src/cli/replay.md` "Replay does not write the state
     // file" for the full reasoning.
     let client = client_builder::build(resolved, None, false)?;
     let mut cancel_rx = cancel::install();

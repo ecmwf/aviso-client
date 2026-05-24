@@ -36,7 +36,7 @@ mdbook serve docs --open
 
 ## Project plan
 
-The current plan and roadmap live under [`plans/`](plans/). Architectural decisions (the *why* of each design choice) live in [`docs/src/internals/decisions.md`](docs/src/internals/decisions.md) and are referenced from plans by their stable ADR id.
+The current plan and roadmap live under [`plans/`](plans/). Architectural decisions (the *why* of each design choice) live in [`plans/decisions.md`](plans/decisions.md) and are referenced from plans by their stable ADR id.
 
 ## Working in this repo
 

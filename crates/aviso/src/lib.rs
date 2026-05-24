@@ -2,8 +2,7 @@
 //! data-driven workflows.
 //!
 //! The public surface grows as features land; the design rationale for each
-//! choice lives in `docs/src/internals/decisions.md` and is referenced by
-//! stable ADR id.
+//! choice lives in `plans/decisions.md` and is referenced by stable ADR id.
 //!
 //! [`aviso-server`]: https://github.com/ecmwf/aviso-server
 

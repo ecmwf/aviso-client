@@ -2,8 +2,8 @@
 //!
 //! Prints the shell-completion script for the requested shell to
 //! stdout. Operators redirect the output to a shell-specific path
-//! (the docs/src/usage/cli.md 'completions' section names the
-//! conventional path for each shell). The script is generated from
+//! (the docs/src/cli/install.md 'Shell completions' section names
+//! the conventional path for each shell). The script is generated from
 //! the clap derive Cli definition via [`clap_complete::generate`],
 //! so it stays in sync with the real flag and subcommand surface
 //! automatically.
