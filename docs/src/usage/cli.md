@@ -160,7 +160,7 @@ aviso listen --event mars --identifiers '{"class":"od"}' | jq -r '.payload'
 
 #### Flag pairing
 
-`--event` and `--identifiers` are a required pair: passing one without the other exits `2` with a clap-generated message naming the missing flag. The `--identifiers` value must be a JSON object literal; the canonical shape is `'{"key":"value", ...}'`. An empty object `{}` is a valid wildcard listener (every notification for the given event type, regardless of identifier).
+`--event` and `--identifiers` are a required pair: passing one without the other exits `2` with a clap-generated message naming the missing flag. The `--identifiers` value must be a JSON object literal; the canonical shape is `'{"key":"value", ...}'`. An empty object `{}` requests every notification for the given event type regardless of identifier; whether the server accepts it depends on the schema. Identifier fields whose schema marks them `required: true` must be present (otherwise the server returns `400 Required field '<NAME>' missing for watch operation`); only `required: false` fields act as wildcards when omitted. Use `aviso schema get <TYPE>` to see which fields are `required: true`.
 
 #### Precedence with positional YAML files
 
