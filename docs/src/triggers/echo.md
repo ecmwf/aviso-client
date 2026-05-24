@@ -11,7 +11,7 @@ triggers:
     required: true      # optional, default true
 ```
 
-No other configurable fields. `timeout` and `fail_fast` are silently ignored (a single-call buffered write has no meaningful timeout, and the failure modes are deterministic-on-environment so retrying never helps).
+No other configurable fields. The YAML loader rejects `timeout` and `fail_fast` at config-load time (`EchoConfig` is `#[serde(deny_unknown_fields)]`) because the echo trigger has no meaningful timeout (a single-call buffered write completes immediately) and no meaningful fail-fast distinction (the failure modes are deterministic-on-environment, so retrying never helps).
 
 ## TTY output (interactive)
 

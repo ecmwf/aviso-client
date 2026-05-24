@@ -20,7 +20,12 @@ triggers:
 - The file handle is RAII-closed when the listener stops (Ctrl+C, max-duration reached, supervisor shutdown).
 - No rotation. If you need rotation, use `logrotate` with a `copytruncate` strategy and the daemon-side OS-level guarantees about appended writes.
 
-Each line is one notification serialised via `serde_json::to_string(&notification)`. The whole-line write is performed in a single `write_all` call against the locked file handle, so concurrent triggers (or other writers using `append(true)`) cannot interleave mid-line on POSIX filesystems.
+Each line is one notification serialised via `serde_json::to_string(&notification)`, followed by a newline, written through tokio's `AsyncWriteExt::write_all` and then flushed so tailers see the bytes promptly. The file is opened with `append(true)` so the kernel positions every write at end-of-file (POSIX O_APPEND). aviso does NOT take an additional file lock around the write. Two consequences operators should know:
+
+- `write_all` may issue more than one underlying `write` syscall for notifications larger than the per-syscall atomicity guarantee (POSIX `PIPE_BUF`, typically 4 KiB on Linux). For a notification whose serialised line exceeds that limit, two concurrent writers to the same path may interleave mid-line.
+- Multiple processes (multiple `aviso listen` invocations, external tools using `append(true)` on the same file) share the at-end-of-file position via O_APPEND but do NOT coordinate beyond what the kernel provides per write. For per-syscall-sized writes interleaving is impossible; for multi-syscall writes it is possible.
+
+If line-atomic guarantees across multiple writers are a hard requirement, use one log file per listener (the typical pattern) or pipe the listener's output to a dedicated log aggregator (`syslog`, `journald`, `vector`) that takes its own locks.
 
 ## Failure modes
 
