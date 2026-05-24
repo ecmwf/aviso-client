@@ -25,7 +25,7 @@ listeners:
 | `identifiers` | map | no | `{}` | Filter. The server returns only notifications whose identifier matches every field here. Empty map allowed; the server may still require certain fields per the schema. |
 | `triggers` | list | no | `[]` | Triggers to run for each matching notification. Empty list is accepted, but a useful listener normally has at least one trigger. |
 | `from_id` | integer | no | unset | Default starting sequence for the first connection. Overridden by `--from`. |
-| `from_date` | string | no | unset | Default starting date. Mutually exclusive with `from_id`. |
+| `from_date` | string | no | unset | Default starting ISO-8601 datetime. The value is sent verbatim to the server, so it must be in a form the server accepts: `YYYY-MM-DDTHH:MM:SSZ`, `YYYY-MM-DDTHH:MM:SS.ffffffZ`, or `YYYY-MM-DD HH:MM:SS+HH:MM`. A bare `YYYY-MM-DD` is **not** accepted here (the CLI's `--from` flag does that normalisation, but the YAML field does not). Mutually exclusive with `from_id`. |
 
 ## Trigger fields
 
