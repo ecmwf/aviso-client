@@ -4,17 +4,15 @@ aviso is a small notification client. It connects to an aviso-server you have ac
 
 ## The pieces
 
-```text
-+-----------------+        HTTP        +---------------+
-|   aviso-server  | <----------------- |     aviso     |
-| (someone else   |                    | (you run this |
-|  runs this)     | -----------------> |  on your box) |
-+-----------------+    SSE stream      +---------------+
-                                              |
-                                              v
-                                       triggers run here:
-                                       echo, log, webhook,
-                                       command, teams, post
+```mermaid
+flowchart LR
+    server["aviso-server<br/>(someone else runs this)"]
+    client["aviso<br/>(you run this on your box)"]
+    triggers["triggers run here:<br/>echo, log, webhook,<br/>command, teams, post"]
+
+    client -->|HTTP| server
+    server -->|SSE stream| client
+    client --> triggers
 ```
 
 The server is the source of truth. Your aviso client subscribes, processes incoming notifications through any triggers you have configured, and remembers where it left off so it can resume cleanly after a restart.
