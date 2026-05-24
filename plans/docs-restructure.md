@@ -20,13 +20,14 @@ should be able to pick up the work without re-deriving anything.
 > next I want to restructure the documentation, right now it is not
 > really for users, it is for developers how to integrate etc. An
 > early restructure now makes sense to me, we should have docs for
-> python api, python cli, rust cli and then for develeopers section,
-> we can explain lib there, then bindings, then as an example how to
-> create cli for c++ (all these can be done when the time comes, not
-> now). It should be clear for the users and accurate, easy to follow,
-> humanised text with less technical terms. Quick start for each, how
-> to install, how to use etc. make a great plan, then ask oracle for
-> a deep plan review, then show me the plan
+> python api, python cli, rust cli and then for develeopers [sic]
+> section, we can explain lib there, then bindings, then as an
+> example how to create cli for c++ (all these can be done when
+> the time comes, not now). It should be clear for the users and
+> accurate, easy to follow, humanised text with less technical
+> terms. Quick start for each, how to install, how to use etc.
+> make a great plan, then ask oracle for a deep plan review, then
+> show me the plan
 
 ## Process completed before save
 
@@ -43,12 +44,12 @@ should be able to pick up the work without re-deriving anything.
 2. Plan v1 drafted at `/tmp/docs-restructure-plan.md` (volatile;
    superseded).
 
-3. Oracle plan review `bg_08b741b5` (1m33s) — verdict
+3. Oracle plan review `bg_08b741b5` (1m33s). Verdict
    **PROCEED-AFTER-AMENDMENTS**. Oracle pushed back hard on:
    - Adding a "Python CLI" section for a binary that does not exist
      (reversal: use Option A, one CLI section serves everyone).
    - Pre-building a 10-page Python tree of "coming soon" stubs
-     (placeholder fatigue — biggest underweighted risk).
+     (placeholder fatigue, the biggest underweighted risk).
    - 10 micro-pages for CLI (cut to 5-7 task-grouped pages).
    - `mdbook-tabs` third-party preprocessor (use stacked code blocks).
    - Phase A scope creep (defer recipes, bindings-guide,
@@ -173,7 +174,7 @@ Codified in `developers/docs-style.md` (to be created in Phase A):
 - "per the locked design"
 - "amendment" (in this PR context)
 - "Q9" (any locked-design question id)
-- "Phase 6", "Phase 7" (any phase number — user said no time-bound refs)
+- "Phase 6", "Phase 7" (any phase number; user said no time-bound refs)
 - "PR-G2" (any PR id)
 - "stable-channel" (jargon)
 
@@ -229,7 +230,7 @@ Add to `book.toml`:
 
 ## Phasing
 
-- **Phase A (this restructure)** — 5-7 working days. NOT YET STARTED.
+- **Phase A (this restructure)**: 5-7 working days. NOT YET STARTED.
   Scope:
   - All file moves + splits per migration table.
   - Hero `index.md` + universal `getting-started/quickstart.md` (stacked code blocks; Python tab is a placeholder pointing at `python/status.md`).
@@ -243,13 +244,13 @@ Add to `book.toml`:
   - mdBook redirects.
   - ADR file out of `docs/src/`.
 
-- **Phase B (Phase 6 PyO3 bindings ship)** — 3-5 days additional.
+- **Phase B (Phase 6 PyO3 bindings ship)**: 3-5 days additional.
   Scope: replace `python/status.md` with full Python tree
   (`overview.md`, `install.md`, `quickstart.md`, `publishing.md`,
   `listening.md`, `triggers.md`, `auth.md`, `examples/`); fill
   Python tab in stacked quickstart.
 
-- **Phase C (post-Phase-6 polish)** — 2-3 days.
+- **Phase C (post-Phase-6 polish)**: 2-3 days.
   Scope: GitHub Pages workflow, hosted pydoc/mkdocstrings,
   recipes (`cli/recipes/{systemd,docker,kubernetes}.md`),
   `developers/{bindings-guide,adding-a-language}.md`.
@@ -289,19 +290,19 @@ Add to `book.toml`:
 
 ## Inputs that informed this plan (durable references)
 
-- `plans/v0.3.md` — the v0.3 plan with Phase 6 scope (PyO3 bindings).
-- Current `docs/src/SUMMARY.md` — has 5 placeholder dead links.
-- Current `docs/src/welcome/quick-start.md` — Rust-only, first impression is Rust deps in Cargo.toml.
-- Current `crates/aviso-py/{Cargo.toml,src/lib.rs}` — placeholder rlib.
-- Current `python/aviso/__init__.py` — version stub only.
-- Current `pyproject.toml` — fully wired with maturin, `aviso._native` module name.
-- Current `docs/book.toml` — uses mdBook with `rust` theme.
+- `plans/v0.3.md`: the v0.3 plan with Phase 6 scope (PyO3 bindings).
+- Current `docs/src/SUMMARY.md`: has 5 placeholder dead links.
+- Current `docs/src/welcome/quick-start.md`: Rust-only, first impression is Rust deps in Cargo.toml.
+- Current `crates/aviso-py/{Cargo.toml,src/lib.rs}`: placeholder rlib.
+- Current `python/aviso/__init__.py`: version stub only.
+- Current `pyproject.toml`: fully wired with maturin, `aviso._native` module name.
+- Current `docs/book.toml`: uses mdBook with `rust` theme.
 
 ## Resume instructions for a fresh session
 
 1. Read this file completely.
-2. Check `git log -1 --format='%H %s'` — should be at or after `3a2005c9` (PR #16 merge).
-3. Check `git status` — should be clean.
+2. Check `git log -1 --format='%H %s'`. Should be at or after `3a2005c9` (PR #16 merge).
+3. Check `git status`. Should be clean.
 4. Ask the user the 8 open questions above (if not already answered).
 5. Once answered, start Phase A. Begin by creating the new directory structure under `docs/src/` and moving the lowest-risk content first (the `triggers/*` directory needs almost no change). Then tackle the cli.md slicing, which is the riskiest single piece of work.
 6. Run gates after each section: `cargo fmt --all -- --check`, `mdbook build docs`, `mdbook test docs`.
@@ -312,12 +313,12 @@ Add to `book.toml`:
 
 ## Oracle review trail
 
-- `bg_08b741b5` — plan v2 review (1m33s, PROCEED-AFTER-AMENDMENTS).
+- `bg_08b741b5`: plan v2 review (1m33s, PROCEED-AFTER-AMENDMENTS).
   Session id `ses_1a609d47dffeVLUd9Ds3yEOlzr`. The complete review
   output is in the conversation history; do not re-run.
-- `bg_abccef90` — current docs inventory (1m27s).
+- `bg_abccef90`: current docs inventory (1m27s).
   Session id `ses_1a60f166effeQUZQOge3G7N8lx`.
-- `bg_f2bbe71c` — Python distribution state (1m21s).
+- `bg_f2bbe71c`: Python distribution state (1m21s).
   Session id `ses_1a60ef341ffe3P1xgQl2yJIACF`.
-- `bg_3ccc9988` — best-practice research across 8 projects (51s).
+- `bg_3ccc9988`: best-practice research across 8 projects (51s).
   Session id `ses_1a60eb28bffeuqdK4HaYbPnPf6`.
