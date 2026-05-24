@@ -27,14 +27,7 @@ jobs:
           rustup show
           rustc --version
 
-      - name: Cache cargo registry and target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+      - uses: Swatinem/rust-cache@v2
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -75,12 +68,9 @@ jobs:
           rustup show
           rustc --version
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-          key: mdbook-registry-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          shared-key: docs-tools
 
       - name: Install mdBook (latest stable)
         run: cargo install mdbook --locked --force
