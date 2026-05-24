@@ -12,7 +12,7 @@
 
 - **GitHub Issues + milestones** are the durable source of truth for in-flight work.
 - **`plans/`** holds the project's planning documents (overall plan, roadmap, follow-ups). Phase numbers and roadmap dates live there and nowhere else (see [`AGENTS.md`](AGENTS.md#time-bound-references)).
-- **`docs/src/internals/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
+- **`plans/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
 
 ## Branch & commit conventions
 

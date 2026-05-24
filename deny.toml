@@ -2,7 +2,7 @@
 #
 # The license allow-list reflects the ECMWF software policy and aviso-server's
 # conventions. Anything outside the list fails CI and requires a deliberate
-# decision recorded in docs/src/internals/decisions.md before being added here.
+# decision recorded in plans/decisions.md before being added here.
 
 [graph]
 all-features = false
