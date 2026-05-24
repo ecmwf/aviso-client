@@ -6,6 +6,7 @@ How to work on this repository. The canonical document is [`CONTRIBUTING.md`](ht
 
 - Rust through [rustup](https://rustup.rs/). The MSRV is in the workspace's root `Cargo.toml`.
 - `mdbook` for the documentation: `cargo install mdbook`.
+- `mdbook-mermaid` for diagram rendering in the book: `cargo install mdbook-mermaid`. Without it, `mdbook build docs` leaves mermaid blocks as raw code instead of rendered diagrams.
 - `cargo-deny` for the license and vulnerability gate: `cargo install cargo-deny`.
 - Docker for the end-to-end tests' compose validation (optional for everyday work).
 
