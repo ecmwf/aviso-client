@@ -25,8 +25,10 @@ mod error;
 mod paths;
 mod runtime;
 mod state_stores;
+mod streams;
 mod triggers;
 mod values;
+mod watch;
 
 /// Version string of the underlying [`aviso`] core crate.
 ///
@@ -52,6 +54,8 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     auth::register_auth(m)?;
     state_stores::register_state_stores(m)?;
     triggers::register_triggers(m)?;
+    watch::register_watch(m)?;
+    streams::register_streams(m)?;
     clients::register_clients(m)?;
     m.add("VERSION", VERSION)?;
     Ok(())

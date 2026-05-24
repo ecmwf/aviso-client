@@ -153,6 +153,30 @@ class JsonFileStore:
 AuthProvider = Bearer | Basic | Env | ConfigFile | Chain
 StateStore = MemoryStore | JsonFileStore
 
+class WatchRequest:
+    @staticmethod
+    def watch(event_type: str) -> WatchRequest: ...
+    @staticmethod
+    def watch_from(event_type: str, from_: int | str) -> WatchRequest: ...
+    @staticmethod
+    def replay_only(event_type: str, from_: int | str) -> WatchRequest: ...
+    def with_filter(self, filter: dict[str, Any]) -> WatchRequest: ...
+    def with_triggers(self, triggers: list[Trigger]) -> WatchRequest: ...
+    @property
+    def event_type(self) -> str: ...
+    @property
+    def mode(self) -> str: ...
+
+class NotificationIterator:
+    def __iter__(self) -> NotificationIterator: ...
+    def __next__(self) -> Notification: ...
+    def close(self) -> None: ...
+
+class AsyncNotificationIterator:
+    def __aiter__(self) -> AsyncNotificationIterator: ...
+    def __anext__(self) -> Any: ...
+    def aclose(self) -> Any: ...
+
 class AvisoClient:
     def __init__(
         self,
@@ -180,6 +204,15 @@ class AvisoClient:
     def wipe_stream(self, stream_name: str) -> None: ...
     def wipe_all(self) -> None: ...
     def delete_notification(self, notification_id: str) -> None: ...
+    def listen(
+        self,
+        event_type: str | None = None,
+        *,
+        filter: dict[str, Any] | None = None,
+        from_: int | str | None = None,
+        mode: str = "watch",
+        request: WatchRequest | None = None,
+    ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
     def __exit__(
         self,
@@ -187,6 +220,43 @@ class AvisoClient:
         exc_value: BaseException | None,
         traceback: Any | None,
     ) -> bool: ...
+
+class AsyncAvisoClient:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        auth: AuthProvider | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+        state_store: StateStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool = False,
+        flush_cursor_on_exit: bool = False,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    def notify(
+        self,
+        *,
+        event_type: str,
+        identifier: Mapping[str, str] | None = None,
+        payload: Any | None = None,
+    ) -> Any: ...
+    def schema(self) -> Any: ...
+    def schema_for(self, event_type: str) -> Any: ...
+    def wipe_stream(self, stream_name: str) -> Any: ...
+    def wipe_all(self) -> Any: ...
+    def delete_notification(self, notification_id: str) -> Any: ...
+    def listen(
+        self,
+        event_type: str | None = None,
+        *,
+        filter: dict[str, Any] | None = None,
+        from_: int | str | None = None,
+        mode: str = "watch",
+        request: WatchRequest | None = None,
+    ) -> AsyncNotificationIterator: ...
 
 class AvisoError(Exception):
     """Base class for every exception raised by the aviso library."""
@@ -248,6 +318,8 @@ class TriggerError(AvisoError):
 
 __all__ = [
     "VERSION",
+    "AsyncAvisoClient",
+    "AsyncNotificationIterator",
     "AuthError",
     "AuthProvider",
     "AvisoClient",
@@ -266,6 +338,7 @@ __all__ = [
     "MalformedEventError",
     "MemoryStore",
     "Notification",
+    "NotificationIterator",
     "NotifyResponse",
     "SchemaCatalog",
     "SchemaResponse",
@@ -276,5 +349,6 @@ __all__ = [
     "Trigger",
     "TriggerError",
     "WatchMode",
+    "WatchRequest",
     "__version__",
 ]
