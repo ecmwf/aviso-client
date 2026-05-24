@@ -76,7 +76,14 @@ pub(crate) async fn run_supervisor(
             };
             match get_result {
                 Ok(Some(cp)) => {
-                    tracing::debug!(
+                    // INFO level per D2 + Q9 (plans/v0.3.md and
+                    // docs/src/internals/decisions.md): a successful
+                    // resume from stored state is operator-visible
+                    // information. The no-checkpoint-found path stays
+                    // silent because starting fresh is the default.
+                    // A previous refactor downgraded this to DEBUG by
+                    // accident; restored here.
+                    tracing::info!(
                         event.name = "client.resume.applied",
                         resume_key = %resume_key.as_hex(),
                         sequence = cp.last_committed_sequence,
