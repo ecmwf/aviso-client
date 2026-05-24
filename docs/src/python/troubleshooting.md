@@ -7,8 +7,11 @@ Common failure modes and how to fix them.
 The compiled extension was not built. From a checkout:
 
 ```bash
+uv sync --locked --group dev
 uv run maturin develop --release
 ```
+
+The `--group dev` flag is what makes `maturin` available in the environment; without it `uv run maturin` will not find the executable.
 
 If the build itself fails, check that you have Rust installed (`rustc --version`) and a C compiler on the path.
 

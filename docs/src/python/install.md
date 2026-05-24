@@ -8,11 +8,11 @@ The Python package ships source-only in this release. PyPI wheels land in a foll
 git clone https://github.com/ecmwf/aviso-client.git
 cd aviso-client
 uv venv
-uv sync
+uv sync --locked --group dev
 uv run maturin develop --release
 ```
 
-That builds the Rust extension into the local virtualenv and makes `import aviso` work. The first build pulls in the workspace's Rust dependencies and compiles them; subsequent builds are incremental.
+The `--group dev` flag pulls in `maturin`, `ruff`, `ty`, `pytest`, and the other dev tools alongside the runtime dependencies. `--locked` makes the install reproducible from the committed `uv.lock`. The next command builds the Rust extension into the local virtualenv so `import aviso` works. The first build pulls in the workspace's Rust dependencies and compiles them; subsequent builds are incremental.
 
 You need:
 

@@ -1,13 +1,12 @@
-//! `PyO3` wrapper for the synchronous client.
+//! `PyO3` wrappers for the synchronous and asynchronous clients.
 //!
-//! `AvisoClient` exposes the publish and schema-discovery methods of the
-//! Rust core to Python users. Methods drive the async core via
-//! `runtime().block_on(...)` wrapped in `py.detach` so the GIL is
+//! `AvisoClient` exposes the publish, schema-discovery, admin, and listen
+//! methods of the Rust core to Python users. Methods drive the async core
+//! via `runtime().block_on(...)` wrapped in `py.detach` so the GIL is
 //! released during the network round-trip and other Python threads can
-//! make progress.
-//!
-//! The async client (`AsyncAvisoClient`) and the watch / listen surface
-//! land in subsequent commits.
+//! make progress. `AsyncAvisoClient` exposes the same surface returning
+//! Python awaitables via `pyo3_async_runtimes::tokio::future_into_py`,
+//! scheduled on the same shared runtime.
 
 use std::collections::BTreeMap;
 
