@@ -58,7 +58,7 @@ impl OtelLogFormat {
     /// `service.version` pinned to the library's compile-time
     /// [`aviso::VERSION`] constant. The optional
     /// `deployment.environment` is read from `AVISO_DEPLOYMENT_ENV`
-    /// at construction time (the CLI invokes [`init_tracing`] once,
+    /// at construction time (the CLI invokes `init_tracing` once,
     /// so this snapshot is stable for the process lifetime).
     pub(crate) fn new() -> Self {
         Self {
