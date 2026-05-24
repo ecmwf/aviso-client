@@ -18,14 +18,17 @@ def test_construct_with_only_base_url() -> None:
     assert client.base_url == "http://127.0.0.1:1/"
 
 
-def test_construct_with_token() -> None:
-    client = aviso.AvisoClient(base_url="http://127.0.0.1:1", token="opaque-jwt-here")
+def test_construct_with_auth() -> None:
+    client = aviso.AvisoClient(
+        base_url="http://127.0.0.1:1",
+        auth=aviso.Bearer("opaque-jwt-here"),
+    )
     assert client.base_url == "http://127.0.0.1:1/"
 
 
-def test_empty_token_raises_config_error() -> None:
+def test_empty_token_raises_config_error_on_provider() -> None:
     with pytest.raises(aviso.ConfigError):
-        aviso.AvisoClient(base_url="http://127.0.0.1:1", token="")
+        aviso.Bearer("")
 
 
 def test_invalid_base_url_raises_config_error() -> None:

@@ -20,11 +20,18 @@ from aviso._native import (
     AuthError,
     AvisoClient,
     AvisoError,
+    Basic,
+    Bearer,
+    Chain,
     ConfigError,
+    ConfigFile,
     DecodeError,
+    Env,
     HistoryGapError,
     HttpError,
+    JsonFileStore,
     MalformedEventError,
+    MemoryStore,
     Notification,
     NotifyResponse,
     SchemaCatalog,
@@ -35,6 +42,9 @@ from aviso._native import (
     TriggerError,
 )
 
+AuthProvider = Bearer | Basic | Env | ConfigFile | Chain
+StateStore = MemoryStore | JsonFileStore
+
 try:
     __version__ = version("aviso")
 except PackageNotFoundError:
@@ -43,17 +53,26 @@ except PackageNotFoundError:
 __all__ = [
     "VERSION",
     "AuthError",
+    "AuthProvider",
     "AvisoClient",
     "AvisoError",
+    "Basic",
+    "Bearer",
+    "Chain",
     "ConfigError",
+    "ConfigFile",
     "DecodeError",
+    "Env",
     "HistoryGapError",
     "HttpError",
+    "JsonFileStore",
     "MalformedEventError",
+    "MemoryStore",
     "Notification",
     "NotifyResponse",
     "SchemaCatalog",
     "SchemaResponse",
+    "StateStore",
     "StateStoreError",
     "StreamProtocolError",
     "TransportError",

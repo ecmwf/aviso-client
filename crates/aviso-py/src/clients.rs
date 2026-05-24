@@ -11,14 +11,13 @@
 
 use std::collections::BTreeMap;
 
-use std::sync::Arc;
-
-use aviso::auth::Bearer;
 use aviso::{AvisoClient, NotificationRequest};
 use pyo3::prelude::*;
 
+use crate::auth::extract_provider;
 use crate::error::map_client_error;
 use crate::runtime::runtime;
+use crate::state_stores::extract_store;
 use crate::values::{PyNotifyResponse, PySchemaCatalog, PySchemaResponse};
 
 /// Synchronous `PyO3` client. Methods block the current Python thread
@@ -31,28 +30,46 @@ pub(crate) struct PyAvisoClient {
 #[pymethods]
 impl PyAvisoClient {
     #[new]
-    #[pyo3(signature = (*, base_url, token = None, timeout = None, user_agent = None))]
+    #[pyo3(signature = (*, base_url, auth = None, timeout = None, user_agent = None,
+                          state_store = None, heartbeat_interval = None,
+                          danger_accept_invalid_certs = false,
+                          flush_cursor_on_exit = false))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
+        py: Python<'_>,
         base_url: String,
-        token: Option<String>,
+        auth: Option<&Bound<'_, PyAny>>,
         timeout: Option<f64>,
         user_agent: Option<String>,
+        state_store: Option<&Bound<'_, PyAny>>,
+        heartbeat_interval: Option<f64>,
+        danger_accept_invalid_certs: bool,
+        flush_cursor_on_exit: bool,
     ) -> PyResult<Self> {
-        Python::attach(|py| {
-            let mut builder = AvisoClient::builder().base_url(base_url);
-            if let Some(t) = token {
-                let bearer = Bearer::new(t).map_err(|e| map_client_error(py, e))?;
-                builder = builder.auth(Arc::new(bearer));
-            }
-            if let Some(secs) = timeout {
-                builder = builder.timeout(std::time::Duration::from_secs_f64(secs));
-            }
-            if let Some(ua) = user_agent {
-                builder = builder.user_agent(ua);
-            }
-            let client = builder.build().map_err(|e| map_client_error(py, e))?;
-            Ok(Self { inner: client })
-        })
+        let mut builder = AvisoClient::builder().base_url(base_url);
+        if let Some(provider) = auth {
+            builder = builder.auth(extract_provider(provider)?);
+        }
+        if let Some(secs) = timeout {
+            builder = builder.timeout(std::time::Duration::from_secs_f64(secs));
+        }
+        if let Some(ua) = user_agent {
+            builder = builder.user_agent(ua);
+        }
+        if let Some(store) = state_store {
+            builder = builder.state_store(extract_store(store)?);
+        }
+        if let Some(secs) = heartbeat_interval {
+            builder = builder.heartbeat_interval(std::time::Duration::from_secs_f64(secs));
+        }
+        if danger_accept_invalid_certs {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        if flush_cursor_on_exit {
+            builder = builder.flush_cursor_on_exit(true);
+        }
+        let client = builder.build().map_err(|e| map_client_error(py, e))?;
+        Ok(Self { inner: client })
     }
 
     #[getter]

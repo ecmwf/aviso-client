@@ -19,9 +19,12 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
 
+mod auth;
 mod clients;
 mod error;
+mod paths;
 mod runtime;
+mod state_stores;
 mod values;
 
 /// Version string of the underlying [`aviso`] core crate.
@@ -45,6 +48,8 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     error::register_exceptions(py, m)?;
     error::register_provoke_error(m)?;
     values::register_value_types(m)?;
+    auth::register_auth(m)?;
+    state_stores::register_state_stores(m)?;
     clients::register_clients(m)?;
     m.add("VERSION", VERSION)?;
     Ok(())
