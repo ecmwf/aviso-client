@@ -315,11 +315,14 @@ impl Trigger {
     /// [`DEFAULT_WEBHOOK_TIMEOUT`] (30s); calling `.timeout(d)`
     /// overrides it.
     ///
-    /// Silently ignored on echo or log triggers: each writes a
-    /// buffer-prepared NDJSON line in a single I/O call and the
-    /// dispatcher preserves that single-call atomicity rather than
-    /// racing the write against a cancellable sleep that could
-    /// leave a malformed line on stdout or in the log file.
+    /// Silently ignored on echo or log triggers: each builds a
+    /// buffer (the JSON body with the newline appended to the same
+    /// `Vec<u8>`) and submits it via one `write_all` call. The
+    /// `write_all` itself may internally loop on short writes (it
+    /// is not promised as one `write(2)` syscall), but the
+    /// dispatcher does not race the call against cancellation, so
+    /// a notification's NDJSON line is never truncated mid-write
+    /// by the cancellation `select!`.
     #[must_use]
     pub fn timeout(mut self, t: std::time::Duration) -> Self {
         self.timeout = Some(t);
