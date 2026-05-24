@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::auth::extract_provider;
-use crate::error::map_client_error;
+use crate::error::{duration_from_seconds, map_client_error};
 use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};
@@ -54,7 +54,7 @@ impl PyAvisoClient {
             builder = builder.auth(extract_provider(provider)?);
         }
         if let Some(secs) = timeout {
-            builder = builder.timeout(std::time::Duration::from_secs_f64(secs));
+            builder = builder.timeout(duration_from_seconds("timeout", secs)?);
         }
         if let Some(ua) = user_agent {
             builder = builder.user_agent(ua);
@@ -63,7 +63,8 @@ impl PyAvisoClient {
             builder = builder.state_store(extract_store(store)?);
         }
         if let Some(secs) = heartbeat_interval {
-            builder = builder.heartbeat_interval(std::time::Duration::from_secs_f64(secs));
+            builder =
+                builder.heartbeat_interval(duration_from_seconds("heartbeat_interval", secs)?);
         }
         if danger_accept_invalid_certs {
             builder = builder.danger_accept_invalid_certs(true);
@@ -226,7 +227,7 @@ impl PyAsyncAvisoClient {
             builder = builder.auth(extract_provider(provider)?);
         }
         if let Some(secs) = timeout {
-            builder = builder.timeout(std::time::Duration::from_secs_f64(secs));
+            builder = builder.timeout(duration_from_seconds("timeout", secs)?);
         }
         if let Some(ua) = user_agent {
             builder = builder.user_agent(ua);
@@ -235,7 +236,8 @@ impl PyAsyncAvisoClient {
             builder = builder.state_store(extract_store(store)?);
         }
         if let Some(secs) = heartbeat_interval {
-            builder = builder.heartbeat_interval(std::time::Duration::from_secs_f64(secs));
+            builder =
+                builder.heartbeat_interval(duration_from_seconds("heartbeat_interval", secs)?);
         }
         if danger_accept_invalid_certs {
             builder = builder.danger_accept_invalid_certs(true);
@@ -376,7 +378,7 @@ fn build_watch_request(
     if let Some(req) = request {
         if event_type.is_some() || filter.is_some() || from_.is_some() {
             return Err(crate::error::AvisoError::new_err(
-                "request is mutually exclusive with event_type, filter, from_, triggers",
+                "request is mutually exclusive with event_type, filter, and from_",
             ));
         }
         if mode != "watch" {

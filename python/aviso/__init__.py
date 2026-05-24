@@ -5,10 +5,12 @@ extension lives at ``aviso._native``; user-facing names are re-exported
 from this module so callers always ``import aviso`` and never reach for
 ``aviso._native`` directly.
 
-The public surface grows as features land. This commit ships the full
-exception hierarchy rooted at ``AvisoError`` covering every
-``ClientError`` variant from the core crate. Clients, value types,
-triggers, auth providers, and state stores land in subsequent commits.
+The public surface covers the publish, schema-discovery, and listen
+verbs on both ``AvisoClient`` (sync) and ``AsyncAvisoClient`` (async),
+the value types they return (``Notification``, ``NotifyResponse``,
+``SchemaCatalog``, ``SchemaResponse``), the trigger builder, the five
+auth providers, the two state stores, and the exception hierarchy
+rooted at ``AvisoError``.
 """
 
 from __future__ import annotations

@@ -19,6 +19,8 @@
 //! message so the new variant is still caught by `except AvisoError`.
 //! The binding maintainer keeps the table in sync as new variants land.
 
+use std::time::Duration;
+
 use aviso::ClientError;
 use aviso::state::StoreError;
 use aviso::watch::{
@@ -467,6 +469,23 @@ fn reqwest_status_from_u16(code: u16) -> Option<reqwest::StatusCode> {
 pub(crate) fn register_provoke_error(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(provoke_error, m)?)?;
     Ok(())
+}
+
+/// Converts a user-provided seconds-as-float into a `Duration`, raising
+/// `ConfigError` on negative, NaN, or infinite values rather than letting
+/// `Duration::from_secs_f64` panic across the FFI boundary.
+pub(crate) fn duration_from_seconds(field: &str, seconds: f64) -> PyResult<Duration> {
+    if !seconds.is_finite() {
+        return Err(ConfigError::new_err(format!(
+            "{field} must be a finite non-negative number of seconds; got {seconds}"
+        )));
+    }
+    if seconds < 0.0 {
+        return Err(ConfigError::new_err(format!(
+            "{field} must be non-negative; got {seconds}"
+        )));
+    }
+    Ok(Duration::from_secs_f64(seconds))
 }
 
 #[cfg(test)]
