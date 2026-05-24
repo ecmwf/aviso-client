@@ -483,14 +483,18 @@ mod tests {
     }
 
     #[test]
-    fn hint_for_polygon_format_in_listener_yaml() {
+    fn hint_for_polygon_format_in_listener_names_both_inline_and_yaml_paths() {
         let body = r#"{"details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)"}"#;
         let hint = hint_for_listener_error(&http_err(400, body))
             .expect("polygon format must yield a hint");
         assert!(hint.contains("lat,lon pairs"), "{hint}");
         assert!(
-            hint.contains("listener YAML") || hint.contains("polygon:"),
-            "the listener variant of the hint must explicitly point at YAML syntax: {hint}"
+            hint.contains("--identifiers"),
+            "the listener polygon hint must name `--identifiers` so an inline-mode operator (no YAML file) sees the path to fix; got: {hint}",
+        );
+        assert!(
+            hint.contains("polygon:"),
+            "the listener polygon hint must also name the `polygon:` YAML key so a YAML-mode operator sees the path; got: {hint}",
         );
     }
 
@@ -520,8 +524,8 @@ mod tests {
             "the `lat,lon` order mnemonic must appear in the listener variant too: this is the most common operator mistake regardless of subcommand: {hint}"
         );
         assert!(
-            hint.contains("listener YAML") || hint.contains("polygon:"),
-            "the listener variant must explicitly point at YAML syntax: {hint}"
+            hint.contains("--identifiers") && hint.contains("polygon:"),
+            "the listener out-of-range hint must name BOTH inline (`--identifiers`) and YAML (`polygon:`) paths so the fix is discoverable regardless of which mode the operator is running: {hint}"
         );
     }
 

@@ -144,7 +144,7 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
     };
     let suffix = match subcommand {
         "listen" | "watch" => {
-            "In listener YAML, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` (the value wrapped as a single string)."
+            "For inline listen, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven listen, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` in the listener YAML (the value wrapped as a single string)."
         }
         "replay" => {
             "For ad-hoc replay, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven replay, use the same `polygon:` shape as listener YAML."
@@ -169,7 +169,7 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
 pub(crate) fn constraint_violation_hint(body: &str, subcommand: &str) -> Option<String> {
     let action_suffix = match subcommand {
         "listen" | "watch" => {
-            "Check the identifier value in your listener YAML; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
+            "Check the identifier value in your `--identifiers` JSON (inline mode) or in the listener YAML's `identifiers:` block (YAML mode); run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
         }
         _ => {
             "Check the value you supplied for this identifier; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
