@@ -46,23 +46,6 @@ docker compose -f tests/e2e/docker-compose.yml config --quiet
 
 The full set is in [`.github/workflows/ci.yml`](https://github.com/ecmwf/aviso-client/blob/main/.github/workflows/ci.yml). Every gate is expected to be green on `main`.
 
-## How the code is laid out
-
-The four crates plus auxiliary trees:
-
-| Path | What it is |
-|---|---|
-| `crates/aviso/` | The core library. The whole client lives here. |
-| `crates/aviso-cli/` | The `aviso` binary. A thin layer on top of the library. |
-| `crates/aviso-py/` | Future Python extension. Placeholder `rlib` today. |
-| `crates/finesse/` | In-tree SSE parser. Not published. |
-| `python/aviso/` | Pure-Python helpers that ship alongside the future extension. |
-| `docs/` | This book. |
-| `plans/` | Planning documents. |
-| `tests/e2e/` | End-to-end integration tests. |
-
-A more visual map is at [Architecture](./architecture.md).
-
 ## Adding a new trigger
 
 A common contribution. The shape:
