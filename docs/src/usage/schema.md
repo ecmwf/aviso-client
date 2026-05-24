@@ -2,7 +2,7 @@
 
 `aviso-server` stores one schema per event type, describing the valid identifier fields and any payload constraints. The client exposes two read-only methods over `GET /api/v1/schema` for tooling that wants to enumerate or inspect them.
 
-Per [D7](../internals/decisions.md), the client does **not** validate notifications against schemas. The server remains the single source of truth; this module is pass-through only.
+The client does **not** validate notifications against schemas. The server remains the single source of truth; this module is pass-through only.
 
 ## List every schema
 

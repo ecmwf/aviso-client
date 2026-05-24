@@ -45,7 +45,7 @@ The key is a SHA-256 digest plus a `key_format_version`. Inputs that go into the
 - The filter body, canonicalised via RFC 8785 JSON Canonicalization Scheme. Object-key reordering does NOT change the key.
 - Optional schema fingerprint.
 
-The hash deliberately excludes any resume position. `from_id` and `from_date` are how the client tells the server where to start; they are not subscription identity (D3 in the ADR log).
+The hash deliberately excludes any resume position. `from_id` and `from_date` are how the client tells the server where to start; they are not subscription identity.
 
 ## The value: `Checkpoint`
 
@@ -97,9 +97,6 @@ The parent directory must exist; `open` does not create it. The file itself is c
 
 ## Choosing a path
 
-The library exposes the trait so any consumer can choose any path or backend today. The aviso CLI binary will default to `~/.config/aviso/state.json` once it wires `StateStore` (a follow-up; the CLI does not yet consume the state module). When that wiring lands, the CLI is responsible for expanding the literal tilde itself before the path reaches `JsonFileStore::open`, since `Path`/`PathBuf` do not perform that expansion.
+The library exposes the trait so any consumer can choose any path or backend today. The aviso CLI binary defaults to `~/.config/aviso/state.json`; the CLI itself expands the literal tilde before the path reaches `JsonFileStore::open`, since `Path`/`PathBuf` do not perform that expansion.
 
-## Architectural references
-
-- D3: resume key shape (`docs/src/internals/decisions.md`).
-- D4: store trait, the impls, and the file format.
+For a tour of what actually lives in that file, see [The state file](./state-file.md): annotated example, every field explained, edit/delete safety rules, and version-mismatch recovery.

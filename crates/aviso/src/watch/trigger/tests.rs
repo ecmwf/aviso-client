@@ -18,7 +18,7 @@ use crate::watch::trigger::kind::TriggerKind;
 #[test]
 fn echo_constructor_uses_default_retries_zero_and_required_true() {
     let trigger = Trigger::echo();
-    assert!(matches!(trigger.kind, TriggerKind::Echo));
+    assert!(matches!(trigger.kind, TriggerKind::Echo { .. }));
     assert_eq!(trigger.retries, 0);
     assert!(trigger.required);
 }
@@ -38,7 +38,7 @@ fn log_constructor_uses_default_retries_zero_and_required_true() {
 fn retries_setter_overrides_default() {
     let trigger = Trigger::echo().retries(7);
     assert_eq!(trigger.retries, 7);
-    assert!(matches!(trigger.kind, TriggerKind::Echo));
+    assert!(matches!(trigger.kind, TriggerKind::Echo { .. }));
     assert!(trigger.required);
 }
 
@@ -167,7 +167,7 @@ fn webhook_timeout_setter_overrides_default() {
 fn method_setter_silently_ignored_on_echo() {
     use super::HttpMethod;
     let trigger = Trigger::echo().method(HttpMethod::Get);
-    assert!(matches!(trigger.kind, TriggerKind::Echo));
+    assert!(matches!(trigger.kind, TriggerKind::Echo { .. }));
 }
 
 #[test]
