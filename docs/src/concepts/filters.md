@@ -44,31 +44,24 @@ This asks for every notification of type `mars` regardless of identifier. The se
 
 ## Spatial filters
 
-Some event types support geospatial filtering. The two shapes are:
+Some event types support a polygon filter. The polygon is a single scalar value: a comma-separated string of `lat,lng` pairs, with the last pair equal to the first so the ring closes.
 
 ```yaml
 identifiers:
-  polygon:
-    type: polygon
-    points: [[46, 8], [46, 9], [47, 9], [47, 8], [46, 8]]
-
-identifiers:
-  point:
-    latitude: 46.5
-    longitude: 8.5
+  polygon: "46,8,46,9,47,9,47,8,46,8"
 ```
 
-`polygon` returns notifications whose geometry overlaps the polygon. `point` returns notifications matching exactly that point (or covering it, depending on the publisher's geometry).
+You get notifications whose geometry overlaps the polygon.
 
-Polygons must close: the last point must equal the first.
-
-On the command line, the polygon shape comes through with quoting:
+On the command line, the same value comes through with quoting because of the embedded commas:
 
 ```bash
-aviso listen --event mars --identifiers '{"polygon":"46,8,46,9,47,9,47,8,46,8"}'
+aviso listen --event test_polygon --identifiers '{"polygon":"46,8,46,9,47,9,47,8,46,8"}'
 ```
 
 For `aviso notify`, the same quoting rule applies to comma-bearing values; see [Publish and listen: quoting values](../cli/publish-and-listen.md#quoting-values-that-contain-commas).
+
+The server expects polygon as a scalar; passing a structured object (`polygon: {type: polygon, points: [...]}`) returns `400 Field 'polygon' does not support constraint filters; expected scalar value`. Other geospatial shapes depend on what the server's schema for an event type declares; run `aviso schema get <TYPE>` to see which identifier fields are valid.
 
 ## When the filter does not match
 
