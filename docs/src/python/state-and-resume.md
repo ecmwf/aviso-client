@@ -43,7 +43,7 @@ client = aviso.AvisoClient(
 )
 ```
 
-The store wins on construction if the parent directory does not exist; create it first:
+The store fails on construction if the parent directory does not exist; create it first:
 
 ```python
 import pathlib

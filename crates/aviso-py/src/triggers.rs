@@ -186,10 +186,6 @@ impl PyTrigger {
 }
 
 impl PyTrigger {
-    #[allow(
-        dead_code,
-        reason = "consumed by WatchRequest.with_triggers which lands in the listen commit"
-    )]
     pub(crate) fn into_inner(self) -> Trigger {
         self.inner
     }
