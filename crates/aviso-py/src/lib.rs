@@ -19,7 +19,10 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
 
+mod clients;
 mod error;
+mod runtime;
+mod values;
 
 /// Version string of the underlying [`aviso`] core crate.
 ///
@@ -41,6 +44,8 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     install_logging_bridge(py)?;
     error::register_exceptions(py, m)?;
     error::register_provoke_error(m)?;
+    values::register_value_types(m)?;
+    clients::register_clients(m)?;
     m.add("VERSION", VERSION)?;
     Ok(())
 }

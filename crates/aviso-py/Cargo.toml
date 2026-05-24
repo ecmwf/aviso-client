@@ -34,10 +34,13 @@ extension-module = ["pyo3/extension-module"]
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
 pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
+pyo3-async-runtimes = { workspace = true }
 pyo3-log = { workspace = true }
+pythonize = { workspace = true }
 # `reqwest` is a transitive dep via aviso; declared here too because the
 # error-mapping layer constructs `reqwest::StatusCode` values when
 # synthesising `TriggerError::Webhook` for the test helper.
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }

@@ -8,8 +8,93 @@ in the current commit.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 __version__: str
 VERSION: str
+
+class Notification:
+    def __init__(
+        self,
+        event_type: str,
+        sequence: int,
+        identifier: Mapping[str, str],
+        payload: Any,
+        cloudevent: Mapping[str, Any] | None = None,
+    ) -> None: ...
+    @property
+    def event_type(self) -> str: ...
+    @property
+    def sequence(self) -> int: ...
+    @property
+    def identifier(self) -> dict[str, str]: ...
+    @property
+    def payload(self) -> Any: ...
+    @property
+    def cloudevent(self) -> dict[str, Any] | None: ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+class NotifyResponse:
+    def __init__(self, status: str, request_id: str, processed_at: str) -> None: ...
+    @property
+    def status(self) -> str: ...
+    @property
+    def request_id(self) -> str: ...
+    @property
+    def processed_at(self) -> str: ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+class SchemaCatalog:
+    @property
+    def status(self) -> str: ...
+    @property
+    def schema(self) -> dict[str, Any]: ...
+    @property
+    def event_types(self) -> list[str]: ...
+    @property
+    def total_schemas(self) -> int: ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+class SchemaResponse:
+    @property
+    def status(self) -> str: ...
+    @property
+    def event_type(self) -> str: ...
+    @property
+    def schema(self) -> dict[str, Any]: ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+class AvisoClient:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token: str | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    def notify(
+        self,
+        *,
+        event_type: str,
+        identifier: Mapping[str, str] | None = None,
+        payload: Any | None = None,
+    ) -> NotifyResponse: ...
+    def schema(self) -> SchemaCatalog: ...
+    def schema_for(self, event_type: str) -> SchemaResponse: ...
+    def wipe_stream(self, stream_name: str) -> None: ...
+    def wipe_all(self) -> None: ...
+    def delete_notification(self, notification_id: str) -> None: ...
+    def __enter__(self) -> AvisoClient: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any | None,
+    ) -> bool: ...
 
 class AvisoError(Exception):
     """Base class for every exception raised by the aviso library."""
@@ -72,12 +157,17 @@ class TriggerError(AvisoError):
 __all__ = [
     "VERSION",
     "AuthError",
+    "AvisoClient",
     "AvisoError",
     "ConfigError",
     "DecodeError",
     "HistoryGapError",
     "HttpError",
     "MalformedEventError",
+    "Notification",
+    "NotifyResponse",
+    "SchemaCatalog",
+    "SchemaResponse",
     "StateStoreError",
     "StreamProtocolError",
     "TransportError",
