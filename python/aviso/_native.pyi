@@ -9,3 +9,19 @@ package.
 from __future__ import annotations
 
 VERSION: str
+
+class AvisoError(Exception): ...
+class TransportError(AvisoError): ...
+
+class HttpError(AvisoError):
+    status: int
+    body: str
+    request_id: str | None
+
+def _provoke_error(
+    kind: str,
+    *,
+    status: int | None = None,
+    body: str | None = None,
+    request_id: str | None = None,
+) -> None: ...

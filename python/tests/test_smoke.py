@@ -28,4 +28,10 @@ def test_native_version_matches_rust_crate() -> None:
 
 
 def test_public_surface_in_this_commit() -> None:
-    assert set(aviso.__all__) == {"VERSION", "__version__"}
+    assert set(aviso.__all__) == {
+        "VERSION",
+        "AvisoError",
+        "HttpError",
+        "TransportError",
+        "__version__",
+    }

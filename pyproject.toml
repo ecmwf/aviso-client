@@ -50,7 +50,7 @@ dev = [
 manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
 module-name = "aviso._native"
-features = []
+features = ["extension-module"]
 
 [tool.uv]
 package = false

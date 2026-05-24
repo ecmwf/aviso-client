@@ -11,4 +11,23 @@ from __future__ import annotations
 __version__: str
 VERSION: str
 
-__all__ = ["VERSION", "__version__"]
+class AvisoError(Exception):
+    """Base class for every exception raised by the aviso library."""
+
+class TransportError(AvisoError):
+    """Network-level failure before the server response begins."""
+
+class HttpError(AvisoError):
+    """Server returned a non-success HTTP status."""
+
+    status: int
+    body: str
+    request_id: str | None
+
+__all__ = [
+    "VERSION",
+    "AvisoError",
+    "HttpError",
+    "TransportError",
+    "__version__",
+]

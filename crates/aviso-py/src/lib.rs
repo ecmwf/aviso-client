@@ -5,9 +5,11 @@
 //! the `aviso` package namespace; users `import aviso`, never
 //! `import aviso._native`.
 //!
-//! Public Python surface is empty in this commit beyond `VERSION`. Subsequent
-//! commits add the value types, clients, triggers, auth providers, state
-//! stores, and exception hierarchy described in `plans/python-api.md`.
+//! Public Python surface in this commit: `VERSION`, the exception classes
+//! `AvisoError` / `TransportError` / `HttpError`, and a `_provoke_error`
+//! test helper. The shared tokio runtime helper and the bulk of the
+//! `ClientError` mapping land alongside the first sync client method in a
+//! subsequent commit. The full plan lives in `plans/python-api.md`.
 
 #![forbid(unsafe_code)]
 
@@ -16,6 +18,8 @@ use std::sync::OnceLock;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
+
+mod error;
 
 /// Version string of the underlying [`aviso`] core crate.
 ///
@@ -35,6 +39,8 @@ static LOGGER_INSTALLED: OnceLock<()> = OnceLock::new();
 #[pymodule]
 fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     install_logging_bridge(py)?;
+    error::register_exceptions(py, m)?;
+    error::register_provoke_error(m)?;
     m.add("VERSION", VERSION)?;
     Ok(())
 }
