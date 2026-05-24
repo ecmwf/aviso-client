@@ -1,27 +1,36 @@
 //! Post trigger dispatch.
 //!
-//! HTTP POST per notification with a CloudEvent-shaped body
-//! (specversion + type + source + id + data) reconstructed from the
-//! notification at dispatch time. Operators get a body shape close
-//! to what `aviso-server` emits on the SSE wire, suitable for
-//! migration from pyaviso's `post` trigger. Custom headers are
-//! supported via the same templated-value pattern as the webhook
-//! trigger.
+//! HTTP POST per notification, body = the CloudEvent envelope from
+//! `aviso-server`. The dispatcher prefers the raw envelope captured
+//! at the SSE parser ([`Notification::cloudevent`] is `Some` in the
+//! production watch path) and forwards those bytes verbatim, so
+//! receivers see the server's actual `specversion` / per-event-type
+//! `type` (e.g. `int.ecmwf.aviso.mars`) / `source` URL / nanosecond-
+//! precision `time` / `dataschema` URL / `datacontenttype` /
+//! `data` exactly as emitted. Only when `cloudevent` is `None`
+//! (test fixtures, library callers building notifications outside
+//! the watch path) does the dispatcher fall back to a minimal
+//! reconstructed envelope (`type: co.ecmwf.aviso.event`,
+//! `source: aviso-client`, no `time`).
+//!
+//! Suitable for pyaviso migration and for any generic CloudEvent
+//! receiver. Custom headers supported via the same templated-value
+//! pattern as the webhook trigger.
 //!
 //! Differs from the webhook trigger in three ways:
 //!
 //! - **Body shape**: webhook defaults to the lib's `Notification`
-//!   JSON; post emits a CloudEvent envelope wrapping the same data.
+//!   JSON; post sends the CloudEvent envelope (raw passthrough in
+//!   production; reconstructed fallback in tests).
 //! - **Method**: locked to POST (the trigger name encodes the verb).
 //! - **No body_template**: operators who need a custom body shape
 //!   should use the webhook trigger directly.
 //!
-//! The `time` CloudEvent field is intentionally omitted: the lib
-//! does not preserve the server's emission time through the SSE
-//! parser (D9 hides the CloudEvent envelope, including `time`), and
-//! synthesising a "dispatch-time" timestamp would be misleading.
-//! Receivers that need a timestamp can use the HTTP request time
-//! their own server records.
+//! The fallback's omission of `time` is honest about the lossy path:
+//! the lib only reconstructs when the wire envelope is unavailable,
+//! and the server's emission time is not reconstructable. Production
+//! receivers always see the server's real `time` because production
+//! always has the raw envelope.
 
 use std::time::Duration;
 

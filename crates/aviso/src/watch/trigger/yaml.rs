@@ -67,10 +67,15 @@ pub enum TriggerConfig {
     /// Operators wanting richer card customisation use [`Self::Webhook`]
     /// directly with a hand-written `body_template`.
     Teams(TeamsTriggerConfig),
-    /// Post trigger: HTTP POST with a CloudEvent-shaped body
-    /// reconstructed from the notification. Custom headers supported;
-    /// body shape is fixed (no `body_template` field). For arbitrary
-    /// body shapes, use [`Self::Webhook`] directly.
+    /// Post trigger: HTTP POST with the server-emitted `CloudEvent`
+    /// envelope as the body. In the production watch path the raw
+    /// envelope captured at the SSE parser is forwarded verbatim
+    /// (`type`, `source`, `time`, `dataschema`, etc. all reach the
+    /// receiver as the server emitted them); outside the watch path
+    /// (test fixtures), a minimal envelope is reconstructed from the
+    /// lib's narrowed fields. Custom headers supported; body shape
+    /// is fixed (no `body_template` field). For arbitrary body
+    /// shapes use [`Self::Webhook`] directly.
     Post(PostTriggerConfig),
 }
 
@@ -189,9 +194,13 @@ pub struct WebhookTriggerConfig {
     pub fail_fast: bool,
 }
 
-/// YAML payload for [`TriggerConfig::Teams`]. Sugar over the webhook
-/// trigger targeting Microsoft Teams Workflows endpoints; desugars to
-/// a [`TriggerConfig::Webhook`] at `into_trigger` time.
+/// YAML payload for [`TriggerConfig::Teams`]. Operator-friendly
+/// shortcut for Microsoft Teams Workflows endpoints. Produces a
+/// [`crate::watch::TriggerKind::Teams`] at `into_trigger` time; the
+/// teams dispatcher builds an Adaptive Card from the notification's
+/// runtime data and delegates to the webhook HTTP machinery for the
+/// actual send (so retry classification, response capture, and
+/// error mapping match the webhook trigger).
 #[non_exhaustive]
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -223,9 +232,10 @@ fn default_teams_title() -> String {
 
 /// YAML payload for [`TriggerConfig::Post`]. Migration-friendly shape
 /// for operators coming from pyaviso's `post` trigger: URL plus
-/// optional custom headers; the body is a fixed `CloudEvent` envelope
-/// built from the notification at dispatch time (no `body_template`
-/// field).
+/// optional custom headers; no `body_template` field because the body
+/// is the server's `CloudEvent` envelope, forwarded verbatim from the
+/// SSE wire when available and reconstructed from the lib's narrowed
+/// fields only as a test-fixture fallback.
 #[non_exhaustive]
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
