@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use aviso::watch::{ResumeStart, WatchMode, WatchRequest};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyInt};
 
 use crate::triggers::PyTrigger;
 
@@ -102,19 +102,25 @@ pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeSta
             "from_ must be an int sequence or a string date, got bool ({b})"
         )));
     }
-    if let Ok(n) = value.extract::<u64>() {
-        return Ok(ResumeStart::AfterSequence(n));
-    }
-    if let Ok(n) = value.extract::<i128>() {
-        if n < 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "from_ sequence must be non-negative",
-            ));
+    if value.is_instance_of::<PyInt>() {
+        if let Ok(n) = value.extract::<u64>() {
+            return Ok(ResumeStart::AfterSequence(n));
         }
-        let unsigned = u64::try_from(n).map_err(|_| {
-            pyo3::exceptions::PyValueError::new_err("from_ sequence exceeds u64::MAX")
-        })?;
-        return Ok(ResumeStart::AfterSequence(unsigned));
+        if let Ok(n) = value.extract::<i128>() {
+            if n < 0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "from_ sequence must be non-negative",
+                ));
+            }
+            return u64::try_from(n)
+                .map(ResumeStart::AfterSequence)
+                .map_err(|_| {
+                    pyo3::exceptions::PyValueError::new_err("from_ sequence exceeds u64::MAX")
+                });
+        }
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "from_ sequence is too large; must fit in u64 (0..=18446744073709551615)",
+        ));
     }
     if let Ok(s) = value.extract::<String>() {
         return Ok(ResumeStart::Date(s));
