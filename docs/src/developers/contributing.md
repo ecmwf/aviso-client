@@ -8,7 +8,7 @@ How to work on this repository. The canonical document is [`CONTRIBUTING.md`](ht
 - `mdbook` for the documentation: `cargo install mdbook`.
 - `mdbook-mermaid` for diagram rendering in the book: `cargo install mdbook-mermaid`. Without it, `mdbook build docs` leaves mermaid blocks as raw code instead of rendered diagrams.
 - `cargo-deny` for the license and vulnerability gate: `cargo install cargo-deny`.
-- Docker for the end-to-end tests' compose validation (optional for everyday work).
+- Docker for the end-to-end tests' compose validation. Needed to run the full CI gate set locally; pure cargo workflows do not need it.
 
 The Python toolchain (`uv`, `ruff`, `ty`, `pytest`) is only needed when you touch the future Python extension or the pure-Python helpers; see `CONTRIBUTING.md` for the details.
 
@@ -27,6 +27,7 @@ mdbook test docs
 mdbook build docs
 cargo deny check
 git diff --exit-code Cargo.lock
+docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
 A pre-commit hook in `.githooks` runs the fast subset (format, clippy, unit tests). Enable it with:
@@ -35,17 +36,11 @@ A pre-commit hook in `.githooks` runs the fast subset (format, clippy, unit test
 git config core.hooksPath .githooks
 ```
 
-A pre-push hook runs the slower targets.
+A pre-push hook runs the slower targets, including the Docker Compose syntax check.
 
 ## What CI runs
 
-Whatever the local gates above run, plus a Docker Compose syntax check for the end-to-end test suite:
-
-```bash
-docker compose -f tests/e2e/docker-compose.yml config --quiet
-```
-
-The full set is in [`.github/workflows/ci.yml`](https://github.com/ecmwf/aviso-client/blob/main/.github/workflows/ci.yml). Every gate is expected to be green on `main`.
+The same gates listed above. The full set is in [`.github/workflows/ci.yml`](https://github.com/ecmwf/aviso-client/blob/main/.github/workflows/ci.yml). Every gate is expected to be green on `main`.
 
 ## Adding a new trigger
 
