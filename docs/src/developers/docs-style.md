@@ -17,8 +17,7 @@ The conventions documentation pages in this book follow. If you are writing or r
 
 ## Headings
 
-- Title case for the page title (`# Resume and state`).
-- Sentence case for sub-headings (`## When the cursor advances`).
+- Sentence case for all headings (`# Resume and state`, `## When the cursor advances`). Proper nouns and acronyms keep their normal casing (`# CLI overview`, `# Listener YAML reference`, `# Rust library guide`).
 - Each H2 should answer a question the reader will actually ask. "When the cursor advances" not "Cursor advancement logic".
 
 ## Code blocks
