@@ -113,4 +113,4 @@ For non-idempotent commands, either:
 
 - Cross-platform deployments: command is Unix only. Use [`webhook`](./webhook.md) for cross-platform.
 - Long-running tasks: command is per-notification, not per-listener-session. Spawning a 60-second task per notification at 100 notifications/sec is going to break things.
-- Sensitive secrets in the command string: the command itself surfaces in `TriggerError::Command` on failure (with the stderr tail). Pass secrets via `env:` instead.
+- Sensitive secrets in the command string: the rendered command appears in DEBUG-level tracing (e.g. via the `client.trigger.template.render_failed` event when template rendering fails); anyone with access to the DEBUG log sees the secret. The public `TriggerError::Command` carries only `exit_code` and `stderr_tail`, not the command itself, but the command's own stderr can still leak secrets it echoed. Pass secrets via `env:` instead (env values are also redacted from the trigger's `Debug` impl and never echoed by the dispatcher).
