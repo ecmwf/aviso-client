@@ -30,8 +30,16 @@ def test_native_version_matches_rust_crate() -> None:
 def test_public_surface_in_this_commit() -> None:
     assert set(aviso.__all__) == {
         "VERSION",
+        "AuthError",
         "AvisoError",
+        "ConfigError",
+        "DecodeError",
+        "HistoryGapError",
         "HttpError",
+        "MalformedEventError",
+        "StateStoreError",
+        "StreamProtocolError",
         "TransportError",
+        "TriggerError",
         "__version__",
     }

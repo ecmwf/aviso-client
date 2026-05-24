@@ -20,6 +20,11 @@
 //! The binding maintainer keeps the table in sync as new variants land.
 
 use aviso::ClientError;
+use aviso::state::StoreError;
+use aviso::watch::{
+    GapReason, TemplateErrorKind, TriggerError as CoreTriggerError, TriggerKindLabel,
+};
+use pyo3::IntoPyObjectExt;
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -27,26 +32,39 @@ use pyo3::prelude::*;
 create_exception!(aviso._native, AvisoError, PyException);
 create_exception!(aviso._native, TransportError, AvisoError);
 create_exception!(aviso._native, HttpError, AvisoError);
+create_exception!(aviso._native, AuthError, AvisoError);
+create_exception!(aviso._native, DecodeError, AvisoError);
+create_exception!(aviso._native, MalformedEventError, AvisoError);
+create_exception!(aviso._native, HistoryGapError, AvisoError);
+create_exception!(aviso._native, StreamProtocolError, AvisoError);
+create_exception!(aviso._native, ConfigError, AvisoError);
+create_exception!(aviso._native, StateStoreError, AvisoError);
+create_exception!(aviso._native, TriggerError, AvisoError);
 
 /// Registers the exception classes on the `aviso._native` module.
 ///
-/// Called once from the `#[pymodule]` entry point. Subsequent commits
-/// add `AuthError`, `DecodeError`, `MalformedEventError`,
-/// `HistoryGapError`, `StreamProtocolError`, `ConfigError`,
-/// `StateStoreError`, and `TriggerError` here.
+/// Called once from the `#[pymodule]` entry point.
 pub(crate) fn register_exceptions(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("AvisoError", py.get_type::<AvisoError>())?;
     m.add("TransportError", py.get_type::<TransportError>())?;
     m.add("HttpError", py.get_type::<HttpError>())?;
+    m.add("AuthError", py.get_type::<AuthError>())?;
+    m.add("DecodeError", py.get_type::<DecodeError>())?;
+    m.add("MalformedEventError", py.get_type::<MalformedEventError>())?;
+    m.add("HistoryGapError", py.get_type::<HistoryGapError>())?;
+    m.add("StreamProtocolError", py.get_type::<StreamProtocolError>())?;
+    m.add("ConfigError", py.get_type::<ConfigError>())?;
+    m.add("StateStoreError", py.get_type::<StateStoreError>())?;
+    m.add("TriggerError", py.get_type::<TriggerError>())?;
     Ok(())
 }
 
 /// Converts a Rust [`ClientError`] into the matching Python exception.
 ///
-/// Currently handles [`ClientError::Transport`] and [`ClientError::Http`];
-/// subsequent commits extend the table to cover every variant. The
-/// wildcard arm catches new variants safely so the binding never panics
-/// on an unknown error from the core crate.
+/// The wildcard arm catches new variants safely so the binding never
+/// panics on an unknown error from the core crate. Each documented
+/// variant has its own arm with explicit field extraction; future
+/// variants added in the core require a follow-up here.
 pub(crate) fn map_client_error(py: Python<'_>, err: ClientError) -> PyErr {
     match err {
         ClientError::Transport(inner) => TransportError::new_err(inner.to_string()),
@@ -55,70 +73,319 @@ pub(crate) fn map_client_error(py: Python<'_>, err: ClientError) -> PyErr {
             body,
             request_id,
         } => http_error(py, status, &body, request_id.as_deref()),
+        ClientError::Auth(message) => AuthError::new_err(message),
+        ClientError::Decode(inner) => DecodeError::new_err(inner.to_string()),
+        ClientError::MalformedEvent(detail) => MalformedEventError::new_err(detail),
+        ClientError::HistoryGap { reason } => history_gap_error(py, reason),
+        ClientError::StreamProtocol {
+            message,
+            request_id,
+        } => stream_protocol_error(py, &message, request_id.as_deref()),
+        ClientError::Config(message) => ConfigError::new_err(message),
+        ClientError::StateStore(inner) => state_store_error(&inner),
+        ClientError::TriggerFailed { kind, source } => trigger_error(py, &kind, source),
         other => AvisoError::new_err(format!("unhandled variant: {other}")),
     }
 }
 
-/// Constructs an [`HttpError`] instance with `.status`, `.body`, and
-/// `.request_id` attached as Python attributes.
-///
-/// `PyO3`'s `create_exception!` macro builds exception classes without a
-/// custom `__init__`, so structured fields are set on the instance via
-/// `setattr` after construction rather than via positional or keyword
-/// arguments. This is the documented pattern in the `PyO3` book and
-/// matches what `polars`, `pydantic-core`, and `opendal` do for their
-/// structured exception types.
 fn http_error(py: Python<'_>, status: u16, body: &str, request_id: Option<&str>) -> PyErr {
     let message = match request_id {
         Some(rid) => format!("http {status} (request_id={rid:?}): {body}"),
         None => format!("http {status}: {body}"),
     };
     let err = HttpError::new_err(message);
-    if let Err(set_err) = attach_http_attributes(py, &err, status, body, request_id) {
+    if let Err(set_err) = attach_setattrs(
+        py,
+        &err,
+        &[
+            ("status", status.into_py_any(py).ok()),
+            ("body", body.into_py_any(py).ok()),
+            ("request_id", request_id.into_py_any(py).ok()),
+        ],
+    ) {
         return set_err;
     }
     err
 }
 
-fn attach_http_attributes(
+fn history_gap_error(py: Python<'_>, reason: GapReason) -> PyErr {
+    let (reason_str, max_allowed, expected, observed) = match reason {
+        GapReason::ReplayLimitReached { max_allowed } => {
+            ("replay_limit_reached", Some(max_allowed), None, None)
+        }
+        GapReason::SequenceJump { expected, observed } => {
+            ("sequence_jump", None, Some(expected), Some(observed))
+        }
+        _ => ("unknown", None, None, None),
+    };
+    let err = HistoryGapError::new_err(format!("history gap: {reason_str}"));
+    if let Err(set_err) = attach_setattrs(
+        py,
+        &err,
+        &[
+            ("reason", reason_str.into_py_any(py).ok()),
+            ("max_allowed", max_allowed.into_py_any(py).ok()),
+            ("expected", expected.into_py_any(py).ok()),
+            ("observed", observed.into_py_any(py).ok()),
+        ],
+    ) {
+        return set_err;
+    }
+    err
+}
+
+fn stream_protocol_error(py: Python<'_>, message: &str, request_id: Option<&str>) -> PyErr {
+    let rendered = match request_id {
+        Some(rid) => format!("stream protocol (request_id={rid:?}): {message}"),
+        None => format!("stream protocol: {message}"),
+    };
+    let err = StreamProtocolError::new_err(rendered);
+    if let Err(set_err) = attach_setattrs(
+        py,
+        &err,
+        &[
+            ("message", message.into_py_any(py).ok()),
+            ("request_id", request_id.into_py_any(py).ok()),
+        ],
+    ) {
+        return set_err;
+    }
+    err
+}
+
+fn state_store_error(inner: &StoreError) -> PyErr {
+    StateStoreError::new_err(inner.to_string())
+}
+
+fn trigger_error(py: Python<'_>, kind: &TriggerKindLabel, source: CoreTriggerError) -> PyErr {
+    let trigger_kind = trigger_kind_label_str(kind);
+    let log_path = match kind {
+        TriggerKindLabel::Log { path } => Some(path.display().to_string()),
+        _ => None,
+    };
+    let detail = TriggerErrorDetail::from_source(source);
+    let rendered = format!(
+        "trigger {trigger_kind} failed ({}): {}",
+        detail.error_kind, detail.summary
+    );
+    let err = TriggerError::new_err(rendered);
+    let attrs: &[(&str, Option<Py<PyAny>>)] = &[
+        ("trigger_kind", trigger_kind.into_py_any(py).ok()),
+        ("error_kind", detail.error_kind.into_py_any(py).ok()),
+        ("path", log_path.into_py_any(py).ok()),
+        ("exit_code", detail.exit_code.into_py_any(py).ok()),
+        ("stderr_tail", detail.stderr_tail.into_py_any(py).ok()),
+        ("status", detail.status.into_py_any(py).ok()),
+        ("body_tail", detail.body_tail.into_py_any(py).ok()),
+        ("reason", detail.reason.into_py_any(py).ok()),
+        (
+            "timeout_seconds",
+            detail.timeout_seconds.into_py_any(py).ok(),
+        ),
+        ("context", detail.context.into_py_any(py).ok()),
+        ("field", detail.field.into_py_any(py).ok()),
+        ("template_kind", detail.template_kind.into_py_any(py).ok()),
+    ];
+    if let Err(set_err) = attach_setattrs(py, &err, attrs) {
+        return set_err;
+    }
+    err
+}
+
+fn trigger_kind_label_str(label: &TriggerKindLabel) -> &'static str {
+    match label {
+        TriggerKindLabel::Echo => "echo",
+        TriggerKindLabel::Log { .. } => "log",
+        #[cfg(unix)]
+        TriggerKindLabel::Command => "command",
+        TriggerKindLabel::Webhook => "webhook",
+        TriggerKindLabel::Teams => "teams",
+        TriggerKindLabel::Post => "post",
+        _ => "unknown",
+    }
+}
+
+#[derive(Default)]
+struct TriggerErrorDetail {
+    error_kind: &'static str,
+    summary: String,
+    exit_code: Option<i32>,
+    stderr_tail: Option<String>,
+    status: Option<u16>,
+    body_tail: Option<String>,
+    reason: Option<String>,
+    timeout_seconds: Option<f64>,
+    context: Option<String>,
+    field: Option<String>,
+    template_kind: Option<&'static str>,
+}
+
+impl TriggerErrorDetail {
+    fn from_source(source: CoreTriggerError) -> Self {
+        match source {
+            CoreTriggerError::Io(err) => Self {
+                error_kind: "io",
+                summary: err.to_string(),
+                ..Self::default()
+            },
+            CoreTriggerError::Encode(err) => Self {
+                error_kind: "encode",
+                summary: err.to_string(),
+                ..Self::default()
+            },
+            #[cfg(unix)]
+            CoreTriggerError::Command {
+                exit_code,
+                stderr_tail,
+            } => Self {
+                error_kind: "command",
+                summary: format!("exit {exit_code}: {stderr_tail}"),
+                exit_code: Some(exit_code),
+                stderr_tail: Some(stderr_tail),
+                ..Self::default()
+            },
+            CoreTriggerError::Timeout(d) => Self {
+                error_kind: "timeout",
+                summary: format!("trigger timed out after {d:?}"),
+                timeout_seconds: Some(d.as_secs_f64()),
+                ..Self::default()
+            },
+            CoreTriggerError::Webhook { status, body_tail } => Self {
+                error_kind: "webhook",
+                summary: format!(
+                    "status={} body_tail={}",
+                    status.map_or_else(|| "<transport>".to_string(), |s| s.as_u16().to_string(),),
+                    if body_tail.is_empty() {
+                        "<empty>"
+                    } else {
+                        body_tail.as_str()
+                    },
+                ),
+                status: status.map(|s| s.as_u16()),
+                body_tail: Some(body_tail),
+                ..Self::default()
+            },
+            CoreTriggerError::WebhookBuild { reason } => Self {
+                error_kind: "webhook_build",
+                summary: reason.clone(),
+                reason: Some(reason),
+                ..Self::default()
+            },
+            CoreTriggerError::Template {
+                context,
+                field,
+                kind,
+            } => Self {
+                error_kind: "template",
+                summary: format!("render in {context} failed at {field}: {kind:?}"),
+                context: Some(context),
+                field: Some(field),
+                template_kind: Some(template_kind_str(kind)),
+                ..Self::default()
+            },
+            _ => Self {
+                error_kind: "unknown",
+                summary: "unhandled trigger error variant".into(),
+                ..Self::default()
+            },
+        }
+    }
+}
+
+fn template_kind_str(kind: TemplateErrorKind) -> &'static str {
+    match kind {
+        TemplateErrorKind::Missing => "missing",
+        TemplateErrorKind::EnvNotSet => "env_not_set",
+        TemplateErrorKind::EnvNotUnicode => "env_not_unicode",
+        TemplateErrorKind::BadSyntax => "bad_syntax",
+        TemplateErrorKind::NotificationEncode => "notification_encode",
+        _ => "unknown",
+    }
+}
+
+fn attach_setattrs(
     py: Python<'_>,
     err: &PyErr,
-    status: u16,
-    body: &str,
-    request_id: Option<&str>,
+    attrs: &[(&str, Option<Py<PyAny>>)],
 ) -> PyResult<()> {
     let instance = err.value(py);
-    instance.setattr("status", status)?;
-    instance.setattr("body", body)?;
-    instance.setattr("request_id", request_id.into_pyobject(py)?)?;
+    for (name, value) in attrs {
+        match value {
+            Some(v) => instance.setattr(*name, v)?,
+            None => instance.setattr(*name, py.None())?,
+        }
+    }
     Ok(())
 }
 
 /// Test-only helper exposed for cross-language round-trip tests in the
-/// Python test suite. Constructs a synthetic [`ClientError::Http`] (or
-/// another variant per `kind`) and runs it through [`map_client_error`]
-/// so the test can inspect the raised exception's class and attributes.
+/// Python test suite. Constructs a synthetic [`ClientError`] of the
+/// requested `kind` and runs it through [`map_client_error`] so the test
+/// can inspect the raised exception's class and attributes.
 ///
 /// Not part of the public Python surface. Registered on the module under
 /// `_provoke_error` so tests can call it; production code never does.
 #[pyfunction]
-#[pyo3(name = "_provoke_error", signature = (kind, /, *, status = None, body = None, request_id = None))]
+#[pyo3(
+    name = "_provoke_error",
+    signature = (
+        kind, /, *,
+        status = None,
+        body = None,
+        request_id = None,
+        message = None,
+        detail = None,
+        sequence = None,
+        max_allowed = None,
+        expected = None,
+        observed = None,
+        log_path = None,
+    )
+)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn provoke_error(
     py: Python<'_>,
     kind: &str,
     status: Option<u16>,
     body: Option<String>,
     request_id: Option<String>,
+    message: Option<String>,
+    detail: Option<String>,
+    sequence: Option<u64>,
+    max_allowed: Option<u64>,
+    expected: Option<u64>,
+    observed: Option<u64>,
+    log_path: Option<String>,
 ) -> PyResult<()> {
-    let err = synthesise_error(kind, status, body, request_id)?;
+    let err = synthesise_error(
+        kind,
+        status,
+        body,
+        request_id,
+        message,
+        detail,
+        sequence,
+        max_allowed,
+        expected,
+        observed,
+        log_path,
+    )?;
     Err(map_client_error(py, err))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn synthesise_error(
     kind: &str,
     status: Option<u16>,
     body: Option<String>,
     request_id: Option<String>,
+    message: Option<String>,
+    detail: Option<String>,
+    _sequence: Option<u64>,
+    max_allowed: Option<u64>,
+    expected: Option<u64>,
+    observed: Option<u64>,
+    log_path: Option<String>,
 ) -> PyResult<ClientError> {
     match kind {
         "http" => Ok(ClientError::Http {
@@ -126,11 +393,75 @@ fn synthesise_error(
             body: body.unwrap_or_default(),
             request_id,
         }),
+        "auth" => Ok(ClientError::Auth(message.unwrap_or_default())),
+        "decode" => {
+            let attempt: Result<serde_json::Value, serde_json::Error> =
+                serde_json::from_str("not json {");
+            match attempt {
+                Ok(_) => Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    "could not synthesise a decode error: bogus json parsed successfully",
+                )),
+                Err(e) => Ok(ClientError::Decode(e)),
+            }
+        }
+        "malformed_event" => Ok(ClientError::MalformedEvent(detail.unwrap_or_default())),
+        "history_gap_replay_limit" => Ok(ClientError::HistoryGap {
+            reason: GapReason::ReplayLimitReached {
+                max_allowed: max_allowed.unwrap_or(0),
+            },
+        }),
+        "history_gap_sequence_jump" => Ok(ClientError::HistoryGap {
+            reason: GapReason::SequenceJump {
+                expected: expected.unwrap_or(0),
+                observed: observed.unwrap_or(0),
+            },
+        }),
+        "stream_protocol" => Ok(ClientError::StreamProtocol {
+            message: message.unwrap_or_default(),
+            request_id,
+        }),
+        "config" => Ok(ClientError::Config(message.unwrap_or_default())),
+        "state_store_io" => Ok(ClientError::StateStore(StoreError::Io(
+            std::io::Error::other(message.unwrap_or_else(|| "disk".to_string())),
+        ))),
+        "trigger_failed_echo_io" => Ok(ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Echo,
+            source: CoreTriggerError::Io(std::io::Error::other(
+                message.unwrap_or_else(|| "broken pipe".to_string()),
+            )),
+        }),
+        "trigger_failed_log_io" => Ok(ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Log {
+                path: std::path::PathBuf::from(log_path.unwrap_or_else(|| "/tmp/log".into())),
+            },
+            source: CoreTriggerError::Io(std::io::Error::other(
+                message.unwrap_or_else(|| "permission denied".to_string()),
+            )),
+        }),
+        "trigger_failed_webhook_4xx" => Ok(ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Webhook,
+            source: CoreTriggerError::Webhook {
+                status: status.and_then(reqwest_status_from_u16),
+                body_tail: body.unwrap_or_default(),
+            },
+        }),
+        "trigger_failed_template_missing" => Ok(ClientError::TriggerFailed {
+            kind: TriggerKindLabel::Webhook,
+            source: CoreTriggerError::Template {
+                context: detail.unwrap_or_else(|| "webhook url".to_string()),
+                field: message.unwrap_or_else(|| "notification.payload.target".to_string()),
+                kind: TemplateErrorKind::Missing,
+            },
+        }),
         other => Err(pyo3::exceptions::PyValueError::new_err(format!(
             "unknown error kind {other:?}; the test helper only knows kinds added \
              alongside their map_client_error arm"
         ))),
     }
+}
+
+fn reqwest_status_from_u16(code: u16) -> Option<reqwest::StatusCode> {
+    reqwest::StatusCode::from_u16(code).ok()
 }
 
 pub(crate) fn register_provoke_error(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -156,16 +487,34 @@ mod tests {
     }
 
     #[test]
-    fn unhandled_variants_fall_back_to_avisoerror() {
+    fn maps_config_to_config_error() {
         Python::attach(|py| {
             let err = ClientError::Config("missing base_url".to_string());
             let py_err = map_client_error(py, err);
-            assert!(py_err.is_instance_of::<AvisoError>(py));
-            assert!(
-                !py_err.is_instance_of::<HttpError>(py),
-                "config errors must NOT route to HttpError in this commit; subsequent \
-                 commits add a ConfigError class with a dedicated mapping arm"
-            );
+            assert!(py_err.is_instance_of::<ConfigError>(py));
+        });
+    }
+
+    #[test]
+    fn maps_history_gap_replay_limit() {
+        Python::attach(|py| {
+            let err = ClientError::HistoryGap {
+                reason: GapReason::ReplayLimitReached { max_allowed: 1000 },
+            };
+            let py_err = map_client_error(py, err);
+            assert!(py_err.is_instance_of::<HistoryGapError>(py));
+        });
+    }
+
+    #[test]
+    fn maps_trigger_failed_echo() {
+        Python::attach(|py| {
+            let err = ClientError::TriggerFailed {
+                kind: TriggerKindLabel::Echo,
+                source: CoreTriggerError::Io(std::io::Error::other("broken pipe")),
+            };
+            let py_err = map_client_error(py, err);
+            assert!(py_err.is_instance_of::<TriggerError>(py));
         });
     }
 }
