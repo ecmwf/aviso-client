@@ -109,6 +109,9 @@ impl PyNotification {
         dict.set_item("sequence", self.sequence)?;
         dict.set_item("identifier", self.identifier(py)?)?;
         dict.set_item("payload", self.payload(py)?)?;
+        if let Some(ce) = self.cloudevent(py)? {
+            dict.set_item("cloudevent", ce)?;
+        }
         Ok(dict)
     }
 

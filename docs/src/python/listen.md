@@ -93,7 +93,7 @@ for notification in client.listen(request=req):
     ...
 ```
 
-Mixing `request=` with the high-level kwargs (`event_type`, `filter`, `from_`, `triggers`) raises `aviso.AvisoError` so it is always clear which surface the caller meant.
+Mixing `request=` with the high-level kwargs (`event_type`, `filter`, `from_`) raises `aviso.AvisoError` so it is always clear which surface the caller meant. Attach triggers via `WatchRequest.with_triggers(...)` when you take the low-level path.
 
 ## Explicit close
 

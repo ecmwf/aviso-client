@@ -61,9 +61,8 @@ impl PyNotificationIterator {
             match outcome {
                 PollOutcome::Received(n) => return Ok(PyNotification::from_core(n)),
                 PollOutcome::Timeout => {}
-                PollOutcome::Exhausted => return Err(PyStopIteration::new_err(())),
-                PollOutcome::Closed => {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err("stream closed"));
+                PollOutcome::Exhausted | PollOutcome::Closed => {
+                    return Err(PyStopIteration::new_err(()));
                 }
                 PollOutcome::Error(e) => return Err(map_client_error(py, e)),
             }
@@ -118,9 +117,9 @@ impl PyAsyncNotificationIterator {
         let stream = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = stream.lock().await;
-            let stream_ref = guard
-                .as_mut()
-                .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("stream closed"))?;
+            let Some(stream_ref) = guard.as_mut() else {
+                return Err(PyStopAsyncIteration::new_err(()));
+            };
             match stream_ref.next().await {
                 Some(Ok(n)) => Ok(PyNotification::from_core(n)),
                 Some(Err(e)) => Err(Python::attach(|py| map_client_error(py, e))),
