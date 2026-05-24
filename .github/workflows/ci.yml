@@ -81,14 +81,22 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/bin
-          key: mdbook-${{ runner.os }}-v0.5.2
+          key: mdbook-${{ runner.os }}-tools-${{ hashFiles('.github/workflows/ci.yml') }}
 
       - name: Install mdBook
         run: |
-          if mdbook --version 2>/dev/null | grep -qF "v0.5.2"; then
-            echo "mdbook v0.5.2 already installed (cache hit)"
+          if mdbook --version >/dev/null 2>&1; then
+            echo "mdbook already installed (cache hit): $(mdbook --version)"
           else
-            cargo install mdbook --version 0.5.2 --locked
+            cargo install mdbook --locked
+          fi
+
+      - name: Install mdbook-mermaid
+        run: |
+          if mdbook-mermaid --version >/dev/null 2>&1; then
+            echo "mdbook-mermaid already installed (cache hit): $(mdbook-mermaid --version)"
+          else
+            cargo install mdbook-mermaid --locked
           fi
 
       - name: Build docs
