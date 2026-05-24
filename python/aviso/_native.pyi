@@ -8,7 +8,12 @@ package.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Mapping
+
+# reason: Notification.payload and filter values are JSON-shaped values
+# (dict, list, str, int, float, bool, or None), so the stubs use `Any`
+# at those positions deliberately.
 from typing import Any
 
 VERSION: str
@@ -68,13 +73,15 @@ class Trigger:
     @staticmethod
     def echo(*, retries: int = 0, required: bool = True, label: str | None = None) -> Trigger: ...
     @staticmethod
-    def log(path: Any, *, retries: int = 0, required: bool = True) -> Trigger: ...
+    def log(
+        path: str | os.PathLike[str], *, retries: int = 0, required: bool = True
+    ) -> Trigger: ...
     @staticmethod
     def command(
         cmd: str,
         *,
         env: dict[str, str] | None = None,
-        working_dir: Any | None = None,
+        working_dir: str | os.PathLike[str] | None = None,
         retries: int = 0,
         required: bool = True,
         timeout: float | None = None,
@@ -126,7 +133,7 @@ class Env:
     def __init__(self) -> None: ...
 
 class ConfigFile:
-    def __init__(self, path: Any) -> None: ...
+    def __init__(self, path: str | os.PathLike[str]) -> None: ...
 
 class Chain:
     def __init__(self, *providers: Any) -> None: ...
@@ -135,7 +142,7 @@ class MemoryStore:
     def __init__(self) -> None: ...
 
 class JsonFileStore:
-    def __init__(self, path: Any) -> None: ...
+    def __init__(self, path: str | os.PathLike[str]) -> None: ...
 
 class WatchRequest:
     @staticmethod
@@ -202,7 +209,7 @@ class AvisoClient:
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: Any | None,
+        traceback: object | None,
     ) -> bool: ...
 
 class AsyncAvisoClient:
