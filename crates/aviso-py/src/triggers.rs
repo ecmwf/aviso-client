@@ -3,6 +3,7 @@
 use aviso::watch::{HttpMethod, Trigger};
 use pyo3::prelude::*;
 
+use crate::error::duration_from_seconds;
 use crate::paths::normalize_path;
 
 #[pyclass(name = "Trigger", module = "aviso._native", skip_from_py_object)]
@@ -64,7 +65,7 @@ impl PyTrigger {
         }
         t = t.retries(retries).required(required).fail_fast(fail_fast);
         if let Some(secs) = timeout {
-            t = t.timeout(std::time::Duration::from_secs_f64(secs));
+            t = t.timeout(duration_from_seconds("timeout", secs)?);
         }
         Ok(Self { inner: t })
     }
@@ -74,7 +75,7 @@ impl PyTrigger {
     #[pyo3(signature = (cmd, **kwargs))]
     fn command(cmd: String, kwargs: Option<&Bound<'_, pyo3::types::PyDict>>) -> PyResult<Self> {
         let _ = (cmd, kwargs);
-        Err(pyo3::exceptions::PyOSError::new_err(
+        Err(crate::error::ConfigError::new_err(
             "Trigger.command is Unix-only; not supported on this platform",
         ))
     }
@@ -108,30 +109,42 @@ impl PyTrigger {
             .retries(retries)
             .required(required)
             .fail_fast(fail_fast)
-            .timeout(std::time::Duration::from_secs_f64(timeout));
+            .timeout(duration_from_seconds("timeout", timeout)?);
         Ok(Self { inner: t })
     }
 
     #[staticmethod]
     #[pyo3(signature = (url, *, retries = 0, required = true, timeout = 30.0, fail_fast = true))]
-    fn teams(url: String, retries: u32, required: bool, timeout: f64, fail_fast: bool) -> Self {
+    fn teams(
+        url: String,
+        retries: u32,
+        required: bool,
+        timeout: f64,
+        fail_fast: bool,
+    ) -> PyResult<Self> {
         let t = Trigger::teams(url)
             .retries(retries)
             .required(required)
             .fail_fast(fail_fast)
-            .timeout(std::time::Duration::from_secs_f64(timeout));
-        Self { inner: t }
+            .timeout(duration_from_seconds("timeout", timeout)?);
+        Ok(Self { inner: t })
     }
 
     #[staticmethod]
     #[pyo3(signature = (url, *, retries = 0, required = true, timeout = 30.0, fail_fast = true))]
-    fn post(url: String, retries: u32, required: bool, timeout: f64, fail_fast: bool) -> Self {
+    fn post(
+        url: String,
+        retries: u32,
+        required: bool,
+        timeout: f64,
+        fail_fast: bool,
+    ) -> PyResult<Self> {
         let t = Trigger::post(url)
             .retries(retries)
             .required(required)
             .fail_fast(fail_fast)
-            .timeout(std::time::Duration::from_secs_f64(timeout));
-        Self { inner: t }
+            .timeout(duration_from_seconds("timeout", timeout)?);
+        Ok(Self { inner: t })
     }
 
     fn retries(&self, n: u32) -> Self {
@@ -146,13 +159,13 @@ impl PyTrigger {
         }
     }
 
-    fn timeout(&self, seconds: f64) -> Self {
-        Self {
+    fn timeout(&self, seconds: f64) -> PyResult<Self> {
+        Ok(Self {
             inner: self
                 .inner
                 .clone()
-                .timeout(std::time::Duration::from_secs_f64(seconds)),
-        }
+                .timeout(duration_from_seconds("timeout", seconds)?),
+        })
     }
 
     fn fail_fast(&self, on: bool) -> Self {
