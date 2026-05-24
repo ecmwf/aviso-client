@@ -51,6 +51,7 @@
 ## Writing style
 - **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
 - **Humanize user-facing prose.** Short sentences. Plain words. Avoid list-of-three flourishes (`X, Y, and Z`), reflexive intensifiers like `notably` or `importantly`, and the `X is the Y that does Z` pattern. If you cannot picture saying the sentence aloud to a colleague, rewrite it.
+- **Diagrams use mermaid.** Architecture, flow, sequence, and relationship diagrams go in ` ```mermaid ` blocks. Do not draw them in ASCII. Plain preformatted text (file trees, error-message samples, JSON output, log lines) stays in ` ```text ` blocks. The `mdbook-mermaid` preprocessor renders them in the book's active theme (light or dark, switched automatically with the book's theme picker) and the project CSS centers them. Authors do not pick mermaid theme variables by hand; the auto-switching handles both modes.
 - Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, planning docs under `plans/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
 
 ## Commit conventions
@@ -82,7 +83,9 @@
 
 ## Dependencies
 
-- **Pin minor versions** (`tokio = "1.45"` not `"1"`). Lockfile committed.
+- **Always use the latest stable version.** For workspace deps in `Cargo.toml`, pin the minor (`tokio = "1.45"` not `"1"`) so cargo resolves the newest compatible patch on every build; the pin is the minimum supported version. Bump the minor whenever a newer one ships and the gates stay green; do not sit on stale pins.
+- **Build-time tools install at their latest stable version.** `cargo install` invocations in CI workflows and contributor docs (`mdbook`, `mdbook-mermaid`, `cargo-deny`, ...) MUST NOT carry `--version <X.Y.Z>`. The cache key keeps a recent binary warm; cache misses install the latest. Hard-pin only when a documented incompatibility forbids the newer version, and cite the reason inline.
+- **Lockfile committed.**
 - **Justify every dep** in the PR description if it's the first of its kind.
 - **Default features off** for heavy crates: `tokio = { version = "1.40", default-features = false, features = ["..."] }`.
 
