@@ -35,8 +35,15 @@ You should see the subcommands listed.
 The binary is called `aviso`, not `aviso-cli`. The crate name carries the `-cli` suffix to leave the unprefixed `aviso` for the library, but the installed executable is plain `aviso` so it reads cleanly on the command line.
 
 ```bash
+# Linux, macOS
 which aviso
 # /home/you/.cargo/bin/aviso
+
+# Windows (PowerShell)
+Get-Command aviso
+# CommandType  Name   Version  Source
+# -----------  ----   -------  ------
+# Application  aviso  0.1.0    C:\Users\you\.cargo\bin\aviso.exe
 ```
 
 ## Shell completions
