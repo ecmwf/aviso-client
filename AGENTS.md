@@ -70,6 +70,50 @@
 - "Pass 1", "Pass 2", "Phase 0" and similar process-stage names are NOT commit types or scopes (see also the Time-bound references rule); use `meta`, `refactor`, or `chore` with a real scope instead.
 - Never add `Co-authored-by:` commit trailers. Real contributors are tracked through the repository's contributor history and the `authors` field in each crate's `Cargo.toml`; commit metadata should not name tools, assistants, or pairing partners.
 
+## Copilot review loop
+
+When the user asks for a "copilot review", a "copilot review loop", or any equivalent phrase, run the loop below. The loop is the contract; one round is not enough.
+
+### Requesting a review
+
+The only request form that works is the literal-bot-suffix form of the REST API:
+
+```bash
+gh api --method POST \
+  /repos/<owner>/<repo>/pulls/<pr>/requested_reviewers \
+  -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+```
+
+`copilot-pull-request-reviewer` (without the `[bot]` suffix) returns `422 Reviews may only be requested from collaborators`. `Copilot` returns 200 but silently drops the request. `requestReviews` GraphQL mutation returns `NOT_FOUND` for the bot's node id. None of those work. The literal `[bot]` suffix on the reviewer name is the only path; the successful response shows `requested_reviewers: [{login: "Copilot", type: "Bot"}]` and the bot posts a review within a few minutes.
+
+### The loop
+
+1. **Request a review** using the command above.
+2. **Watch for the review.** Poll `gh api repos/<owner>/<repo>/pulls/<pr>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i"))] | length'` until the count rises. Five minutes is a reasonable cap. If nothing has landed after that, request again.
+3. **Read every comment in the new review.** For each thread, either fix or reject:
+   - **Fix** if the finding is correct. Use the AGENTS.md commit-size rule: one focused commit per concern; restructures, renames, and reorganisations split per the same rule.
+   - **Reject** if the finding is a false positive, a misreading of the code, a misinterpretation of a deliberate decision, or otherwise does not warrant a change. Do NOT silently apply suggestions that would degrade the code, contradict documented design, or revert deliberate work. A rejected finding gets a reply that names the reason in one sentence (examples below).
+4. **Reply to each comment** with `gh api repos/<owner>/<repo>/pulls/<pr>/comments -f body=... -F in_reply_to=<comment_database_id>` and **resolve each thread** via the GraphQL `resolveReviewThread` mutation against the thread node id.
+5. **Push the fix commits** before requesting the next round so Copilot reviews the new state, not the stale one.
+6. **Request another review** and repeat from step 2.
+7. **Stop the loop** when Copilot's latest review surfaces no new actionable findings: the review body says it found no issues, every comment is a duplicate of one already resolved, or every comment is a false positive that has already been rejected with reasoning. The loop terminates on Copilot's behaviour, not on a fixed count.
+
+### Rejection discipline
+
+A rejection is a reply that names the reason. Phrasing patterns:
+
+- "False positive: <one-sentence reason that points at evidence>."
+- "Not applicable: <why the suggestion does not match the code's actual behaviour>; verified by <test / production check / source location>."
+- "Out of scope: <pointer to the rule or doc that places this concern elsewhere>."
+
+After rejection the thread is still resolved. A rejected finding does not count toward "actionable items" for the loop's stopping condition. Multiple Copilot rounds that resurface the same already-rejected position also do not extend the loop.
+
+### When the loop should not run
+
+- Drafts. Open the PR for review first.
+- PRs with currently-failing CI. Resolve CI first; Copilot reads the same diff regardless of CI status, so a loop run against a broken state wastes a round.
+- PRs explicitly marked "do not review" or "skip Copilot" by the user.
+
 # Rust rules
 ## Style
 
