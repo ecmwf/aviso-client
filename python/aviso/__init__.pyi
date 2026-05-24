@@ -9,6 +9,7 @@ in the current commit.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from enum import Enum
 from typing import Any
 
 __version__: str
@@ -64,6 +65,69 @@ class SchemaResponse:
     @property
     def schema(self) -> dict[str, Any]: ...
     def as_dict(self) -> dict[str, Any]: ...
+
+class HttpMethod(str, Enum):
+    POST = "POST"
+    GET = "GET"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+
+class WatchMode(str, Enum):
+    WATCH = "watch"
+    REPLAY_ONLY = "replay_only"
+
+class Trigger:
+    @staticmethod
+    def echo(*, retries: int = 0, required: bool = True, label: str | None = None) -> Trigger: ...
+    @staticmethod
+    def log(path: Any, *, retries: int = 0, required: bool = True) -> Trigger: ...
+    @staticmethod
+    def command(
+        cmd: str,
+        *,
+        env: dict[str, str] | None = None,
+        working_dir: Any | None = None,
+        retries: int = 0,
+        required: bool = True,
+        timeout: float | None = None,
+        fail_fast: bool = True,
+    ) -> Trigger: ...
+    @staticmethod
+    def webhook(
+        url: str,
+        *,
+        method: str | HttpMethod | None = None,
+        headers: dict[str, str] | None = None,
+        body_template: str | None = None,
+        retries: int = 0,
+        required: bool = True,
+        timeout: float = 30.0,
+        fail_fast: bool = True,
+    ) -> Trigger: ...
+    @staticmethod
+    def teams(
+        url: str,
+        *,
+        retries: int = 0,
+        required: bool = True,
+        timeout: float = 30.0,
+        fail_fast: bool = True,
+    ) -> Trigger: ...
+    @staticmethod
+    def post(
+        url: str,
+        *,
+        retries: int = 0,
+        required: bool = True,
+        timeout: float = 30.0,
+        fail_fast: bool = True,
+    ) -> Trigger: ...
+    def retries(self, n: int) -> Trigger: ...
+    def required(self, on: bool) -> Trigger: ...
+    def timeout(self, seconds: float) -> Trigger: ...
+    def fail_fast(self, on: bool) -> Trigger: ...
+    def label(self, name: str) -> Trigger: ...
 
 class Bearer:
     def __init__(self, token: str) -> None: ...
@@ -197,6 +261,7 @@ __all__ = [
     "Env",
     "HistoryGapError",
     "HttpError",
+    "HttpMethod",
     "JsonFileStore",
     "MalformedEventError",
     "MemoryStore",
@@ -208,6 +273,8 @@ __all__ = [
     "StateStoreError",
     "StreamProtocolError",
     "TransportError",
+    "Trigger",
     "TriggerError",
+    "WatchMode",
     "__version__",
 ]

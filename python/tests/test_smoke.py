@@ -43,6 +43,7 @@ def test_public_surface_in_this_commit() -> None:
         "Env",
         "HistoryGapError",
         "HttpError",
+        "HttpMethod",
         "JsonFileStore",
         "MalformedEventError",
         "MemoryStore",
@@ -54,6 +55,8 @@ def test_public_surface_in_this_commit() -> None:
         "StateStoreError",
         "StreamProtocolError",
         "TransportError",
+        "Trigger",
         "TriggerError",
+        "WatchMode",
         "__version__",
     }
