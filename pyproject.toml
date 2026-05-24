@@ -1,12 +1,5 @@
-# Python package configuration for aviso.
-#
-# The aviso-py crate is currently an `rlib`, so `maturin develop` is not
-# yet usable; it becomes usable once the crate is converted to `cdylib`
-# and PyO3 bindings are added. Build-system metadata is wired so that
-# transition is a code-only change, not a packaging redesign.
-
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin>=1.13,<2"]
 build-backend = "maturin"
 
 [project]
@@ -22,7 +15,7 @@ authors = [
     { name = "Tiago Quintino", email = "tiago.quintino@ecmwf.int" },
 ]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
@@ -41,11 +34,30 @@ Homepage = "https://github.com/ecmwf/aviso-client"
 Repository = "https://github.com/ecmwf/aviso-client"
 Issues = "https://github.com/ecmwf/aviso-client/issues"
 
+[dependency-groups]
+dev = [
+    "maturin>=1.13,<2",
+    "ruff>=0.14",
+    "ty>=0.0.1",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-httpserver>=1.1",
+    "hypothesis>=6.100",
+    "aiohttp>=3.10",
+]
+
 [tool.maturin]
 manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
 module-name = "aviso._native"
 features = []
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
@@ -57,3 +69,6 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.10"

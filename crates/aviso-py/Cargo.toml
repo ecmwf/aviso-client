@@ -12,10 +12,16 @@ description = "PyO3 bindings crate for aviso, the aviso-server client library."
 readme = "README.md"
 
 [lib]
-crate-type = ["rlib"]
+# `cdylib` for the Python extension; `rlib` so the workspace `cargo build`
+# / `cargo test` can see the crate's types in cross-crate tests. Only the
+# cdylib is published as a wheel.
+crate-type = ["cdylib", "rlib"]
 
 [lints]
 workspace = true
 
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
+pyo3 = { workspace = true, features = ["extension-module", "abi3-py310"] }
+pyo3-log = { workspace = true }
+tracing = { workspace = true }
