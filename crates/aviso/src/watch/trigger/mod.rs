@@ -249,8 +249,10 @@ impl Trigger {
 
     /// Adds an environment variable to the command trigger's child
     /// process. Repeatable; later sets override earlier ones with
-    /// the same key. Silently ignored on non-command triggers.
-    /// Unix-only (`#[cfg(unix)]`).
+    /// the same key. Values are passed LITERALLY to the child
+    /// (they are NOT template-rendered); only the `command:` string
+    /// itself goes through the template engine. Silently ignored
+    /// on non-command triggers. Unix-only (`#[cfg(unix)]`).
     #[cfg(unix)]
     #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {

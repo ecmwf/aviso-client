@@ -8,15 +8,17 @@ Spawns `/bin/sh -c <rendered>` per notification, with the notification's fields 
 triggers:
   - type: command
     command: "echo {{ notification.event_type }}@{{ notification.sequence }} >> /tmp/seen.log"
-    env:                                         # optional
-      KEY1: value1
-      KEY2: "{{ env.HOME }}/aviso-data"
+    env:                                         # optional; values are literal (NOT templated)
+      DATA_DIR: /var/lib/aviso/data
+      MODE: production
     working_dir: /var/lib/aviso                  # optional
     timeout: 30s                                 # optional
     retries: 2                                   # optional, default 0
     required: true                               # optional, default true
     fail_fast: true                              # optional, default true
 ```
+
+**`env:` values are passed literally** to the child process; they are NOT run through the template engine. Only the `command:` string is templated. If you need a value that depends on a notification field or another env var, render it inside the command string (e.g. `command: "FOO={{ notification.event_type }} ./run.sh"`) or compute it inside the shell command itself (`command: "DATA=$HOME/aviso ./run.sh"`).
 
 ## Template rendering on the command string
 
