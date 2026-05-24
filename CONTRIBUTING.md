@@ -33,7 +33,7 @@ mdbook test docs
 docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
-This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation).
+This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny mdbook-mermaid`, and a working Docker (for the compose validation). The mdBook build calls the `mdbook-mermaid` preprocessor for diagram blocks; without it, mermaid diagrams render as raw code blocks.
 
 ## Pre-commit / pre-push hooks
 
