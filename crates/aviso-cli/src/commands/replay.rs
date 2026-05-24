@@ -49,6 +49,17 @@ pub(crate) async fn run(
     let triggers = collect_triggers(&spec);
     let req = req.with_triggers(triggers);
 
+    // Replay is stateless by design: passing `None` here means the
+    // supervisor never reads or writes the state file for this run.
+    // Wiring `Some(store)` would let replay collide with `aviso listen`
+    // on the same `ResumeKey` (derived from server URL + event type +
+    // filter), and the monotonic-merge rule would let replay advance
+    // listen's cursor past events listen has not processed, breaking
+    // listen's at-least-once delivery. The trade-off is that an
+    // interrupted replay is not auto-resumable; the operator passes
+    // `--from <VALUE>` to seed the cursor on the next invocation.
+    // See `docs/src/resume/state-file.md` "aviso replay and the state
+    // file" for the full reasoning.
     let client = client_builder::build(resolved, None, false)?;
     let mut cancel_rx = cancel::install();
     let mut stream = client.watch(req)?;
