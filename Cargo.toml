@@ -34,12 +34,16 @@ clap_complete = { version = "4.5", default-features = false }
 directories = "6.0"
 finesse = { version = "0.1", path = "crates/finesse" }
 futures-core = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false }
 hex = "0.4"
 httpdate = "1.0"
 humantime = "2"
 humantime-serde = "1.1"
 predicates = "3.1"
 proptest = "1.5"
+pyo3 = { version = "0.28", default-features = false, features = ["macros"] }
+pyo3-async-runtimes = { version = "0.28", default-features = false, features = ["tokio-runtime"] }
+pyo3-log = { version = "0.13", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_jcs = "0.2"
@@ -50,7 +54,7 @@ static_assertions = "1.1"
 tempfile = "3.10"
 thiserror = "2.0"
 tokio = { version = "1.45", default-features = false, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
+tracing = { version = "0.1", default-features = false, features = ["std", "attributes", "log"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter", "ansi"] }
 url = "2.5"
 wiremock = "0.6"
