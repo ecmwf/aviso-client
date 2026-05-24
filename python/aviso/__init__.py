@@ -13,6 +13,7 @@ triggers, auth providers, and state stores land in subsequent commits.
 
 from __future__ import annotations
 
+from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 
 from aviso._native import (
@@ -39,11 +40,31 @@ from aviso._native import (
     StateStoreError,
     StreamProtocolError,
     TransportError,
+    Trigger,
     TriggerError,
 )
 
 AuthProvider = Bearer | Basic | Env | ConfigFile | Chain
 StateStore = MemoryStore | JsonFileStore
+
+
+class HttpMethod(str, Enum):
+    """HTTP method for webhook / teams / post triggers."""
+
+    POST = "POST"
+    GET = "GET"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+
+
+class WatchMode(str, Enum):
+    """Whether a watch reconnects after end_of_stream (WATCH) or terminates
+    once replay completes (REPLAY_ONLY)."""
+
+    WATCH = "watch"
+    REPLAY_ONLY = "replay_only"
+
 
 try:
     __version__ = version("aviso")
@@ -65,6 +86,7 @@ __all__ = [
     "Env",
     "HistoryGapError",
     "HttpError",
+    "HttpMethod",
     "JsonFileStore",
     "MalformedEventError",
     "MemoryStore",
@@ -76,6 +98,8 @@ __all__ = [
     "StateStoreError",
     "StreamProtocolError",
     "TransportError",
+    "Trigger",
     "TriggerError",
+    "WatchMode",
     "__version__",
 ]
