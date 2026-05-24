@@ -64,14 +64,39 @@ class SchemaResponse:
     def schema(self) -> dict[str, Any]: ...
     def as_dict(self) -> dict[str, Any]: ...
 
+class Bearer:
+    def __init__(self, token: str) -> None: ...
+
+class Basic:
+    def __init__(self, username: str, password: str = "") -> None: ...
+
+class Env:
+    def __init__(self) -> None: ...
+
+class ConfigFile:
+    def __init__(self, path: Any) -> None: ...
+
+class Chain:
+    def __init__(self, *providers: Any) -> None: ...
+
+class MemoryStore:
+    def __init__(self) -> None: ...
+
+class JsonFileStore:
+    def __init__(self, path: Any) -> None: ...
+
 class AvisoClient:
     def __init__(
         self,
         *,
         base_url: str,
-        token: str | None = None,
+        auth: Bearer | Basic | Env | ConfigFile | Chain | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
+        state_store: MemoryStore | JsonFileStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool = False,
+        flush_cursor_on_exit: bool = False,
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
