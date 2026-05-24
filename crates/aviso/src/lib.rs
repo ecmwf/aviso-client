@@ -35,29 +35,37 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Process-wide flag controlling whether the built-in echo trigger emits
 /// ANSI color escapes around its human-readable output.
 ///
-/// Default: `false` (no color). Library consumers leave this alone unless
-/// they specifically want colored echo output; the CLI flips it on at
-/// startup when the operator passes `--color auto|always` and the
-/// effective color decision (taking the target stream's TTY state and the
-/// `NO_COLOR` env var into account) is `true`.
+/// Default: `false` (no color). The flag is owned by the host application
+/// (the `aviso` CLI binary, a future `PyO3` binding, an embedding Rust
+/// application) and set via [`set_echo_color_enabled`] before listeners
+/// spawn; the lib itself never decides color policy.
 static ECHO_COLOR_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Enables or disables ANSI color codes in the built-in echo trigger's
-/// human-readable TTY output. Default: disabled (no color).
+/// Sets the host-application-level policy for ANSI color codes in the
+/// built-in echo trigger's human-readable TTY output. Default: disabled
+/// (no color).
 ///
-/// Intended as a CLI-coordination point: the `aviso` binary parses its
-/// `--color auto|always|never` flag at startup, computes whether color
-/// should fire for the echo trigger (taking `stdout`'s TTY state and the
-/// `NO_COLOR` env var into account), and calls this setter ONCE before
-/// any listener spawns. Other consumers of the lib (a future Python
-/// binding, embedded uses) can ignore this function entirely; the
-/// default is off.
+/// Echo lives in the library because it is a built-in trigger like
+/// webhook, log, command, teams, and post; library consumers need it
+/// even when they do not run on top of `aviso-cli`. TTY-state detection
+/// and `NO_COLOR`-handling are host concerns (a daemon embedding the lib
+/// has different rules from an interactive CLI) and the lib refuses to
+/// guess. This setter is the narrow public surface through which the
+/// host communicates its resolved decision to the in-lib trigger:
 ///
-/// Process-wide global state. Concurrent reads from echo triggers running
-/// on multiple tokio workers are thread-safe via `AtomicBool` with
-/// `Relaxed` ordering; the value is read once per `dispatch_echo` call,
-/// so a late mid-flight change is observed at the next notification
-/// rather than mid-format.
+/// - The `aviso` CLI binary parses `--color auto|always|never`,
+///   inspects `stdout`'s TTY state, honors `NO_COLOR`, and calls this
+///   ONCE at startup before any listener spawns.
+/// - A future `PyO3` binding can mirror that pattern from Python.
+/// - An embedded Rust application that does not want color simply
+///   never calls the setter; the default is off.
+///
+/// Process-wide global state. Concurrent reads from echo triggers
+/// running on multiple tokio workers are thread-safe via `AtomicBool`
+/// with `Relaxed` ordering; the value is read once per `dispatch_echo`
+/// call, so a late mid-flight change is observed at the next
+/// notification rather than mid-format. The flag does not synchronize
+/// any other state, which is why `Relaxed` is sound.
 pub fn set_echo_color_enabled(enabled: bool) {
     ECHO_COLOR_ENABLED.store(enabled, Ordering::Relaxed);
 }
