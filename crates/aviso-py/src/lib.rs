@@ -5,11 +5,19 @@
 //! the `aviso` package namespace; users `import aviso`, never
 //! `import aviso._native`.
 //!
-//! Public Python surface in this commit: `VERSION`, the exception classes
-//! `AvisoError` / `TransportError` / `HttpError`, and a `_provoke_error`
-//! test helper. The shared tokio runtime helper and the bulk of the
-//! `ClientError` mapping land alongside the first sync client method in a
-//! subsequent commit. The full plan lives in `plans/python-api.md`.
+//! Public Python surface: `VERSION`, the synchronous `AvisoClient` and
+//! asynchronous `AsyncAvisoClient` with their `notify` / `schema` / admin /
+//! `listen` methods, the value types they return (`Notification`,
+//! `NotifyResponse`, `SchemaCatalog`, `SchemaResponse`), the
+//! `NotificationIterator` and `AsyncNotificationIterator` returned by
+//! `listen`, the `WatchRequest` builder, the `Trigger` builder with its six
+//! kind constructors, the five auth providers (`Bearer`, `Basic`, `Env`,
+//! `ConfigFile`, `Chain`), the two state stores (`MemoryStore`,
+//! `JsonFileStore`), and the exception hierarchy rooted at `AvisoError`.
+//! The `_provoke_error` test helper is registered but kept off the
+//! documented surface (used only by the python test suite).
+//!
+//! The full plan lives in `plans/python-api.md`.
 
 #![forbid(unsafe_code)]
 
