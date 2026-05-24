@@ -12,7 +12,7 @@
 
 - **GitHub Issues + milestones** are the durable source of truth for in-flight work.
 - **`plans/`** holds the project's planning documents (overall plan, roadmap, follow-ups). Phase numbers and roadmap dates live there and nowhere else (see [`AGENTS.md`](AGENTS.md#time-bound-references)).
-- **`docs/src/internals/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
+- **`plans/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
 
 ## Branch & commit conventions
 
@@ -33,7 +33,7 @@ mdbook test docs
 docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
-This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation).
+This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny mdbook-mermaid`, and a working Docker (for the compose validation). The mdBook build calls the `mdbook-mermaid` preprocessor for diagram blocks; without it, mermaid diagrams render as raw code blocks.
 
 ## Pre-commit / pre-push hooks
 

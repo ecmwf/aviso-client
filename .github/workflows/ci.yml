@@ -27,14 +27,7 @@ jobs:
           rustup show
           rustc --version
 
-      - name: Cache cargo registry and target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+      - uses: Swatinem/rust-cache@v2
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -75,21 +68,15 @@ jobs:
           rustup show
           rustc --version
 
-      - name: Cache cargo registry and bin
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/bin
-          key: mdbook-${{ runner.os }}-v0.5.2
+          shared-key: docs-tools
 
-      - name: Install mdBook
-        run: |
-          if mdbook --version 2>/dev/null | grep -qF "v0.5.2"; then
-            echo "mdbook v0.5.2 already installed (cache hit)"
-          else
-            cargo install mdbook --version 0.5.2 --locked
-          fi
+      - name: Install mdBook (latest stable)
+        run: cargo install mdbook --locked --force
+
+      - name: Install mdbook-mermaid (latest stable)
+        run: cargo install mdbook-mermaid --locked --force
 
       - name: Build docs
         run: mdbook build docs

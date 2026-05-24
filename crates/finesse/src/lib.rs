@@ -25,10 +25,9 @@
 //! assert!(parser.next_frame().is_none());
 //! ```
 //!
-//! The crate is reusable in principle but, while it remains a private
-//! workspace member of `aviso-client`, it is not published to
-//! crates.io. The first external consumer makes that decision worth
-//! revisiting.
+//! finesse owns no transport, no async runtime, and no aviso
+//! semantics. It is a state machine the caller drives with `feed`
+//! and drains with `next_frame`.
 
 #![forbid(unsafe_code)]
 

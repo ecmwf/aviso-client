@@ -2,7 +2,7 @@
 //!
 //! The reducer implements the transition rules specified by D2 (the
 //! reconnect classifier and state-machine sketch in
-//! `docs/src/internals/decisions.md`). Each match arm carries a row
+//! `plans/decisions.md`). Each match arm carries a row
 //! number; the row numbers match the canonical transition table in
 //! the commit message that introduced this file, kept here as a
 //! traceable audit trail for spec conformance. D15 constrains the

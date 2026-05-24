@@ -20,4 +20,4 @@ uv run python -c "import aviso; print(aviso.__version__)"
 
 ## Roadmap
 
-See [`plans/`](../plans/) for the current plan and roadmap, and [`docs/src/internals/decisions.md`](../docs/src/internals/decisions.md) for the architectural decisions.
+See [`plans/`](../plans/) for the current plan and roadmap, and [`plans/decisions.md`](../plans/decisions.md) for the architectural decisions.
