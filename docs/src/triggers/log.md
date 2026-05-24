@@ -14,18 +14,14 @@ triggers:
 
 ## Behavior
 
-- The file is opened with `append(true).create(true)` on the FIRST notification, then held open for the trigger's lifetime. There is no per-write `fsync`; the kernel buffers writes per its standard policy.
+- The file is created on the first notification if it does not exist.
 - The parent directory must exist. The log trigger does **not** create directories.
-- The path is not template-rendered; it's a static string from the YAML.
-- The file handle is RAII-closed when the listener stops (Ctrl+C, max-duration reached, supervisor shutdown).
-- No rotation. If you need rotation, use `logrotate` with a `copytruncate` strategy and the daemon-side OS-level guarantees about appended writes.
+- The path is not template-rendered; it is a static string from the YAML.
+- aviso keeps the file open while the listener runs.
+- aviso flushes after each line so tailers see notifications promptly. It does not force every write to disk with `fsync`.
+- No rotation. Use `logrotate` or your log platform if the file can grow for a long time.
 
-Each line is one notification serialised via `serde_json::to_string(&notification)`, followed by a newline, written through tokio's `AsyncWriteExt::write_all` and then flushed so tailers see the bytes promptly. The file is opened with `append(true)` so the kernel positions every write at end-of-file (POSIX O_APPEND). aviso does NOT take an additional file lock around the write. Two consequences operators should know:
-
-- `write_all` may issue more than one underlying `write` syscall for notifications larger than the per-syscall atomicity guarantee (POSIX `PIPE_BUF`, typically 4 KiB on Linux). For a notification whose serialised line exceeds that limit, two concurrent writers to the same path may interleave mid-line.
-- Multiple processes (multiple `aviso listen` invocations, external tools using `append(true)` on the same file) share the at-end-of-file position via O_APPEND but do NOT coordinate beyond what the kernel provides per write. For per-syscall-sized writes interleaving is impossible; for multi-syscall writes it is possible.
-
-If line-atomic guarantees across multiple writers are a hard requirement, use one log file per listener (the typical pattern) or pipe the listener's output to a dedicated log aggregator (`syslog`, `journald`, `vector`) that takes its own locks.
+Each line is one compact JSON notification followed by a newline. If several processes append to the same file, aviso does not coordinate between them. Very large notification lines can interleave. Use one log file per listener, or send output to a log aggregator, if that matters.
 
 ## Failure modes
 
@@ -48,7 +44,7 @@ Error in listener my-listener: trigger log(/var/log/aviso/mars.log) failed: io: 
 
 The log trigger advances the resume cursor only after a write succeeds. A listener crash mid-write (rare) leaves the cursor un-advanced; on restart the listener redelivers and the same notification's NDJSON line is appended a second time.
 
-Downstream log processors should be ready for this: filter on `event_type@sequence` uniqueness if exact-once semantics are required.
+Downstream log processors should be ready for this. Filter on `event_type@sequence` uniqueness if exact-once output matters.
 
 ## When to use
 

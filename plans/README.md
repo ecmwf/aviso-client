@@ -11,5 +11,5 @@ Plans survive context compaction and fresh sessions: an agent or contributor com
 ## Conventions
 
 - One plan revision per file (`vMAJOR.MINOR.md`). When the plan changes meaningfully, write a new file and update this README.
-- Plans are descriptive, not prescriptive at the line level. Architectural decisions (the *why* of each design choice) live in [`docs/src/internals/decisions.md`](../docs/src/internals/decisions.md) and are referenced from plans by their stable ADR id (D1, D2, …).
+- Plans are descriptive, not prescriptive at the line level. Architectural decisions (the *why* of each design choice) live in [`decisions.md`](./decisions.md) and are referenced from plans by their stable ADR id (D1, D2, …).
 - Plans may name phases. Code, user-facing docs, and configuration files may not.

@@ -77,7 +77,7 @@ pub(crate) async fn run_supervisor(
             match get_result {
                 Ok(Some(cp)) => {
                     // INFO level per D2 + Q9 (plans/v0.3.md and
-                    // docs/src/internals/decisions.md): a successful
+                    // plans/decisions.md): a successful
                     // resume from stored state is operator-visible
                     // information. The no-checkpoint-found path stays
                     // silent because starting fresh is the default.

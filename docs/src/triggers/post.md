@@ -1,6 +1,6 @@
 # Post trigger
 
-HTTP POST per notification with the **raw CloudEvent envelope** that aviso-server emitted on the SSE wire as the request body. Custom headers supported. Migration path for operators coming from pyaviso's `post` trigger; suitable for any receiver expecting CloudEvents.
+HTTP POST per notification with the CloudEvent envelope from aviso-server as the request body. Custom headers are supported. Use this when migrating from pyaviso's `post` trigger or sending to any receiver that expects CloudEvents.
 
 ## YAML
 
@@ -19,9 +19,9 @@ triggers:
 
 No `body_template` field: the body is **always** the CloudEvent envelope. For arbitrary body shapes, use the [`webhook`](./webhook.md) trigger directly. No `method` field: always POST.
 
-## Body shape (what aviso-server actually sends)
+## Body shape
 
-When the notification originates from the live watch stream, the body is the **CloudEvent envelope aviso-server emitted, captured at the SSE parser and re-serialised as JSON**, including all server-side fields:
+When the notification comes from the live watch stream, the body is the CloudEvent envelope aviso-server sent, including its server-side fields:
 
 ```json
 {
@@ -43,23 +43,18 @@ When the notification originates from the live watch stream, the body is the **C
 }
 ```
 
-Notable per-event-type fields the lib preserves verbatim:
+Fields worth knowing:
 
 - **`type`** is per-event-type (`int.ecmwf.aviso.mars`, `int.ecmwf.aviso.dissemination`, etc.). Downstream routing logic that branches on `type` works correctly.
 - **`time`** is the server's emission timestamp with nanosecond precision. Receivers can use it for ordering and latency measurement.
 - **`source`** is the aviso-server URL. Receivers can identify which server (production vs staging) emitted the event.
 - **`dataschema`** is a URL pointing at the schema definition; receivers can fetch it for validation.
 
-These fields would all be wrong if aviso reconstructed the CloudEvent client-side. The post trigger preserves them by capturing the parsed envelope from the SSE wire (see [Notification.cloudevent](#how-the-passthrough-works)). Note: the captured envelope is preserved semantically, not byte-identically: aviso parses the JSON into a `serde_json::Value` and re-serialises it. Whitespace and object-key ordering may differ from the server's original bytes; field values are preserved exactly. Use the [`webhook`](./webhook.md) trigger with a hand-written `body_template` if true byte fidelity is required.
+aviso preserves these server-provided values instead of rebuilding the CloudEvent locally. Whitespace and object-key order may differ because aviso parses and writes the JSON again; field values stay the same. Use the [`webhook`](./webhook.md) trigger with a hand-written `body_template` if byte-for-byte output matters.
 
-## How the passthrough works
+## Fallback body
 
-The aviso lib's supervisor receives each SSE event as JSON, parses it into a `serde_json::Value`, then narrows it to the lib's internal fields (`event_type`, `sequence`, `identifier`, `payload`). Before narrowing, the supervisor clones the parsed envelope `Value` into the `Notification.cloudevent` field (`Option<Value>`). The post trigger dispatcher checks this field:
-
-- **`Some(envelope_value)`** is the production / live watch path. The trigger re-serialises the captured `Value` as JSON and sends those bytes as the body.
-- **`None`** is the test-fixture / library-callers-building-notifications-outside-the-watch-path case. The trigger falls back to a minimal reconstructed envelope (with `type: co.ecmwf.aviso.event`, `source: aviso-client`, no `time`).
-
-The fallback exists so unit tests don't need to mock a full CloudEvent. Production `aviso listen` always has `Some(...)`, so production receivers always see the server's actual envelope.
+A live `aviso listen` run forwards the server's CloudEvent envelope. Notifications built directly in library tests or custom code may not carry that envelope; in that case the post trigger falls back to a minimal CloudEvent body.
 
 ## Headers
 
@@ -68,7 +63,7 @@ The fallback exists so unit tests don't need to mock a full CloudEvent. Producti
 | `Content-Type` | `application/cloudevents+json` | Auto-injected when the operator does not set their own |
 | Operator-supplied headers | template-rendered at dispatch | As declared in YAML |
 
-The auto-injected `Content-Type` matches the CloudEvent specification's "structured mode" content type. Receivers using the official CloudEvents SDKs (`cloudevents` Python, Java, Go, etc.) parse this content type natively.
+The auto-injected `Content-Type` matches the CloudEvents structured-mode content type. Official CloudEvents SDKs can parse it directly.
 
 If the operator sets `Content-Type` explicitly, that wins:
 
