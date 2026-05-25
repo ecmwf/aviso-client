@@ -11,13 +11,14 @@
 //! `KeyboardInterrupt` to the awaiting task.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use aviso::watch::NotificationStream;
 use futures_util::StreamExt;
 use pyo3::exceptions::{PyStopAsyncIteration, PyStopIteration};
 use pyo3::prelude::*;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use crate::error::map_client_error;
 use crate::runtime::runtime;
@@ -105,6 +106,8 @@ enum PollOutcome {
 )]
 pub(crate) struct PyAsyncNotificationIterator {
     inner: Arc<AsyncMutex<Option<NotificationStream>>>,
+    closed: Arc<AtomicBool>,
+    wake: Arc<Notify>,
 }
 
 #[pymethods]
@@ -115,22 +118,38 @@ impl PyAsyncNotificationIterator {
 
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let stream = self.inner.clone();
+        let closed = self.closed.clone();
+        let wake = self.wake.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if closed.load(Ordering::Acquire) {
+                return Err(PyStopAsyncIteration::new_err(()));
+            }
             let mut guard = stream.lock().await;
+            if closed.load(Ordering::Acquire) {
+                return Err(PyStopAsyncIteration::new_err(()));
+            }
             let Some(stream_ref) = guard.as_mut() else {
                 return Err(PyStopAsyncIteration::new_err(()));
             };
-            match stream_ref.next().await {
-                Some(Ok(n)) => Ok(PyNotification::from_core(n)),
-                Some(Err(e)) => Err(Python::attach(|py| map_client_error(py, e))),
-                None => Err(PyStopAsyncIteration::new_err(())),
+            tokio::select! {
+                biased;
+                () = wake.notified() => Err(PyStopAsyncIteration::new_err(())),
+                item = stream_ref.next() => match item {
+                    Some(Ok(n)) => Ok(PyNotification::from_core(n)),
+                    Some(Err(e)) => Err(Python::attach(|py| map_client_error(py, e))),
+                    None => Err(PyStopAsyncIteration::new_err(())),
+                },
             }
         })
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let stream = self.inner.clone();
+        let closed = self.closed.clone();
+        let wake = self.wake.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            closed.store(true, Ordering::Release);
+            wake.notify_waiters();
             let mut guard = stream.lock().await;
             if let Some(s) = guard.take() {
                 s.close().await;
@@ -144,6 +163,8 @@ impl PyAsyncNotificationIterator {
     pub(crate) fn new(stream: NotificationStream) -> Self {
         Self {
             inner: Arc::new(AsyncMutex::new(Some(stream))),
+            closed: Arc::new(AtomicBool::new(false)),
+            wake: Arc::new(Notify::new()),
         }
     }
 }

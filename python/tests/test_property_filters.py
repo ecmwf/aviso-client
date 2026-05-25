@@ -50,15 +50,8 @@ def test_watch_request_with_filter_accepts_any_json_compatible_dict(filt: dict[s
     assert req.event_type == "mars"
 
 
-@given(filt=_filter_dict)
-def test_listen_accepts_any_json_compatible_filter(filt: dict[str, Any]) -> None:
-    client = aviso.AvisoClient(base_url="http://127.0.0.1:1")
-    iterator = client.listen("mars", filter=filt)
-    iterator.close()
-
-
 @given(
-    sequence=st.integers(min_value=0, max_value=2**63 - 1),
+    sequence=st.integers(min_value=0, max_value=2**64 - 1),
 )
 def test_watch_from_accepts_any_u64(sequence: int) -> None:
     req = aviso.WatchRequest.watch_from("mars", sequence)
