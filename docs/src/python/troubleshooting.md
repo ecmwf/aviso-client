@@ -19,11 +19,12 @@ If the build itself fails, check that you have Rust installed (`rustc --version`
 
 Pass a full URL including the scheme:
 
+<!-- not-runnable -->
 ```python
 aviso.AvisoClient(base_url="https://aviso.example.org")
 ```
 
-`localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected because `reqwest` cannot parse them as absolute URLs.
+`localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected because the underlying URL parser cannot read them as absolute.
 
 ## `aviso.HttpError: 401`
 
@@ -31,12 +32,12 @@ The configured auth source did not produce credentials the server accepts. Check
 
 - `Bearer` was constructed with a token the server's auth backend recognises.
 - `Basic` was constructed with the right username and password.
-- `Env()` is reading the env vars you think it is (`AVISO_TOKEN`, `AVISO_USERNAME`, `AVISO_PASSWORD`).
+- `Env()` is reading the env vars you expect (`AVISO_TOKEN`, `AVISO_USERNAME`, `AVISO_PASSWORD`).
 - `ConfigFile(...)` points at a file with exactly one of `bearer:` or `basic:` at the top level.
 
 ## `aviso.TransportError`
 
-Network failure before the response begins. The error message names the cause (DNS, TCP, TLS). For self-signed certificates in dev, use `aviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept that the warning is loud.
+Network failure before the response begins. The error message names the cause (DNS, TCP, TLS). For self-signed certificates in dev, use `aviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept the loud warning that comes with it.
 
 ## `aviso.HistoryGapError`
 
@@ -45,7 +46,7 @@ A gap was detected in the watch stream. Two reasons:
 - `reason == "replay_limit_reached"`: the server's `notification_replay_limit_reached` payload says some of the requested backfill is older than its retention. `.max_allowed` tells you how many notifications can be replayed at most.
 - `reason == "sequence_jump"`: the wire delivered a non-consecutive sequence. `.expected` and `.observed` name the boundary.
 
-A gap is terminal: continuing past it would silently violate at-least-once. The client raises and exits the iterator. Decide what the right recovery is (e.g., restart from the live edge with `from_=None`).
+A gap is terminal: continuing past it would silently violate at-least-once. The client raises and exits the iterator. Decide what the right recovery is (for example, restart from the live edge with `from_=None`).
 
 ## `aviso.TriggerError: command failed`
 
@@ -54,7 +55,7 @@ A required command trigger exited non-zero or timed out. The exception carries:
 - `.exit_code`: the child's exit code (`-1` for signal-terminated).
 - `.stderr_tail`: the last 4 KiB of the child's stderr.
 
-If the failure is transient, raise the trigger's `retries=` count or set `required=False` to make the watch continue past a failed dispatch.
+If the failure is transient, raise the trigger's `retries=` count or set `required=False` so the watch continues past a failed dispatch.
 
 ## `Ctrl+C` does not stop a listening loop
 
@@ -65,27 +66,41 @@ The sync iterator polls the channel every 100 ms and checks for pending signals 
 `JsonFileStore` does not create parent directories. Create them first:
 
 ```python
+"""Construct the state file's parent directory before passing it to the client."""
+
+import os
 import pathlib
+import aviso
 
 path = pathlib.Path("~/.config/aviso/state.json").expanduser()
 path.parent.mkdir(parents=True, exist_ok=True)
 
 client = aviso.AvisoClient(
-    base_url="...",
+    base_url=os.environ["AVISO_BASE_URL"],
+    auth=aviso.Env(),
     state_store=aviso.JsonFileStore(path),
 )
+
+print(f"using state file: {path}")
 ```
 
 ## Mixing sync and async clients
 
-Do not call sync methods on `AvisoClient` from inside an asyncio event loop. Use `AsyncAvisoClient` instead, or run the sync client in a thread:
+Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The sync surface drives the underlying tokio runtime with `block_on`, which blocks the asyncio thread until the call returns. Other coroutines stop making progress until then. Use `AsyncAvisoClient` from inside async code, or push the sync client onto a thread:
 
+<!-- not-runnable -->
 ```python
 import asyncio
-
-result = await asyncio.to_thread(client.notify, event_type="mars", payload={"k": "v"})
+result = await asyncio.to_thread(
+    client.notify,
+    event_type="test_polygon",
+    identifier={"polygon": "0,0,1,0,1,1,0,0", "date": "20260601", "time": "1200"},
+    payload={"location": "s3://example/data.grib"},
+)
 ```
+
+See [the Async page](./async.md) for the situations where the async client actually helps.
 
 ## Wheels on PyPI
 
-Not available in this release. Install from source with `uv run maturin develop`. When the wheel matrix PR ships, `pip install aviso` becomes the recommended path.
+Not available in this release. Install from source with `uv run maturin develop`. When the wheel matrix lands in a follow-up, `pip install aviso` becomes the recommended path.
