@@ -25,10 +25,14 @@ def test_json_file_store_accepts_str_path(tmp_path: pathlib.Path) -> None:
     aviso.JsonFileStore(str(tmp_path / "state.json"))
 
 
-def test_json_file_store_expands_tilde() -> None:
-    store = aviso.JsonFileStore("~/aviso-tmp-test-state.json")
+def test_json_file_store_expands_tilde(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    store = aviso.JsonFileStore("~/state.json")
     rendered = repr(store)
     assert "~" not in rendered
+    assert str(tmp_path) in rendered
 
 
 def test_client_accepts_auth_and_state_store(tmp_path: pathlib.Path) -> None:
