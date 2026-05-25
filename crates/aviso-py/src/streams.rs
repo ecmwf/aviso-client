@@ -81,6 +81,23 @@ impl PyNotificationIterator {
             });
         });
     }
+
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    #[pyo3(signature = (exc_type = None, exc_value = None, traceback = None))]
+    fn __exit__(
+        &self,
+        py: Python<'_>,
+        exc_type: Option<&Bound<'_, PyAny>>,
+        exc_value: Option<&Bound<'_, PyAny>>,
+        traceback: Option<&Bound<'_, PyAny>>,
+    ) -> bool {
+        let _ = (exc_type, exc_value, traceback);
+        self.close(py);
+        false
+    }
 }
 
 impl PyNotificationIterator {
@@ -156,6 +173,23 @@ impl PyAsyncNotificationIterator {
             }
             Ok(())
         })
+    }
+
+    fn __aenter__<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let slf_object: Py<PyAny> = slf.into_pyobject(py)?.into_any().unbind();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move { Ok(slf_object) })
+    }
+
+    #[pyo3(signature = (exc_type = None, exc_value = None, traceback = None))]
+    fn __aexit__<'py>(
+        &self,
+        py: Python<'py>,
+        exc_type: Option<&Bound<'_, PyAny>>,
+        exc_value: Option<&Bound<'_, PyAny>>,
+        traceback: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let _ = (exc_type, exc_value, traceback);
+        self.aclose(py)
     }
 }
 
