@@ -1,3 +1,10 @@
+<div align="center">
+  <img class="logo-light" src="./images/logo_light.svg" alt="Aviso logo" width="320" />
+  <img class="logo-dark"  src="./images/logo_dark.svg"  alt="Aviso logo" width="320" />
+</div>
+
+<br/>
+
 # aviso
 
 aviso is ECMWF's notification system for data-driven workflows. It runs as a client and a server: [aviso-server](https://github.com/ecmwf/aviso-server) tracks streams of events and pushes them out in close to real time; clients connect, subscribe to the streams they care about, and react when a dataset they were waiting for has landed.
