@@ -188,4 +188,4 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The async client earns its keep when you have many publishes in flight at once. See [Async](./async.md) for the fan-out pattern and the other two situations async helps.
+The async client is worth the extra ceremony when you have many publishes pending at once. See [Async](./async.md) for the fan-out pattern and the other two situations where async helps.

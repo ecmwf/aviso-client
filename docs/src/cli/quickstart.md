@@ -39,7 +39,7 @@ Values that contain commas (a polygon, for example) must be wrapped in quotes:
 aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200,data={"test":true}'
 ```
 
-The quotes are part of the CLI syntax (so the comma inside the value is not mistaken for a separator); they are stripped before the value goes on the wire.
+The quotes are part of the CLI syntax (so the comma inside the value is not mistaken for a separator); they are stripped before the value is sent to the server.
 
 ## Listen for live notifications
 

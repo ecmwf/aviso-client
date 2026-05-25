@@ -74,7 +74,7 @@ aviso supports anonymous access (no `Authorization` header), HTTP Basic, and Bea
 | `ConfigFile` | Reads from a separate YAML file with `bearer:` or `basic:` blocks. |
 | `Chain` | Tries multiple providers in order and uses the first one that produces a header. |
 
-aviso composes the layered settings into whichever provider fits. See [Authentication providers](../concepts/auth-providers.md) for when each one is the right pick.
+aviso composes the layered settings into whichever provider fits. See [Authentication providers](../concepts/auth-providers.md) for when to use each one.
 
 ### On a 401, aviso retries once
 
@@ -195,7 +195,7 @@ AVISO_LOG=h2=debug,hyper=debug,aviso=debug  # also see HTTP transport
 
 `--color auto|always|never`. The default is `never`. The `auto` mode emits color when the target stream is a TTY and `NO_COLOR` is unset. `always` overrides `NO_COLOR`.
 
-Color only ever lands on human-readable output. JSON output (piped or redirected) is always plain.
+Color only ever applies to human-readable output. JSON output (piped or redirected) is always plain.
 
 ## What next
 

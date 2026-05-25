@@ -8,7 +8,7 @@ Pick the row that matches what you want to do.
 | Use the Rust library in your own crate | `cargo add aviso` |
 | Call aviso from Python | Install the CLI above and run it via `subprocess`, or install the native [Python package](../python/overview.md) |
 
-## Command line, in one shot
+## Command line, in one command
 
 ```bash
 cargo install aviso-cli
@@ -17,7 +17,7 @@ aviso --version
 
 `cargo install` puts the binary in `~/.cargo/bin/aviso`, which is on your PATH if you installed Rust through [rustup](https://rustup.rs/).
 
-If you do not have Rust installed yet, get it from <https://rustup.rs/>. The script that page provides is the smoothest way; it handles every supported platform.
+If you do not have Rust installed yet, get it from <https://rustup.rs/>. The script that page provides is the recommended path; it handles every supported platform.
 
 The [CLI install page](../cli/install.md) covers the from-source path and how to verify your install.
 

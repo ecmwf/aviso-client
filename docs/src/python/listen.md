@@ -171,7 +171,7 @@ Mixing `request=` with `event_type=` / `filter=` / `from_=` raises `aviso.AvisoE
 
 ## Explicit close
 
-When `flush_cursor_on_exit=True` is set on the client, call `iter.close()` so the supervisor's final cursor flush lands before the process exits:
+When `flush_cursor_on_exit=True` is set on the client, call `iter.close()` so the supervisor's final cursor flush completes before the process exits:
 
 ```python
 """Listen with an explicit close so the last sequence is committed before exit."""
@@ -198,7 +198,7 @@ finally:
     iterator.close()
 ```
 
-Without an explicit close the supervisor still cancels via iterator drop, but the final commit may not land before the process exits. The default (no flag) is fine for normal at-least-once usage.
+Without an explicit close the supervisor still cancels via iterator drop, but the final commit may not complete before the process exits. The default (no flag) is fine for normal at-least-once usage.
 
 ## Async equivalent
 

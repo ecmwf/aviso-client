@@ -1,6 +1,6 @@
 # Authentication
 
-Five auth providers ship in the Python package. They wrap the same Rust providers the CLI uses; pick the one that matches where your credentials live.
+The Python package includes five auth providers. They wrap the same Rust providers the CLI uses; pick the one that matches where your credentials live.
 
 Every example on this page constructs a client. Replace the placeholder credentials with real values for your server (or set the matching environment variables and switch to `aviso.Env()`).
 

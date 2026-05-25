@@ -34,7 +34,7 @@ Read [Resume and state](../concepts/resume-and-state.md) for the durability rule
 
 ## Triggers
 
-A trigger is what aviso does with each notification. Six built-in kinds ship:
+A trigger is what aviso does with each notification. Six built-in kinds are available:
 
 - `echo` prints the notification.
 - `log` appends it to a file.

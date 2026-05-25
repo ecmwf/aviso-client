@@ -22,6 +22,6 @@ The short version of the words aviso uses. Each links to the page where the idea
 
 **State file.** The on-disk record of cursors per listener. By default `~/.config/aviso/state.json`. See [State file](../reference/state-file.md).
 
-**Stream.** The long-lived HTTP connection aviso opens to receive notifications. SSE under the hood. See [Streams](./streams.md).
+**Stream.** The long-lived HTTP connection aviso opens to receive notifications. The transport is Server-Sent Events. See [Streams](./streams.md).
 
 **Trigger.** The action aviso takes for each matching notification: echo, log, command, webhook, teams, post. Configured in the listener YAML. See [Triggers overview](../triggers/overview.md).

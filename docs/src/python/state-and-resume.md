@@ -57,7 +57,7 @@ Run it once and Ctrl+C after seeing a few notifications. Run it again and the it
 
 ## Where state lives
 
-Two store implementations ship:
+Two store implementations are included with the package:
 
 - `aviso.MemoryStore()` keeps the cursor in process memory. It dies with the process. Use it in tests and one-shot scripts that do not need to survive restart.
 - `aviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic rename and a sidecar lockfile so cooperating processes on a local filesystem can share the cursor.
