@@ -62,7 +62,7 @@ Expected output:
   time         (optional, TimeHandler)
 ```
 
-The schema lists what the field validators accept. Many fields are flagged optional in the schema but required by the notify endpoint (`test_polygon` notify actually requires `time` and `date` even though the schema marks them optional). When in doubt, publish a test value and read the error message from the resulting `aviso.HttpError`.
+The schema lists what the field validators accept. Some event types are stricter at notify time than at validation time: `test_polygon`, for example, requires `date` and `time` for a notify call even though its schema marks them optional. When in doubt, publish a test value and read the error message from the resulting `aviso.HttpError`.
 
 ## Publishing many notifications in a loop
 
