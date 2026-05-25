@@ -6,7 +6,7 @@ The package wraps the Rust core via PyO3 bindings. The compiled extension lives 
 
 ## Install
 
-PyPI wheels are coming in a follow-up release. Until then, install from a checkout of this repository:
+PyPI wheels are not published yet. Install from a checkout of this repository:
 
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git

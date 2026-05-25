@@ -103,4 +103,4 @@ See [the Async page](./async.md) for the situations where the async client actua
 
 ## Wheels on PyPI
 
-Not available in this release. Install from source with `uv run maturin develop`. Once the wheel matrix is published in a follow-up release, `pip install aviso` becomes the recommended path.
+Not available today. Install from source with `uv run maturin develop`. If and when the wheel matrix lands, `pip install aviso` becomes the simpler path.

@@ -1,6 +1,6 @@
 # Install
 
-The Python package is source-only in this release. PyPI wheels will be published in a follow-up release; until then, the install path is a checkout of the repository plus `maturin develop`.
+The Python package is source-only today. PyPI wheels are not published yet; the install path is a checkout of the repository plus `maturin develop`.
 
 ## From source
 
@@ -28,14 +28,9 @@ uv run python -c "import aviso; print(aviso.__version__)"
 
 Expected output: a version string like `0.1.0` (matching the Rust workspace version).
 
-## From PyPI (coming soon)
+## From PyPI
 
-<!-- not-runnable -->
-```bash
-pip install aviso
-```
-
-The wheel matrix (manylinux, macOS universal2, Windows) is the subject of a separate change. Once published, `pip install aviso` will be the recommended path.
+Not available today. Install from a checkout as above. The wheel matrix (manylinux, macOS universal2, Windows) is the subject of a separate change; if and when it lands, `pip install aviso` becomes the simpler path.
 
 ## Python version
 
