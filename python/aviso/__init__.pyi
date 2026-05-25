@@ -215,7 +215,7 @@ class AvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
-        mode: str = "watch",
+        mode: WatchMode | str = "watch",
         request: WatchRequest | None = None,
     ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
@@ -259,7 +259,7 @@ class AsyncAvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
-        mode: str = "watch",
+        mode: WatchMode | str = "watch",
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator: ...
 
