@@ -34,7 +34,7 @@ You ask aviso to listen for a type and the identifiers you care about. The serve
 |---|---|---|
 | Run aviso in a terminal or a script | The `aviso` CLI | [CLI overview](../cli/overview.md) |
 | Embed aviso in a Rust program | The `aviso` Rust library | [Library guide](../developers/lib-guide.md) |
-| Call aviso from Python | The CLI through `subprocess` (a native Python package is planned) | [Python page](../python/status.md) |
+| Call aviso from Python | The native `aviso` package, or the CLI through `subprocess` | [Python overview](../python/overview.md) |
 
 The CLI and the library are the same code. Pick the surface that matches the program you are writing.
 

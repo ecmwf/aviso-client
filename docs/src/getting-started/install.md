@@ -6,7 +6,7 @@ Pick the row that matches what you want to do.
 |---|---|
 | Run the `aviso` command-line tool | [`cargo install aviso-cli`](../cli/install.md) |
 | Use the Rust library in your own crate | `cargo add aviso` |
-| Call aviso from Python | Install the CLI above and run it via `subprocess` (see [Python](../python/status.md)) |
+| Call aviso from Python | Install the CLI above and run it via `subprocess`, or install the native [Python package](../python/overview.md) |
 
 ## Command line, in one shot
 
