@@ -24,7 +24,7 @@ For a value that itself contains commas (a polygon, a comma-separated list), wra
 aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200'
 ```
 
-The quotes are CLI-side; they are stripped before the value goes on the wire.
+The quotes are CLI-side; they are stripped before the value is sent to the server.
 
 ### Identifier fields the server requires
 
@@ -101,7 +101,7 @@ A full reference for the file format is at [Listener YAML](../reference/listener
 
 ### Triggers, briefly
 
-A trigger is the action aviso takes for each matching notification. Six kinds ship:
+A trigger is the action aviso takes for each matching notification. Six kinds are built in:
 
 - [`echo`](../triggers/echo.md) prints the notification.
 - [`log`](../triggers/log.md) appends it to a file.

@@ -12,10 +12,36 @@ description = "PyO3 bindings crate for aviso, the aviso-server client library."
 readme = "README.md"
 
 [lib]
-crate-type = ["rlib"]
+# `cdylib` for the Python extension; `rlib` so the workspace `cargo build`
+# / `cargo test` can see the crate's types in cross-crate tests. Only the
+# cdylib is published as a wheel.
+crate-type = ["cdylib", "rlib"]
 
 [lints]
 workspace = true
 
+[features]
+# `extension-module` tells PyO3 NOT to link against libpython at compile
+# time, because the resulting cdylib gets loaded INTO a running Python
+# interpreter that already provides the symbols. Maturin enables this
+# feature for wheel builds via `[tool.maturin] features`. Plain
+# `cargo test` and `cargo build` leave the feature off so PyO3 links
+# against libpython normally and Rust-side unit tests can call into the
+# Python runtime via `Python::attach`.
+default = []
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
+futures-util = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
+pyo3-async-runtimes = { workspace = true }
+pyo3-log = { workspace = true }
+pythonize = { workspace = true }
+# `reqwest` is a transitive dep via aviso; declared here too because the
+# error-mapping layer constructs `reqwest::StatusCode` values when
+# synthesising `TriggerError::Webhook` for the test helper.
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

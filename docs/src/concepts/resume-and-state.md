@@ -27,7 +27,7 @@ A required trigger might run more than once for the same notification (after a c
 | `kubectl annotate ... --overwrite`. | `psql -c "INSERT ..."` without `ON CONFLICT`. |
 | `cp src dest` (copy is overwriting). | `kubectl create ...` (fails on conflict). |
 
-For triggers that are not naturally idempotent, build a dedupe layer keyed on `event_type@sequence`.
+For triggers that are not inherently idempotent, build a dedupe layer keyed on `event_type@sequence`.
 
 ## Optional triggers are different
 

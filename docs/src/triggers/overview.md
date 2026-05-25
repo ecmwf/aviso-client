@@ -1,6 +1,6 @@
 # Triggers
 
-A trigger is a per-notification side-effect attached to a listener. When a notification matches the listener's filter, every configured trigger runs in declaration order. Six built-in trigger kinds ship in the core:
+A trigger is a per-notification side-effect attached to a listener. When a notification matches the listener's filter, every configured trigger runs in declaration order. The core has six built-in trigger kinds:
 
 | Kind | What it does | Use when |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Developers
 
-This section is for people working on aviso itself, or embedding the `aviso` Rust library in their own program. It is not the right place to start if you just want to use the CLI; head to [CLI overview](../cli/overview.md) for that.
+This section is for people working on aviso itself, or embedding the `aviso` Rust library in their own program. If you just want to use the CLI, start at [CLI overview](../cli/overview.md) instead.
 
 ## What lives here
 

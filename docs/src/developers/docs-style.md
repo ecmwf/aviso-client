@@ -24,7 +24,7 @@ The conventions documentation pages in this book follow. If you are writing or r
 
 - Always set the language: ` ```bash `, ` ```yaml `, ` ```rust,ignore `.
 - Rust examples in user-facing pages use `rust,ignore` so doctests do not try to compile them. They are illustrative, not part of the test surface.
-- For commands, prefer the multi-line form with `\` continuations only when the line is too long to read in one go.
+- For commands, prefer the multi-line form with `\` continuations only when the line is too long to read on a single line.
 
 ## Tables
 
@@ -61,7 +61,7 @@ These belong in `developers/` or in `plans/`, not in pages people land on while 
 
 ## Length
 
-A page is too long when a reader has to scroll to find the second example. Two screens of typical text is the upper end; one is better. If a page is growing past that, the right move is usually to split it.
+A page is too long when a reader has to scroll to find the second example. Two screens of typical text is the upper end; one is better. If a page is growing past that, the usual answer is to split it.
 
 ## When in doubt
 

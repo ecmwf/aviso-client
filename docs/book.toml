@@ -18,8 +18,8 @@ default-theme = "rust"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/ecmwf/aviso-client"
 edit-url-template = "https://github.com/ecmwf/aviso-client/edit/main/docs/{path}"
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
-additional-css = ["mermaid-extra.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js", "theme/logo-theme.js"]
+additional-css = ["mermaid-extra.css", "theme/custom.css"]
 
 [output.html.redirect]
 "welcome/introduction.html" = "../index.html"
@@ -37,6 +37,7 @@ additional-css = ["mermaid-extra.css"]
 "troubleshooting/overview.html" = "../cli/troubleshooting.html"
 "internals/architecture.html" = "../developers/architecture.html"
 "internals/contributing.html" = "../developers/contributing.html"
+"python/status.html" = "../python/overview.html"
 
 [preprocessor]
 
