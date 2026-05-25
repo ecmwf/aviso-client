@@ -9,7 +9,7 @@ package.
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 
 # reason: Notification.payload and filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
@@ -216,6 +216,7 @@ class AvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
@@ -260,6 +261,7 @@ class AsyncAvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator: ...
 

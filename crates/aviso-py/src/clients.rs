@@ -19,6 +19,7 @@ use crate::error::{duration_from_seconds, map_client_error};
 use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};
+use crate::triggers::PyTrigger;
 use crate::values::{PyNotifyResponse, PySchemaCatalog, PySchemaResponse};
 use crate::watch::{PyWatchRequest, parse_resume_start};
 
@@ -148,7 +149,8 @@ impl PyAvisoClient {
         result.map_err(|e| map_client_error(py, e))
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, triggers = None, request = None))]
+    #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
         py: Python<'_>,
@@ -156,9 +158,10 @@ impl PyAvisoClient {
         filter: Option<&Bound<'_, PyDict>>,
         from_: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
+        triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyNotificationIterator> {
-        let req = build_watch_request(event_type, filter, from_, mode, request)?;
+        let req = build_watch_request(event_type, filter, from_, mode, triggers, request)?;
         let client = self.inner.clone();
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
@@ -342,7 +345,8 @@ impl PyAsyncAvisoClient {
         })
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, triggers = None, request = None))]
+    #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
         py: Python<'_>,
@@ -350,9 +354,10 @@ impl PyAsyncAvisoClient {
         filter: Option<&Bound<'_, PyDict>>,
         from_: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
+        triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyAsyncNotificationIterator> {
-        let req = build_watch_request(event_type, filter, from_, mode, request)?;
+        let req = build_watch_request(event_type, filter, from_, mode, triggers, request)?;
         let client = self.inner.clone();
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
@@ -372,6 +377,7 @@ fn build_watch_request(
     filter: Option<&Bound<'_, PyDict>>,
     from_: Option<&Bound<'_, PyAny>>,
     mode: Option<&str>,
+    triggers: Option<&Bound<'_, PyAny>>,
     request: Option<PyRef<'_, PyWatchRequest>>,
 ) -> PyResult<aviso::watch::WatchRequest> {
     if let Some(req) = request {
@@ -383,6 +389,11 @@ fn build_watch_request(
         if mode.is_some() {
             return Err(crate::error::AvisoError::new_err(
                 "request already carries a mode; do not pass mode= when using request=",
+            ));
+        }
+        if triggers.is_some() {
+            return Err(crate::error::AvisoError::new_err(
+                "triggers= cannot be combined with request=; add triggers to the WatchRequest instead",
             ));
         }
         return Ok(req.clone().into_inner());
@@ -423,7 +434,44 @@ fn build_watch_request(
         }
         req = req.with_filter(map);
     }
+    if let Some(triggers_value) = triggers {
+        let trigger_vec = extract_triggers(triggers_value)?;
+        if !trigger_vec.is_empty() {
+            req = req.with_triggers(trigger_vec);
+        }
+    }
     Ok(req)
+}
+
+fn extract_triggers(value: &Bound<'_, PyAny>) -> PyResult<Vec<aviso::watch::Trigger>> {
+    if value.is_instance_of::<PyTrigger>() {
+        return Err(crate::error::AvisoError::new_err(
+            "triggers= must be a sequence of Trigger; pass [trigger] for a single trigger",
+        ));
+    }
+    if value.is_instance_of::<pyo3::types::PyString>()
+        || value.is_instance_of::<pyo3::types::PyBytes>()
+    {
+        return Err(crate::error::AvisoError::new_err(
+            "triggers= must be a sequence of Trigger, not a string or bytes",
+        ));
+    }
+    let iter = value.try_iter().map_err(|_| {
+        crate::error::AvisoError::new_err(
+            "triggers= must be an iterable of Trigger instances (list or tuple)",
+        )
+    })?;
+    let mut out = Vec::new();
+    for item in iter {
+        let item = item?;
+        let trigger: PyRef<'_, PyTrigger> = item.extract().map_err(|_| {
+            crate::error::AvisoError::new_err(
+                "triggers= entries must be Trigger instances; got something else",
+            )
+        })?;
+        out.push(trigger.clone().into_inner());
+    }
+    Ok(out)
 }
 
 pub(crate) fn register_clients(m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -7,7 +7,7 @@ Hand-written. Kept in sync with the runtime ``__all__`` via
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 from enum import Enum
 
 # reason: Notification.payload and filter values are JSON-shaped values
@@ -230,6 +230,7 @@ class AvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: WatchMode | str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
@@ -274,6 +275,7 @@ class AsyncAvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: WatchMode | str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator: ...
 
