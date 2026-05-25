@@ -62,7 +62,7 @@ Expected output:
   time         (optional, TimeHandler)
 ```
 
-The schema lists what the field validators accept. Some event types are stricter at notify time than at validation time: `test_polygon`, for example, requires `date` and `time` for a notify call even though its schema marks them optional. When in doubt, publish a test value and read the error message from the resulting `aviso.HttpError`.
+A `notify` call has to supply every identifier field the schema defines, regardless of the field's `required` flag: there is no such thing as a partial notification, and the schema's identifier section enumerates the complete identifier. The `required` flag in the schema tells you what a filter or watch call has to specify; for `test_polygon` the only required-for-filter field is `polygon`, but a publish still needs all three. When in doubt, publish a test value and read the error message from the resulting `aviso.HttpError`.
 
 ## Publishing many notifications in a loop
 
