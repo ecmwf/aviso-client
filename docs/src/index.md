@@ -30,15 +30,19 @@ Start with the [library guide](./developers/lib-guide.md).
 
 ## From Python
 
-A Python package is planned. Until then, the CLI does what you need and works well from Python through `subprocess`.
+The `aviso` package wraps the Rust core through PyO3, so you get a real Python API: typed value objects, structured exceptions, `for`-iteration over a watch stream, and the same trigger surface the CLI uses.
 
 ```python
-import subprocess
-subprocess.run(["aviso", "listen", "--event", "mars",
-                "--identifiers", '{"class":"od"}'])
+import os
+import aviso
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+for notification in client.listen("mars", filter={"class": "od"}):
+    print(notification.sequence, notification.payload)
 ```
 
-See the [Python page](./python/status.md) for the full pattern.
+Start with the [Python overview](./python/overview.md).
 
 ## New here?
 

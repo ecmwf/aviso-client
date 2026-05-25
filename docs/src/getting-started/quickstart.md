@@ -65,7 +65,7 @@ for line in proc.stdout:
     print(notification["sequence"], notification["payload"])
 ```
 
-The full Python pattern, including environment variables and graceful shutdown, is at the [Python page](../python/status.md).
+The native Python client, which avoids the subprocess and gives you typed value objects, is documented at [Python overview](../python/overview.md).
 
 ## Calling aviso from a Rust program
 
