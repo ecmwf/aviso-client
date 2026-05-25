@@ -1,6 +1,6 @@
 # What aviso is
 
-aviso is a small notification client. It connects to an aviso-server you have access to, asks for the events you care about, and tells you when they arrive. That is the whole job.
+aviso is ECMWF's notification system for data-driven workflows. It runs as a client-server pair: aviso-server is the source of truth for streams of events; the client connects, asks for the events you care about, and tells you when they arrive. This page is about the client side, which is what ships in this repo.
 
 ## The pieces
 
