@@ -147,7 +147,7 @@ class ConfigFile:
     def __init__(self, path: str | os.PathLike[str]) -> None: ...
 
 class Chain:
-    def __init__(self, *providers: Any) -> None: ...
+    def __init__(self, *providers: AuthProvider) -> None: ...
 
 class MemoryStore:
     def __init__(self) -> None: ...
@@ -215,7 +215,7 @@ class AvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
-        mode: WatchMode | str = "watch",
+        mode: WatchMode | str | None = None,
         request: WatchRequest | None = None,
     ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
@@ -259,7 +259,7 @@ class AsyncAvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
-        mode: WatchMode | str = "watch",
+        mode: WatchMode | str | None = None,
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator: ...
 

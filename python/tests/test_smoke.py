@@ -25,6 +25,7 @@ def test_version_is_a_string() -> None:
 def test_native_version_matches_rust_crate() -> None:
     assert isinstance(aviso.VERSION, str)
     assert re.match(r"^\d+\.\d+\.\d+", aviso.VERSION)
+    assert aviso.__version__ == aviso.VERSION
 
 
 def test_public_surface_matches_documented_set() -> None:
