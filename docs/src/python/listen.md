@@ -61,7 +61,7 @@ for notification in client.listen(
     print(notification.sequence)
 ```
 
-Each stream requires its own minimum identifier set. `mars` requires `class`; `test_polygon` requires `polygon`; `dissemination` requires `class` and `destination`. Run `client.schema_for(event_type).schema["identifier"]` to see the full validator list before constructing your filter.
+Each stream's schema declares a minimum identifier set that a filter must commit to (the fields flagged `"required": true`). For `test_polygon` that is just `polygon`. Listing more fields in `filter=` narrows the match further. Run `client.schema_for(event_type).schema["identifier"]` to see the full field list, and see [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for the difference between the filter minimum and what a publish needs.
 
 ## Resume across restarts
 

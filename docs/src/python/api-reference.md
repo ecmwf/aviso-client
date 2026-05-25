@@ -50,7 +50,7 @@ Properties: `status`, `event_types`, `total_schemas`, `schema`. Method: `as_dict
 
 `aviso.SchemaResponse`
 
-Properties: `status`, `event_type`, `schema`. Method: `as_dict()`. The `schema` is a dict with two keys: `payload` (a `{"required": bool}` shape) and `identifier` (a dict keyed by identifier field name, each value naming the validator type, whether the field is `required`, and any type-specific metadata).
+Properties: `status`, `event_type`, `schema`. Method: `as_dict()`. The `schema` is a dict with two keys: `payload` (a `{"required": bool}` shape) and `identifier` (a dict keyed by identifier field name, each value naming the validator type, the `required` flag (which gates whether a filter or watch call must include the field, not whether a notify call must), and any type-specific metadata).
 
 ## Watch shape
 

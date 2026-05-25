@@ -70,9 +70,9 @@ A schema response looks like this (your fields and types will differ):
 }
 ```
 
-So a `test_polygon` notification has three identifier fields. `polygon` is required (a string of comma-separated lat,lon pairs forming a closed shape). `date` (YYYYMMDD) and `time` (HHMM) are flagged optional by the schema. Identifier values are always strings on the wire; the `type` is the validator the server runs against the string. The `payload` is whatever JSON the publisher attached.
+So a `test_polygon` notification is keyed on three identifier fields: `polygon` (a string of comma-separated lat,lon pairs forming a closed shape), `date` (YYYYMMDD), and `time` (HHMM). Identifier values are always strings on the wire; the `type` is the validator the server runs against the string. The `payload` is whatever JSON the publisher attached.
 
-**A caveat the schema does not advertise.** aviso-server's `notify` endpoint can be stricter than the schema it publishes. With the schema above, publishing without `date` and `time` returns `400 Required field 'date' missing for notify operation` even though the schema marks them optional. The schema endpoint describes the validators that run on each field; the notify endpoint enforces an insertion contract that can require more fields than the validation does. If a publish fails with "Required field X missing", add X to the identifier and retry.
+**What `"required": true` means.** The `required` flag on each identifier field says whether a **filter or watch** call must include it. For `test_polygon`, the only `required: true` field is `polygon`, so a listener can subscribe with just `{"polygon": "..."}` and the rest narrow the match further if you want. A **notify** call is different: it must supply every identifier field the schema defines, regardless of the flag, because the schema enumerates the complete identifier of a notification. Publishing `test_polygon` without `date` or `time` returns `400 Required field 'date' missing for notify operation`. If a publish fails with `Required field X missing`, add X and retry.
 
 **The rest of this page uses `test_polygon` as the example event type.** It is one stream that may exist on your server; substitute your own event type and identifier fields if not. The shape of every call is the same.
 
@@ -170,7 +170,7 @@ The file is locked across cooperating processes on local filesystems (ext4, xfs,
 
 ## Filters
 
-`filter=` is a dict of identifier predicates. A field flagged `"required": true` in the schema must appear in your filter; the rest are optional and narrow what you see. Use the schema dump shown earlier to remind yourself which fields are which.
+`filter=` is a dict of identifier predicates. A field flagged `"required": true` in the schema must appear in your filter; the rest are optional and narrow what you see further. (A notify call has to supply every identifier field defined in the schema regardless of the flag, but a listener only has to commit to the required ones; see "What is on your server" above.)
 
 ## What about async?
 
