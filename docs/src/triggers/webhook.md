@@ -1,6 +1,6 @@
 # Webhook trigger
 
-Generic HTTP request per notification. Operators get full control of method, URL, headers, and body via the [template engine](./template-engine.md). This is the trigger you reach for when forwarding notifications to any REST endpoint: Slack, Discord, PagerDuty, custom internal services, GitHub Actions, log aggregators, etc.
+Generic HTTP request per notification. Operators get full control of method, URL, headers, and body via the [template engine](./template-engine.md). Use this trigger to forward notifications to any REST endpoint: Slack, Discord, PagerDuty, custom internal services, GitHub Actions, log aggregators, and so on.
 
 ## YAML
 

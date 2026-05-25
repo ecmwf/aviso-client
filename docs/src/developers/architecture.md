@@ -9,7 +9,7 @@ flowchart TB
     subgraph consumers["consumers"]
         direction LR
         cli["aviso-cli<br/>Rust binary<br/>installed as <tt>aviso</tt>"]
-        py["aviso-py<br/>PyO3 cdylib<br/>(when bindings land)"]
+        py["aviso-py<br/>PyO3 cdylib<br/>(Python bindings)"]
     end
 
     core["aviso<br/>(core Rust library)<br/><br/>HTTP via reqwest + rustls<br/>SSE parser (finesse crate)<br/>Reconnect supervisor<br/>State store + checkpoints<br/>AuthProvider trait<br/>Trigger dispatcher"]
@@ -21,9 +21,9 @@ flowchart TB
     core -- HTTP + SSE --> server
 ```
 
-The CLI and the future Python extension are peer consumers of the core library. They never depend on each other. The core library never depends on PyO3, the CLI, or any binding machinery.
+The CLI and the Python extension are peer consumers of the core library. They never depend on each other. The core library never depends on PyO3, the CLI, or any binding machinery.
 
-Adding a new language surface (a C/C++ adapter, for example) becomes a new adapter crate next to `aviso-cli` and `aviso-py`. The core library does not change.
+A new language surface (a C/C++ adapter, for example) becomes a new adapter crate next to `aviso-cli` and `aviso-py`. The core library does not change.
 
 ## The crates in more detail
 
@@ -40,13 +40,13 @@ The whole client lives here. Everything else is a thin wrapper.
 
 ### `aviso-cli`
 
-The thin binary on top. Resolves the layered config (flag > env > file > default), builds an `AvisoClient`, wires in a `JsonFileStore`, parses listener YAML, dispatches subcommands.
+The thin binary on top. Resolves the layered config (flag > env > file > default), builds an `AvisoClient`, attaches a `JsonFileStore`, parses listener YAML, dispatches subcommands.
 
 The CLI's responsibilities are mostly about composition and I/O surfaces. It does not implement any of the SSE, reconnect, or trigger logic; that is all in the library.
 
 ### `aviso-py`
 
-A placeholder today (`rlib`, not a Python `cdylib`). When the PyO3 bindings land it becomes the extension crate. It will expose an `AvisoClient` mirror plus a `NotificationStream` async iterator over the same channel the Rust API uses.
+The PyO3 extension crate. Built as a `cdylib` for the Python wheel and as an `rlib` so the workspace `cargo test` sees its types. Exposes a synchronous `AvisoClient` and an asynchronous `AsyncAvisoClient` over the same channel the Rust core uses, plus typed value classes, the trigger builder, auth providers, state stores, and the exception hierarchy.
 
 ### `finesse`
 
@@ -83,7 +83,7 @@ The supervisor's `select!` is `biased` so cancellation cannot be starved by a fa
 
 A bounded channel (capacity 128 by default; 1 when a state store is configured) sits between the supervisor and the consumer. The channel applies TCP backpressure end to end: when the consumer falls behind, the supervisor's `send` blocks, which makes it stop reading bytes from the wire, which throttles the server.
 
-When a state store is wired, the channel capacity drops to 1 so the supervisor's commit-of-previous-notification is forced to happen before the consumer can pull the next one. The user-facing contract is "pulling item N+1 implies item N is durable", and capacity 1 is what makes that true.
+When a state store is configured, the channel capacity drops to 1 so the supervisor's commit-of-previous-notification is forced to happen before the consumer can pull the next one. The user-facing contract is "pulling item N+1 implies item N is durable", and capacity 1 is what makes that true.
 
 ## The state-store contract
 

@@ -109,7 +109,7 @@ Internally, the Teams trigger is sugar over [`webhook`](./webhook.md). The dispa
 3. Synthesise a webhook config with the body pre-rendered, method `POST`, `Content-Type: application/json`.
 4. Delegate to the webhook dispatcher.
 
-Operators wanting full control of the card shape (extra sections, custom colors, action buttons) should use the [webhook](./webhook.md) trigger directly with a hand-written `body_template`. The Teams trigger optimises for the common case; webhook is the escape hatch.
+Operators wanting full control of the card shape (extra sections, custom colors, action buttons) should use the [webhook](./webhook.md) trigger directly with a hand-written `body_template`. The Teams trigger is the shortcut for the common case; the webhook trigger is the way to express anything else.
 
 ## Failure modes
 

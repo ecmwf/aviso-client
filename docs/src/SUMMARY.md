@@ -1,6 +1,6 @@
 # Summary
 
-[aviso](./index.md)
+[Introduction](./index.md)
 
 ---
 
@@ -28,7 +28,18 @@
 
 # Python
 
-- [Python](./python/status.md)
+- [Overview](./python/overview.md)
+- [Install](./python/install.md)
+- [Quickstart](./python/quickstart.md)
+- [Publishing](./python/publish.md)
+- [Listening](./python/listen.md)
+- [Triggers](./python/triggers.md)
+- [Auth](./python/auth.md)
+- [State and resume](./python/state-and-resume.md)
+- [Error handling](./python/error-handling.md)
+- [Async](./python/async.md)
+- [API reference](./python/api-reference.md)
+- [Troubleshooting](./python/troubleshooting.md)
 
 ---
 

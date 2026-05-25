@@ -46,7 +46,7 @@ let client = AvisoClient::builder()
     .build()?;
 ```
 
-Five built-in providers ship: `Basic`, `Bearer`, `Env`, `ConfigFile`, and `Chain`. The page on [authentication providers](../concepts/auth-providers.md) covers when each one is the right pick. The full API is at [`aviso::auth`](https://docs.rs/aviso/latest/aviso/auth/).
+Five built-in providers are available: `Basic`, `Bearer`, `Env`, `ConfigFile`, and `Chain`. The page on [authentication providers](../concepts/auth-providers.md) covers when to use each one. The full API is at [`aviso::auth`](https://docs.rs/aviso/latest/aviso/auth/).
 
 For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider` trait. Always call `HeaderValue::set_sensitive(true)` on the value you return; that is what makes downstream loggers redact it.
 

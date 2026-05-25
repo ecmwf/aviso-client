@@ -1,6 +1,6 @@
 # What aviso is
 
-aviso is a small notification client. It connects to an aviso-server you have access to, asks for the events you care about, and tells you when they arrive. That is the whole job.
+aviso is ECMWF's notification system for data-driven workflows. It runs as a client-server pair: aviso-server is the source of truth for streams of events; the client connects, asks for the events you care about, and tells you when they arrive. This page is about the client.
 
 ## The pieces
 
@@ -34,7 +34,7 @@ You ask aviso to listen for a type and the identifiers you care about. The serve
 |---|---|---|
 | Run aviso in a terminal or a script | The `aviso` CLI | [CLI overview](../cli/overview.md) |
 | Embed aviso in a Rust program | The `aviso` Rust library | [Library guide](../developers/lib-guide.md) |
-| Call aviso from Python | The CLI through `subprocess` (a native Python package is planned) | [Python page](../python/status.md) |
+| Call aviso from Python | The native `aviso` package, or the CLI through `subprocess` | [Python overview](../python/overview.md) |
 
 The CLI and the library are the same code. Pick the surface that matches the program you are writing.
 
@@ -42,7 +42,7 @@ The CLI and the library are the same code. Pick the surface that matches the pro
 
 - **Reconnects**. The server intentionally closes a listener every so often. aviso reconnects without losing your place.
 - **Resume**. When the process restarts, aviso picks up from the last notification it fully processed. Normal restarts avoid skipping events.
-- **At-least-once delivery**. Each notification reaches your triggers at least once. Designing your triggers to be idempotent is the only thing you need to do.
+- **At-least-once delivery**. Each notification reaches your triggers at least once. Design your triggers to be idempotent.
 - **Backpressure**. If your code is slow to handle a notification, aviso slows down its read from the network rather than buffering forever in memory.
 - **Heartbeat watchdog**. If the network goes quiet for too long, aviso assumes the connection is dead and reconnects.
 

@@ -26,7 +26,7 @@ aviso schema get mars
 
 You get the schema as pretty JSON. Use it to discover which identifiers the server insists on when publishing or filtering.
 
-To fetch every schema in one go:
+To fetch every schema in one command:
 
 ```bash
 aviso schema list | jq -r .event_type | xargs -I{} aviso schema get {}

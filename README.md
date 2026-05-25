@@ -2,15 +2,19 @@
 
 Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows.
 
-## What's in the box
+## Repository layout
 
 - **`crates/aviso`**: Rust library crate (the core implementation; published as `aviso` on crates.io).
 - **`crates/aviso-cli`**: Rust binary crate producing the `aviso` command-line tool.
-- **`crates/aviso-py`**: scaffold for the future Python extension crate. Currently builds as an `rlib` placeholder; it will become a PyO3 `cdylib` once bindings land.
-- **`python/aviso/`**: pure-Python helpers shipping alongside the extension. The installable distribution and the importable module are both named `aviso`.
-- **`docs/`**: mdBook user-facing documentation.
+- **`crates/aviso-py`**: PyO3 binding crate. Builds as a `cdylib` extension named `aviso._native` plus an `rlib` so the workspace's `cargo test` sees its types.
+- **`python/aviso/`**: pure-Python wrapper around `aviso._native`. The installable distribution and the importable module are both named `aviso`. Built locally with `uv run maturin develop`; PyPI wheels are not published yet, so install from a checkout.
+- **`docs/`**: mdBook user-facing documentation (CLI, Rust library, Python package).
 
-## Build
+## Running the full check set
+
+These are the same commands CI runs (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). A fresh clone passes them after installing `rustup`, `cargo install mdbook cargo-deny mdbook-mermaid`, [`uv`](https://docs.astral.sh/uv/), and a working Docker (for the compose validation).
+
+Rust and docs:
 
 ```bash
 cargo fmt --all -- --check
@@ -25,14 +29,27 @@ mdbook test docs
 docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
-This is the full set CI runs (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and every command is expected to be green on `main`. A fresh clone passes it after installing `rustup`, `cargo install mdbook cargo-deny`, and a working Docker (for the compose validation). The Python toolchain (`uv`, `ruff`, `ty`, `pytest`) is described in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Python:
+
+```bash
+uv sync --locked --group dev
+uv run maturin develop --locked
+uv run ruff check python/
+uv run ruff format --check python/
+uv run ty check python/
+uv run pytest python/tests/
+```
+
+The Python toolchain (`uv`, `ruff`, `ty`, `pytest`, `maturin`) is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Documentation
 
 ```bash
-cargo install mdbook
+cargo install mdbook mdbook-mermaid
 mdbook serve docs --open
 ```
+
+The Python user-facing pages live under [`docs/src/python/`](docs/src/python/) and start at [`overview.md`](docs/src/python/overview.md).
 
 ## Project plan
 

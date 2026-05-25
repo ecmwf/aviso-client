@@ -14,6 +14,10 @@ docs/book/
 .venv/
 **/__pycache__/
 *.pyc
+*.so
+*.pyd
+.pytest_cache/
+.ruff_cache/
 .worktrees/
 # IDE / editor cruft
 .idea/

@@ -1,8 +1,13 @@
-# aviso
+<div align="center">
+  <img class="logo-light" src="./images/logo_light.svg" alt="Aviso logo" width="320" />
+  <img class="logo-dark"  src="./images/logo_dark.svg"  alt="Aviso logo" width="320" />
+</div>
 
-aviso is a notification client for [aviso-server](https://github.com/ecmwf/aviso-server), ECMWF's pub-sub service for data-driven workflows. It tells you, in close to real time, when a dataset you care about has just landed on the server.
+# Introduction
 
-You can use it three ways. Pick the one that fits how you work.
+aviso is ECMWF's notification system for data-driven workflows. It runs as a client and a server: [aviso-server](https://github.com/ecmwf/aviso-server) tracks streams of events and pushes them out in close to real time; clients connect, subscribe to the streams they care about, and react when a dataset they were waiting for has landed.
+
+This site documents the **client** side. This repo holds three clients: a command-line tool, a Rust library, and a Python package. Pick the one that fits how you work.
 
 ## From the command line
 
@@ -30,15 +35,19 @@ Start with the [library guide](./developers/lib-guide.md).
 
 ## From Python
 
-A Python package is planned. Until then, the CLI does what you need and works well from Python through `subprocess`.
+The `aviso` package wraps the Rust core through PyO3, so you get a real Python API: typed value objects, structured exceptions, `for`-iteration over a watch stream, and the same trigger surface the CLI uses.
 
 ```python
-import subprocess
-subprocess.run(["aviso", "listen", "--event", "mars",
-                "--identifiers", '{"class":"od"}'])
+import os
+import aviso
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+for notification in client.listen("mars", filter={"class": "od"}):
+    print(notification.sequence, notification.payload)
 ```
 
-See the [Python page](./python/status.md) for the full pattern.
+Start with the [Python overview](./python/overview.md).
 
 ## New here?
 

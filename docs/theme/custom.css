@@ -1,0 +1,10 @@
+/* Logo: initial state. logo-theme.js handles switching on theme change. */
+.logo-dark  { display: none; }
+.logo-light { display: block; }
+
+/* On dark themes, dim the dark logo so pure white does not glare. */
+html.coal .logo-dark,
+html.navy .logo-dark,
+html.ayu  .logo-dark {
+    opacity: 0.75;
+}

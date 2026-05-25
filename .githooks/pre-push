@@ -103,5 +103,33 @@ else
     step "docker not installed; skipping compose validation"
 fi
 
+if command -v uv >/dev/null 2>&1; then
+    step "uv sync --locked --group dev"
+    uv sync --locked --group dev >/dev/null 2>&1 \
+        || fail "uv sync failed. Check pyproject.toml and uv.lock."
+
+    step "uv run maturin develop --locked"
+    uv run maturin develop --locked >/dev/null 2>&1 \
+        || fail "maturin develop failed."
+
+    step "uv run ruff check python/"
+    uv run ruff check python/ \
+        || fail "ruff check failed. Run \`uv run ruff check python/ --fix\` and re-commit."
+
+    step "uv run ruff format --check python/"
+    uv run ruff format --check python/ \
+        || fail "Python files are not formatted. Run \`uv run ruff format python/\` and re-commit."
+
+    step "uv run ty check python/"
+    uv run ty check python/ \
+        || fail "ty check failed. Fix the type errors and re-commit."
+
+    step "uv run pytest python/tests/"
+    uv run pytest python/tests/ \
+        || fail "pytest failed."
+else
+    step "uv not installed; skipping Python gates (install: https://docs.astral.sh/uv/)"
+fi
+
 echo "aviso-client pre-push hook: all gates pass."
 exit 0
