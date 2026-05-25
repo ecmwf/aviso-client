@@ -148,14 +148,14 @@ impl PyAvisoClient {
         result.map_err(|e| map_client_error(py, e))
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = "watch", request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, request = None))]
     fn listen(
         &self,
         py: Python<'_>,
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
         from_: Option<&Bound<'_, PyAny>>,
-        mode: &str,
+        mode: Option<&str>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyNotificationIterator> {
         let req = build_watch_request(event_type, filter, from_, mode, request)?;
@@ -342,14 +342,14 @@ impl PyAsyncAvisoClient {
         })
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = "watch", request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, request = None))]
     fn listen(
         &self,
         py: Python<'_>,
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
         from_: Option<&Bound<'_, PyAny>>,
-        mode: &str,
+        mode: Option<&str>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyAsyncNotificationIterator> {
         let req = build_watch_request(event_type, filter, from_, mode, request)?;
@@ -371,7 +371,7 @@ fn build_watch_request(
     event_type: Option<String>,
     filter: Option<&Bound<'_, PyDict>>,
     from_: Option<&Bound<'_, PyAny>>,
-    mode: &str,
+    mode: Option<&str>,
     request: Option<PyRef<'_, PyWatchRequest>>,
 ) -> PyResult<aviso::watch::WatchRequest> {
     if let Some(req) = request {
@@ -380,7 +380,7 @@ fn build_watch_request(
                 "request is mutually exclusive with event_type, filter, and from_",
             ));
         }
-        if mode != "watch" {
+        if mode.is_some() {
             return Err(crate::error::AvisoError::new_err(
                 "request already carries a mode; do not pass mode= when using request=",
             ));
@@ -392,7 +392,8 @@ fn build_watch_request(
             "listen() requires either event_type=<str> or request=<WatchRequest>",
         )
     })?;
-    let mut req = match (mode, from_) {
+    let effective_mode = mode.unwrap_or("watch");
+    let mut req = match (effective_mode, from_) {
         ("watch", None) => aviso::watch::WatchRequest::watch(event),
         ("watch", Some(from_obj)) => {
             let resume = parse_resume_start(from_obj)?;
@@ -409,7 +410,7 @@ fn build_watch_request(
         }
         _ => {
             return Err(crate::error::AvisoError::new_err(format!(
-                "unknown WatchMode {mode:?}; expected 'watch' or 'replay_only'"
+                "unknown WatchMode {effective_mode:?}; expected 'watch' or 'replay_only'"
             )));
         }
     };

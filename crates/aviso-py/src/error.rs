@@ -346,7 +346,11 @@ pub(crate) fn duration_from_seconds(field: &str, seconds: f64) -> PyResult<Durat
             "{field} must be non-negative; got {seconds}"
         )));
     }
-    Ok(Duration::from_secs_f64(seconds))
+    Duration::try_from_secs_f64(seconds).map_err(|err| {
+        ConfigError::new_err(format!(
+            "{field} = {seconds} cannot be represented as a duration: {err}"
+        ))
+    })
 }
 
 #[cfg(test)]
