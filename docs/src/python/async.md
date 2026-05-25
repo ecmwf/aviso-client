@@ -1,16 +1,16 @@
 # Async
 
-The Python package ships two clients: `aviso.AvisoClient` (sync) and `aviso.AsyncAvisoClient` (async). The two share the same constructor, the same auth and state-store wiring, the same exception hierarchy, and return the same value types. The choice between them is about call style, not capability.
+The Python package includes two clients: `aviso.AvisoClient` (sync) and `aviso.AsyncAvisoClient` (async). The two share the same constructor, the same auth and state-store configuration, the same exception hierarchy, and return the same value types. The choice between them is about call style, not capability.
 
-This page is about when the async client earns its keep, and what the patterns look like when it does.
+This page is about when the async client is worth using, and what the patterns look like when it is.
 
-## Reach for `AvisoClient` by default
+## Use `AvisoClient` by default
 
-For most aviso users, `AvisoClient` is the right tool. Scripts, batch jobs, one-shot CLI tools, cron entries, notebooks: all of these benefit from straight-line code with no event loop ceremony. If your first `asyncio.run` would exist only because of aviso, stop. Use the sync client.
+For most aviso users, `AvisoClient` is what you want. Scripts, batch jobs, one-shot CLI tools, cron entries, notebooks: all of these benefit from straight-line code with no event loop ceremony. If your first `asyncio.run` would exist only because of aviso, stop. Use the sync client.
 
 ## When async helps
 
-Three situations earn the async surface its keep.
+Three situations make the async client worth the extra ceremony.
 
 ### 1. You are already inside an event loop
 
@@ -151,4 +151,4 @@ result = await asyncio.to_thread(
 )
 ```
 
-If you are reaching for this often, switch to `AsyncAvisoClient` and stop fighting the loop.
+If you are doing this often, switch to `AsyncAvisoClient` and stop fighting the loop.

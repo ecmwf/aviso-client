@@ -67,7 +67,7 @@ The server expects polygon as a scalar; passing a structured object (`polygon: {
 
 If you set a field to a value the server's schema does not allow, the server rejects the request with a clear error. aviso surfaces the message verbatim.
 
-If you set a field to a value that is allowed but matches nothing right now, the listener simply waits. New matching notifications will arrive when they happen.
+If you set a field to a value that is allowed but matches nothing right now, the listener waits. New matching notifications will arrive when they happen.
 
 ## How the filter affects resume
 

@@ -2,7 +2,7 @@
 
 `aviso replay` re-reads past notifications and runs them through your triggers, just like `aviso listen` does for live ones. The difference: replay always starts from a cursor you supply, ends when it catches up, and never touches the state file.
 
-You will reach for it when:
+Use it when:
 
 - You want to backfill a new downstream system with what already happened.
 - You missed a window of notifications and want to re-process them.

@@ -1,6 +1,6 @@
 # Install
 
-The Python package ships source-only in this release. PyPI wheels land in a follow-up; until then, the install path is a checkout of the repository plus `maturin develop`.
+The Python package is source-only in this release. PyPI wheels will be published in a follow-up release; until then, the install path is a checkout of the repository plus `maturin develop`.
 
 ## From source
 
@@ -35,7 +35,7 @@ Expected output: a version string like `0.1.0` (matching the Rust workspace vers
 pip install aviso
 ```
 
-The wheel matrix (manylinux, macOS universal2, Windows) lands in a separate PR. Once published, `pip install aviso` will be the recommended path.
+The wheel matrix (manylinux, macOS universal2, Windows) is the subject of a separate change. Once published, `pip install aviso` will be the recommended path.
 
 ## Python version
 

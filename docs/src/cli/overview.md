@@ -2,7 +2,7 @@
 
 `aviso` is a single binary that talks to an aviso-server. Use it to publish notifications, listen for new ones, replay history, and look around (schemas, configuration).
 
-You will reach for it when you want to:
+Use it when you want to:
 
 - Subscribe to a stream and pipe the output to `jq`, a log file, or any line-oriented tool.
 - Run a long-lived listener that ships notifications to a webhook, a Teams channel, a log file, or a custom shell command.

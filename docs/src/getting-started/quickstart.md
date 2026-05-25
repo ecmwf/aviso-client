@@ -105,5 +105,5 @@ The full library walkthrough is in the [library guide](../developers/lib-guide.m
 ## Next
 
 - [Publish a notification](../cli/publish-and-listen.md#publish) (your first `aviso notify`).
-- [Listen with a YAML file](../cli/publish-and-listen.md#listen-with-a-yaml-file): named listeners, multiple triggers, production-ready setup.
+- [Listen with a YAML file](../cli/publish-and-listen.md#listen-with-a-yaml-file): named listeners, multiple triggers, the configuration you keep around.
 - [Concepts](./concepts.md): the five ideas you need to get fluent.

@@ -40,7 +40,7 @@ Each notification produces one line on stdout (from echo) and one line in `log_p
 
 ### Echo
 
-Writes one line of compact JSON per notification to standard output. The cheapest "see what is flowing" sink.
+Writes one line of compact JSON per notification to standard output. The simplest way to see what is arriving in a stream.
 
 ```python
 import aviso
@@ -147,7 +147,7 @@ aviso.Trigger.echo().retries(3).required(False)
 | Forward raw CloudEvents to a collector | `post` |
 | Run arbitrary Python code per notification | (use the iteration loop body, no trigger needed) |
 
-The iteration loop body is the right place for in-process Python logic. Triggers exist for declarative durable side effects that should keep working when the calling program exits.
+In-process Python logic belongs in the iteration loop body. Triggers exist for declarative durable side effects that should keep working when the calling program exits.
 
 ## With `AsyncAvisoClient`
 
