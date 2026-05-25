@@ -37,6 +37,7 @@
 - [Auth](./python/auth.md)
 - [State and resume](./python/state-and-resume.md)
 - [Error handling](./python/error-handling.md)
+- [Async](./python/async.md)
 - [API reference](./python/api-reference.md)
 - [Troubleshooting](./python/troubleshooting.md)
 

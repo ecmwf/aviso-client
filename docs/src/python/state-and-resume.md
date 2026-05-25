@@ -1,12 +1,12 @@
 # State and resume
 
-The aviso client delivers at-least-once. A notification advances its stream's resume cursor only after the consumer has accepted it (drawn it off the iterator) and any required triggers have succeeded. Across reconnects and across process restarts the supervisor picks up at the last committed cursor and re-delivers anything not yet committed.
+The aviso client delivers at-least-once. A notification advances its stream's resume cursor only after the consumer has accepted it (drawn it off the iterator) and any required triggers have succeeded. Across reconnects and across process restarts the supervisor picks up at the last committed cursor and re-delivers anything that did not get committed.
 
 ## How it works
 
-Each watch derives a stable resume key from the base URL, the event type, the canonical filter body, and a schema fingerprint. The key is the address under which the cursor is stored.
+Each watch derives a stable resume key from the base URL, the event type, the canonical filter body, and a schema fingerprint. That key is the address under which the cursor is stored.
 
-The supervisor's commit policy is commit-on-next-send: before sending notification N+1 to the consumer iterator, it commits N. Pulling N+1 from the iterator therefore implies N is durable.
+The commit policy is commit-on-next-send: before sending notification N+1 to the consumer iterator, the supervisor commits N. Pulling N+1 from the iterator therefore implies N is durable.
 
 ```mermaid
 sequenceDiagram
@@ -27,55 +27,130 @@ sequenceDiagram
 
 If the process crashes between sending N and committing N, the next start re-delivers N. If the process crashes before sending N at all, the next start re-delivers N. At-least-once.
 
+## A complete resuming listener
+
+```python
+"""Listen for notifications with a persistent cursor.
+
+The first run reads from the live edge. Every subsequent run resumes
+from the last sequence the supervisor committed.
+"""
+
+import os
+import pathlib
+import aviso
+
+state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
+state_path.parent.mkdir(parents=True, exist_ok=True)
+
+client = aviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"],
+    auth=aviso.Env(),
+    state_store=aviso.JsonFileStore(state_path),
+)
+
+for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+    print(f"seq={notification.sequence}")
+```
+
+Run it once and Ctrl+C after seeing a few notifications. Run it again and the iterator picks up at the sequence after the last one that was committed.
+
 ## Where state lives
 
-Two implementations of the state store ship:
+Two store implementations ship:
 
-- `aviso.MemoryStore()`: keeps state in process memory. Dies with the process. Use it in tests and one-shot scripts that do not need to survive restart.
-- `aviso.JsonFileStore(path)`: writes a JSON file with crash-safe atomic rename plus a sidecar lockfile so cooperating processes on a local filesystem can share the cursor. The path defaults to `~/.config/aviso/state.json` in the CLI; Python users pass whatever path makes sense.
+- `aviso.MemoryStore()` keeps the cursor in process memory. It dies with the process. Use it in tests and one-shot scripts that do not need to survive restart.
+- `aviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic rename and a sidecar lockfile so cooperating processes on a local filesystem can share the cursor.
 
+<!-- not-runnable -->
 ```python
 import aviso
 
 client = aviso.AvisoClient(
     base_url="https://aviso.example.org",
-    state_store=aviso.JsonFileStore("~/.config/aviso/state.json"),
+    state_store=aviso.JsonFileStore("/var/lib/aviso/state.json"),
 )
 ```
 
-The store fails on construction if the parent directory does not exist; create it first:
+The store fails on construction if the parent directory does not exist. Create it first:
 
 ```python
+"""Construct the state file's parent directory before passing it to the client."""
+
+import os
 import pathlib
+import aviso
 
 path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 path.parent.mkdir(parents=True, exist_ok=True)
 
 client = aviso.AvisoClient(
-    base_url="https://aviso.example.org",
+    base_url=os.environ["AVISO_BASE_URL"],
+    auth=aviso.Env(),
     state_store=aviso.JsonFileStore(path),
 )
+
+print(f"using state file: {path}")
 ```
 
 ## Local filesystems only
 
-`JsonFileStore` uses `flock`, which is not safe over NFS or CIFS. Use a local filesystem (ext4, xfs, apfs, ntfs) for the state file.
+`JsonFileStore` uses `flock`, which is not safe over NFS or CIFS. Use a local filesystem (ext4, xfs, apfs, ntfs) for the state file. If you need to share a cursor across machines, run one process and have the others consume its output, or write your own state store against a coordination service.
 
 ## Flush on exit
 
-By default the cursor is committed when the next notification arrives, which means the LAST notification of a session is never committed. For an interactive operator pressing Ctrl+C, the next run replays that last notification. Set `flush_cursor_on_exit=True` and call `iter.close()` to commit the last notification before exit:
+The default commit policy commits N when N+1 arrives. The very last notification of a session is therefore never committed automatically: a Ctrl+C while waiting for the next publish leaves that last notification uncommitted, and the next run replays it.
+
+For interactive operators who want a clean Ctrl+C, set `flush_cursor_on_exit=True` on the client and call `iter.close()` in a `finally`:
 
 ```python
+"""Commit the last notification before exit."""
+
+import os
+import pathlib
+import aviso
+
+state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
+state_path.parent.mkdir(parents=True, exist_ok=True)
+
 client = aviso.AvisoClient(
-    base_url="https://aviso.example.org",
-    state_store=aviso.JsonFileStore("~/.config/aviso/state.json"),
+    base_url=os.environ["AVISO_BASE_URL"],
+    auth=aviso.Env(),
+    state_store=aviso.JsonFileStore(state_path),
     flush_cursor_on_exit=True,
 )
 
-iterator = client.listen("mars", filter={"class": "od"})
+iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
 try:
-    for n in iterator:
-        process(n)
+    for notification in iterator:
+        print(notification.sequence)
 finally:
     iterator.close()
+```
+
+Without `flush_cursor_on_exit=True`, the at-least-once contract still holds; you just see one replayed notification per restart.
+
+## With `AsyncAvisoClient`
+
+Both state stores work identically with the async client. The async iterator uses `aclose()` in place of `close()`:
+
+<!-- not-runnable -->
+```python
+import asyncio
+import aviso
+
+async def main() -> None:
+    client = aviso.AsyncAvisoClient(
+        base_url="https://aviso.example.org",
+        state_store=aviso.JsonFileStore("/var/lib/aviso/state.json"),
+        flush_cursor_on_exit=True,
+    )
+    iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
+    try:
+        async for notification in iterator:
+            print(notification.sequence)
+    finally:
+        await iterator.aclose()
+
+asyncio.run(main())
 ```

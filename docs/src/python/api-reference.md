@@ -2,8 +2,11 @@
 
 Every public symbol the package exports. The Python wrapper module is `aviso`; the compiled extension is `aviso._native` but users never import it directly.
 
+For motivation and when-to-use-this guidance on individual surfaces, see the narrative pages. The async client is documented on [the Async page](./async.md); everywhere a sync method returns `T`, the async equivalent returns `Awaitable[T]`.
+
 ## Clients
 
+<!-- not-runnable -->
 ```python
 class aviso.AvisoClient(
     *,
@@ -29,7 +32,7 @@ Methods:
 - `listen(event_type=None, *, filter=None, from_=None, mode="watch", request=None) -> NotificationIterator`
 - `__enter__` / `__exit__` for `with` blocks.
 
-`aviso.AsyncAvisoClient` is the same shape, with `notify` / `schema` / `schema_for` / `wipe_*` / `delete_notification` returning awaitables and `listen` returning an `AsyncNotificationIterator`.
+`aviso.AsyncAvisoClient` is the same shape. `notify` / `schema` / `schema_for` / `wipe_*` / `delete_notification` return awaitables; `listen` returns an `AsyncNotificationIterator`.
 
 ## Value types
 
@@ -41,7 +44,13 @@ Properties: `event_type`, `sequence`, `identifier`, `payload`, `cloudevent`. Met
 
 Properties: `status`, `request_id`, `processed_at`. Method: `as_dict()`.
 
-`aviso.SchemaCatalog` and `aviso.SchemaResponse`: properties and `as_dict()`.
+`aviso.SchemaCatalog`
+
+Properties: `status`, `event_types`, `total_schemas`, `schema`. Method: `as_dict()`. The `schema` property is a dict keyed by event type, whose values match the per-event-type schema below.
+
+`aviso.SchemaResponse`
+
+Properties: `status`, `event_type`, `schema`. Method: `as_dict()`. The `schema` is a dict with two keys: `payload` (a `{"required": bool}` shape) and `identifier` (a dict keyed by identifier field name, each value naming the validator type, whether the field is `required`, and any type-specific metadata).
 
 ## Watch shape
 
