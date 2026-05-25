@@ -1,9 +1,16 @@
 """Value-type round-trip tests.
 
-The classes under test are pure data carriers: Notification, NotifyResponse,
-SchemaCatalog, SchemaResponse. The tests verify property access, equality,
-``as_dict()`` shape, ``__repr__`` shape, and the unhashable contract that
-keeps misuse loud.
+The classes under test here are the two value types that have a public
+Python constructor and can be exercised hermetically: ``Notification`` and
+``NotifyResponse``. The tests verify property access, equality, ``as_dict()``
+shape, ``__repr__`` shape, and the unhashable contract that keeps misuse
+loud.
+
+``SchemaCatalog`` and ``SchemaResponse`` are also value types but are
+deliberately not user-constructible: they only exist as outputs of
+``client.schema()`` and ``client.schema_for(...)``. They are exercised
+indirectly through any integration path that calls those methods; a mock-
+server harness for those calls lands in a follow-up.
 """
 
 from __future__ import annotations
