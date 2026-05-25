@@ -2,7 +2,7 @@
 
 Triggers are declarative side effects that run per notification: write to a file, post to a webhook, post to a Microsoft Teams channel, run a shell command. The Python `Trigger` class wraps the same six kinds the Rust core ships, with the same semantics: retries, optional-vs-required, fail-fast.
 
-Triggers attach to a `WatchRequest`; the supervisor dispatches each trigger for each notification before the iterator yields it. A required trigger that fails after retries stops the watch with `aviso.TriggerError`.
+Triggers attach to a watch via the `triggers=` kwarg on `client.listen(...)`. The supervisor dispatches each trigger for each notification before the iterator yields it. A required trigger that fails after retries stops the watch with `aviso.TriggerError`.
 
 The listener example below uses `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
 
@@ -22,21 +22,17 @@ log_path = pathlib.Path(tempfile.gettempdir()) / "aviso-doc-example.log"
 
 client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
 
-request = (
-    aviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([
-        aviso.Trigger.echo(),
-        aviso.Trigger.log(log_path),
-    ])
-)
-
 print(f"writing log to {log_path}")
-for notification in client.listen(request=request):
-    pass  # the echo trigger already printed; the log trigger already wrote
+with client.listen(
+    "test_polygon",
+    filter={"polygon": "0,0,1,0,1,1,0,0"},
+    triggers=[aviso.Trigger.echo(), aviso.Trigger.log(log_path)],
+) as iterator:
+    for _ in iterator:
+        pass  # the echo trigger already printed; the log trigger already wrote
 ```
 
-Each notification produces one line on stdout (from echo) and one line in `log_path` (from log). Both are compact JSON, one object per line.
+Each notification produces one line on stdout (from echo) and one line in `log_path` (from log). Both are compact JSON, one object per line. If you want to build the watch once and reuse it across several `listen()` calls, see [Reusing a watch request](./listen.md#reusing-a-watch-request) for the builder form.
 
 ## The six kinds
 
@@ -153,4 +149,4 @@ In-process Python logic belongs in the iteration loop body. Triggers exist for d
 
 ## With `AsyncAvisoClient`
 
-The Trigger class is a value type; it has no async surface of its own. Attach the same triggers to a `WatchRequest` and pass it to either client.
+The Trigger class is a value type; it has no async surface of its own. Pass the same `triggers=[...]` list to either client.
