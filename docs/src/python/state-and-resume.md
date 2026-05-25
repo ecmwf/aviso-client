@@ -2,6 +2,8 @@
 
 The aviso client delivers at-least-once. A notification advances its stream's resume cursor only after the consumer has accepted it (drawn it off the iterator) and any required triggers have succeeded. Across reconnects and across process restarts the supervisor picks up at the last committed cursor and re-delivers anything that did not get committed.
 
+The examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## How it works
 
 Each watch derives a stable resume key from the base URL, the event type, the canonical filter body, and a schema fingerprint. That key is the address under which the cursor is stored.

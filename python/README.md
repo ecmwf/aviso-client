@@ -6,7 +6,7 @@ The package wraps the Rust core via PyO3 bindings. The compiled extension lives 
 
 ## Install
 
-PyPI wheels land in a follow-up release. Until then, install from a checkout of this repository:
+PyPI wheels are coming in a follow-up release. Until then, install from a checkout of this repository:
 
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git
@@ -19,19 +19,25 @@ uv run python -c "import aviso; print(aviso.__version__)"
 
 ## Quickstart
 
+Set two environment variables for the server URL and credentials, then run a listener. `aviso.Env()` reads `AVISO_TOKEN` (preferred) or the `AVISO_USERNAME`/`AVISO_PASSWORD` pair.
+
+```bash
+export AVISO_BASE_URL=https://aviso.example.org
+export AVISO_USERNAME=alice
+export AVISO_PASSWORD=wonderland
+```
+
 ```python
+import os
 import aviso
 
-client = aviso.AvisoClient(
-    base_url="https://aviso.example.org",
-    auth=aviso.Bearer("opaque-jwt"),
-)
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
 
-for notification in client.listen("mars", filter={"class": "od"}):
+for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
     print(notification.sequence, notification.payload)
 ```
 
-See the [user-facing documentation](https://github.com/ecmwf/aviso-client/tree/main/docs/src/python) for the full surface, including the async client, triggers, auth providers, state stores, and the exception hierarchy.
+The example uses an event type called `test_polygon`. Substitute your own if your server has different schemas configured; discover what is there with `client.schema().event_types` and `client.schema_for("<event_type>")`. The [user-facing Python documentation](https://github.com/ecmwf/aviso-client/tree/main/docs/src/python) covers the full surface, including the async client, triggers, state stores, the exception hierarchy, and how schemas work.
 
 ## License
 
