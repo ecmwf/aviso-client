@@ -2,6 +2,8 @@
 
 `AvisoClient.listen(...)` returns a `NotificationIterator`: a regular Python iterator that yields one `Notification` at a time as the server delivers them. Iterate it with `for`. Press Ctrl+C to stop. The underlying supervisor handles reconnects, checkpoints, and the watch protocol.
 
+The examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## A complete listener
 
 Save as `listen.py` and run it. In a second terminal, publish notifications with the script from the [Publishing page](./publish.md); the listener prints each one as it arrives.

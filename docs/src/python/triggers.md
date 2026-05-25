@@ -4,6 +4,8 @@ Triggers are declarative side effects that run per notification: write to a file
 
 Triggers attach to a `WatchRequest`; the supervisor dispatches each trigger for each notification before the iterator yields it. A required trigger that fails after retries stops the watch with `aviso.TriggerError`.
 
+The listener example below uses `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## A complete listener with triggers
 
 The watch below prints every notification (`echo`) and also appends it to a log file (`log`). Stop with Ctrl+C.

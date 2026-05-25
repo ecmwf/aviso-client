@@ -2,6 +2,8 @@
 
 Every exception the library raises subclasses `aviso.AvisoError`. Catch that to handle anything from the library; catch a specific class for fine-grained dispatch.
 
+The runnable examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## Hierarchy
 
 ```text

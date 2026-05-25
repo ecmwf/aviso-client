@@ -2,6 +2,8 @@
 
 `AvisoClient.notify(...)` publishes one notification to `aviso-server` and returns a `NotifyResponse` carrying the server's `request_id` for support correlation. This page walks through the end-to-end publish flow, then covers the variations.
 
+The examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## A complete publish script
 
 Save as `publish.py` and run it. The script expects `AVISO_BASE_URL` plus either `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD` in the environment.

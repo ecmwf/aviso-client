@@ -26,6 +26,7 @@ cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo build --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
+cargo test --locked --workspace --doc
 git diff --exit-code Cargo.lock
 cargo deny check
 mdbook build docs
@@ -33,7 +34,7 @@ mdbook test docs
 docker compose -f tests/e2e/docker-compose.yml config --quiet
 ```
 
-This list mirrors [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny mdbook-mermaid`, and a working Docker (for the compose validation). The mdBook build calls the `mdbook-mermaid` preprocessor for diagram blocks; without it, mermaid diagrams render as raw code blocks.
+This list mirrors the Rust and docs jobs of [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Required tooling: `rustup`, `cargo install mdbook cargo-deny mdbook-mermaid`, and a working Docker (for the compose validation). The mdBook build calls the `mdbook-mermaid` preprocessor for diagram blocks; without it, mermaid diagrams render as raw code blocks. The Python CI job runs the steps in [Python toolchain](#python-toolchain) below.
 
 ## Pre-commit / pre-push hooks
 
@@ -57,7 +58,9 @@ git push   --no-verify     # skip pre-push
 
 `AGENTS.md` requires this gate to be enabled (or the equivalent commands run by hand) before every push. See the [agent rulebook](AGENTS.md#commit-conventions) for the policy text.
 
-Python toolchain. The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribution loads as `aviso._native`. The `uv` workflow drives every Python-side check:
+## Python toolchain
+
+The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribution loads as `aviso._native`. The `uv` workflow drives every Python-side check:
 
 ```bash
 uv sync --locked --group dev

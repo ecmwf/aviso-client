@@ -4,6 +4,8 @@ The Python package includes two clients: `aviso.AvisoClient` (sync) and `aviso.A
 
 This page is about when the async client is worth using, and what the patterns look like when it is.
 
+The runnable examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+
 ## Use `AvisoClient` by default
 
 For most aviso users, `AvisoClient` is what you want. Scripts, batch jobs, one-shot CLI tools, cron entries, notebooks: all of these benefit from straight-line code with no event loop ceremony. If your first `asyncio.run` would exist only because of aviso, stop. Use the sync client.
