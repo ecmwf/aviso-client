@@ -6,14 +6,17 @@ The builder pattern is for the rare case where you want to construct
 the request once, perhaps from configuration, and pass the same request
 to several listen() calls or store it in a registry.
 
-Two snippets shown side-by-side in this docstring so you can compare:
+Two snippets shown side-by-side in this docstring so you can compare
+(both wrap the iterator in `with` so close() runs on exit):
 
     # kwarg style (recommended):
-    iterator = client.listen(
+    with client.listen(
         "test_polygon",
         filter={"polygon": "0,0,1,0,1,1,0,0"},
         triggers=[aviso.Trigger.echo()],
-    )
+    ) as iterator:
+        for n in iterator:
+            ...
 
     # builder style (this file):
     request = (
@@ -21,7 +24,9 @@ Two snippets shown side-by-side in this docstring so you can compare:
         .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
         .with_triggers([aviso.Trigger.echo()])
     )
-    iterator = client.listen(request=request)
+    with client.listen(request=request) as iterator:
+        for n in iterator:
+            ...
 
 The two produce identical iterators against the same server. Passing
 both triggers= and request= raises aviso.AvisoError.
