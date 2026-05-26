@@ -45,7 +45,7 @@ def main() -> None:
             print(f"received {count} notifications; exiting")
 
         if state_path.exists():
-            data = json.loads(state_path.read_text())
+            data = json.loads(state_path.read_text(encoding="utf-8"))
             print(f"state file contents: {data}")
         else:
             print("state file not yet written (no notifications committed)")

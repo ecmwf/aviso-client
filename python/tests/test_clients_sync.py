@@ -116,3 +116,26 @@ def test_listen_empty_triggers_with_request_still_raises() -> None:
     request = aviso.WatchRequest.watch("test_polygon").with_filter({"polygon": "0,0,1,0,1,1,0,0"})
     with pytest.raises(aviso.AvisoError):
         client.listen(request=request, triggers=[])
+
+
+def test_async_listen_accepts_triggers_kwarg() -> None:
+    import asyncio
+
+    client = aviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+
+    async def drive() -> None:
+        iterator = client.listen(
+            "test_polygon",
+            filter={"polygon": "0,0,1,0,1,1,0,0"},
+            triggers=[aviso.Trigger.echo()],
+        )
+        await iterator.aclose()
+
+    asyncio.run(drive())
+
+
+def test_async_listen_triggers_with_request_raises() -> None:
+    client = aviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+    request = aviso.WatchRequest.watch("test_polygon").with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    with pytest.raises(aviso.AvisoError):
+        client.listen(request=request, triggers=[aviso.Trigger.echo()])

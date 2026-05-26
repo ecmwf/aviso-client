@@ -31,15 +31,15 @@ def main() -> None:
         log_path = workdir / "notifications.log"
         print(f"log path: {log_path}")
 
-        iterator = client.listen(
+        count = 0
+        with client.listen(
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
             triggers=[aviso.Trigger.echo(), aviso.Trigger.log(log_path)],
-        )
-        count = 0
-        for n in break_after(iterator, 3):
-            print(f"seq={n.sequence} received")
-            count += 1
+        ) as iterator:
+            for n in break_after(iterator, 3):
+                print(f"seq={n.sequence} received")
+                count += 1
         print(f"received {count} notifications; exiting")
 
 

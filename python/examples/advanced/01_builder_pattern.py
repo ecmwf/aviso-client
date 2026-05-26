@@ -51,11 +51,11 @@ def main() -> None:
         .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
         .with_triggers([aviso.Trigger.echo()])
     )
-    iterator = client.listen(request=request)
     count = 0
-    for n in break_after(iterator, 3):
-        print(f"seq={n.sequence} received")
-        count += 1
+    with client.listen(request=request) as iterator:
+        for n in break_after(iterator, 3):
+            print(f"seq={n.sequence} received")
+            count += 1
     print(f"received {count} notifications; exiting")
 
 

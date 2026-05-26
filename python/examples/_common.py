@@ -21,9 +21,11 @@ import contextlib
 import os
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import TypeVar
+
+T = TypeVar("T")
 
 
 def require_env() -> str:
@@ -44,7 +46,7 @@ def require_env() -> str:
     return base_url
 
 
-def break_after(iterator: Any, n: int) -> Iterator[Any]:
+def break_after(iterator: Iterable[T], n: int) -> Iterator[T]:
     """Yield up to ``n`` items from an iterator, then stop.
 
     The examples use this so they terminate in bounded time. A real
