@@ -4,9 +4,10 @@ The simplest possible publisher: construct a client, call notify(), look
 at what came back. Substitute your own event type and identifier fields
 if your server has different schemas than the test_polygon used here.
 
-Expected output (the UUID and timestamp differ on every run):
+Expected output (two lines; the UUID and timestamp differ on every run):
 
-    status=success request_id=<uuid> processed_at=<iso 8601>
+    status=success request_id=<uuid>
+    processed_at=<iso 8601>
 """
 
 from __future__ import annotations

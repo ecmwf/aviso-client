@@ -2,6 +2,17 @@
 
 Runnable scripts that show what the Python API does, one scenario per file. Every script reads `AVISO_BASE_URL` plus either `AVISO_TOKEN` or `AVISO_USERNAME` / `AVISO_PASSWORD` from the environment and connects to whatever aviso-server you point it at. The examples use the `test_polygon` event type because it is widely available on dev servers; if your server has different schemas configured, replace the event type and identifier fields with what `client.schema()` reports.
 
+## Prerequisites
+
+The `aviso` package must be installed in the active Python environment. From a checkout:
+
+```bash
+uv sync --locked --group dev
+uv run maturin develop --release --locked
+```
+
+See [`python/README.md`](../README.md#install) for the full install instructions.
+
 ## How to run
 
 Set two environment variables and run any script:

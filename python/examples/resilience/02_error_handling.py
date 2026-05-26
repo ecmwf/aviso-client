@@ -7,10 +7,11 @@ for fine-grained dispatch.
 This example deliberately publishes an invalid notification (malformed
 polygon) to trigger an HttpError, then prints the structured fields.
 
-Expected output (the request_id changes every run):
+Expected output (the request_id changes every run; body is the
+first 200 chars of the server's JSON error response):
 
     HttpError: status=400 request_id=<uuid>
-      details: field 'polygon' must be a valid polygon: ...
+      body: {"code":"INVALID_NOTIFICATION_REQUEST","details":"field 'polygon' ...
 """
 
 from __future__ import annotations

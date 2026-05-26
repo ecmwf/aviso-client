@@ -197,4 +197,6 @@ The pre-implementation design review (oracle round 1) closed these:
 
 - Branch: `feat/python-examples-and-kwarg`
 - Plan: this file
-- Not yet implemented
+- Implemented in commits `449bafb` (iterator context manager), `ea705da` (triggers= kwarg), `96a00dc` (examples tree + harness extension), `d05cd96` (docs rewrite).
+- Code-review pass settled six follow-ups in `2d2fc55` (every sync listener wrapped in `with`; README trigger counts corrected; async tests added; webhook example fails on no POST; `break_after` typed with TypeVar; explicit UTF-8 on `read_text` calls). A one-line README tightening followed in `d12fc69`.
+- PR #21 open for review.

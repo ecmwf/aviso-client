@@ -12,8 +12,10 @@ Expected output:
 
     workdir: <tmp>
     received 3 notifications; exiting
-    handled_<sequence>.touch -- 3 files
-
+    touch files in workdir: 3
+      handled_<sequence>.touch
+      handled_<sequence>.touch
+      handled_<sequence>.touch
 """
 
 from __future__ import annotations
