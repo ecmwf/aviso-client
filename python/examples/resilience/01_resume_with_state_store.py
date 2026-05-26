@@ -8,11 +8,12 @@ nothing it has already seen. ``flush_cursor_on_exit=True`` plus the
 committed before the process exits, so a clean Ctrl+C does not cause
 a replay on next start.
 
-Expected output:
+Expected output (the state file's contents are the supervisor's
+internal cursor map keyed by the resume-key the watch derived):
 
     state file: <tmp>/state.json
     received 3 notifications; exiting
-    cursor in state file: <some integer>
+    state file contents: {'<resume-key>': {'sequence': <int>, ...}}
 """
 
 from __future__ import annotations
