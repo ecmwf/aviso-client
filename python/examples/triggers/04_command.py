@@ -44,14 +44,14 @@ def main() -> None:
             print(f"Trigger.command unavailable on this platform: {e}")
             return
 
-        iterator = client.listen(
+        count = 0
+        with client.listen(
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
             triggers=[trigger],
-        )
-        count = 0
-        for _ in break_after(iterator, 3):
-            count += 1
+        ) as iterator:
+            for _ in break_after(iterator, 3):
+                count += 1
         print(f"received {count} notifications; exiting")
 
         touches = sorted(workdir.glob("handled_*.touch"))

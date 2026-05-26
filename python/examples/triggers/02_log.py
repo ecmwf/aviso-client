@@ -31,18 +31,18 @@ def main() -> None:
         log_path = workdir / "notifications.log"
         print(f"log path: {log_path}")
 
-        iterator = client.listen(
+        count = 0
+        with client.listen(
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
             triggers=[aviso.Trigger.log(log_path)],
-        )
-        count = 0
-        for _ in break_after(iterator, 3):
-            count += 1
+        ) as iterator:
+            for _ in break_after(iterator, 3):
+                count += 1
         print(f"received {count} notifications; exiting")
 
         print("log contents:")
-        print(log_path.read_text(), end="")
+        print(log_path.read_text(encoding="utf-8"), end="")
 
 
 if __name__ == "__main__":

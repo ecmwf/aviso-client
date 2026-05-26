@@ -32,11 +32,11 @@ from _common import break_after, require_env
 
 def main() -> None:
     client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
-    iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
     count = 0
-    for n in break_after(iterator, 3):
-        print(f"seq={n.sequence} identifier={n.identifier} payload={n.payload}")
-        count += 1
+    with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+        for n in break_after(iterator, 3):
+            print(f"seq={n.sequence} identifier={n.identifier} payload={n.payload}")
+            count += 1
     print(f"received {count} notifications; exiting")
 
 

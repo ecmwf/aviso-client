@@ -55,7 +55,8 @@ def main() -> None:
 
     try:
         client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
-        iterator = client.listen(
+        count = 0
+        with client.listen(
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
             triggers=[
@@ -64,20 +65,19 @@ def main() -> None:
                     method=aviso.HttpMethod.POST,
                 )
             ],
-        )
-        count = 0
-        for _ in break_after(iterator, 1):
-            count += 1
+        ) as iterator:
+            for _ in break_after(iterator, 1):
+                count += 1
         print(f"received {count} notification; exiting")
     finally:
         server.shutdown()
         thread.join(timeout=2)
 
     bodies = RecordingHandler.received_bodies
-    if bodies:
-        print(f"server received {len(bodies)} POST; first body bytes: {bodies[0][:120]!r}")
-    else:
-        print("server received no POST (the webhook may have fired after timeout)")
+    if not bodies:
+        sys.stderr.write("server received no POST; the webhook did not fire as expected\n")
+        sys.exit(1)
+    print(f"server received {len(bodies)} POST; first body bytes: {bodies[0][:120]!r}")
 
 
 if __name__ == "__main__":

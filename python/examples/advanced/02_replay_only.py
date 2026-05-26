@@ -32,16 +32,16 @@ def main() -> None:
     client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
     from_sequence = 1
     print(f"replaying from sequence {from_sequence}")
-    iterator = client.listen(
+    count = 0
+    with client.listen(
         "test_polygon",
         filter={"polygon": "0,0,1,0,1,1,0,0"},
         from_=from_sequence,
         mode="replay_only",
-    )
-    count = 0
-    for n in break_after(iterator, 3):
-        print(f"seq={n.sequence} received")
-        count += 1
+    ) as iterator:
+        for n in break_after(iterator, 3):
+            print(f"seq={n.sequence} received")
+            count += 1
     print(f"replayed {count} notifications; exiting")
 
 

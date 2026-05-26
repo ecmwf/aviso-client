@@ -30,7 +30,7 @@ for n in client.listen(
 
 ### D-K2. Conflict detection mirrors the existing `request=` + `mode=` rule
 
-If both `request=` and `triggers=` are passed, the call errors with the same shape as the existing `request= + mode=` conflict. The message is `"triggers= cannot be combined with request=; add triggers to the WatchRequest instead"` (not "the request already carries its own triggers" — a triggerless `WatchRequest` is a legitimate construction, so the message has to describe the kwarg/builder mutual exclusion, not invent a state the request might not be in). The kwargs path and the builder path stay mutually exclusive; nobody can construct an ambiguous request.
+If both `request=` and `triggers=` are passed, the call errors with the same shape as the existing `request= + mode=` conflict. The message is `"triggers= cannot be combined with request=; add triggers to the WatchRequest instead"` (not "the request already carries its own triggers", which would be false for a triggerless `WatchRequest`; the message has to describe the kwarg/builder mutual exclusion, not invent a state the request might not be in). The kwargs path and the builder path stay mutually exclusive; nobody can construct an ambiguous request.
 
 ### D-K3.5. `NotificationIterator` and `AsyncNotificationIterator` become context managers
 
@@ -106,7 +106,7 @@ Log, command, and resume examples write to `tempfile.NamedTemporaryFile` paths o
 
 ### D-E3. The builder pattern gets one dedicated example, not one variant per scenario
 
-`pyaviso-examples` shipped `<trigger>-env.py` AND `<trigger>-config.py` for every trigger — eight files where four would do, because the config-vs-env split is orthogonal to the trigger kind. We do not repeat that mistake. The builder pattern gets exactly one file (`advanced/01_builder_pattern.py`) that takes the simplest trigger example (`triggers/01_echo.py`) and shows it again with the builder, with the diff explained in the docstring. Readers learn the pattern once and apply it to whatever scenario they need.
+`pyaviso-examples` shipped `<trigger>-env.py` AND `<trigger>-config.py` for every trigger: eight files where four would do, because the config-vs-env split is orthogonal to the trigger kind. We do not repeat that mistake. The builder pattern gets exactly one file (`advanced/01_builder_pattern.py`) that takes the simplest trigger example (`triggers/01_echo.py`) and shows it again with the builder, with the diff explained in the docstring. Readers learn the pattern once and apply it to whatever scenario they need.
 
 ### D-E4. Each example is fact-checked end-to-end against `aviso-server.ecmwf.int`
 
@@ -144,7 +144,7 @@ Four commits on `feat/python-examples-and-kwarg`. The first two are split (per t
 
 1. **Commit 1: iterator context-manager support.** Add `__enter__`/`__exit__` to `PyNotificationIterator` and `__aenter__`/`__aexit__` to `PyAsyncNotificationIterator` (`crates/aviso-py/src/streams.rs`). Update `python/aviso/__init__.pyi` and `python/aviso/_native.pyi`. Two tests in `python/tests/test_iter_close.py`: sync `with`, async `async with`.
 
-2. **Commit 2: `triggers=` kwarg.** Add the kwarg to `AvisoClient.listen` and `AsyncAvisoClient.listen` (Rust, `crates/aviso-py/src/clients.rs`). Update `build_watch_request` to apply `triggers=` when `request=` is absent and to error when both are passed (including when `triggers=` is an empty sequence — any non-None value alongside `request=` is the conflict). Reject bare `Trigger` with a clear runtime error ("triggers= must be a sequence of Trigger; pass [trigger] for a single one"); accept tuples and lists alike via Python sequence extraction. Stubs updated to `Sequence[Trigger] | None`. A brief `api-reference.md` signature touch keeps the reference in sync. Four tests in `python/tests/test_clients_sync.py`: kwargs happy path, kwargs+request conflict (with both non-empty and empty `triggers`), tuple acceptance, bare-`Trigger` rejection.
+2. **Commit 2: `triggers=` kwarg.** Add the kwarg to `AvisoClient.listen` and `AsyncAvisoClient.listen` (Rust, `crates/aviso-py/src/clients.rs`). Update `build_watch_request` to apply `triggers=` when `request=` is absent and to error when both are passed (including when `triggers=` is an empty sequence; any non-None value alongside `request=` is the conflict). Reject bare `Trigger` with a clear runtime error ("triggers= must be a sequence of Trigger; pass [trigger] for a single one"); accept tuples and lists alike via Python sequence extraction. Stubs updated to `Sequence[Trigger] | None`. A brief `api-reference.md` signature touch keeps the reference in sync. Four tests in `python/tests/test_clients_sync.py`: kwargs happy path, kwargs+request conflict (with both non-empty and empty `triggers`), tuple acceptance, bare-`Trigger` rejection.
 
 3. **Commit 3: `python/examples/` tree + harness extension.** All 15 example files plus 5 READMEs (root + 4 directory) plus a `_common.py` helper (env check, `break_after(iterator, n)`, `temp_dir()` context-manager wrapping `tempfile.TemporaryDirectory` with helper paths for child files). Each example carries a tiny top-of-file path-bootstrap (`sys.path.insert(0, str(Path(__file__).resolve().parents[1]))`) so users can run `python python/examples/triggers/01_echo.py` without manual `PYTHONPATH`. Non-runnable examples are marked with a top-of-file `# AVISO_EXAMPLE_NOT_RUNNABLE: <reason>` comment that the harness scans for (the harness already handles `<!-- not-runnable -->` for markdown blocks; the new comment marker is the example-script equivalent). Side-effect examples use `tempfile.TemporaryDirectory` + named child files, never `NamedTemporaryFile`, to avoid races between the trigger writer and the example's verification step. The doc-examples harness extends to walk `python/examples/**/*.py` in addition to `docs/src/python/*.md` code blocks. The local-server webhook example uses `http.server.HTTPServer` with a randomly-bound port (`server_address=("127.0.0.1", 0)`, then read `server.server_port`).
 
@@ -163,7 +163,7 @@ Four commits on `feat/python-examples-and-kwarg`. The first two are split (per t
 
 - Common case becomes one method call instead of method-call-plus-builder. The kwargs path covers every trigger scenario without ever touching `WatchRequest`.
 - The docs lead with the kwargs path. The builder is documented in one place (one subsection in `listen.md`, one example in `advanced/`) framed as "if you want to reuse the same configured request across multiple `listen()` calls, here is the builder".
-- `listen(request=..., triggers=[...])` is a new error (it was a silent ambiguity before, kind of — triggers could only be attached to the request, so passing triggers= AND request= was not expressible; the explicit error catches the case if/when users try it).
+- `listen(request=..., triggers=[...])` is a new error (it was a silent ambiguity before, kind of: triggers could only be attached to the request, so passing triggers= AND request= was not expressible; the explicit error catches the case if/when users try it).
 
 ## Validation
 
