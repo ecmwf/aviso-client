@@ -21,7 +21,7 @@ Each script terminates on its own (most listeners stop after receiving 3 notific
 The directories group examples by purpose, not by API surface:
 
 - **basics/**: the three calls that every user needs first. Publish, listen, schema discovery.
-- **triggers/**: five of the six trigger kinds the library exposes (`echo`, `log`, `multiple`-as-combination, `command`, `webhook`), each attached via the kwargs path (`triggers=[...]`). The other two kinds (`teams`, `post`) are HTTP variants of `webhook`; see the [api reference](../../docs/src/python/api-reference.md#triggers) for their full surface.
+- **triggers/**: four trigger-kind examples (`echo`, `log`, `command`, `webhook`) plus one composition example (`multiple`), all using the kwargs path (`triggers=[...]`). `teams` and `post` are HTTP variants of `webhook` and share its shape; see the [api reference](../../docs/src/python/api-reference.md#triggers) for their full constructors.
 - **resilience/**: state-store resume and exception handling. The two reasons you need patterns on top of listen.
 - **async/**: the async client. The basic listener and the multiplex pattern that earns the async surface its keep.
 - **advanced/**: the builder pattern (alternative to kwargs), replay-only mode, and the runnable webhook example.
