@@ -29,7 +29,7 @@ Methods:
 - `wipe_stream(stream_name) -> None`
 - `wipe_all() -> None`
 - `delete_notification(notification_id) -> None`
-- `listen(event_type=None, *, filter=None, from_=None, mode=None, request=None) -> NotificationIterator` (mode defaults to `"watch"` when not specified)
+- `listen(event_type=None, *, filter=None, from_=None, mode=None, triggers=None, request=None) -> NotificationIterator` (mode defaults to `"watch"` when not specified; `triggers` is a `Sequence[Trigger]`; the returned iterator is also a context manager via `with` and supports `iterator.close()` for explicit teardown)
 - `__enter__` / `__exit__` for `with` blocks.
 
 `aviso.AsyncAvisoClient` is the same shape. `notify` / `schema` / `schema_for` / `wipe_*` / `delete_notification` return awaitables; `listen` returns an `AsyncNotificationIterator`.

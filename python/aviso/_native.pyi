@@ -9,7 +9,7 @@ package.
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 
 # reason: Notification.payload and filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
@@ -162,11 +162,25 @@ class NotificationIterator:
     def __iter__(self) -> NotificationIterator: ...
     def __next__(self) -> Notification: ...
     def close(self) -> None: ...
+    def __enter__(self) -> NotificationIterator: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> bool: ...
 
 class AsyncNotificationIterator:
     def __aiter__(self) -> AsyncNotificationIterator: ...
     def __anext__(self) -> Awaitable[Notification]: ...
     def aclose(self) -> Awaitable[None]: ...
+    def __aenter__(self) -> Awaitable[AsyncNotificationIterator]: ...
+    def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> Awaitable[None]: ...
 
 class AvisoClient:
     def __init__(
@@ -202,6 +216,7 @@ class AvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> NotificationIterator: ...
     def __enter__(self) -> AvisoClient: ...
@@ -246,6 +261,7 @@ class AsyncAvisoClient:
         filter: dict[str, Any] | None = None,
         from_: int | str | None = None,
         mode: str | None = None,
+        triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator: ...
 
