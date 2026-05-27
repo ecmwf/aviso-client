@@ -8,12 +8,12 @@
 )]
 
 use std::io::Write;
-use std::process::{Command as StdCommand, Stdio};
+use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 
 use assert_cmd::Command as AssertCommand;
-use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url};
+use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url, isolated_aviso_command};
 use tempfile::NamedTempFile;
 
 const POLYGON: &str = "0,40,1,40,1,41,0,40";
@@ -28,10 +28,9 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
     listener_file.write_all(listener_yaml.as_bytes()).unwrap();
     let listener_path = listener_file.path().to_path_buf();
 
-    let aviso_bin = assert_cmd::cargo::cargo_bin("aviso");
     let base = base_url();
 
-    let mut child = StdCommand::new(&aviso_bin)
+    let mut child = isolated_aviso_command()
         .args([
             "--base-url",
             &base,
@@ -54,8 +53,7 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
         let parameters = format!(
             "event=test_polygon,polygon=\"{POLYGON}\",date=20260613,time={seq:04},data={{\"from\":\"cli_listen_test\",\"seq\":{seq}}}"
         );
-        AssertCommand::cargo_bin("aviso")
-            .unwrap()
+        AssertCommand::from_std(isolated_aviso_command())
             .args([
                 "--base-url",
                 &base,

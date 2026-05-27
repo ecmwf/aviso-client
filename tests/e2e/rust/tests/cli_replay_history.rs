@@ -14,7 +14,7 @@
 use std::time::Duration;
 
 use assert_cmd::Command;
-use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url};
+use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url, isolated_aviso_command};
 use predicates::str::is_empty;
 
 const POLYGON: &str = "0,50,1,50,1,51,0,50";
@@ -25,8 +25,7 @@ fn cli_replay_empty_window_exits_zero() {
     let base = base_url();
     let identifiers = format!("{{\"polygon\":\"{POLYGON}\"}}");
 
-    Command::cargo_bin("aviso")
-        .unwrap()
+    Command::from_std(isolated_aviso_command())
         .args([
             "--base-url",
             &base,
