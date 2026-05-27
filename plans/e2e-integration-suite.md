@@ -131,6 +131,30 @@ A new GitHub Actions job `e2e` runs on the existing CI workflow:
 - **The doc-examples harness** moves to optionally point at the local stack via `AVISO_BASE_URL=http://localhost:8000` (the local default). It can also keep pointing at `aviso.example.org` for the maintainer's local validation; the harness becomes server-agnostic via the env var.
 - **Currently-`<!-- not-runnable -->`-marked snippets** become runnable against the local stack (the webhook example with placeholder URL, the command example with a custom shell command, the resume example with a persistent state file). The harness's not-runnable list shrinks.
 
+### What this changes for the python/examples/ tree (D-S9)
+
+This is one of the highest-leverage downstream wins of the e2e work and the entire reason we are doing it from a user-experience angle.
+
+Today, the 15 example scripts under `python/examples/` assume the reader's server has the `test_polygon` event type configured. We document a fallback ("substitute your own event type if not") and ship a copy-paste schema snippet for operators (per the quickstart's "What is on your server" section + the existing `tests/e2e/aviso-server.config.yaml`), but a new user without an operator account on any aviso-server still has friction: they have to find a server, get credentials, hope it has `test_polygon`, and only then can they try the examples.
+
+Once the e2e stack ships, that friction collapses to two commands:
+
+```bash
+cd tests/e2e && docker compose up -d --wait
+export AVISO_BASE_URL=http://localhost:8000 AVISO_USERNAME=tester AVISO_PASSWORD=tester-token
+python python/examples/basics/01_publish.py
+```
+
+The `test_polygon` schema is already in `tests/e2e/aviso-server.config.yaml`, so every example runs out of the box against the local stack with no operator involvement. The schema-substitution fallback becomes the secondary path (for users who do want to run against their own production server); the local docker stack becomes the primary "try the examples" path.
+
+Concretely the examples-PR follow-up to this work will:
+
+- Add a "Run the examples against the local stack" subsection to `python/examples/README.md` showing the two-command setup above.
+- Add a one-line cross-reference from `docs/src/python/quickstart.md`'s "What is on your server" section so the schema-snippet path frames itself as "two options: spin up the local stack, or paste this into your own server's config".
+- Optionally promote the `triggers/05_webhook.py` placeholder example to runnable now that the harness has a local HTTP receiver pattern in `advanced/03_webhook_with_local_server.py`; reconsider whether the split-into-two-files pedagogy still makes sense once both are runnable.
+
+The work itself is small (a docs edit and possibly the webhook-pair reconsideration); it lives in a follow-up PR once the e2e stack is in place because it depends on that stack being available locally. Tracked here so it does not get lost.
+
 ## Decisions
 
 ### D-S1. Same compose stack serves both language suites
@@ -165,6 +189,10 @@ The existing `aviso-server` is pinned `0.6.2@sha256:...`. The new `nats` and `au
 
 On any e2e test failure, the workflow runs `docker compose logs > e2e-logs.txt` and uploads it via `actions/upload-artifact`. Without this, debugging an e2e failure means re-running locally with the same images and hoping the bug reproduces.
 
+### D-S9. The same compose stack is the recommended local environment for running the `python/examples/` tree
+
+The e2e suite is the primary consumer of the stack, but the stack is reusable for any local validation. Specifically: the `python/examples/` scripts assume a server with `test_polygon` configured; the e2e stack ships that schema in `tests/e2e/aviso-server.config.yaml`. A new user evaluating the Python API will be told to run the same `docker compose up -d` that the test suite uses, point `AVISO_BASE_URL` at `http://localhost:8000`, and run any example unchanged. This collapses the "find a server, get credentials, hope it has test_polygon" friction to two commands. The follow-up examples PR documents this; the e2e work just has to make sure the stack-up flow is documented for end users, not only for CI.
+
 ## Open questions
 
 1. **Image references**. The user said both ECMWF images are public; the exact tag and digest to pin will come from the user in the implementation phase. The plan reserves slots for `eccr.ecmwf.int/aviso/auth_o_tron:<TAG>@<DIGEST>` and `docker.io/library/nats:<TAG>@<DIGEST>` (or wherever the user names).
@@ -176,7 +204,7 @@ On any e2e test failure, the workflow runs `docker compose logs > e2e-logs.txt` 
 
 Five focused commits on `feat/e2e-integration-suite`:
 
-1. **Commit 1: compose stack + configs**. Extend `docker-compose.yml` with `auth-o-tron` and `nats` services; add their config files; flip `aviso-server.config.yaml` to NATS backend + auth enabled; add the `aviso-server.in-memory` service for the fast-feedback variant; update `tests/e2e/README.md` to document the new shape and the bump procedure for the new pinned images.
+1. **Commit 1: compose stack + configs**. Extend `docker-compose.yml` with `auth-o-tron` and `nats` services; add their config files; flip `aviso-server.config.yaml` to NATS backend + auth enabled; add the `aviso-server.in-memory` service for the fast-feedback variant; update `tests/e2e/README.md` to document the new shape, the bump procedure for the new pinned images, AND the "run python/examples/ against the local stack" user-facing workflow (per D-S9).
 
 2. **Commit 2: stack-up helper + Python conftest.py**. Add `shared/stack_up.sh` (a shell helper both languages call to bring the stack up against a chosen port shard) and `python/conftest.py` (session-scoped fixture, per-xdist-worker shard allocation). No tests yet; just the scaffolding.
 
@@ -184,7 +212,7 @@ Five focused commits on `feat/e2e-integration-suite`:
 
 4. **Commit 4: Rust e2e suite**. New `tests/e2e/rust/Cargo.toml` workspace member, the 6 Rust test files, workspace `Cargo.toml` updated.
 
-5. **Commit 5: CI workflow + final docs**. New `.github/workflows/ci.yml` job (or extends the existing one) running the e2e suite per D-S2 + D-S8; updates `CONTRIBUTING.md` and `README.md` to document local-run workflow.
+5. **Commit 5: CI workflow + final docs**. New `.github/workflows/ci.yml` job (or extends the existing one) running the e2e suite per D-S2 + D-S8; updates `CONTRIBUTING.md` and `README.md` to document local-run workflow; updates `python/examples/README.md` and `docs/src/python/quickstart.md`'s schema-snippet section to lead with "spin up the local stack" as the recommended path for trying the examples (per D-S9).
 
 ## What stays the same
 
