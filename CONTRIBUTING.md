@@ -65,17 +65,44 @@ The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribut
 ```bash
 uv sync --locked --group dev
 uv run maturin develop --locked
-uv run ruff check python/
-uv run ruff format --check python/
-uv run ty check python/
+uv run ruff check python/ tests/e2e/python/
+uv run ruff format --check python/ tests/e2e/python/
+uv run ty check python/ tests/e2e/python/
 uv run pytest python/tests/
 ```
 
-`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `aviso/` package (writes `python/aviso/_native*.so` on the system Python and an editable install into `.venv`). The remaining four commands are the Python CI gates, run identically by the GitHub Actions `python` job and by the pre-push hook.
+`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `aviso/` package (writes `python/aviso/_native*.so` on the system Python and an editable install into `.venv`). The lint, format-check, and type-check commands shown above run against `python/ tests/e2e/python/` as the recommended local superset; the GitHub Actions `python` job currently runs them against `python/` only, so adding `tests/e2e/python/` here protects the e2e suite from drift between local and CI runs.
 
 ## End-to-end tests
 
-E2E tests run against a real `aviso-server` instance pulled from ECMWF's container registry. The pinned version lives in the `image:` tag of [`tests/e2e/docker-compose.yml`](tests/e2e/docker-compose.yml). Bring it up locally with `cd tests/e2e && docker compose up -d`.
+E2E tests run against a real three-service stack (`aviso-server` + `auth-o-tron` + JetStream-backed NATS) pulled from public registries. Images are pinned by manifest digest in [`tests/e2e/docker-compose.yml`](tests/e2e/docker-compose.yml). The stack mirrors ECMWF's production deployment patterns (auth required, three accounts mapped to three roles, shared JWT secret); see [`tests/e2e/README.md`](tests/e2e/README.md) for the account credentials and the bump procedure.
+
+### Python e2e suite
+
+Assumes the [Python toolchain](#python-toolchain) setup above has already been run (`uv sync` + `uv run maturin develop` builds the `aviso._native` extension into the local venv; without it, `uv run pytest tests/e2e/python/` fails on first import).
+
+```bash
+bash tests/e2e/shared/stack.sh up
+export AVISO_BASE_URL=http://localhost:8000 \
+       AVISO_USERNAME=producer-user \
+       AVISO_PASSWORD=producer-pass
+uv run pytest tests/e2e/python/
+```
+
+The stack-up helper polls each service's health endpoint with a 60 s timeout and exits non-zero if any service does not come up. By default the stack is left running after pytest exits so successive runs skip the docker startup cost; set `AVISO_E2E_TEARDOWN=1` to tear down. On any test failure `docker compose logs` are captured to `tests/e2e/last-failure.log` for post-mortem.
+
+The hermetic suite at `python/tests/` stays the default (`uv run pytest`); the e2e suite is opt-in via the explicit path (`tests/e2e/python/`).
+
+### Rust e2e suite
+
+```bash
+bash tests/e2e/shared/stack.sh up
+cargo build -p aviso-cli
+cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
+bash tests/e2e/shared/stack.sh down  # when done, or `restart` to wipe JetStream between runs
+```
+
+Every `#[test]` function in `tests/e2e/rust/` carries `#[ignore = "requires e2e compose stack"]`, so the default `cargo test --workspace` invocation compiles the crate but skips running the tests. The `--include-ignored` flag opts in; `--test-threads=1` keeps publishers and listeners from racing each other in the shared JetStream stream. The CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects the `aviso` binary to exist at `target/debug/aviso`, hence the `cargo build -p aviso-cli` step. See `bash tests/e2e/shared/stack.sh` (no args) for the full subcommand list (`up`, `down`, `restart`, `logs`, `status`).
 
 ## Code of conduct
 
