@@ -27,7 +27,9 @@ COMPOSE_FILE = E2E_DIR / "docker-compose.yml"
 STACK_UP = E2E_DIR / "shared" / "stack_up.sh"
 LAST_FAILURE_LOG = E2E_DIR / "last-failure.log"
 
-BASE_URL = os.environ.get("AVISO_E2E_BASE_URL", "http://localhost:8000")
+BASE_URL = os.environ.get(
+    "AVISO_E2E_BASE_URL", os.environ.get("AVISO_BASE_URL", "http://localhost:8000")
+)
 
 ADMIN_USERNAME = "admin-user"
 ADMIN_PASSWORD = "admin-pass"

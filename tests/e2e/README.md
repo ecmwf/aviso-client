@@ -39,12 +39,18 @@ export AVISO_BASE_URL=http://localhost:8000 \
        AVISO_PASSWORD=producer-pass
 uv run pytest tests/e2e/python/
 
-# rust e2e suite (tests are #[ignore]-gated; --include-ignored opts in)
-cargo test --locked -p aviso-e2e -- --include-ignored
+# rust e2e suite (tests are #[ignore]-gated; --include-ignored opts in;
+# --test-threads=1 keeps publishers and listeners from racing in the shared stream)
+cargo build -p aviso-cli
+cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 
 # teardown
 docker compose -f tests/e2e/docker-compose.yml down -v
 ```
+
+The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.
+
+Per-pytest-session teardown is opt-in via `AVISO_E2E_TEARDOWN=1` so successive `uv run pytest` invocations skip the docker startup cost; tests will leave the stack running otherwise.
 
 ## Run multiple shards in parallel
 

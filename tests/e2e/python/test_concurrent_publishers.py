@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import aviso
+from _helpers import receive_within_async
 
 POLYGON = "80,0,81,0,81,1,80,0"
 EVENT_TYPE = "test_polygon"
@@ -29,9 +30,8 @@ async def test_five_parallel_publishes_get_unique_request_ids_and_all_arrive_on_
         request_ids = {r.request_id for r in responses}
         assert len(request_ids) == PARALLELISM, "every publish must get a unique request_id"
 
-        async for notification in iterator:
+        for _ in range(PARALLELISM):
+            notification = await receive_within_async(iterator, timeout=10)
             received.add(notification.payload["seq"])
-            if len(received) >= PARALLELISM:
-                break
 
     assert received == set(range(1, PARALLELISM + 1))

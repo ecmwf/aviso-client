@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import threading
 import time
 
 import aviso
+from _helpers import background_publishes, receive_within
 
 POLYGON = "10,0,11,0,11,1,10,0"
 EVENT_TYPE = "test_polygon"
@@ -18,29 +18,29 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
     )
 
 
-def _delayed_publish(client: aviso.AvisoClient, seq: int, delay_sec: float) -> None:
-    def run() -> None:
-        time.sleep(delay_sec)
-        _publish(client, seq)
-
-    threading.Thread(target=run, daemon=True).start()
-
-
 def test_listener_survives_max_duration_reached_cut(
     producer_client: aviso.AvisoClient,
 ) -> None:
     expected = {1, 2, 3, 4}
     received: list[int] = []
+
+    def publish_sequence() -> None:
+        time.sleep(0.5)
+        _publish(producer_client, 1)
+        time.sleep(0.5)
+        _publish(producer_client, 2)
+        time.sleep(CONNECTION_MAX_DURATION_SEC + 1.0)
+        _publish(producer_client, 3)
+        time.sleep(0.5)
+        _publish(producer_client, 4)
+
     with producer_client.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator:
         time.sleep(0.5)
-        _delayed_publish(producer_client, 1, 0.5)
-        _delayed_publish(producer_client, 2, 1.0)
-        _delayed_publish(producer_client, 3, CONNECTION_MAX_DURATION_SEC + 2.0)
-        _delayed_publish(producer_client, 4, CONNECTION_MAX_DURATION_SEC + 3.0)
-        deadline = time.monotonic() + CONNECTION_MAX_DURATION_SEC + 10
-        while set(received) < expected and time.monotonic() < deadline:
-            notification = next(iterator)
-            received.append(notification.payload["seq"])
+        with background_publishes(publish_sequence, timeout=CONNECTION_MAX_DURATION_SEC + 10):
+            deadline = time.monotonic() + CONNECTION_MAX_DURATION_SEC + 10
+            while set(received) < expected and time.monotonic() < deadline:
+                remaining = max(deadline - time.monotonic(), 0.5)
+                received.append(receive_within(iterator, timeout=remaining).payload["seq"])
 
     assert set(received) >= expected, f"missing items: {expected - set(received)}"
     assert len(received) <= len(expected) + 1, (

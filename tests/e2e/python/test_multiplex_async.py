@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import aviso
+from _helpers import receive_within_async
 
 POLYGON_A = "50,0,51,0,51,1,50,0"
 POLYGON_B = "60,0,61,0,61,1,60,0"
@@ -12,10 +13,9 @@ EVENT_TYPE = "test_polygon"
 async def _consume(client: aviso.AsyncAvisoClient, polygon: str, count: int) -> list[int]:
     received: list[int] = []
     async with client.listen(EVENT_TYPE, filter={"polygon": polygon}) as iterator:
-        async for notification in iterator:
+        for _ in range(count):
+            notification = await receive_within_async(iterator, timeout=10)
             received.append(notification.payload["seq"])
-            if len(received) >= count:
-                break
     return received
 
 
