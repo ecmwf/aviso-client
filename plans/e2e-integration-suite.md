@@ -24,8 +24,8 @@ The infrastructure to fix the above exists. `tests/e2e/docker-compose.yml` ships
 
 The configs we ship for the test stack mirror ECMWF's production deployment so the e2e suite exercises real-world settings and the configs double as canonical examples for users who want to run their own deployment. Source repositories:
 
-- `https://github.com/ecmwf/aviso-chart` (Helm chart for aviso-server, with `examples/` profiles including `values-auth-enabled.yaml` and `values-jetstream-internal-nats.yaml`).
-- `https://github.com/ecmwf/aviso-config` (production values overlay; `location/bologna.yaml` is the live overlay we mirror).
+- [`ecmwf/aviso-chart`](https://github.com/ecmwf/aviso-chart) (Helm chart for aviso-server, with `examples/` profiles including [`values-auth-enabled.yaml`](https://github.com/ecmwf/aviso-chart/blob/main/examples/values-auth-enabled.yaml) and [`values-jetstream-internal-nats.yaml`](https://github.com/ecmwf/aviso-chart/blob/main/examples/values-jetstream-internal-nats.yaml)).
+- [`ecmwf/aviso-config`](https://github.com/ecmwf/aviso-config) (production values overlay; [`location/bologna.yaml`](https://github.com/ecmwf/aviso-config/blob/main/location/bologna.yaml) is the live overlay we mirror).
 
 The relevant production decisions we adopt verbatim:
 

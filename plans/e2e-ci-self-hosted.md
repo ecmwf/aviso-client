@@ -86,7 +86,7 @@ e2e:
     - if: steps.filter.outputs.affected == 'true'
       run: uv run pytest tests/e2e/python/ -v
     - if: steps.filter.outputs.affected == 'true'
-      run: cargo test --locked -p aviso-e2e -- --include-ignored
+      run: cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
     - if: always() && steps.filter.outputs.affected == 'true'
       run: docker compose -f tests/e2e/docker-compose.yml logs > tests/e2e/last-failure.log
     - if: failure() && steps.filter.outputs.affected == 'true'
