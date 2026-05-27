@@ -49,7 +49,7 @@
 - The same rule applies to TODO-style status banners such as `> Status: Phase 0 placeholder.` and to scaffold/preview markers in module docs and config comments.
 
 ## Process-meta references
-- Internal tool names, review-cycle counters, and PR-internal identifiers MUST NOT appear in code, docstrings, configuration files, commit messages, PR descriptions, PR review replies, or user-facing docs. They belong to `plans/` and to ephemeral conversation only.
+- Internal tool names, review-cycle counters, and PR-internal identifiers MUST NOT appear in shipped code, docstrings, configuration files, commit messages, PR descriptions, PR review replies, or user-facing docs. They belong only in the project's own process-description files: `plans/`, this `AGENTS.md`, `CONTRIBUTING.md`, and dotfile tooling configs like `.prompts/`. They are also fine in ephemeral conversation transcripts.
 - Specifically banned tokens (case-insensitive) outside `plans/`:
   - Agent / reviewer names: `oracle`, `librarian`, `explore`, `metis`, `momus`, `copilot`, `sisyphus`, `artistry`, `ultrabrain`.
   - Review counters: `round N`, `pass N`, `round-N`, `pass-N`, `further pass`, `nth round`, `Nth pass`. Same for spelled-out forms (`first round`, `second pass`, etc.) when used as process-meta.
