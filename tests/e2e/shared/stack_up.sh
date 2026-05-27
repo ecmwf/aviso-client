@@ -13,7 +13,8 @@
 # Optional env vars:
 #   AVISO_SERVER_HOST_PORT      (default 8000)
 #   AUTH_O_TRON_HOST_PORT       (default 8080)
-#   NATS_MONITORING_HOST_PORT   (default 8222)
+#   NATS_HOST_PORT              (default 4222; NATS client port)
+#   NATS_MONITORING_HOST_PORT   (default 8222; NATS monitoring port the readiness probe polls)
 #   AVISO_E2E_TIMEOUT_SECS      (default 60)
 
 set -euo pipefail
