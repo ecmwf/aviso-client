@@ -148,11 +148,17 @@ Three focused commits:
 
 ## Status snapshot
 
-- Branch: not yet created; should be `feat/python-examples-local-stack` (or similar) off `main` once PR #22 merges.
+- Branch: `feat/python-examples-local-stack` off `main` at `8461466` (the PR #22 merge commit).
 - Plan: this file.
-- Not yet implemented; depends on PR #22 landing first.
-- Dependent on: PR #22 (the e2e stack + test_polygon schema with allow_duplicates).
-- Open decisions named above:
-  - Env-var friction strategy (Option A recommended).
-  - Webhook example consolidation (Option C recommended).
-- Awaiting: PR #22 merge.
+- **Implemented** in 4 focused commits on the branch:
+  1. `fix(py-examples): replay_only example self-publishes and uses from_=0 to mean stream start` (`b5778b2`).
+  2. `refactor(py-examples): consolidate triggers/05_webhook with advanced/03 into one runnable example` (`e080a33`).
+  3. `fix(py-examples): align expected output and force-flush prints under captured stdout` (`e05d5ef`).
+  4. `docs(py-examples): lead with the local-stack workflow in README and quickstart` (`2d6710d`).
+- Per-example walk: all 14 examples (15 minus the consolidated webhook) pass against the local stack. The maintainer's fact-check harness at `/tmp/aviso-py-fact-check/run_doc_examples.py` reports 47 / 47 runnable blocks pass, 0 fails.
+- Decisions taken (all three matched the plan's recommendations):
+  - Env-var friction: **Option A** (doc-only exports). No new files; the README documents the three env vars inline in the local-stack workflow.
+  - Webhook example consolidation: **Option C**. `triggers/05_webhook.py` promoted to a runnable, self-contained example (in-process HTTP server + background publisher thread + delivery assertion); `advanced/03_webhook_with_local_server.py` deleted.
+  - README prose retention: reduced. The "if your server has no `test_polygon`" content moved out of `python/examples/README.md` and into the quickstart, with a one-line cross-reference back from the examples README.
+- The plan's Commit 3 (fact-check harness retarget) turned out to be a no-op: the harness already reads `AVISO_BASE_URL` / `AVISO_USERNAME` / `AVISO_PASSWORD` from the environment at runtime, and the polygon set in its sidecar publisher already matches what the examples use. No code change needed; the verification was running the harness against the local stack and seeing 47 / 47 pass.
+- Depends on: PR #22 (the e2e stack + test_polygon schema with `allow_duplicates`). PR #22 merged at `8461466` before this work started.

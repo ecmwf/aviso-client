@@ -62,9 +62,9 @@ def main() -> None:
     count = 0
     with client.listen(request=request) as iterator:
         for n in break_after(iterator, 3):
-            print(f"seq={n.sequence} received")
+            print(f"seq={n.sequence} received", flush=True)
             count += 1
-    print(f"received {count} notifications; exiting")
+    print(f"received {count} notifications; exiting", flush=True)
 
 
 if __name__ == "__main__":

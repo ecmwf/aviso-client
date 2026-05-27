@@ -36,9 +36,9 @@ def main() -> None:
         triggers=[aviso.Trigger.echo()],
     ) as iterator:
         for n in break_after(iterator, 3):
-            print(f"seq={n.sequence} received")
+            print(f"seq={n.sequence} received", flush=True)
             count += 1
-    print(f"received {count} notifications; exiting")
+    print(f"received {count} notifications; exiting", flush=True)
 
 
 if __name__ == "__main__":
