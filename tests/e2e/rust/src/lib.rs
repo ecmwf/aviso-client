@@ -33,10 +33,15 @@ pub const ADMIN_USERNAME: &str = "admin-user";
 /// Admin-account password.
 pub const ADMIN_PASSWORD: &str = "admin-pass";
 
-/// Returns the base URL the e2e stack runs at. Reads `AVISO_E2E_BASE_URL` if set.
+/// Returns the base URL the e2e stack runs at. Resolves `AVISO_E2E_BASE_URL` first, then
+/// `AVISO_BASE_URL` (the variable the docs and the Python fixtures use), then falls back to
+/// [`DEFAULT_BASE_URL`]. The e2e-specific variant wins on conflict so a developer can override
+/// the local stack independently of the `AVISO_BASE_URL` they have set for other purposes.
 #[must_use]
 pub fn base_url() -> String {
-    std::env::var("AVISO_E2E_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.into())
+    std::env::var("AVISO_E2E_BASE_URL")
+        .or_else(|_| std::env::var("AVISO_BASE_URL"))
+        .unwrap_or_else(|_| DEFAULT_BASE_URL.into())
 }
 
 /// Returns an `AvisoClient` authenticated as `producer-user`.
