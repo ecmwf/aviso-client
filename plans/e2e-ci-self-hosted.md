@@ -76,7 +76,7 @@ e2e:
     - if: steps.filter.outputs.affected == 'true'
       run: uv run maturin develop --locked
     - if: steps.filter.outputs.affected == 'true'
-      run: cargo build --release -p aviso-cli
+      run: cargo build -p aviso-cli  # debug build; CLI e2e tests use cargo_bin which expects target/debug/aviso
     - if: steps.filter.outputs.affected == 'true'
       run: bash tests/e2e/shared/stack_up.sh
     - if: steps.filter.outputs.affected == 'true'

@@ -1,8 +1,14 @@
 //! Shared helpers for end-to-end Rust tests against the docker-compose stack at `tests/e2e/`.
 //!
-//! Every integration test under `tests/` is `#[ignore]`-gated. Bring the stack up first via
-//! `bash tests/e2e/shared/stack_up.sh`, then opt the e2e suite in:
-//! `cargo test --locked -p aviso-e2e -- --include-ignored`.
+//! Every integration test under `tests/` is `#[ignore]`-gated. The CLI tests use
+//! `assert_cmd::Command::cargo_bin("aviso")` which expects `target/debug/aviso` to exist, so
+//! build the CLI first. Full local-run flow from the repo root:
+//!
+//! ```text
+//! bash tests/e2e/shared/stack_up.sh
+//! cargo build -p aviso-cli
+//! cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
+//! ```
 
 use std::sync::Arc;
 
