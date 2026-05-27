@@ -25,7 +25,7 @@ watch_endpoint:
   sse_heartbeat_interval_sec: 5
   connection_max_duration_sec: 15
   replay_batch_size: 100
-  max_historical_notifications: 10000
+  max_historical_notifications: 50
   replay_batch_delay_ms: 50
   concurrent_notification_processing: 15
 
