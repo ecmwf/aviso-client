@@ -10,6 +10,7 @@
 //! cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 //! ```
 
+use std::process::Command;
 use std::sync::Arc;
 
 use aviso::AvisoClient;
@@ -75,4 +76,37 @@ pub fn reader_client() -> aviso::Result<AvisoClient> {
         .base_url(base_url())
         .auth(Arc::new(Basic::new(READER_USERNAME, READER_PASSWORD)?))
         .build()
+}
+
+/// Returns a `std::process::Command` pointing at the `aviso` binary with all `AVISO_*`
+/// environment variables stripped (so the developer's interactive `AVISO_BASE_URL`,
+/// `AVISO_TOKEN`, `AVISO_LOG`, and the like never leak into a test) and
+/// `AVISO_CLIENT_CONFIG_FILE` pointed at a non-existent path so the CLI does not parse
+/// the developer's real `~/.config/aviso/config.yaml`.
+///
+/// Mirrors the isolation the hermetic CLI test helper at
+/// `crates/aviso-cli/tests/common/mod.rs::aviso` applies. Use this for every e2e CLI
+/// invocation so local machine state cannot make a test pass or fail for the wrong
+/// reason. Wrap in `assert_cmd::Command::from_std(...)` for the timeout +
+/// `.assert().success()` pattern.
+///
+/// # Panics
+///
+/// Panics if the `aviso` binary is not built at `target/debug/aviso`; run
+/// `cargo build -p aviso-cli` first.
+#[must_use]
+pub fn isolated_aviso_command() -> Command {
+    let bin = assert_cmd::cargo::cargo_bin("aviso");
+    let mut cmd = Command::new(bin);
+    for (k, _) in std::env::vars() {
+        if k.starts_with("AVISO_") {
+            cmd.env_remove(k);
+        }
+    }
+    cmd.env("AVISO_LOG", "error");
+    cmd.env(
+        "AVISO_CLIENT_CONFIG_FILE",
+        "/nonexistent/aviso-e2e-isolated/config.yaml",
+    );
+    cmd
 }
