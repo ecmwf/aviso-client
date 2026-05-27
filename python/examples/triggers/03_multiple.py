@@ -5,6 +5,9 @@ supervisor dispatches them in declaration order per notification before
 the iterator yields to your code. Combining triggers is the normal way
 to do "print AND archive" or "log AND notify".
 
+Run this script in one terminal and basics/01_publish.py in another;
+the publisher's 3-publish window covers the listener's SSE handshake.
+
 Expected output:
 
     log path: <tmp>/notifications.log

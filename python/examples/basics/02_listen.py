@@ -8,7 +8,12 @@ listener would just `for n in client.listen(...): ...` and rely on
 Ctrl+C to stop.
 
 Run this script in one terminal, then run ``basics/01_publish.py`` in
-another terminal a few times to see notifications arrive here.
+another terminal to see notifications arrive here. The publisher
+publishes three notifications in a 2-second window: that is deliberate,
+because the listener subscribes at the live edge and a publish that
+fires before the SSE handshake completes (~100-300 ms after the listener
+starts) is delivered to zero subscribers. Three publishes ensure the
+listener catches at least one even if it lost the race on the first.
 
 Expected output (one line per matching publish; sequences differ between
 servers and advance over time):

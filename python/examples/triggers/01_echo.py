@@ -4,8 +4,10 @@ Each matching notification is printed by the supervisor (the echo
 trigger) before the iterator yields it back to your code. The iterator
 loop body then sees the same notifications.
 
-Run this script in one terminal and basics/01_publish.py in another a
-few times to see the echo lines on stdout.
+Run this script in one terminal and basics/01_publish.py in another to
+see the echo lines on stdout. The publisher publishes three notifications
+in a 2-second window to cover the listener's SSE handshake (~100-300 ms);
+a single publish that races the handshake reaches zero subscribers.
 
 Expected output (one block per matching publish, then the loop print):
 
