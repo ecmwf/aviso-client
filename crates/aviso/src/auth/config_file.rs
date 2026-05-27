@@ -75,32 +75,35 @@ struct BasicSection {
 impl ConfigFile {
     /// Reads and parses the YAML config file at `path`.
     ///
-    /// The path is canonicalised at construction time and the canonical form is stored on the
-    /// returned provider so [`AuthProvider::refresh`] re-reads the same file regardless of any
-    /// later changes to the process current directory.
+    /// The path is normalised to an absolute form at construction time (joining a relative
+    /// path with the current directory) but symlinks are NOT resolved, so atomic
+    /// symlink-swap secret rotation (write `auth.yaml.next` then `ln -sfn auth.yaml.next
+    /// auth.yaml`) is honoured: [`AuthProvider::refresh`] re-reads whatever the path
+    /// currently points at. The absolute-but-not-canonicalised form also keeps refresh
+    /// stable across later changes to the process current directory.
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Config`] when the file cannot be read or canonicalised, the YAML
-    /// cannot be parsed, or the file has zero or two of the `bearer`/`basic` sections (exactly
-    /// one is required).
+    /// Returns [`ClientError::Config`] when the file cannot be read or its absolute path
+    /// cannot be computed, the YAML cannot be parsed, or the file has zero or two of the
+    /// `bearer`/`basic` sections (exactly one is required).
     pub fn from_path(path: impl AsRef<Path>) -> crate::Result<Self> {
         let path = path.as_ref();
-        let canonical = std::fs::canonicalize(path).map_err(|e| {
+        let absolute = std::path::absolute(path).map_err(|e| {
             ClientError::Config(format!("resolve auth file {}: {e}", path.display()))
         })?;
-        let content = std::fs::read_to_string(&canonical).map_err(|e| {
-            ClientError::Config(format!("read auth file {}: {e}", canonical.display()))
+        let content = std::fs::read_to_string(&absolute).map_err(|e| {
+            ClientError::Config(format!("read auth file {}: {e}", absolute.display()))
         })?;
         let inner = Self::parse_config_source(&content).map_err(|e| match e {
             ClientError::Config(msg) => {
-                ClientError::Config(format!("auth file {}: {msg}", canonical.display()))
+                ClientError::Config(format!("auth file {}: {msg}", absolute.display()))
             }
             other => other,
         })?;
         Ok(Self {
             inner: RwLock::new(inner),
-            path: Some(canonical),
+            path: Some(absolute),
         })
     }
 

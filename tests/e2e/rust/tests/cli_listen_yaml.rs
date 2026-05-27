@@ -39,6 +39,7 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
             "--password",
             PRODUCER_PASSWORD,
             "listen",
+            "--no-state-store",
             listener_path.to_str().unwrap(),
         ])
         .stdout(Stdio::piped())
