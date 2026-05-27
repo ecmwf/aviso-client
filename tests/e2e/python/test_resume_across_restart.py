@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import threading
 import time
 from pathlib import Path
 
 import aviso
+from _helpers import receive_within
 
 POLYGON = "20,0,21,0,21,1,20,0"
 EVENT_TYPE = "test_polygon"
@@ -16,14 +16,6 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
         identifier={"polygon": POLYGON, "date": "20260604", "time": f"{seq:04d}"},
         payload={"seq": seq},
     )
-
-
-def _delayed_publish(client: aviso.AvisoClient, seq: int, delay_sec: float) -> None:
-    def run() -> None:
-        time.sleep(delay_sec)
-        _publish(client, seq)
-
-    threading.Thread(target=run, daemon=True).start()
 
 
 def test_resume_picks_up_after_simulated_restart(
@@ -43,10 +35,10 @@ def test_resume_picks_up_after_simulated_restart(
         first.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):
         time.sleep(0.5)
-        _delayed_publish(first, 1, 0.5)
-        _delayed_publish(first, 2, 1.0)
+        _publish(first, 1)
+        _publish(first, 2)
         for _ in range(2):
-            first_received.append(next(iterator).payload["seq"])
+            first_received.append(receive_within(iterator, timeout=5).payload["seq"])
 
     assert first_received == [1, 2]
     assert state_path.exists(), "JsonFileStore must persist state on clean shutdown"
@@ -61,10 +53,11 @@ def test_resume_picks_up_after_simulated_restart(
         second.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):
         time.sleep(0.5)
-        _delayed_publish(second, 3, 0.5)
+        _publish(second, 3)
         deadline = time.monotonic() + 10.0
         while 3 not in second_received and time.monotonic() < deadline:
-            second_received.append(next(iterator).payload["seq"])
+            remaining = max(deadline - time.monotonic(), 0.5)
+            second_received.append(receive_within(iterator, timeout=remaining).payload["seq"])
 
     assert 3 in second_received, f"item 3 must arrive after resume; got {second_received}"
     assert 1 not in second_received, (

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import threading
 import time
 from pathlib import Path
 
 import aviso
+from _helpers import receive_within
 
 POLYGON = "70,0,71,0,71,1,70,0"
 EVENT_TYPE = "test_polygon"
@@ -16,14 +16,6 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
         identifier={"polygon": POLYGON, "date": "20260608", "time": f"{seq:04d}"},
         payload={"seq": seq},
     )
-
-
-def _delayed_publish(client: aviso.AvisoClient, seq: int, delay_sec: float) -> None:
-    def run() -> None:
-        time.sleep(delay_sec)
-        _publish(client, seq)
-
-    threading.Thread(target=run, daemon=True).start()
 
 
 def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
@@ -44,10 +36,10 @@ def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
         first.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):
         time.sleep(0.5)
-        _delayed_publish(first, 1, 0.5)
-        _delayed_publish(first, 2, 1.0)
+        _publish(first, 1)
+        _publish(first, 2)
         for _ in range(2):
-            first_received.append(next(iterator).payload["seq"])
+            first_received.append(receive_within(iterator, timeout=5).payload["seq"])
 
     assert first_received == [1, 2]
     assert state_path.exists(), "JsonFileStore must persist on clean shutdown"
@@ -63,7 +55,7 @@ def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
         second.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):
         time.sleep(0.5)
-        _delayed_publish(second, 3, 0.5)
-        second_received.append(next(iterator).payload["seq"])
+        _publish(second, 3)
+        second_received.append(receive_within(iterator, timeout=5).payload["seq"])
 
     assert second_received == [3], "flush_cursor_on_exit should prevent replay of [1, 2]"
