@@ -146,6 +146,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aviso-e2e"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "aviso",
+ "futures-util",
+ "predicates",
+ "reqwest",
+ "serde_json",
+ "serde_norway",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "aviso-py"
 version = "0.1.0"
 dependencies = [
