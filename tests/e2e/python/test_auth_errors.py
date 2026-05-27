@@ -16,7 +16,7 @@ def test_invalid_credentials_get_401(base_url: str) -> None:
         client.notify(
             event_type=EVENT_TYPE,
             identifier={
-                "polygon": "90,0,91,0,91,1,90,0",
+                "polygon": "85,0,86,0,86,1,85,0",
                 "date": "20260603",
                 "time": "0000",
             },
@@ -30,7 +30,7 @@ def test_role_mismatch_gets_403(reader_client: aviso.AvisoClient) -> None:
         reader_client.notify(
             event_type=EVENT_TYPE,
             identifier={
-                "polygon": "95,0,96,0,96,1,95,0",
+                "polygon": "87,0,88,0,88,1,87,0",
                 "date": "20260603",
                 "time": "0001",
             },
