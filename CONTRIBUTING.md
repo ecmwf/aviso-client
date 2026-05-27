@@ -65,9 +65,9 @@ The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribut
 ```bash
 uv sync --locked --group dev
 uv run maturin develop --locked
-uv run ruff check python/
-uv run ruff format --check python/
-uv run ty check python/
+uv run ruff check python/ tests/e2e/python/
+uv run ruff format --check python/ tests/e2e/python/
+uv run ty check python/ tests/e2e/python/
 uv run pytest python/tests/
 ```
 

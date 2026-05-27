@@ -1,3 +1,5 @@
+x-jwt-secret: &jwt-secret "${AVISO_E2E_JWT_SECRET:-aviso-e2e-test-secret-do-not-use-in-production}"
+
 services:
   aviso-server:
     image: eccr.ecmwf.int/aviso/aviso_server:0.6.2@sha256:2c2607d1ba4d9b4bf55e52bf9b08793d8ca1959843a3efaa3d6f6922d5fdc60c
@@ -7,7 +9,7 @@ services:
       RUST_LOG: "info"
       AVISOSERVER_CONFIG_FILE: "/etc/aviso/config.yaml"
       AVISOSERVER_APPLICATION__BASE_URL: "http://127.0.0.1:${AVISO_SERVER_HOST_PORT:-8000}"
-      AVISOSERVER_AUTH__JWT_SECRET: "${AVISO_E2E_JWT_SECRET:-aviso-e2e-test-secret-do-not-use-in-production}"
+      AVISOSERVER_AUTH__JWT_SECRET: *jwt-secret
     volumes:
       - "./aviso-server.config.yaml:/etc/aviso/config.yaml:ro"
     depends_on:
@@ -19,7 +21,7 @@ services:
     ports:
       - "127.0.0.1:${AUTH_O_TRON_HOST_PORT:-8080}:8080"
     environment:
-      AOT_JWT__SECRET: "${AVISO_E2E_JWT_SECRET:-aviso-e2e-test-secret-do-not-use-in-production}"
+      AOT_JWT__SECRET: *jwt-secret
     volumes:
       - "./auth-o-tron.config.yaml:/app/config.yaml:ro"
 
