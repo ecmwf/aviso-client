@@ -75,25 +75,32 @@ struct BasicSection {
 impl ConfigFile {
     /// Reads and parses the YAML config file at `path`.
     ///
-    /// The path is stored on the returned provider so [`AuthProvider::refresh`] can re-read it.
+    /// The path is canonicalised at construction time and the canonical form is stored on the
+    /// returned provider so [`AuthProvider::refresh`] re-reads the same file regardless of any
+    /// later changes to the process current directory.
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Config`] when the file cannot be read, the YAML cannot be parsed,
-    /// or the file has zero or two of the `bearer`/`basic` sections (exactly one is required).
+    /// Returns [`ClientError::Config`] when the file cannot be read or canonicalised, the YAML
+    /// cannot be parsed, or the file has zero or two of the `bearer`/`basic` sections (exactly
+    /// one is required).
     pub fn from_path(path: impl AsRef<Path>) -> crate::Result<Self> {
         let path = path.as_ref();
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ClientError::Config(format!("read auth file {}: {e}", path.display())))?;
+        let canonical = std::fs::canonicalize(path).map_err(|e| {
+            ClientError::Config(format!("resolve auth file {}: {e}", path.display()))
+        })?;
+        let content = std::fs::read_to_string(&canonical).map_err(|e| {
+            ClientError::Config(format!("read auth file {}: {e}", canonical.display()))
+        })?;
         let inner = Self::parse_config_source(&content).map_err(|e| match e {
             ClientError::Config(msg) => {
-                ClientError::Config(format!("auth file {}: {msg}", path.display()))
+                ClientError::Config(format!("auth file {}: {msg}", canonical.display()))
             }
             other => other,
         })?;
         Ok(Self {
             inner: RwLock::new(inner),
-            path: Some(path.to_path_buf()),
+            path: Some(canonical),
         })
     }
 

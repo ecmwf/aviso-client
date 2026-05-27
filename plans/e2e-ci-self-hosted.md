@@ -47,6 +47,10 @@ A new job `e2e` is added to `.github/workflows/ci.yml`:
 ```yaml
 e2e:
   name: e2e
+  # Self-hosted runners must never execute untrusted code from forks.
+  # The Security section below explains the rationale; the job-level guard
+  # below enforces the policy on every step.
+  if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
   runs-on: [self-hosted, linux, x64, aviso-e2e]
   needs: []
   env:
