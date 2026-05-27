@@ -1,26 +1,30 @@
-"""Listen with a JsonFileStore so restarts pick up where we left off.
+"""Listen with a JsonFileStore so restarts pick up where they left off.
 
 The state store remembers the last sequence the supervisor committed.
-On the first run the iterator starts at the live edge; on every
-subsequent run it resumes after the committed cursor and replays
+A long-running process points it at a persistent path
+(e.g. ``~/.config/myapp/aviso-state.json``) so a fresh start after a
+crash or restart resumes after the committed cursor and replays
 nothing it has already seen. ``flush_cursor_on_exit=True`` plus the
-``with`` form on the iterator ensures the final notification is
-committed before the process exits, so a clean Ctrl+C does not cause
-a replay on next start.
+iterator's ``with`` form commits the final notification before the
+process exits, so a clean Ctrl+C does not cause a replay on next start.
 
-On the first run only, you need notifications to flow while this
-listener is subscribed. Run basics/01_publish.py from another
-terminal; its 3-publish window covers the SSE handshake. On
-subsequent runs the listener resumes from the stored cursor and
-sees anything published since the previous run, regardless of
-when you start the next publisher.
+This example uses a temporary directory for the state file (gone when
+the script exits), so it shows the API surface rather than actual
+resume-across-restart behaviour. For an end-to-end check that resume
+works across processes see
+``tests/e2e/python/test_resume_across_restart.py``.
 
-Expected output (the state file's contents are the supervisor's
-internal cursor map keyed by the resume-key the watch derived):
+Run basics/01_publish.py from another terminal while this listener is
+subscribed; its 3-publish window covers the SSE handshake.
+
+Expected output (the hash key inside ``checkpoints`` is derived from
+the resume key the watch built; sequence numbers vary):
 
     state file: <tmp>/state.json
     received 3 notifications; exiting
-    state file contents: {'<resume-key>': {'sequence': <int>, ...}}
+    state file contents: {'version': 1, 'key_format_version': 1, 'checkpoints':
+      {'<hex-hash>': {'last_committed_sequence': <N>,
+                     'last_event_id': 'test_polygon@<N>'}}}
 """
 
 from __future__ import annotations

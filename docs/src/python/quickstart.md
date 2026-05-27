@@ -76,32 +76,36 @@ So a `test_polygon` notification is keyed on three identifier fields: `polygon` 
 
 **The rest of this page uses `test_polygon` as the example event type.** It is one stream that may exist on your server.
 
-If your server has no `test_polygon` configured, you have two options. If you have access to your aviso-server's config, paste the snippet below into the `notification_schema:` section and restart the server:
+If your server has no `test_polygon` configured, you have two paths:
 
-```yaml
-notification_schema:
-  test_polygon:
-    payload:
-      required: true
-    topic:
-      base: "polygon"
-      key_order: ["date", "time"]
-    identifier:
-      polygon:
-        type: PolygonHandler
-        required: true
-      date:
-        type: DateHandler
-        canonical_format: "%Y%m%d"
-        required: false
-      time:
-        type: TimeHandler
-        required: false
-```
+1. **Use the local stack from this repo.** From a checkout, `bash tests/e2e/shared/stack.sh up` brings up an aviso-server with `test_polygon` pre-configured (auth required, write role `producer`). See [`python/examples/README.md`](https://github.com/ecmwf/aviso-client/tree/main/python/examples#run-the-examples-against-the-local-stack-recommended) for the env-var setup. This is the fastest way to try the rest of this page.
 
-This matches the schema used in the repo's own end-to-end test stack ([`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml)). After restart, `client.schema().event_types` should include `test_polygon`.
+2. **Add the schema to your own aviso-server.** If you have access to the server's config, paste this snippet into `notification_schema:` and restart:
 
-If you do not run the server yourself, substitute your own event type and identifier fields in every example below. The shape of every call is the same; only the event-type string and the identifier keys change.
+   ```yaml
+   notification_schema:
+     test_polygon:
+       payload:
+         required: true
+       topic:
+         base: "polygon"
+         key_order: ["date", "time"]
+       identifier:
+         polygon:
+           type: PolygonHandler
+           required: true
+         date:
+           type: DateHandler
+           canonical_format: "%Y%m%d"
+           required: false
+         time:
+           type: TimeHandler
+           required: false
+   ```
+
+   The same schema lives in [`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml). After restart, `client.schema().event_types` should include `test_polygon`.
+
+If you do not run the server yourself and cannot reach a server that has `test_polygon`, substitute your own event type and identifier fields in every example below. The shape of every call is the same; only the event-type string and the identifier keys change.
 
 ## 1. Publish one notification
 
