@@ -18,7 +18,7 @@ use tempfile::NamedTempFile;
 
 const POLYGON: &str = "0,40,1,40,1,41,0,40";
 
-#[ignore = "requires e2e compose stack; run via stack_up.sh"]
+#[ignore = "requires e2e compose stack; run via stack.sh up"]
 #[test]
 fn cli_listen_yaml_dispatches_echo_trigger() {
     let listener_yaml = format!(
