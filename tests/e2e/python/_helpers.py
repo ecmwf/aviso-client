@@ -28,7 +28,7 @@ def receive_within(iterator: Any, timeout: float) -> Any:
     def fetch() -> None:
         try:
             box.put(("ok", next(iterator)))
-        except BaseException as exc:
+        except Exception as exc:
             box.put(("err", exc))
 
     thread = threading.Thread(target=fetch, daemon=True)
@@ -57,7 +57,7 @@ def background_publishes(target: Callable[[], None], timeout: float = 10.0) -> I
     def run() -> None:
         try:
             target()
-        except BaseException as exc:
+        except Exception as exc:
             excs.append(exc)
 
     thread = threading.Thread(target=run, daemon=True)
