@@ -18,7 +18,7 @@ Three behaviour classes are not covered by any of these:
 
 Auth refresh on real 401 was originally a fourth motivation. The plain auth-o-tron provider has no hot-reconfiguration mechanism (no SIGHUP, no file-watch, no admin API for credentials), so a deterministic mid-test 401 cannot be produced against real auth-o-tron without restarting the container with a swapped config (fragile and slow). Auth refresh is therefore covered by two hermetic tests instead: the existing supervisor wiremock test (`crates/aviso/tests/watch_supervisor_resilience.rs::auth_refresh_on_401_uses_refreshed_credential`) plus a new hermetic test for `ConfigFile::refresh()` (Commit 1).
 
-The infrastructure to fix the above exists. `tests/e2e/docker-compose.yml` ships an `aviso-server` pinned by digest with a 60-second `connection_max_duration_sec` and a 5-second heartbeat (`tests/e2e/aviso-server.config.yaml`), which are the right knobs to surface reconnect bugs fast. The README explicitly notes: "The full e2e suite runs once real tests exist." This plan delivers that suite.
+The infrastructure to fix the above exists. `tests/e2e/docker-compose.yml` ships an `aviso-server` pinned by digest, with `connection_max_duration_sec` and `sse_heartbeat_interval_sec` knobs (`tests/e2e/aviso-server.config.yaml`) tuned short enough to surface reconnect bugs fast. The README explicitly notes: "The full e2e suite runs once real tests exist." This plan delivers that suite; the shipped values for those two knobs are documented in the compose stack additions section below.
 
 ## Reference: production configuration
 
@@ -139,7 +139,7 @@ What stays in CI in this branch:
 What this branch DOES ship for local use:
 
 - The compose stack, the readiness-polling helper (`tests/e2e/shared/stack_up.sh`), and a documented per-language flow. Python: `bash tests/e2e/shared/stack_up.sh && uv run pytest tests/e2e/python/`. Rust: `bash tests/e2e/shared/stack_up.sh && cargo build -p aviso-cli && cargo test -p aviso-e2e -- --include-ignored --test-threads=1` (the build step is required because the CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects `target/debug/aviso`; `--test-threads=1` keeps publishers and listeners from racing in the shared JetStream stream).
-- The Rust e2e tests are `#[ignore]`-gated per D-S6 so the existing `cargo test --workspace --all-targets` CI gate keeps passing without the stack up. Developers explicitly opt in via `--include-ignored`.
+- The Rust e2e tests are `#[ignore]`-gated per D-S6 so the existing `cargo test --workspace --all-targets` CI gate keeps passing without the stack up. Developers explicitly opt in via `cargo build -p aviso-cli && cargo test -p aviso-e2e -- --include-ignored --test-threads=1` (the build step seeds `target/debug/aviso` for the CLI tests; `--test-threads=1` serializes the shared-stack publishers and listeners).
 - The Python e2e tests live under `tests/e2e/python/` and are NOT picked up by the hermetic `pyproject.toml`'s `[tool.pytest.ini_options] testpaths = ["python/tests"]`. Developers run them explicitly via `uv run pytest tests/e2e/python/`.
 
 ### What this changes about the existing test surface
@@ -219,7 +219,7 @@ The e2e crate's `Cargo.toml` declares:
 
 These three settings together prevent the workspace-member relationship from leaking unintended gates onto the e2e crate.
 
-The alternative (a separate top-level Cargo project outside the workspace) was considered and rejected because workspace membership keeps the dev-dep deduplication and the `aviso = { workspace = true }` import shape; the per-test `#[ignore]` annotation costs nothing in maintenance and gives a clear "why this is skipped" signal in `cargo test` output.
+The alternative (a separate top-level Cargo project outside the workspace) was considered and rejected because workspace membership keeps the dev-dep deduplication and lets the e2e crate import the core via a path dependency (`aviso = { path = "../../../crates/aviso", version = "=0.1.0" }`, matching the existing aviso-cli and aviso-py pattern); the per-test `#[ignore]` annotation costs nothing in maintenance and gives a clear "why this is skipped" signal in `cargo test` output.
 
 `cargo deny check` already covers any new dev-dependencies the e2e crate brings; no separate deny.toml entry is required. `Cargo.lock` updates land in the same commit (Commit 4) that adds the e2e crate as a workspace member.
 
@@ -258,7 +258,7 @@ Five focused commits on `feat/e2e-integration-suite`. The branch is rebased onto
 
 3. **Commit 3: Python conftest + e2e suite**. Add `tests/e2e/python/conftest.py` (session-scoped fixture calling `stack_up.sh` once per session per D-S2; failure-teardown captures docker logs per D-S8). Add the 10 Python test files; tests use the PR #21 API surfaces (`triggers=` kwarg + `with` / `async with` form). Identifier-space isolation per D-S7. Update `CONTRIBUTING.md` with the local-run paragraph for the Python suite.
 
-4. **Commit 4: Rust e2e suite + workspace wiring**. New `tests/e2e/rust/Cargo.toml` workspace member added to root `Cargo.toml`'s `[workspace] members`. Shared stack-up helper in `tests/e2e/rust/src/lib.rs`. Five Rust test files; every `#[test]` annotated `#[ignore = "requires e2e compose stack"]` per D-S6. Workspace gates compile but skip running these tests; developers (and the future CI per `plans/e2e-ci-self-hosted.md`) opt in via `--include-ignored`. Update `CONTRIBUTING.md` with the local-run paragraph for the Rust suite.
+4. **Commit 4: Rust e2e suite + workspace wiring**. New `tests/e2e/rust/Cargo.toml` workspace member added to root `Cargo.toml`'s `[workspace] members`. Shared helper in `tests/e2e/rust/src/lib.rs` (base URL accessor, credential constants, producer/reader client constructors, `isolated_aviso_command` helper for CLI subprocess isolation; stack startup is handled by `tests/e2e/shared/stack_up.sh`). Five Rust test files; every `#[test]` annotated `#[ignore = "requires e2e compose stack"]` per D-S6. Workspace gates compile but skip running these tests; developers (and the future CI per `plans/e2e-ci-self-hosted.md`) opt in via `cargo build -p aviso-cli && cargo test -p aviso-e2e -- --include-ignored --test-threads=1`. Update `CONTRIBUTING.md` with the local-run paragraph for the Rust suite.
 
 5. **Commit 5: final docs polish**. Update `README.md` with a sentence pointing at the e2e suite and the local-run docs. Cross-check `tests/e2e/README.md` is complete after commits 2-4 layered changes. `python/examples/README.md` and `docs/src/python/quickstart.md` are EXPLICITLY OUT OF SCOPE per D-S9; they land in a separate follow-up PR after the e2e PR merges.
 
