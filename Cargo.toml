@@ -5,6 +5,7 @@ members = [
     "crates/aviso-cli",
     "crates/aviso-py",
     "crates/finesse",
+    "tests/e2e/rust",
 ]
 
 [workspace.package]
