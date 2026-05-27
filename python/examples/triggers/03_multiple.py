@@ -32,7 +32,7 @@ def main() -> None:
     client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
     with temp_dir() as workdir:
         log_path = workdir / "notifications.log"
-        print(f"log path: {log_path}")
+        print(f"log path: {log_path}", flush=True)
 
         count = 0
         with client.listen(
@@ -41,9 +41,9 @@ def main() -> None:
             triggers=[aviso.Trigger.echo(), aviso.Trigger.log(log_path)],
         ) as iterator:
             for n in break_after(iterator, 3):
-                print(f"seq={n.sequence} received")
+                print(f"seq={n.sequence} received", flush=True)
                 count += 1
-        print(f"received {count} notifications; exiting")
+        print(f"received {count} notifications; exiting", flush=True)
 
 
 if __name__ == "__main__":

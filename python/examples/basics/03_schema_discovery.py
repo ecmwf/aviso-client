@@ -4,14 +4,15 @@ Useful as a first step before publishing or listening: read what your
 operator has configured, then build your filter / identifier dicts
 against the actual schema rather than guessing.
 
-Expected output (list and field set depend on your server):
+Expected output (list and field set depend on your server; the example
+below is what the local e2e stack returns):
 
-    event types: ['test_polygon', 'dissemination', 'mars']
+    event types: ['test_polygon', 'test_event']
     test_polygon schema:
       payload required: True
       identifier:
-        polygon  (required, PolygonHandler)
         date     (optional, DateHandler)
+        polygon  (required, PolygonHandler)
         time     (optional, TimeHandler)
 """
 
