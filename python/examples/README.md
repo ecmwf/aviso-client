@@ -13,6 +13,11 @@ uv run maturin develop --release --locked
 
 See [`python/README.md`](../README.md#install) for the full install instructions.
 
+The examples use the `test_polygon` event type because it is widely available on dev servers. If `client.schema().event_types` against your server does not include it, you have two options:
+
+- **If you have access to the aviso-server config**: paste the `test_polygon` snippet from the [quickstart's "What is on your server" section](../../docs/src/python/quickstart.md#what-is-on-your-server) into your server's `notification_schema:` and restart. The same definition is in [`tests/e2e/aviso-server.config.yaml`](../../tests/e2e/aviso-server.config.yaml).
+- **If you only use the server (not run it)**: substitute your own event type and identifier fields in each example. The shape of every call stays the same; only the event-type string and identifier keys change.
+
 ## How to run
 
 Set two environment variables and run any script:
