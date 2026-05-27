@@ -1,0 +1,41 @@
+version: "2.0.0"
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+logging:
+  level: "info"
+  format: "console"
+
+providers:
+  - name: "plain-provider"
+    type: "plain"
+    realm: "localrealm"
+    users:
+      - username: "admin-user"
+        password: "admin-pass"
+      - username: "reader-user"
+        password: "reader-pass"
+      - username: "producer-user"
+        password: "producer-pass"
+
+augmenters:
+  - name: "plain-role-augmenter"
+    type: "plain"
+    realm: "localrealm"
+    roles:
+      admin: ["admin-user"]
+      reader: ["reader-user"]
+      producer: ["producer-user"]
+
+store:
+  enabled: false
+
+services: []
+
+jwt:
+  exp: 3600
+  iss: "authotron-test"
+  aud: "authotron-test"
+  # secret injected via AOT_JWT__SECRET env var; matches AVISOSERVER_AUTH__JWT_SECRET on the aviso-server container so JWTs issued here validate there.
