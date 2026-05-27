@@ -13,7 +13,7 @@ The merged client suite (Rust core + CLI + Python bindings) is exercised today b
 Three behaviour classes are not covered by any of these:
 
 1. **Real-wire reconnect on routine `max_duration_reached`**: wiremock cannot fake the `connection-closing` event the real server emits every `connection_max_duration_sec`, and the dev server's 1-hour rotation is too slow for tests.
-2. **Authentication and authorization end-to-end**: aviso-server's direct-mode flow (forward Basic to auth-o-tron, validate, issue JWT, enforce roles per stream) cannot be faked by wiremock. Real 401 (bad credentials) and real 403 (wrong role) need real auth-o-tron and a schema with `auth.required: true`.
+2. **Authentication and authorization end-to-end**: aviso-server's direct-mode flow (forward Basic to auth-o-tron, validate, issue JWT, enforce roles per stream) cannot be faked by wiremock. Both branches of the auth surface need real services: 401 (wrong password, surfaces as `HttpError(status=401)`) needs auth-o-tron's plain provider to reject credentials, and 403 (valid credentials but role missing from `write_roles`, surfaces as `HttpError(status=403)`) needs aviso-server's schema-level role enforcement. The plan ships one Python scenario (`test_auth_errors.py`) covering both branches.
 3. **CLI subcommands against a real server**: every CLI subcommand (`notify`, `listen`, `replay`, `schema list/get`, `admin wipe-*`, `config dump`) has only the wiremock surface from earlier work.
 
 Auth refresh on real 401 was originally a fourth motivation. The plain auth-o-tron provider has no hot-reconfiguration mechanism (no SIGHUP, no file-watch, no admin API for credentials), so a deterministic mid-test 401 cannot be produced against real auth-o-tron without restarting the container with a swapped config (fragile and slow). Auth refresh is therefore covered by two hermetic tests instead: the existing supervisor wiremock test (`crates/aviso/src/notify.rs::refreshes_and_retries_once_on_401`) plus a new hermetic test for `ConfigFile::refresh()` (Commit 1).
@@ -72,7 +72,7 @@ tests/e2e/
 │   ├── conftest.py                 (session-scoped stack fixture; shared stack)
 │   ├── test_publish_listen.py
 │   ├── test_reconnect.py
-│   ├── test_permission_denied.py
+│   ├── test_auth_errors.py
 │   ├── test_resume_across_restart.py
 │   ├── test_history_gap.py
 │   ├── test_triggers_real_dispatch.py
@@ -104,7 +104,7 @@ Ten scenarios targeting the user-facing API. Tests use the PR #21 API surfaces: 
 |---|---|
 | `test_publish_listen.py` | Publish N notifications, listen for them via `with client.listen(...) as iterator:`, assert all N received in order with matching identifier and payload. Uses `producer-user`. |
 | `test_reconnect.py` | Open a listener, let `connection_max_duration_sec` fire (15 s), count notifications across the cut. Asserts at-least-once with at-most-one duplicate per cut. Also covers `docker compose restart aviso-server` mid-stream. Uses `producer-user` (read role is satisfied). |
-| `test_permission_denied.py` | Authenticate as `reader-user` (role `reader`); try to `client.notify(...)` to `test_polygon` (which has `write_roles: ["producer"]`); assert 403 surfaces as `ClientError::PermissionDenied` (or whatever the typed variant is). Replaces the original `test_auth_refresh.py` per the motivation rewrite above. |
+| `test_auth_errors.py` | Two test functions in one file. (a) `test_invalid_credentials_get_401`: authenticate as `reader-user` with wrong password; call `client.notify(...)`; assert `aviso.HttpError` with `status == 401`. (b) `test_role_mismatch_gets_403`: authenticate as `reader-user` (role `reader`) with the right password; try to `client.notify(...)` on `test_polygon` (`write_roles: ["producer"]`); assert `aviso.HttpError` with `status == 403`. The client does not have a `PermissionDenied` variant: 401 and 403 both surface as `HttpError` with the status code attached (see `python/aviso/__init__.pyi::HttpError`). Replaces the original `test_auth_refresh.py` per the motivation rewrite above. |
 | `test_resume_across_restart.py` | Listen with `JsonFileStore`, kill the Python process after N notifications, restart, assert the next pull is `N+1` with no replay and no gap. Uses `producer-user`. |
 | `test_history_gap.py` | Publish past the configured `max_messages: 100` so JetStream prunes the oldest, request replay from a known pruned sequence, assert `HistoryGapError(reason="replay_limit_reached")` with `.max_allowed` populated. Uses `producer-user`. |
 | `test_triggers_real_dispatch.py` | `client.listen(..., triggers=[Trigger.echo(), Trigger.log(path), Trigger.webhook(url)])` with the local webhook pointed at an in-process `pytest-httpserver`. Assert stdout, file contents, and webhook receipts all match expected. Uses `producer-user`. |
@@ -156,7 +156,7 @@ This is one of the highest-leverage downstream wins of the e2e work and the enti
 
 Today, the 15 example scripts under `python/examples/` assume the reader's server has the `test_polygon` event type configured. We document a fallback ("substitute your own event type if not") and ship a copy-paste schema snippet for operators, but a new user without an operator account on any aviso-server still has friction: they have to find a server, get credentials, hope it has `test_polygon`, and only then can they try the examples.
 
-Once the e2e stack ships, that friction collapses to two commands run from the repo root:
+Once the e2e stack ships, that friction collapses to three commands run from the repo root:
 
 ```bash
 bash tests/e2e/shared/stack_up.sh
@@ -198,8 +198,8 @@ Auth refresh on real 401 is NOT covered by this suite, because the plain auth-o-
 
 Instead, auth refresh is covered by two hermetic tests:
 
-- `crates/aviso/src/notify.rs::refreshes_and_retries_once_on_401` (existing): wiremock-driven, exercises the supervisor's refresh-then-retry-once contract on a real 401 path.
-- `crates/aviso/src/auth/config_file.rs::tests::reads_path_on_refresh` (new, Commit 1): asserts `ConfigFile` re-reads the file on `refresh()` and swaps `inner` atomically, so a file rewrite between requests is reflected on the next `authorization_header()` call.
+- `crates/aviso/tests/watch_supervisor_resilience.rs::auth_refresh_on_401_uses_refreshed_credential` (existing): wiremock-driven, asserts the supervisor's refresh-then-retry-once contract delivers the refreshed credential on the second attempt against a 401 → 200 sequence.
+- `crates/aviso/src/auth/config_file.rs::tests::*` (new, Commit 1): a small set of unit tests asserting `ConfigFile` re-reads the file on `refresh()` and atomically swaps `inner`, so a file rewrite between requests is reflected on the next `authorization_header()` call. Specifically: (i) `refresh_rereads_file_after_rewrite` swaps a Bearer token for a different Bearer; (ii) `refresh_swaps_section_kind` swaps from a Bearer section to a Basic section; (iii) `refresh_parse_failure_leaves_previous_credential` verifies that a write-then-bad-yaml round-trip leaves the old `inner` active and surfaces `ClientError::Auth` from the refresh (the invariant is "parse the new YAML into a fresh `ConfigSource` BEFORE acquiring the write lock, then perform a single swap"); (iv) `refresh_is_noop_for_from_yaml_str_constructor` verifies the in-memory constructor path stays a no-op.
 
 This split is the right trade: hermetic tests get the right granularity (file-rewrite + 401 + retry-once), and the e2e suite focuses on the behaviours where real services matter (reconnect, JetStream retention, role enforcement, CLI subcommands).
 
@@ -211,9 +211,17 @@ The existing `aviso-server` is pinned `0.6.2@sha256:...`. The new `nats` and `au
 
 `tests/e2e/rust/Cargo.toml` declares an `aviso-e2e` package. The workspace `Cargo.toml` adds it as a member so `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets`, and `cargo test --workspace --all-targets` (the gates the existing CI Rust job runs on every PR) all compile the e2e crate's test code and catch type errors. Every `#[test]` function in the crate carries `#[ignore = "requires e2e compose stack"]`, so the normal `cargo test --workspace` invocation skips actually running them. The dedicated e2e job opts in via `cargo test --locked -p aviso-e2e -- --include-ignored`.
 
+The e2e crate's `Cargo.toml` declares:
+
+- `publish = false` (this crate never ships to crates.io; it is internal test infrastructure).
+- `[lints] workspace = true` (the same clippy and rustc lint level applied to every workspace crate applies here too; no quiet exceptions).
+- `[lib] doctest = false` on the shared helper in `src/lib.rs`. The helper is internal scaffolding (a `stack_up` function plus a few constants) with no public API users would write docs against, so the `cargo test --workspace --doc` gate has nothing to run here.
+
+These three settings together prevent the workspace-member relationship from leaking unintended gates onto the e2e crate.
+
 The alternative (a separate top-level Cargo project outside the workspace) was considered and rejected because workspace membership keeps the dev-dep deduplication and the `aviso = { workspace = true }` import shape; the per-test `#[ignore]` annotation costs nothing in maintenance and gives a clear "why this is skipped" signal in `cargo test` output.
 
-`cargo deny check` already covers any new dev-dependencies the e2e crate brings; no separate deny.toml entry is required.
+`cargo deny check` already covers any new dev-dependencies the e2e crate brings; no separate deny.toml entry is required. `Cargo.lock` updates land in the same commit (Commit 4) that adds the e2e crate as a workspace member.
 
 ### D-S7. Tests isolate via disjoint identifier values, not unique event types
 
@@ -244,7 +252,7 @@ The e2e suite is the primary consumer of the stack, but the stack is reusable fo
 
 Five focused commits on `feat/e2e-integration-suite`. The branch is rebased onto `main` (`a0096d3`) as of the third oracle round; see Status snapshot.
 
-1. **Commit 1: `feat(aviso): ConfigFile re-reads credentials on refresh()`**. Library-level fix: store the path on `ConfigFile`, wrap `inner` in `tokio::sync::RwLock<ConfigSource>`, override `refresh()` to re-read the file and swap atomically. Keep the existing `from_yaml_str` constructor for unit tests that pass YAML directly (its `refresh()` is a no-op). Add hermetic tests covering: refresh re-reads the file, refresh swaps from Bearer-section to Basic-section (and vice versa), refresh propagates parse errors as `ClientError::Auth`, dropped-mid-refresh future leaves the cached credential consistent (per the trait's cancel-safety contract). ~80 LOC + ~6 tests. Replaces the deferred-to-implementation framing of the original plan with a concrete library fix.
+1. **Commit 1: `feat(aviso): ConfigFile re-reads credentials on refresh()`**. Library-level fix: store the path on `ConfigFile`, wrap `inner` in `tokio::sync::RwLock<ConfigSource>`, override `refresh()` to (a) read the file, (b) parse YAML into a fresh `ConfigSource` (so parse failure cannot leave a torn state), and (c) acquire the write lock and swap in one operation. Preserve the existing `from_yaml_str` constructor for unit tests that pass YAML directly; its `refresh()` is a no-op (the stored path is `None`). Add hermetic tests: `refresh_rereads_file_after_rewrite`, `refresh_swaps_section_kind` (bearer → basic), `refresh_parse_failure_leaves_previous_credential` (parse-before-swap invariant), `refresh_is_noop_for_from_yaml_str_constructor`. ~80 LOC + ~4 new tests on top of the existing 13. Replaces the deferred-to-implementation framing of the original plan with a concrete library fix.
 
 2. **Commit 2: compose stack + configs + local-run README**. Extend `docker-compose.yml` with `auth-o-tron` and `nats` services pinned by `<tag>@<digest>`; add `auth-o-tron.config.yaml` mirroring `aviso-config/location/bologna.yaml` modulo the test-local `iss`/`aud` strings; add `nats.conf` enabling monitoring on 8222 + JetStream with bounded file-store; flip `aviso-server.config.yaml` to `notification_backend.kind: jetstream`, `auth.enabled: true`, `connection_max_duration_sec: 15`, schema `auth.required: true` with `write_roles: ["producer"]`; set the shared JWT secret via env vars in docker-compose. Add `tests/e2e/shared/stack_up.sh` (polls aviso-server `/health`, NATS `/healthz` on 8222, auth-o-tron's `/health` with a 60 s bounded timeout and 250 ms poll interval). Update `tests/e2e/README.md` to document the new shape, the bump procedure for the two new pinned images, the local-run workflow (`bash tests/e2e/shared/stack_up.sh && export AVISO_BASE_URL=... && export AVISO_USERNAME=producer-user && export AVISO_PASSWORD=producer-pass`), and the three account credentials. The existing `e2e-config` CI gate (`docker compose config --quiet`) must pass against the new shape.
 
@@ -263,16 +271,16 @@ Five focused commits on `feat/e2e-integration-suite`. The branch is rebased onto
 
 ## What changes for users
 
-Nothing user-facing in this branch. The CI signal does NOT change yet; the e2e suite is locally runnable but not gated. The wider CI integration is captured in `plans/e2e-ci-self-hosted.md` and lands when self-hosted runners are available on the repo.
+No new public API shape ships. One existing behaviour improves: `ConfigFile::refresh()` now re-reads file-backed credentials per its docstring, where previously it silently inherited the trait's default no-op (a latent bug for any user with a file-backed credential source going through the supervisor's refresh-then-retry-once contract).
 
-`ConfigFile::refresh()` becoming effective means any user with a file-backed credential source benefits from the supervisor's refresh-then-retry-once contract; it was silently a no-op before, which would have been a latent bug for that user path.
+The CI signal does NOT change in this branch; the e2e suite is locally runnable but not gated. The wider CI integration is captured in `plans/e2e-ci-self-hosted.md` and lands when self-hosted runners are available on the repo.
 
 The downstream win for end users (local examples via `docker compose up` + creds env vars) lands in a separate follow-up PR per D-S9; the present branch only ships the stack and library fix that the follow-up depends on.
 
 ## Status snapshot
 
 - Branch: `feat/e2e-integration-suite`. Rebased onto `main` (`a0096d3`).
-- Plan: this file. Four rounds of oracle plan review: two PROCEED rounds against `main` at `5f16885`; an AMEND-then-PROCEED round against `main` at `a0096d3` resolving workspace-member gating, history-gap mechanism, test isolation, in-memory variant drop, readiness polling, PR #21 API surfaces, examples-update boundary, xdist drop, and the CI scope split; and an AMEND round (this one) reshaping the auth flow after librarian research on auth-o-tron + the user pointing at `aviso-chart` / `aviso-config` as the production reference. The current shape: drop the e2e auth-refresh test, mirror the bologna overlay for the stack config, add a `ConfigFile::refresh()` library fix in Commit 1, add a `test_permission_denied.py` scenario for the 403 path.
+- Plan: this file. Four rounds of oracle plan review: two PROCEED rounds against `main` at `5f16885`; an AMEND-then-PROCEED round against `main` at `a0096d3` resolving workspace-member gating, history-gap mechanism, test isolation, in-memory variant drop, readiness polling, PR #21 API surfaces, examples-update boundary, xdist drop, and the CI scope split; an AMEND round reshaping the auth flow after librarian research on auth-o-tron + the user pointing at `aviso-chart` / `aviso-config` as the production reference; and an AMEND-then-PROCEED round resolving the typed-error gap in the auth-errors test (Python uses `HttpError(status=...)`, not a `PermissionDenied` variant), the correct supervisor-test citation, the explicit `aviso-e2e` Cargo.toml settings (`publish = false`, workspace lints, `doctest = false`), and two doc-polish items. The current shape: drop the e2e auth-refresh test, mirror the bologna overlay for the stack config, add a `ConfigFile::refresh()` library fix in Commit 1, add a `test_auth_errors.py` scenario covering both 401 and 403 paths.
 - Not yet implemented.
 - Image references: `eccr.ecmwf.int/auth-o-tron/auth-o-tron:0.3.3` and `nats:2.12.4-alpine`; digests resolved at Commit 2 implementation time.
 - Awaiting: round-4 oracle plan review of this revised plan, then user go-ahead for execution.
