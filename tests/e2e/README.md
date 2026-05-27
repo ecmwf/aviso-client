@@ -31,6 +31,12 @@ The stack-up helper polls each service's readiness endpoint before returning, th
 
 ```bash
 # from the repo root
+
+# one-time setup (or whenever crates/aviso-py changes)
+uv sync --locked --group dev
+uv run maturin develop --locked
+
+# bring the stack up
 bash tests/e2e/shared/stack_up.sh
 
 # python e2e suite
@@ -48,7 +54,7 @@ cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 docker compose -f tests/e2e/docker-compose.yml down -v
 ```
 
-The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.
+The `uv sync` + `uv run maturin develop` setup builds the `aviso._native` extension into the local venv so the Python suite can `import aviso`; without it, `uv run pytest tests/e2e/python/` fails on first import. The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.
 
 Per-pytest-session teardown is opt-in via `AVISO_E2E_TEARDOWN=1` so successive `uv run pytest` invocations skip the docker startup cost; tests will leave the stack running otherwise.
 

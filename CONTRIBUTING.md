@@ -79,6 +79,8 @@ E2E tests run against a real three-service stack (`aviso-server` + `auth-o-tron`
 
 ### Python e2e suite
 
+Assumes the [Python toolchain](#python-toolchain) setup above has already been run (`uv sync` + `uv run maturin develop` builds the `aviso._native` extension into the local venv; without it, `uv run pytest tests/e2e/python/` fails on first import).
+
 ```bash
 bash tests/e2e/shared/stack_up.sh
 export AVISO_BASE_URL=http://localhost:8000 \
