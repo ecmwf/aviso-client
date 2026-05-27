@@ -8,6 +8,13 @@ nothing it has already seen. ``flush_cursor_on_exit=True`` plus the
 committed before the process exits, so a clean Ctrl+C does not cause
 a replay on next start.
 
+On the first run only, you need notifications to flow while this
+listener is subscribed. Run basics/01_publish.py from another
+terminal; its 3-publish window covers the SSE handshake. On
+subsequent runs the listener resumes from the stored cursor and
+sees anything published since the previous run, regardless of
+when you start the next publisher.
+
 Expected output (the state file's contents are the supervisor's
 internal cursor map keyed by the resume-key the watch derived):
 

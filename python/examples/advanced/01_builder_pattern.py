@@ -31,6 +31,9 @@ Two snippets shown side-by-side in this docstring so you can compare
 The two produce identical iterators against the same server. Passing
 both triggers= and request= raises aviso.AvisoError.
 
+Run this script in one terminal and basics/01_publish.py in another;
+the publisher's 3-publish window covers the listener's SSE handshake.
+
 Expected output (same as triggers/01_echo.py):
 
     {"event_type":"test_polygon",...}

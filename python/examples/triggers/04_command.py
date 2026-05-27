@@ -8,6 +8,9 @@ environment variables; the command string can reference them with
 Unix only. On non-Unix platforms the Trigger.command constructor
 raises aviso.ConfigError; this example exits gracefully in that case.
 
+Run this script in one terminal and basics/01_publish.py in another;
+the publisher's 3-publish window covers the listener's SSE handshake.
+
 Expected output:
 
     workdir: <tmp>
