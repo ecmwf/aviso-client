@@ -52,7 +52,7 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
         let parameters = format!(
             "event=test_polygon,polygon=\"{POLYGON}\",date=20260613,time={seq:04},data={{\"from\":\"cli_listen_test\",\"seq\":{seq}}}"
         );
-        StdCommand::new(&aviso_bin)
+        let publish = StdCommand::new(&aviso_bin)
             .args([
                 "--base-url",
                 &base,
@@ -65,6 +65,13 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
             ])
             .output()
             .unwrap();
+        assert!(
+            publish.status.success(),
+            "publish seq={seq} should succeed; status={:?} stdout={:?} stderr={:?}",
+            publish.status.code(),
+            String::from_utf8_lossy(&publish.stdout),
+            String::from_utf8_lossy(&publish.stderr),
+        );
         thread::sleep(Duration::from_millis(300));
     }
 

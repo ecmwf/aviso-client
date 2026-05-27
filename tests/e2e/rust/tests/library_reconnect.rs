@@ -81,6 +81,6 @@ async fn rust_listener_survives_max_duration_reached_cut() {
     );
     assert!(
         received.len() <= expected.len() + 1,
-        "at-most-one duplicate per cut per D2; got {received:?}"
+        "at-least-once delivery should produce at most one duplicate per cut; got {received:?}"
     );
 }
