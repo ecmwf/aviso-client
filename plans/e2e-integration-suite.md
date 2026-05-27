@@ -121,9 +121,9 @@ Five scenarios targeting Rust-specific surfaces. Every `#[test]` function carrie
 |---|---|
 | `library_publish_listen.rs` | `AvisoClient::builder()` + `client.notify(...).await?` + `client.watch(req)?` against the stack. Validates the Rust API ergonomics, not just the binding. Uses `producer-user` via `BasicAuth`. |
 | `library_reconnect.rs` | Same reconnect scenario as the Python test, from the Rust library caller's POV. Catches Rust-API-specific bugs (lifetimes, error propagation, supervisor lifetime) that the binding might hide. |
-| `cli_publish.rs` | `aviso notify` subcommand: argument parsing, `--config` resolution, identifier flag parsing, stdout shape. Auth via a `~/.config/aviso/config.yaml` fixture. |
-| `cli_listen_yaml.rs` | `aviso listen --config <yaml>` with a listener YAML file that exercises every trigger kind; assert stdout / file outputs / process exit code. |
-| `cli_replay_history.rs` | `aviso replay --from <N>` against a stream that has been pushed past N; assert ordering and end-of-stream exit. |
+| `cli_publish.rs` | `aviso notify` subcommand with `--base-url`/`--username`/`--password` flags and a quoted polygon parameter; asserts the command exits 0. Validates argument parsing + the parameter-string format end-to-end. |
+| `cli_listen_yaml.rs` | `aviso listen <yaml>` with a listener YAML configuring an echo trigger; spawns the listener as a child process, publishes three notifications via `aviso notify`, asserts captured stdout contains the published NDJSON. Echo is the cheapest representative trigger; expanding to every kind would require log-file / webhook / command targets and per-trigger output assertions, none of which add coverage the per-trigger hermetic tests do not already give. |
+| `cli_replay_history.rs` | `aviso replay --from <future-seq>` (u64::MAX - 1) exits 0 with an empty replay window. Picking a future sequence keeps the test insensitive to the shared JetStream stream's accumulated state across other tests in the session, while still exercising the request-build, auth, and end-of-stream paths. |
 
 The original `library_auth_refresh.rs` is dropped (auth refresh is covered hermetically per the motivation rewrite; the Rust-side surfaces tested are already exercised by `library_publish_listen.rs` + the new hermetic `ConfigFile::refresh()` test in Commit 1).
 
@@ -236,7 +236,7 @@ The stack-up cost is paid once per session: `bash tests/e2e/shared/stack_up.sh` 
 
 ### D-S8. Failure logs are captured for local debugging
 
-On any e2e test failure during a local run, the test harnesses (`tests/e2e/python/conftest.py` for the Python suite, the helper in `tests/e2e/rust/src/lib.rs` for the Rust suite) capture `docker compose -f tests/e2e/docker-compose.yml logs > tests/e2e/last-failure.log` in a session-scope teardown that runs only on failure. The same capture pattern is reused by the future CI workflow (`plans/e2e-ci-self-hosted.md`) which uploads the file as an artifact; for now the file is local-only.
+On any Python e2e test failure during a local run, `tests/e2e/python/conftest.py`'s `pytest_sessionfinish` hook captures `docker compose -f tests/e2e/docker-compose.yml logs > tests/e2e/last-failure.log` (gitignored). The Rust suite does not currently auto-capture logs on failure; on a Rust-side failure, the operator inspects `docker compose -f tests/e2e/docker-compose.yml logs` manually (the suite leaves the stack running by default). The future CI workflow (`plans/e2e-ci-self-hosted.md`) extends the capture pattern to cover both suites and uploads `last-failure.log` as an artifact.
 
 ### D-S9. The same compose stack is the recommended local environment for running the `python/examples/` tree
 
@@ -279,9 +279,8 @@ The downstream win for end users (local examples via `docker compose up` + creds
 
 ## Status snapshot
 
-- Branch: `feat/e2e-integration-suite`. Rebased onto `main` (`a0096d3`).
-- Plan: this file. Five rounds of oracle plan review: two PROCEED rounds against `main` at `5f16885`; an AMEND-then-PROCEED round against `main` at `a0096d3` resolving workspace-member gating, history-gap mechanism, test isolation, in-memory variant drop, readiness polling, PR #21 API surfaces, examples-update boundary, xdist drop, and the CI scope split; an AMEND round reshaping the auth flow after librarian research on auth-o-tron + the user pointing at `aviso-chart` / `aviso-config` as the production reference; an AMEND round resolving the typed-error gap in the auth-errors test (Python uses `HttpError(status=...)`, not a `PermissionDenied` variant), the correct supervisor-test citation, the explicit `aviso-e2e` Cargo.toml settings (`publish = false`, workspace lints, `doctest = false`), and two doc-polish items; and a final AMEND-to-PROCEED sweep removing a quickstart scope contradiction and three stale-citation polish items. The current shape: drop the e2e auth-refresh test, mirror the bologna overlay for the stack config, add a `ConfigFile::refresh()` library fix in Commit 1, add a `test_auth_errors.py` scenario covering both 401 and 403 paths.
-- Not yet implemented.
-- Image references: `eccr.ecmwf.int/auth-o-tron/auth-o-tron:0.3.3` and `nats:2.12.4-alpine`; digests resolved at Commit 2 implementation time.
-- Awaiting: round-4 oracle plan review of this revised plan, then user go-ahead for execution.
+- Branch: `feat/e2e-integration-suite`. Implementation landed in PR #22 against `main` at `a0096d3`.
+- Final shape after implementation: e2e auth-refresh test was dropped (auth-o-tron's plain provider has no hot-reconfiguration mechanism that produces a deterministic mid-test 401 against real services; auth refresh is covered hermetically instead by the supervisor wiremock test plus a new `ConfigFile::refresh()` library fix that shipped as the first commit of the series). The stack mirrors the bologna overlay verbatim with three accounts (`admin-user` / `reader-user` / `producer-user`) mapped to three roles via `plain-role-augmenter`. The auth-errors scenario asserts `HttpError(status=401)` and `HttpError(status=403)` because the client does not expose a typed `PermissionDenied` variant.
+- Test results at landing: 11 Python e2e scenarios pass, 1 skipped (`test_history_gap`, with documented investigation note); 5 Rust e2e scenarios pass.
+- Image references: `eccr.ecmwf.int/auth-o-tron/auth-o-tron:0.3.3@sha256:380afb697e086fd8f6d64ab2cdcb0583d1603a2e29bccd8e950f90bbaf9bfe66` and `nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea`.
 - Related plan: `plans/e2e-ci-self-hosted.md` (future work; wires this suite into CI on self-hosted runners with sccache + persistent docker image cache).
