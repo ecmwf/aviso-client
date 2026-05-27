@@ -83,7 +83,7 @@ tests/e2e/
 └── rust/                           (NEW)
     ├── Cargo.toml                  (workspace member; tests `#[ignore]`-gated)
     ├── src/
-    │   └── lib.rs                  (shared stack-up helper for cargo tests)
+    │   └── lib.rs                  (shared base URL + credential constants + producer/reader client constructors)
     └── tests/
         ├── library_publish_listen.rs
         ├── library_reconnect.rs
@@ -103,15 +103,15 @@ Ten scenarios targeting the user-facing API. Tests use the PR #21 API surfaces: 
 | File | What it asserts |
 |---|---|
 | `test_publish_listen.py` | Publish N notifications, listen for them via `with client.listen(...) as iterator:`, assert all N received in order with matching identifier and payload. Uses `producer-user`. |
-| `test_reconnect.py` | Open a listener, let `connection_max_duration_sec` fire (15 s), count notifications across the cut. Asserts at-least-once with at-most-one duplicate per cut. Also covers `docker compose restart aviso-server` mid-stream. Uses `producer-user` (read role is satisfied). |
+| `test_reconnect.py` | Open a listener, publish two notifications, wait past `connection_max_duration_sec` (15 s), publish two more, assert all four arrive across the routine `max_duration_reached` cut with at-most-one duplicate per cut (D2). Uses `producer-user`. A separate scenario for `docker compose restart aviso-server` mid-stream is captured as future work in the related CI plan; the routine-close path is the more frequent reconnect cause and the one the supervisor classifier optimises for. |
 | `test_auth_errors.py` | Two test functions in one file. (a) `test_invalid_credentials_get_401`: authenticate as `reader-user` with wrong password; call `client.notify(...)`; assert `aviso.HttpError` with `status == 401`. (b) `test_role_mismatch_gets_403`: authenticate as `reader-user` (role `reader`) with the right password; try to `client.notify(...)` on `test_polygon` (`write_roles: ["producer"]`); assert `aviso.HttpError` with `status == 403`. The client does not have a `PermissionDenied` variant: 401 and 403 both surface as `HttpError` with the status code attached (see `python/aviso/__init__.pyi::HttpError`). Replaces the original `test_auth_refresh.py` per the motivation rewrite above. |
-| `test_resume_across_restart.py` | Listen with `JsonFileStore`, kill the Python process after N notifications, restart, assert the next pull is `N+1` with no replay and no gap. Uses `producer-user`. |
+| `test_resume_across_restart.py` | Listen with `JsonFileStore`, consume N notifications, close the first `AvisoClient` (in-process simulation of a restart), open a second `AvisoClient` against the same state file, publish N+1, assert N+1 arrives. The supervisor's commit-on-next-send semantics mean item N may replay once (at-least-once contract); item 1 must never replay (already committed). True process-kill-and-restart is not exercised at the pytest level because the fixture's process scope would leak; the in-process variant covers the `JsonFileStore` round-trip contract that is the actual library surface under test. Uses `producer-user`. |
 | `test_history_gap.py` | Publish past the configured `max_messages: 100` so JetStream prunes the oldest, request replay from a known pruned sequence, assert `HistoryGapError(reason="replay_limit_reached")` with `.max_allowed` populated. Uses `producer-user`. |
 | `test_triggers_real_dispatch.py` | `client.listen(..., triggers=[Trigger.echo(), Trigger.log(path), Trigger.webhook(url)])` with the local webhook pointed at an in-process `pytest-httpserver`. Assert stdout, file contents, and webhook receipts all match expected. Uses `producer-user`. |
 | `test_multiplex_async.py` | Two `async with client.listen(...) as iterator:` calls under `asyncio.gather`; assert per-stream ordering preserved, cross-stream interleaving is non-deterministic. Uses `producer-user`. |
 | `test_flush_cursor_on_exit.py` | `flush_cursor_on_exit=True` + iterator `with` block; clean shutdown, then restart; assert no replay of the last notification. Uses `producer-user`. |
 | `test_schema_discovery.py` | `client.schema()` + `client.schema_for(...)` against the test stack; assert returned shape matches the configured schemas. Uses `reader-user` (schema endpoint requires auth but no specific role). |
-| `test_concurrent_publishers.py` | Five `asyncio.gather`'d publishes; assert all five `request_id`s are unique and all five appear on a subsequent listen. Uses `producer-user`. |
+| `test_concurrent_publishers.py` | Open a listener, then fire five `asyncio.gather`'d publishes, then drain the live stream; assert all five `request_id`s are unique and all five payload `seq` values arrive on the listener. The listen-before-publish order avoids the supervisor's subscribe race; the test asserts the concurrent-publish path produces distinct request_ids and that nothing is lost on the wire. Uses `producer-user`. |
 
 #### Rust suite (`tests/e2e/rust/`)
 
@@ -138,7 +138,7 @@ What stays in CI in this branch:
 
 What this branch DOES ship for local use:
 
-- The compose stack, the readiness-polling helper (`tests/e2e/shared/stack_up.sh`), and a documented one-command flow: `bash tests/e2e/shared/stack_up.sh && uv run pytest tests/e2e/python/ && cargo test -p aviso-e2e -- --include-ignored`.
+- The compose stack, the readiness-polling helper (`tests/e2e/shared/stack_up.sh`), and a documented per-language flow. Python: `bash tests/e2e/shared/stack_up.sh && uv run pytest tests/e2e/python/`. Rust: `bash tests/e2e/shared/stack_up.sh && cargo build -p aviso-cli && cargo test -p aviso-e2e -- --include-ignored --test-threads=1` (the build step is required because the CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects `target/debug/aviso`; `--test-threads=1` keeps publishers and listeners from racing in the shared JetStream stream).
 - The Rust e2e tests are `#[ignore]`-gated per D-S6 so the existing `cargo test --workspace --all-targets` CI gate keeps passing without the stack up. Developers explicitly opt in via `--include-ignored`.
 - The Python e2e tests live under `tests/e2e/python/` and are NOT picked up by the hermetic `pyproject.toml`'s `[tool.pytest.ini_options] testpaths = ["python/tests"]`. Developers run them explicitly via `uv run pytest tests/e2e/python/`.
 
@@ -184,7 +184,7 @@ One compose file, one stack-up call, both languages run against it sequentially 
 
 ### D-S2. Single session-scoped stack per pytest session
 
-`tests/e2e/python/conftest.py` brings the stack up once via `bash tests/e2e/shared/stack_up.sh` at session scope, holds it for every test in the session, and tears it down after the last test. No pytest-xdist sharding in the initial implementation: the ten Python scenarios run sequentially with the reconnect-test floor at ~20 s, comfortably within a single local run, and adding xdist would require port-sharding logic plus the `pytest-xdist` dev dependency for no concrete payoff. The existing `tests/e2e/README.md` parallel-shard pattern (`AVISO_SERVER_HOST_PORT=8101 -p shard-1`) survives as documentation for human operators who want to run the suite locally alongside other instances; the test fixture itself does not exercise it. If a future test count growth makes the suite slow enough to warrant parallelism, xdist + per-worker port sharding lands as a small follow-up.
+`tests/e2e/python/conftest.py` brings the stack up once via `bash tests/e2e/shared/stack_up.sh` at session scope, holds it for every test in the session, and LEAVES IT RUNNING after the last test so successive `uv run pytest` invocations skip the docker startup cost. Setting `AVISO_E2E_TEARDOWN=1` opts in to `docker compose down -v` at session end. No pytest-xdist sharding in the initial implementation: the ten Python scenarios run sequentially with the reconnect-test floor at ~20 s, comfortably within a single local run, and adding xdist would require port-sharding logic plus the `pytest-xdist` dev dependency for no concrete payoff. The existing `tests/e2e/README.md` parallel-shard pattern (`AVISO_SERVER_HOST_PORT=8101 -p shard-1`) survives as documentation for human operators who want to run the suite locally alongside other instances; the test fixture itself does not exercise it. If a future test count growth makes the suite slow enough to warrant parallelism, xdist + per-worker port sharding lands as a small follow-up.
 
 ### D-S3. JetStream-backed NATS
 
@@ -215,7 +215,7 @@ The e2e crate's `Cargo.toml` declares:
 
 - `publish = false` (this crate never ships to crates.io; it is internal test infrastructure).
 - `[lints] workspace = true` (the same clippy and rustc lint level applied to every workspace crate applies here too; no quiet exceptions).
-- `[lib] doctest = false` on the shared helper in `src/lib.rs`. The helper is internal scaffolding (a `stack_up` function plus a few constants) with no public API users would write docs against, so the `cargo test --workspace --doc` gate has nothing to run here.
+- `[lib] doctest = false` on the shared helper in `src/lib.rs`. The helper is internal scaffolding (base URL accessor, credential constants, producer/reader client constructors) with no public API users would write docs against, so the `cargo test --workspace --doc` gate has nothing to run here.
 
 These three settings together prevent the workspace-member relationship from leaking unintended gates onto the e2e crate.
 
