@@ -55,12 +55,6 @@ notification_schema:
     topic:
       base: "test"
       key_order: ["date", "time"]
-    auth:
-      required: true
-      read_roles:
-        localrealm: ["*"]
-      write_roles:
-        localrealm: ["producer"]
     identifier:
       date:
         type: DateHandler
@@ -69,6 +63,14 @@ notification_schema:
       time:
         type: TimeHandler
         required: false
+    storage_policy:
+      allow_duplicates: true
+    auth:
+      required: true
+      read_roles:
+        localrealm: ["*"]
+      write_roles:
+        localrealm: ["producer"]
 
   test_polygon:
     payload:
@@ -76,12 +78,6 @@ notification_schema:
     topic:
       base: "polygon"
       key_order: ["date", "time"]
-    auth:
-      required: true
-      read_roles:
-        localrealm: ["*"]
-      write_roles:
-        localrealm: ["producer"]
     identifier:
       date:
         type: DateHandler
@@ -93,3 +89,11 @@ notification_schema:
       polygon:
         type: PolygonHandler
         required: true
+    storage_policy:
+      allow_duplicates: true
+    auth:
+      required: true
+      read_roles:
+        localrealm: ["*"]
+      write_roles:
+        localrealm: ["producer"]
