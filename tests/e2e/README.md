@@ -54,13 +54,13 @@ Per-pytest-session teardown is opt-in via `AVISO_E2E_TEARDOWN=1` so successive `
 
 ## Run multiple shards in parallel
 
-To run multiple instances side by side (the existing pattern from before the suite landed), override the host ports and the compose project name:
+To run multiple instances side by side (the existing pattern from before the suite landed), override the host ports and the compose project name. The commands below run from the repo root via `-f`:
 
 ```bash
 AVISO_SERVER_HOST_PORT=8101 AUTH_O_TRON_HOST_PORT=8181 NATS_HOST_PORT=4322 NATS_MONITORING_HOST_PORT=8322 \
-  docker compose -p shard-1 up -d
+  docker compose -f tests/e2e/docker-compose.yml -p shard-1 up -d
 AVISO_SERVER_HOST_PORT=8102 AUTH_O_TRON_HOST_PORT=8182 NATS_HOST_PORT=4323 NATS_MONITORING_HOST_PORT=8323 \
-  docker compose -p shard-2 up -d
+  docker compose -f tests/e2e/docker-compose.yml -p shard-2 up -d
 ```
 
 `container_name` is intentionally not set so multiple compose projects do not collide on the daemon. The pytest fixture in `tests/e2e/python/conftest.py` uses one stack at session scope and does not exercise this pattern; it is documented here for human operators.
