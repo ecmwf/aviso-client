@@ -1,8 +1,8 @@
 # aviso Python examples
 
-Runnable scripts that show what the Python API does, one scenario per file. Every script reads `AVISO_BASE_URL` plus either `AVISO_TOKEN` or `AVISO_USERNAME` / `AVISO_PASSWORD` from the environment and connects to whatever aviso-server you point it at. The examples use the `test_polygon` event type because it is widely available on dev servers; if your server has different schemas configured, replace the event type and identifier fields with what `client.schema()` reports.
+Runnable scripts that show what the Python API does, one scenario per file. Every script reads `AVISO_BASE_URL` plus either `AVISO_TOKEN` or `AVISO_USERNAME` / `AVISO_PASSWORD` from the environment and connects to whatever aviso-server you point it at. The examples use the `test_polygon` event type, which the local e2e stack in this repo ships pre-configured.
 
-## Prerequisites
+## Install the aviso package
 
 The `aviso` package must be installed in the active Python environment. From a checkout:
 
@@ -13,22 +13,31 @@ uv run maturin develop --release --locked
 
 See [`python/README.md`](../README.md#install) for the full install instructions.
 
-The examples use the `test_polygon` event type because it is widely available on dev servers. If `client.schema().event_types` against your server does not include it, you have two options:
+## Run the examples against the local stack (recommended)
 
-- **If you have access to the aviso-server config**: paste the `test_polygon` snippet from the [quickstart's "What is on your server" section](../../docs/src/python/quickstart.md#what-is-on-your-server) into your server's `notification_schema:` and restart. The same definition is in [`tests/e2e/aviso-server.config.yaml`](../../tests/e2e/aviso-server.config.yaml).
-- **If you only use the server (not run it)**: substitute your own event type and identifier fields in each example. The shape of every call stays the same; only the event-type string and identifier keys change.
-
-## How to run
-
-Set two environment variables and run any script:
+The fastest way to try the examples is the docker-compose stack from `tests/e2e/`. It ships `test_polygon` pre-configured (auth required, write role `producer`), and the `producer-user` account has both read and write permissions.
 
 ```bash
-export AVISO_BASE_URL=https://aviso.example.org
-export AVISO_USERNAME=alice
-export AVISO_PASSWORD=wonderland
+# bring the stack up (auth-o-tron + aviso-server + JetStream NATS)
+bash tests/e2e/shared/stack.sh up
 
-python python/examples/basics/01_publish.py
+# point the examples at the local stack
+export AVISO_BASE_URL=http://localhost:8000
+export AVISO_USERNAME=producer-user
+export AVISO_PASSWORD=producer-pass
+
+# run any example
+uv run python python/examples/basics/01_publish.py
+
+# when done
+bash tests/e2e/shared/stack.sh down
 ```
+
+See [`tests/e2e/README.md`](../../tests/e2e/README.md) for the two read-only test accounts (`admin-user`, `reader-user`) and the full lifecycle commands.
+
+## Run the examples against your own server
+
+Set the same three environment variables to point at an aviso-server you can reach. The examples assume `test_polygon` is configured on the server; if it is not, see [the quickstart's "What is on your server" section](../../docs/src/python/quickstart.md#what-is-on-your-server) for the schema snippet to paste into your server's config, or substitute your own event type and identifier fields in each example (the shape of every call stays the same).
 
 Each script terminates on its own (most listeners stop after receiving 3 notifications) so you do not have to Ctrl+C anything. The terminate-after-N pattern is for the harness and for users following along; remove the `break_after(...)` call in real long-running code.
 
@@ -40,7 +49,7 @@ The directories group examples by purpose, not by API surface:
 - **triggers/**: four trigger-kind examples (`echo`, `log`, `command`, `webhook`) plus one composition example (`multiple`), all using the kwargs path (`triggers=[...]`). `teams` and `post` are HTTP variants of `webhook` and share its shape; see the [api reference](../../docs/src/python/api-reference.md#triggers) for their full constructors.
 - **resilience/**: state-store resume and exception handling. The two reasons you need patterns on top of listen.
 - **async/**: the async client. The basic listener and the multiplex pattern that earns the async surface its keep.
-- **advanced/**: the builder pattern (alternative to kwargs), replay-only mode, and the runnable webhook example.
+- **advanced/**: the builder pattern (alternative to kwargs) and replay-only mode.
 
 Open the per-directory `README.md` for the list of files and a one-line description of each.
 
