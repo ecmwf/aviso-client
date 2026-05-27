@@ -14,7 +14,7 @@ The stack mirrors ECMWF's production deployment patterns (sourced from [`ecmwf/a
 
 - **aviso-server** runs with `auth.enabled: true`, `auth.mode: direct`, JetStream backend, and two schemas (`test_event`, `test_polygon`) both with `auth.required: true` and `write_roles: ["producer"]`.
 - **auth-o-tron** runs the `plain` provider with three test accounts mapped to three roles via a `plain-role-augmenter`.
-- **nats** runs JetStream with bounded `max_messages` (small enough that the history-gap test can deterministically force pruning) and the monitoring server on port `8222`.
+- **nats** runs JetStream with bounded `max_messages` (sized to support a future deterministic history-gap test once aviso-server's `notification_replay_limit_reached` trigger condition is pinned down; the current `test_history_gap.py` is skipped) and the monitoring server on port `8222`.
 - aviso-server and auth-o-tron share a JWT secret via the `AVISOSERVER_AUTH__JWT_SECRET` and `AOT_JWT__SECRET` env vars (default value baked into `docker-compose.yml`; override via `AVISO_E2E_JWT_SECRET`).
 
 ## Test accounts
