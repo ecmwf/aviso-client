@@ -44,5 +44,5 @@ def test_listener_survives_max_duration_reached_cut(
 
     assert set(received) >= expected, f"missing items: {expected - set(received)}"
     assert len(received) <= len(expected) + 1, (
-        f"at-most-one duplicate per cut per D2; got {received}"
+        f"at-least-once delivery should produce at most one duplicate per cut; got {received}"
     )
