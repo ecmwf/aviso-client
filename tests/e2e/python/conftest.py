@@ -27,9 +27,18 @@ COMPOSE_FILE = E2E_DIR / "docker-compose.yml"
 STACK_UP = E2E_DIR / "shared" / "stack_up.sh"
 LAST_FAILURE_LOG = E2E_DIR / "last-failure.log"
 
-BASE_URL = os.environ.get(
-    "AVISO_E2E_BASE_URL", os.environ.get("AVISO_BASE_URL", "http://localhost:8000")
-)
+
+def _default_base_url() -> str:
+    """Compute the e2e base URL, honouring explicit overrides then AVISO_SERVER_HOST_PORT."""
+    if explicit := os.environ.get("AVISO_E2E_BASE_URL"):
+        return explicit
+    if explicit := os.environ.get("AVISO_BASE_URL"):
+        return explicit
+    port = os.environ.get("AVISO_SERVER_HOST_PORT", "8000")
+    return f"http://localhost:{port}"
+
+
+BASE_URL = _default_base_url()
 
 ADMIN_USERNAME = "admin-user"
 ADMIN_PASSWORD = "admin-pass"

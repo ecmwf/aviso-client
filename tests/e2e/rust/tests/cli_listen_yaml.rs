@@ -12,6 +12,7 @@ use std::process::{Command as StdCommand, Stdio};
 use std::thread;
 use std::time::Duration;
 
+use assert_cmd::Command as AssertCommand;
 use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url};
 use tempfile::NamedTempFile;
 
@@ -53,7 +54,8 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
         let parameters = format!(
             "event=test_polygon,polygon=\"{POLYGON}\",date=20260613,time={seq:04},data={{\"from\":\"cli_listen_test\",\"seq\":{seq}}}"
         );
-        let publish = StdCommand::new(&aviso_bin)
+        AssertCommand::cargo_bin("aviso")
+            .unwrap()
             .args([
                 "--base-url",
                 &base,
@@ -64,15 +66,9 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
                 "notify",
                 &parameters,
             ])
-            .output()
-            .unwrap();
-        assert!(
-            publish.status.success(),
-            "publish seq={seq} should succeed; status={:?} stdout={:?} stderr={:?}",
-            publish.status.code(),
-            String::from_utf8_lossy(&publish.stdout),
-            String::from_utf8_lossy(&publish.stderr),
-        );
+            .timeout(Duration::from_secs(10))
+            .assert()
+            .success();
         thread::sleep(Duration::from_millis(300));
     }
 
