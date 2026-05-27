@@ -8,4 +8,4 @@ Four trigger kinds get a dedicated example here. `teams` and `post` are not cove
 - **02_log.py** -- appends one compact JSON line per notification to a file under a temp directory.
 - **03_multiple.py** -- a scenario, not a trigger kind: combines `echo` and `log` to demonstrate that triggers compose in declaration order.
 - **04_command.py** -- runs `/bin/sh -c <rendered_command>` per notification, with notification fields exposed as `AVISO_*` env vars and `{{ notification.<dotted.path> }}` templates. Unix only; skipped on Windows with a clear message.
-- **05_webhook.py** -- illustration only (placeholder URL, not runnable end-to-end). For the runnable counterpart that spins up an in-process HTTP server, see `advanced/03_webhook_with_local_server.py`.
+- **05_webhook.py** -- runnable webhook trigger backed by an in-process HTTP server. Publishes one notification in a background thread, fires the webhook, asserts the server received the POST.
