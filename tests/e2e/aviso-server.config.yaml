@@ -4,22 +4,15 @@ application:
   base_url: "http://localhost:8000"  # overridden at runtime via AVISOSERVER_APPLICATION__BASE_URL to track AVISO_SERVER_HOST_PORT.
   static_files_path: "/var/empty"
 
-watch_endpoint:
-  sse_heartbeat_interval_sec: 5
-  connection_max_duration_sec: 60
-  replay_batch_size: 100
-  max_historical_notifications: 10000
-  replay_batch_delay_ms: 50
-  concurrent_notification_processing: 15
-
-notification_backend:
-  kind: in_memory
-  in_memory:
-    max_history_per_topic: 10000
-    max_topics: 100
+notification_schema_strict: true
 
 auth:
-  enabled: false
+  enabled: true
+  mode: direct
+  auth_o_tron_url: "http://auth-o-tron:8080"
+  admin_roles:
+    localrealm: ["admin"]
+  timeout_ms: 5000
 
 metrics:
   enabled: false
@@ -28,6 +21,33 @@ logging:
   level: info
   format: json
 
+watch_endpoint:
+  sse_heartbeat_interval_sec: 5
+  connection_max_duration_sec: 15
+  replay_batch_size: 100
+  max_historical_notifications: 10000
+  replay_batch_delay_ms: 50
+  concurrent_notification_processing: 15
+
+notification_backend:
+  kind: jetstream
+  jetstream:
+    nats_url: "nats://nats:4222"
+    timeout_seconds: 30
+    retry_attempts: 10
+    max_messages: 100
+    max_bytes: 10485760
+    retention_time: "1h"
+    storage_type: file
+    replicas: 1
+    retention_policy: limits
+    discard_policy: old
+    enable_auto_reconnect: true
+    max_reconnect_attempts: 10
+    reconnect_delay_ms: 1000
+    publish_retry_attempts: 3
+    publish_retry_base_delay_ms: 50
+
 notification_schema:
   test_event:
     payload:
@@ -35,6 +55,12 @@ notification_schema:
     topic:
       base: "test"
       key_order: ["date", "time"]
+    auth:
+      required: true
+      read_roles:
+        localrealm: ["*"]
+      write_roles:
+        localrealm: ["producer"]
     identifier:
       date:
         type: DateHandler
@@ -50,6 +76,12 @@ notification_schema:
     topic:
       base: "polygon"
       key_order: ["date", "time"]
+    auth:
+      required: true
+      read_roles:
+        localrealm: ["*"]
+      write_roles:
+        localrealm: ["producer"]
     identifier:
       date:
         type: DateHandler

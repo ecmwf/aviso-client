@@ -7,6 +7,27 @@ services:
       RUST_LOG: "info"
       AVISOSERVER_CONFIG_FILE: "/etc/aviso/config.yaml"
       AVISOSERVER_APPLICATION__BASE_URL: "http://127.0.0.1:${AVISO_SERVER_HOST_PORT:-8000}"
+      AVISOSERVER_AUTH__JWT_SECRET: "${AVISO_E2E_JWT_SECRET:-aviso-e2e-test-secret-do-not-use-in-production}"
     volumes:
       - "./aviso-server.config.yaml:/etc/aviso/config.yaml:ro"
+    depends_on:
+      - nats
+      - auth-o-tron
 
+  auth-o-tron:
+    image: eccr.ecmwf.int/auth-o-tron/auth-o-tron:0.3.3@sha256:380afb697e086fd8f6d64ab2cdcb0583d1603a2e29bccd8e950f90bbaf9bfe66
+    ports:
+      - "127.0.0.1:${AUTH_O_TRON_HOST_PORT:-8080}:8080"
+    environment:
+      AOT_JWT__SECRET: "${AVISO_E2E_JWT_SECRET:-aviso-e2e-test-secret-do-not-use-in-production}"
+    volumes:
+      - "./auth-o-tron.config.yaml:/app/config.yaml:ro"
+
+  nats:
+    image: nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea
+    ports:
+      - "127.0.0.1:${NATS_HOST_PORT:-4222}:4222"
+      - "127.0.0.1:${NATS_MONITORING_HOST_PORT:-8222}:8222"
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - "./nats.conf:/etc/nats/nats.conf:ro"
