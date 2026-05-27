@@ -75,7 +75,21 @@ uv run pytest python/tests/
 
 ## End-to-end tests
 
-E2E tests run against a real `aviso-server` instance pulled from ECMWF's container registry. The pinned version lives in the `image:` tag of [`tests/e2e/docker-compose.yml`](tests/e2e/docker-compose.yml). Bring it up locally with `cd tests/e2e && docker compose up -d`.
+E2E tests run against a real three-service stack (`aviso-server` + `auth-o-tron` + JetStream-backed NATS) pulled from public registries. Images are pinned by manifest digest in [`tests/e2e/docker-compose.yml`](tests/e2e/docker-compose.yml). The stack mirrors ECMWF's production deployment patterns (auth required, three accounts mapped to three roles, shared JWT secret); see [`tests/e2e/README.md`](tests/e2e/README.md) for the account credentials and the bump procedure.
+
+### Python e2e suite
+
+```bash
+bash tests/e2e/shared/stack_up.sh
+export AVISO_BASE_URL=http://localhost:8000 \
+       AVISO_USERNAME=producer-user \
+       AVISO_PASSWORD=producer-pass
+uv run pytest tests/e2e/python/
+```
+
+The stack-up helper polls each service's health endpoint with a 60 s timeout and exits non-zero if any service does not come up. By default the stack is left running after pytest exits so successive runs skip the docker startup cost; set `AVISO_E2E_TEARDOWN=1` to tear down. On any test failure `docker compose logs` are captured to `tests/e2e/last-failure.log` for post-mortem.
+
+The hermetic suite at `python/tests/` stays the default (`uv run pytest`); the e2e suite is opt-in via the explicit path (`tests/e2e/python/`).
 
 ## Code of conduct
 
