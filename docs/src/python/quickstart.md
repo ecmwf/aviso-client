@@ -74,7 +74,34 @@ So a `test_polygon` notification is keyed on three identifier fields: `polygon` 
 
 **What `"required": true` means.** The `required` flag on each identifier field says whether a **filter or watch** call must include it. For `test_polygon`, the only `required: true` field is `polygon`, so a listener can subscribe with just `{"polygon": "..."}` and the rest narrow the match further if you want. A **notify** call is different: it must supply every identifier field the schema defines, regardless of the flag, because the schema enumerates the complete identifier of a notification. Publishing `test_polygon` without `date` or `time` returns `400 Required field 'date' missing for notify operation`. If a publish fails with `Required field X missing`, add X and retry.
 
-**The rest of this page uses `test_polygon` as the example event type.** It is one stream that may exist on your server; substitute your own event type and identifier fields if not. The shape of every call is the same.
+**The rest of this page uses `test_polygon` as the example event type.** It is one stream that may exist on your server.
+
+If your server has no `test_polygon` configured, you have two options. If you have access to your aviso-server's config, paste the snippet below into the `notification_schema:` section and restart the server:
+
+```yaml
+notification_schema:
+  test_polygon:
+    payload:
+      required: true
+    topic:
+      base: "polygon"
+      key_order: ["date", "time"]
+    identifier:
+      polygon:
+        type: PolygonHandler
+        required: true
+      date:
+        type: DateHandler
+        canonical_format: "%Y%m%d"
+        required: false
+      time:
+        type: TimeHandler
+        required: false
+```
+
+This matches the schema used in the repo's own end-to-end test stack ([`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml)). After restart, `client.schema().event_types` should include `test_polygon`.
+
+If you do not run the server yourself, substitute your own event type and identifier fields in every example below. The shape of every call is the same; only the event-type string and the identifier keys change.
 
 ## 1. Publish one notification
 

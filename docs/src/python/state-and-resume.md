@@ -122,19 +122,16 @@ client = aviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
-try:
+with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
     for notification in iterator:
         print(notification.sequence)
-finally:
-    iterator.close()
 ```
 
-Without `flush_cursor_on_exit=True`, the at-least-once contract still holds; you just see one replayed notification per restart.
+The iterator's `with` form calls `close()` automatically on exit (whether the loop body returns, raises, or breaks), so the supervisor's final cursor flush always lands. Without `flush_cursor_on_exit=True`, the at-least-once contract still holds; you just see one replayed notification per restart.
 
 ## With `AsyncAvisoClient`
 
-Both state stores work identically with the async client. The async iterator uses `aclose()` in place of `close()`:
+Both state stores work identically with the async client. The async iterator is an `async with` context manager that calls `aclose()` on exit:
 
 <!-- not-runnable -->
 ```python
@@ -147,12 +144,11 @@ async def main() -> None:
         state_store=aviso.JsonFileStore("/var/lib/aviso/state.json"),
         flush_cursor_on_exit=True,
     )
-    iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
-    try:
+    async with client.listen(
+        "test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}
+    ) as iterator:
         async for notification in iterator:
             print(notification.sequence)
-    finally:
-        await iterator.aclose()
 
 asyncio.run(main())
 ```

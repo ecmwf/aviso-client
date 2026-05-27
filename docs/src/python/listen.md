@@ -147,36 +147,12 @@ print(f"replayed {count} notifications")
 
 The iterator raises `StopIteration` cleanly on the control-event boundary.
 
-## Low-level `WatchRequest`
+## Clean shutdown with `with`
 
-When you want to build a request once and reuse it, or you want to attach triggers, use `WatchRequest` directly:
-
-```python
-"""Build a WatchRequest with triggers and pass it to listen()."""
-
-import os
-import aviso
-
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
-
-request = (
-    aviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([aviso.Trigger.echo()])
-)
-
-for notification in client.listen(request=request):
-    print(notification.sequence)
-```
-
-Mixing `request=` with `event_type=` / `filter=` / `from_=` raises `aviso.AvisoError` so it is always clear which surface you meant. Triggers can only be attached via `WatchRequest.with_triggers(...)`.
-
-## Explicit close
-
-When `flush_cursor_on_exit=True` is set on the client, call `iter.close()` so the supervisor's final cursor flush completes before the process exits:
+Both `NotificationIterator` and `AsyncNotificationIterator` are context managers. Use them with `with` (sync) or `async with` (async) and the iterator's `close()` runs automatically on exit, even if the loop body raises or breaks. This is the recommended shape when you have `flush_cursor_on_exit=True` set on the client, because it guarantees the supervisor's final cursor flush completes before the process exits:
 
 ```python
-"""Listen with an explicit close so the last sequence is committed before exit."""
+"""Listen with a clean shutdown via the iterator context manager."""
 
 import os
 import pathlib
@@ -192,19 +168,43 @@ client = aviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-iterator = client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"})
-try:
+with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
     for notification in iterator:
         print(notification.sequence)
-finally:
-    iterator.close()
 ```
 
-Without an explicit close the supervisor still cancels via iterator drop, but the final commit may not complete before the process exits. The default (no flag) is fine for normal at-least-once usage.
+You can still call `iterator.close()` (or `await iterator.aclose()` on the async surface) manually if you prefer a `try/finally`; the `with` form is just a shorter way to express the same lifecycle.
+
+Without `flush_cursor_on_exit=True` the supervisor still cancels via iterator drop, so the default (no flag, no context manager) is fine for normal at-least-once usage.
+
+## Reusing a watch request
+
+For most usage, the `client.listen(event_type, filter=..., triggers=..., from_=..., mode=...)` kwargs above are the simplest path. If you want to build the configuration once and pass it to several `listen()` calls (constructing from operator config, registering a set of watches up front, that sort of thing), use `WatchRequest` directly:
+
+```python
+"""Build a WatchRequest once, then pass it to listen()."""
+
+import os
+import aviso
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+request = (
+    aviso.WatchRequest.watch("test_polygon")
+    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_triggers([aviso.Trigger.echo()])
+)
+
+with client.listen(request=request) as iterator:
+    for notification in iterator:
+        print(notification.sequence)
+```
+
+`request=` is mutually exclusive with `event_type=`, `filter=`, `from_=`, `mode=`, and `triggers=`. Passing any of those alongside `request=` raises `aviso.AvisoError` so it is always clear which surface you meant. For the side-by-side comparison see the [`advanced/01_builder_pattern.py`](https://github.com/ecmwf/aviso-client/tree/main/python/examples/advanced/01_builder_pattern.py) example.
 
 ## Async equivalent
 
-The async client yields `Notification` instances from `async for`:
+The async client yields `Notification` instances from `async for`, and `AsyncNotificationIterator` is itself an `async with` context manager:
 
 ```python
 """Async equivalent: listen for test_polygon notifications."""
@@ -216,11 +216,14 @@ import aviso
 
 async def main() -> None:
     client = aviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
-    async for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
-        print(notification.sequence)
+    async with client.listen(
+        "test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}
+    ) as iterator:
+        async for notification in iterator:
+            print(notification.sequence)
 
 
 asyncio.run(main())
 ```
 
-`asyncio.run`'s default signal handling delivers `KeyboardInterrupt` to the awaiting task. The iterator drops, the supervisor exits cleanly. See [Async](./async.md) for the situations where the async client actually helps, including draining several streams concurrently from one process.
+`asyncio.run`'s default signal handling delivers `KeyboardInterrupt` to the awaiting task. The `async with` form ensures `aclose()` runs even on interrupt. See [Async](./async.md) for the situations where the async client actually helps, including draining several streams concurrently from one process.

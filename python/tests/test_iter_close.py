@@ -69,3 +69,23 @@ def test_async_iterator_is_async_iterable() -> None:
         await iterator.aclose()
 
     asyncio.run(cleanup())
+
+
+def test_sync_iterator_works_as_context_manager() -> None:
+    client = aviso.AvisoClient(base_url="http://127.0.0.1:1")
+    with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+        assert iter(iterator) is iterator
+    with pytest.raises(StopIteration):
+        next(iterator)
+
+
+def test_async_iterator_works_as_async_context_manager() -> None:
+    client = aviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+
+    async def drive() -> None:
+        async with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+            assert iterator.__aiter__() is iterator
+        with pytest.raises(StopAsyncIteration):
+            await iterator.__anext__()
+
+    asyncio.run(drive())
