@@ -3,10 +3,9 @@
 //! Generates random sequences of [`WatchEvent`]s and asserts the
 //! reducer's spec-correctness invariants for every step. Invariants
 //! trace back to ADR D2 (reconnect-as-norm, reconnect classifier,
-//! at-least-once delivery) and the oracle review that hardened the
-//! reducer surface before implementation. The invariant numbering
-//! is local to this file and reused in the commit message that
-//! introduced it.
+//! at-least-once delivery), which hardened the reducer surface
+//! before implementation. The invariant numbering is local to this
+//! file and reused in the commit message that introduced it.
 //!
 //! The invariants checked here are:
 //!

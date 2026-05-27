@@ -71,6 +71,10 @@ e2e:
             - 'python/**'
             - 'tests/e2e/**'
             - '.github/workflows/ci.yml'
+            - 'Cargo.toml'
+            - 'Cargo.lock'
+            - 'pyproject.toml'
+            - 'uv.lock'
     - if: steps.filter.outputs.affected == 'true'
       uses: mozilla-actions/sccache-action@v0.0.6
     - if: steps.filter.outputs.affected == 'true'
