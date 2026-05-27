@@ -1,12 +1,12 @@
 """End-to-end pytest fixtures backed by the docker-compose stack at tests/e2e/.
 
 The fixtures here run against the real aviso-server + auth-o-tron + nats stack.
-Each pytest session brings the stack up once via ``tests/e2e/shared/stack_up.sh``
+Each pytest session brings the stack up once via ``tests/e2e/shared/stack.sh up``
 and reuses it across every test.
 
 By default the stack is LEFT RUNNING after the session ends so successive ``uv run
 pytest`` invocations skip the docker startup cost. Set ``AVISO_E2E_TEARDOWN=1`` to
-tear down (``docker compose down -v``) when the session finishes.
+run ``tests/e2e/shared/stack.sh down`` when the session finishes.
 
 On any test failure during the session, ``docker compose logs`` are captured to
 ``tests/e2e/last-failure.log`` for debugging.
@@ -24,7 +24,7 @@ import pytest
 
 E2E_DIR = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = E2E_DIR / "docker-compose.yml"
-STACK_UP = E2E_DIR / "shared" / "stack_up.sh"
+STACK = E2E_DIR / "shared" / "stack.sh"
 LAST_FAILURE_LOG = E2E_DIR / "last-failure.log"
 
 
@@ -50,14 +50,11 @@ PRODUCER_PASSWORD = "producer-pass"
 
 @pytest.fixture(scope="session", autouse=True)
 def e2e_stack() -> Iterator[None]:
-    """Brings the e2e stack up via stack_up.sh, leaves it running by default."""
-    subprocess.run(["bash", str(STACK_UP)], check=True)
+    """Brings the e2e stack up via stack.sh, leaves it running by default."""
+    subprocess.run(["bash", str(STACK), "up"], check=True)
     yield
     if os.environ.get("AVISO_E2E_TEARDOWN") == "1":
-        subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE_FILE), "down", "-v"],
-            check=False,
-        )
+        subprocess.run(["bash", str(STACK), "down"], check=False)
 
 
 @pytest.fixture

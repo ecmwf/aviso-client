@@ -5,7 +5,7 @@
 //! build the CLI first. Full local-run flow from the repo root:
 //!
 //! ```text
-//! bash tests/e2e/shared/stack_up.sh
+//! bash tests/e2e/shared/stack.sh up
 //! cargo build -p aviso-cli
 //! cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 //! ```
@@ -39,7 +39,7 @@ pub const ADMIN_PASSWORD: &str = "admin-pass";
 /// 1. `AVISO_E2E_BASE_URL` (e2e-specific override; wins so a developer can target a different
 ///    stack from any `AVISO_BASE_URL` they may have set for other purposes).
 /// 2. `AVISO_BASE_URL` (the variable the docs and the Python fixtures use).
-/// 3. `http://localhost:${AVISO_SERVER_HOST_PORT:-8000}` (matches `stack_up.sh`'s port
+/// 3. `http://localhost:${AVISO_SERVER_HOST_PORT:-8000}` (matches `stack.sh`'s port
 ///    override; if the operator started the stack on a non-default port via that variable,
 ///    the Rust tests pick it up automatically).
 #[must_use]

@@ -14,7 +14,7 @@ use aviso_e2e::{PRODUCER_PASSWORD, PRODUCER_USERNAME, base_url, isolated_aviso_c
 
 const POLYGON: &str = "0,30,1,30,1,31,0,30";
 
-#[ignore = "requires e2e compose stack; run via stack_up.sh"]
+#[ignore = "requires e2e compose stack; run via stack.sh up"]
 #[test]
 fn cli_publish_succeeds_with_producer_credentials() {
     let parameters = format!(

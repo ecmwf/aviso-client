@@ -32,7 +32,7 @@ fn identifier(seq: u64) -> BTreeMap<String, String> {
     ])
 }
 
-#[ignore = "requires e2e compose stack; run via stack_up.sh"]
+#[ignore = "requires e2e compose stack; run via stack.sh up"]
 #[tokio::test]
 async fn rust_library_publishes_and_listens() {
     let client = producer_client().unwrap();

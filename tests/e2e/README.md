@@ -37,7 +37,7 @@ uv sync --locked --group dev
 uv run maturin develop --locked
 
 # bring the stack up
-bash tests/e2e/shared/stack_up.sh
+bash tests/e2e/shared/stack.sh up
 
 # python e2e suite
 export AVISO_BASE_URL=http://localhost:8000 \
@@ -51,7 +51,15 @@ cargo build -p aviso-cli
 cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 
 # teardown
-docker compose -f tests/e2e/docker-compose.yml down -v
+bash tests/e2e/shared/stack.sh down
+```
+
+`stack.sh` is the single lifecycle entry point. Other useful subcommands:
+
+```bash
+bash tests/e2e/shared/stack.sh status   # ps + readiness probes
+bash tests/e2e/shared/stack.sh restart  # wipe JetStream and bring back up
+bash tests/e2e/shared/stack.sh logs     # tail the last 100 lines of docker compose logs
 ```
 
 The `uv sync` + `uv run maturin develop` setup builds the `aviso._native` extension into the local venv so the Python suite can `import aviso`; without it, `uv run pytest tests/e2e/python/` fails on first import. The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.

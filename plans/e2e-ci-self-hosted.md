@@ -86,7 +86,7 @@ e2e:
     - if: steps.filter.outputs.affected == 'true'
       run: cargo build -p aviso-cli  # debug build; CLI e2e tests use cargo_bin which expects target/debug/aviso
     - if: steps.filter.outputs.affected == 'true'
-      run: bash tests/e2e/shared/stack_up.sh
+      run: bash tests/e2e/shared/stack.sh up
     - if: steps.filter.outputs.affected == 'true'
       run: uv run pytest tests/e2e/python/ -v
     - if: steps.filter.outputs.affected == 'true'

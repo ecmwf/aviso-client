@@ -19,7 +19,7 @@ use predicates::str::is_empty;
 
 const POLYGON: &str = "0,50,1,50,1,51,0,50";
 
-#[ignore = "requires e2e compose stack; run via stack_up.sh"]
+#[ignore = "requires e2e compose stack; run via stack.sh up"]
 #[test]
 fn cli_replay_empty_window_exits_zero() {
     let base = base_url();
