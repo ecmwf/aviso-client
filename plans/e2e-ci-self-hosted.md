@@ -4,7 +4,7 @@ The e2e integration test suite (`plans/e2e-integration-suite.md`) ships as a loc
 
 ## Why this is a separate plan
 
-A GitHub-hosted `ubuntu-latest` runner would add ~3-5 min warm and ~6-9 min cold to every PR cycle. The dominant costs are docker image pulls (three images per run, network-bound), cold Rust builds (the e2e crate plus the release-mode CLI), and the reconnect-test floor (~15 s per reconnect cycle). Two of those three costs evaporate on a self-hosted runner with persistent disk:
+A GitHub-hosted `ubuntu-latest` runner would add ~3-5 min warm and ~6-9 min cold to every PR cycle. The dominant costs are docker image pulls (three images per run, network-bound), cold Rust builds (the e2e crate plus the debug-mode `aviso` CLI binary that `assert_cmd::cargo_bin` resolves), and the reconnect-test floor (~15 s per reconnect cycle). Two of those three costs evaporate on a self-hosted runner with persistent disk:
 
 - Docker images persist between runs; pinned-by-digest images guarantee `docker compose up` is fast unless the digest itself changed.
 - The Rust target directory persists on disk; combined with `sccache` against the user's existing S3 bucket, cold builds become incremental even across runners.

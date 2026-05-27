@@ -71,7 +71,7 @@ uv run ty check python/ tests/e2e/python/
 uv run pytest python/tests/
 ```
 
-`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `aviso/` package (writes `python/aviso/_native*.so` on the system Python and an editable install into `.venv`). The remaining four commands are the Python CI gates, run identically by the GitHub Actions `python` job and by the pre-push hook.
+`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `aviso/` package (writes `python/aviso/_native*.so` on the system Python and an editable install into `.venv`). The lint, format-check, and type-check commands shown above run against `python/ tests/e2e/python/` as the recommended local superset; the GitHub Actions `python` job currently runs them against `python/` only, so adding `tests/e2e/python/` here protects the e2e suite from drift between local and CI runs.
 
 ## End-to-end tests
 
