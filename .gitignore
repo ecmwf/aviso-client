@@ -18,6 +18,7 @@ docs/book/
 *.pyd
 .pytest_cache/
 .ruff_cache/
+tests/e2e/last-failure.log
 .worktrees/
 # IDE / editor cruft
 .idea/
