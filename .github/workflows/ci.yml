@@ -46,7 +46,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       TMPDIR: ${{ github.workspace }}/.tmp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
       - name: Format check
@@ -88,7 +88,7 @@ jobs:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: cargo-deny
         run: cargo deny --log-level warn check
 
@@ -103,7 +103,7 @@ jobs:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build docs
         run: mdbook build docs
@@ -146,7 +146,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
       UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
       - name: Sync environment with dev dependency group
@@ -180,7 +180,7 @@ jobs:
     name: e2e compose config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate docker-compose
         run: docker compose -f tests/e2e/docker-compose.yml config --quiet
 
