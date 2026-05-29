@@ -3,7 +3,10 @@
 #
 # Pre-bakes the Rust toolchain, sccache, uv, and the doc/lint tools
 # (mdbook, mdbook-mermaid, cargo-deny) as prebuilt static binaries.
-# Python interpreters are installed at CI runtime by uv.
+# A system python3 is baked so workspace cargo commands can build the
+# aviso-py PyO3 crate (pyo3 abi3 + auto-initialize need an interpreter
+# and libpython). Version-specific interpreters for the binding test
+# matrix are still installed at CI runtime by uv.
 #
 #   docker build -t aviso-cli-ci:test .github/ci/
 # ────────────────────────────────────────────────────────────────
@@ -29,12 +32,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # gcc + libc6-dev: link Rust binaries and build ring/cc (the only
 # native deps in Cargo.lock). git: checkout + the Cargo.lock-diff gate.
 # ca-certificates: TLS to crates.io and the sccache S3 bucket.
+# python3-dev: the interpreter + libpython that pyo3 (abi3 +
+# auto-initialize, extension-module off) needs to build and run
+# aviso-py under workspace cargo commands.
 # No g++, make, pkg-config, OpenSSL, node, cmake or wasm: nothing here
 # needs them (reqwest is rustls, ring drives gcc directly).
 RUN set -eux \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      gcc libc6-dev git curl ca-certificates \
+      gcc libc6-dev git curl ca-certificates python3-dev \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
            /usr/share/doc /usr/share/man /usr/share/info
@@ -74,6 +80,7 @@ RUN set -eux \
  && cargo clippy --version && rustfmt --version \
  && mdbook --version && mdbook-mermaid --version && cargo-deny --version \
  && uv --version \
- && sccache --version
+ && sccache --version \
+ && python3 --version
 
 WORKDIR /workspace
