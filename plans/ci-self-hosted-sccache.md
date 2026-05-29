@@ -95,4 +95,5 @@ GitHub-hosted `ubuntu-latest`, `needs:` every job above, `if: always()`, **fails
 
 - Planned and agreed. Bucket `aviso-client-ci-cache` provisioned (no lifecycle rule; see above).
 - Branch `ci/self-hosted-sccache`: CI image built, validated, and **pushed to eccr** (`Dockerfile`, `VERSION` = `0.1.0`, `ci-image.yml`). Tags `0.1.0` / `0.1` / `0` / `latest` are live on digest `sha256:85290a37…`. The bootstrap push was done by hand from local (the consuming workflow can't pull an image that does not exist yet); `ci-image.yml` handles every subsequent rebuild.
-- Next action: roll-out step 2 (rewrite `ci.yml` onto the trusted family + `e2e-config` + `ci-pass`, pinned to `:0.1.0`).
+- `ci.yml` rewritten onto the trusted family (`rust`, `deny`, `docs`, `python` 3.10/3.13 in the container; sccache scoped to `rust`/`python`) plus GitHub-hosted `e2e-config` and the `ci-pass` aggregate gate. `.github/actionlint.yaml` declares the self-hosted labels; both workflows pass actionlint.
+- Next action: roll-out step 3 (docs: `CONTRIBUTING.md` fork-PR policy, `README.md`, `tests/e2e/README.md`), then set branch protection to require `ci-pass`. The trusted jobs only execute once runners are assigned to the repo and the `S3_*` secrets are populated.
