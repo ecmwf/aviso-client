@@ -24,8 +24,8 @@ Ubuntu 24.04 base, single stage (plus a stage to copy the `uv` binary). ~1.1 GB 
 
 - Rust toolchain **1.95.0** (matches `rust-toolchain.toml`) + clippy + rustfmt, with `rustup default 1.95.0` set so directly-wrapped `rustc` invocations (maturin) resolve the right toolchain without a `rust-toolchain.toml` lookup from the wrong directory.
 - `sccache`, `cargo-deny`, `mdbook`, `mdbook-mermaid` as **prebuilt static (musl) binaries**, version-pinned via `ARG` (smaller than compiling from source and the image build stays in seconds). Refresh = bump the `ARG` + `.github/ci/VERSION`. This is the owner-approved "bake + update from time to time" mechanism.
-- `uv` (Python interpreters installed at CI runtime by uv).
-- `gcc`, `libc6-dev`, `git`, `curl`, `ca-certificates` only. **A C compiler is required:** `ring` 0.17 and `cc` are in `Cargo.lock` (ring drives gcc directly — no perl/make/cmake). No g++, no pkg-config, no OpenSSL (rustls), no node, no wasm, no cmake. Stripping the toolchain `.so`s was tried and rejected: it saved 15 MB and segfaulted cargo.
+- `uv` (version-specific interpreters for the binding matrix installed at CI runtime by uv).
+- `gcc`, `libc6-dev`, `git`, `curl`, `ca-certificates`, `python3-dev`. **A C compiler is required:** `ring` 0.17 and `cc` are in `Cargo.lock` (ring drives gcc directly — no perl/make/cmake). **A system Python is required:** `aviso-py` uses pyo3 `abi3` + `auto-initialize` with `extension-module` off for plain cargo, so workspace `cargo build/clippy/test` need an interpreter and libpython (this bit the first `0.1.0` run, whose Rust job had no Python). No g++, no pkg-config, no OpenSSL (rustls), no node, no wasm, no cmake. Stripping the toolchain `.so`s was tried and rejected: it saved 15 MB and segfaulted cargo.
 
 `ci-image.yml`: builds and pushes on changes to `.github/ci/**`, **plus `rust-toolchain.toml` and the workflow file itself** (a toolchain bump must not silently desync the image). Tags full/minor/major from `VERSION`, `cache-from`/`cache-to: type=gha`, ECCR login via `ECMWF_DOCKER_REGISTRY_USERNAME` / `ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN`. Push only on non-PR events.
 
@@ -39,7 +39,7 @@ Workflow-level: `concurrency` group with `cancel-in-progress`, `permissions: con
 
 ### Trusted family (self-hosted + container)
 
-Jobs `rust`, `deny`, `docs`, `python` (matrix 3.10 / 3.13):
+Jobs `rust`, `deny`, `docs`, `python` (matrix 3.10 / 3.14 — the supported floor and ceiling):
 
 - `runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]`
 - `container: { image: eccr.ecmwf.int/aviso/ci:<FULL_VERSION>, credentials: ... }` — **pinned full tag, never `:latest`**.
@@ -95,5 +95,6 @@ GitHub-hosted `ubuntu-latest`, `needs:` every job above, `if: always()`, **fails
 
 - Planned and agreed. Bucket `aviso-client-ci-cache` provisioned (no lifecycle rule; see above).
 - Branch `ci/self-hosted-sccache`: CI image built, validated, and **pushed to eccr** (`Dockerfile`, `VERSION` = `0.1.0`, `ci-image.yml`). Tags `0.1.0` / `0.1` / `0` / `latest` are live on digest `sha256:85290a37…`. The bootstrap push was done by hand from local (the consuming workflow can't pull an image that does not exist yet); `ci-image.yml` handles every subsequent rebuild.
-- `ci.yml` rewritten onto the trusted family (`rust`, `deny`, `docs`, `python` 3.10/3.13 in the container; sccache scoped to `rust`/`python`) plus GitHub-hosted `e2e-config` and the `ci-pass` aggregate gate. `.github/actionlint.yaml` declares the self-hosted labels; both workflows pass actionlint.
-- Next action: roll-out step 3 (docs: `CONTRIBUTING.md` fork-PR policy, `README.md`, `tests/e2e/README.md`), then set branch protection to require `ci-pass`. The trusted jobs only execute once runners are assigned to the repo and the `S3_*` secrets are populated.
+- `ci.yml` rewritten onto the trusted family (`rust`, `deny`, `docs`, `python` 3.10/3.14 in the container; sccache scoped to `rust`/`python`) plus GitHub-hosted `e2e-config` and the `ci-pass` aggregate gate. `.github/actionlint.yaml` declares the self-hosted labels; both workflows pass actionlint.
+- PR #24 opened. First run validated the self-hosted path: `deny`, `mdBook`, `e2e-config` passed; sccache worked (0 cache errors). The Rust job failed because the lean `0.1.0` image had no Python for the pyo3 workspace build. Fixed by baking `python3-dev` and bumping the image to `0.2.0` (pushed); `ci.yml` pins `:0.2.0`.
+- Next action: confirm the green run on PR #24, then set branch protection to require `ci-pass`.
