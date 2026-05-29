@@ -6,28 +6,48 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: "1"
 
 jobs:
+  # ── Rust: fmt, clippy, build, test, doctests, lockfile ──────────
   rust:
-    name: Rust ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Rust
+    # Trusted path only: self-hosted runners must never run fork code.
+    # Fork PRs skip every trusted job; ci-pass then stays red so they
+    # cannot merge. A maintainer lands the work on a repo branch to gate it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.1.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
+      - run: mkdir -p "$TMPDIR"
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -45,38 +65,45 @@ jobs:
         run: cargo test --locked --workspace --doc
 
       - name: Lockfile unchanged
-        run: git diff --exit-code Cargo.lock
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code Cargo.lock
 
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target
+
+  # ── cargo-deny (no compile, no S3 creds) ────────────────────────
   deny:
     name: cargo-deny
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.1.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          log-level: warn
-          command: check
+      - name: cargo-deny
+        run: cargo deny --log-level warn check
 
+  # ── mdBook docs (no S3 creds) ───────────────────────────────────
   docs:
     name: mdBook
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.1.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: docs-tools
-
-      - name: Install mdBook (latest stable)
-        run: cargo install mdbook --locked --force
-
-      - name: Install mdbook-mermaid (latest stable)
-        run: cargo install mdbook-mermaid --locked --force
 
       - name: Build docs
         run: mdbook build docs
@@ -84,41 +111,43 @@ jobs:
       - name: Test docs (Rust code blocks)
         run: mdbook test docs
 
-  e2e-config:
-    name: e2e compose config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate docker-compose
-        run: docker compose -f tests/e2e/docker-compose.yml config --quiet
+      - name: Cleanup
+        if: always()
+        run: rm -rf docs/book
 
+  # ── Python bindings (matrix) ────────────────────────────────────
   python:
-    name: Python ${{ matrix.python }} ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Python ${{ matrix.python }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.1.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, python: "3.10" }
-          - { os: ubuntu-latest, python: "3.13" }
-          - { os: macos-latest,  python: "3.13" }
+        python: ["3.10", "3.13"]
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
+      UV_PYTHON: ${{ matrix.python }}
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: python-build-${{ matrix.python }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Pin Python version for uv
-        run: uv python pin ${{ matrix.python }}
+      - run: mkdir -p "$TMPDIR"
 
       - name: Sync environment with dev dependency group
         run: uv sync --locked --group dev
@@ -137,3 +166,39 @@ jobs:
 
       - name: Tests
         run: uv run pytest python/tests/ -v
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target .venv
+
+  # ── e2e compose validation (GitHub-hosted; no compile, no secrets) ─
+  e2e-config:
+    name: e2e compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose
+        run: docker compose -f tests/e2e/docker-compose.yml config --quiet
+
+  # ── Aggregate gate: the single required status check ────────────
+  ci-pass:
+    name: ci-pass
+    if: always()
+    needs: [rust, deny, docs, python, e2e-config]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every required job succeeded
+        run: |
+          results='${{ join(needs.*.result, ',') }}'
+          echo "needs results: $results"
+          case ",$results," in
+            *,failure,*|*,cancelled,*|*,skipped,*)
+              echo "::error::a required job did not succeed (fork PRs skip the trusted jobs by design)"
+              exit 1
+              ;;
+          esac
+          echo "all required jobs succeeded"
