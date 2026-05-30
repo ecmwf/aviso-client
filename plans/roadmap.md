@@ -21,9 +21,10 @@ to a package registry yet.
   `pyaviso` name is reclaimed rather than a new one minted. The current
   `pyaviso` project will be archived with a deprecation notice in its README
   and docs pointing here. Wheels need a tag-triggered workflow building
-  manylinux and musllinux (x86_64 and aarch64) plus macOS universal2, `abi3`
-  if supportable. No Windows wheels. macOS regressions surface here rather
-  than in everyday CI.
+  manylinux (x86_64 and aarch64) plus macOS universal2, `abi3` if supportable,
+  and an sdist on every release. No Windows wheels, no musllinux for now (see
+  follow-ups). The sdist is the source-build fallback for any platform without
+  a matching wheel. macOS regressions surface here rather than in everyday CI.
 - **Promote e2e to a merge gate.** The real-stack `e2e` job runs today but stays
   informational. After a flake-free soak, add it to `ci-pass` and require
   `ci-pass` in branch protection.
@@ -63,6 +64,11 @@ Smaller items, none gating. Pick up when the moment is right.
   variant carrying the inner debug string).
 - Per-file ECMWF copyright headers if policy requires them (the LICENSE file
   plus per-crate SPDX cover licensing today).
+- musllinux wheels (Alpine and other musl distros), added if an Alpine user
+  needs them. Manylinux covers every glibc distro; on musl, `pip install`
+  falls back to building the sdist from source (needs a Rust and C toolchain),
+  so the gap is real but only bites Alpine. Adding it later is a config-only
+  change to the wheel matrix.
 
 ## Open questions
 
