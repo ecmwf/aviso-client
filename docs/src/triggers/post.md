@@ -1,6 +1,8 @@
 # Post trigger
 
-HTTP POST per notification with the CloudEvent envelope from aviso-server as the request body. Custom headers are supported. Use this when migrating from pyaviso's `post` trigger or sending to any receiver that expects CloudEvents.
+HTTP POST per notification with the CloudEvent envelope from aviso-server as the
+request body. Custom headers are supported. Use this when migrating from
+pyaviso's `post` trigger or sending to any receiver that expects CloudEvents.
 
 ## YAML
 
@@ -17,11 +19,14 @@ triggers:
     fail_fast: true                                   # optional, default true
 ```
 
-No `body_template` field: the body is **always** the CloudEvent envelope. For arbitrary body shapes, use the [`webhook`](./webhook.md) trigger directly. No `method` field: always POST.
+No `body_template` field: the body is **always** the CloudEvent envelope. For
+arbitrary body shapes, use the [`webhook`](./webhook.md) trigger directly. No
+`method` field: always POST.
 
 ## Body shape
 
-When the notification comes from the live watch stream, the body is the CloudEvent envelope aviso-server sent, including its server-side fields:
+When the notification comes from the live watch stream, the body is the
+CloudEvent envelope aviso-server sent, including its server-side fields:
 
 ```json
 {
@@ -45,16 +50,27 @@ When the notification comes from the live watch stream, the body is the CloudEve
 
 Fields worth knowing:
 
-- **`type`** is per-event-type (`int.ecmwf.aviso.mars`, `int.ecmwf.aviso.dissemination`, etc.). Downstream routing logic that branches on `type` works correctly.
-- **`time`** is the server's emission timestamp with nanosecond precision. Receivers can use it for ordering and latency measurement.
-- **`source`** is the aviso-server URL. Receivers can identify which server (production vs staging) emitted the event.
-- **`dataschema`** is a URL pointing at the schema definition; receivers can fetch it for validation.
+- **`type`** is per-event-type (`int.ecmwf.aviso.mars`,
+  `int.ecmwf.aviso.dissemination`, etc.). Downstream routing logic that branches
+  on `type` works correctly.
+- **`time`** is the server's emission timestamp with nanosecond precision.
+  Receivers can use it for ordering and latency measurement.
+- **`source`** is the aviso-server URL. Receivers can identify which server
+  (production vs staging) emitted the event.
+- **`dataschema`** is a URL pointing at the schema definition; receivers can
+  fetch it for validation.
 
-aviso preserves these server-provided values instead of rebuilding the CloudEvent locally. Whitespace and object-key order may differ because aviso parses and writes the JSON again; field values stay the same. Use the [`webhook`](./webhook.md) trigger with a hand-written `body_template` if byte-for-byte output matters.
+aviso preserves these server-provided values instead of rebuilding the
+CloudEvent locally. Whitespace and object-key order may differ because aviso
+parses and writes the JSON again; field values stay the same. Use the
+[`webhook`](./webhook.md) trigger with a hand-written `body_template` if
+byte-for-byte output matters.
 
 ## Fallback body
 
-A live `aviso listen` run forwards the server's CloudEvent envelope. Notifications built directly in library tests or custom code may not carry that envelope; in that case the post trigger falls back to a minimal CloudEvent body.
+A live `aviso listen` run forwards the server's CloudEvent envelope.
+Notifications built directly in library tests or custom code may not carry that
+envelope; in that case the post trigger falls back to a minimal CloudEvent body.
 
 ## Headers
 
@@ -63,7 +79,8 @@ A live `aviso listen` run forwards the server's CloudEvent envelope. Notificatio
 | `Content-Type` | `application/cloudevents+json` | Auto-injected when the operator does not set their own |
 | Operator-supplied headers | template-rendered at dispatch | As declared in YAML |
 
-The auto-injected `Content-Type` matches the CloudEvents structured-mode content type. Official CloudEvents SDKs can parse it directly.
+The auto-injected `Content-Type` matches the CloudEvents structured-mode content
+type. Official CloudEvents SDKs can parse it directly.
 
 If the operator sets `Content-Type` explicitly, that wins:
 
@@ -77,7 +94,8 @@ triggers:
 
 ## Migrating from pyaviso
 
-pyaviso's `post` trigger forwards the notification as a POST body. The aviso (Rust) equivalent matches the same wire contract:
+pyaviso's `post` trigger forwards the notification as a POST body. The aviso
+(Rust) equivalent matches the same wire contract:
 
 | pyaviso config | aviso YAML |
 |---|---|
@@ -86,7 +104,9 @@ pyaviso's `post` trigger forwards the notification as a POST body. The aviso (Ru
 | `headers: {...}` | `headers: {...}` |
 | AWS-specific options (S3, SNS) | **not supported** - use a custom receiver or the [`webhook`](./webhook.md) trigger with a hand-written body |
 
-The dispatched body shape matches pyaviso's (CloudEvent envelope with `specversion`, `type`, `source`, `id`, `time`, `data`). Downstream receivers built for pyaviso work without changes.
+The dispatched body shape matches pyaviso's (CloudEvent envelope with
+`specversion`, `type`, `source`, `id`, `time`, `data`). Downstream receivers
+built for pyaviso work without changes.
 
 ## Examples
 
@@ -130,18 +150,24 @@ Inherits all of webhook's error semantics:
 - 5xx retryable
 - Transport errors retryable
 - Timeout retryable
-- Template render errors terminal (only `url` and header values are templated; the body is not)
+- Template render errors terminal (only `url` and header values are templated;
+  the body is not)
 
-The webhook hint dispatcher fires for post trigger failures too, with the same operator-facing wording.
+The webhook hint dispatcher fires for post trigger failures too, with the same
+operator-facing wording.
 
 ## When to use
 
 - pyaviso migration: matching wire shape.
-- Generic CloudEvent receivers (Knative Eventing, ArgoEvents, CloudEvent-aware message brokers).
-- Receivers that want the server's actual `type` / `source` / `time` / `dataschema` (not a reconstruction).
+- Generic CloudEvent receivers (Knative Eventing, ArgoEvents, CloudEvent-aware
+  message brokers).
+- Receivers that want the server's actual `type` / `source` / `time` /
+  `dataschema` (not a reconstruction).
 
 ## When NOT to use
 
-- Custom body shape needed: use [`webhook`](./webhook.md) with a hand-written `body_template`.
+- Custom body shape needed: use [`webhook`](./webhook.md) with a hand-written
+  `body_template`.
 - Microsoft Teams: use [`teams`](./teams.md) for the Adaptive Card auto-build.
-- Receivers expecting the notification in a different envelope (Slack message, Discord embed, PagerDuty event): use [`webhook`](./webhook.md).
+- Receivers expecting the notification in a different envelope (Slack message,
+  Discord embed, PagerDuty event): use [`webhook`](./webhook.md).

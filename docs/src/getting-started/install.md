@@ -15,11 +15,15 @@ cargo install aviso-cli
 aviso --version
 ```
 
-`cargo install` puts the binary in `~/.cargo/bin/aviso`, which is on your PATH if you installed Rust through [rustup](https://rustup.rs/).
+`cargo install` puts the binary in `~/.cargo/bin/aviso`, which is on your PATH
+if you installed Rust through [rustup](https://rustup.rs/).
 
-If you do not have Rust installed yet, get it from <https://rustup.rs/>. The script that page provides is the recommended path; it handles every supported platform.
+If you do not have Rust installed yet, get it from <https://rustup.rs/>. The
+script that page provides is the recommended path; it handles every supported
+platform.
 
-The [CLI install page](../cli/install.md) covers the from-source path and how to verify your install.
+The [CLI install page](../cli/install.md) covers the from-source path and how to
+verify your install.
 
 ## Rust library, in your `Cargo.toml`
 
@@ -30,13 +34,16 @@ tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 ```
 
-aviso is async and runs on [tokio](https://tokio.rs/). The full library guide is in the [developers section](../developers/lib-guide.md).
+aviso is async and runs on [tokio](https://tokio.rs/). The full library guide is
+in the [developers section](../developers/lib-guide.md).
 
 ## What you need on the server side
 
 Whichever surface you pick, you will need:
 
-- The base URL of an aviso-server you can talk to (your team or ECMWF gives you this).
+- The base URL of an aviso-server you can talk to (your team or ECMWF gives you
+  this).
 - Credentials, when the server requires them (usually a bearer token).
 
-See [authentication providers](../concepts/auth-providers.md) for the five ways to attach credentials.
+See [authentication providers](../concepts/auth-providers.md) for the five ways
+to attach credentials.

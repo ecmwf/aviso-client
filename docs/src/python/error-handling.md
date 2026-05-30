@@ -1,8 +1,14 @@
 # Error handling
 
-Every exception the library raises subclasses `aviso.AvisoError`. Catch that to handle anything from the library; catch a specific class for fine-grained dispatch.
+Every exception the library raises subclasses `aviso.AvisoError`. Catch that to
+handle anything from the library; catch a specific class for fine-grained
+dispatch.
 
-The runnable examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+The runnable examples on this page use `test_polygon` as the event type. If your
+server does not have it configured, replace the event type and identifier fields
+with one of your own; the call shape is the same. See
+[What is on your server](./quickstart.md#what-is-on-your-server) in the
+quickstart for how to discover what is configured.
 
 ## Hierarchy
 
@@ -53,7 +59,9 @@ except aviso.AvisoError as e:
 
 ## `HttpError` exposes the server's response
 
-`HttpError` carries `.status`, `.body`, and `.request_id`. The body is whatever the server sent; for aviso-server it is a JSON object with a `code`, a `details` message, and the same `request_id` for support correlation.
+`HttpError` carries `.status`, `.body`, and `.request_id`. The body is whatever
+the server sent; for aviso-server it is a JSON object with a `code`, a `details`
+message, and the same `request_id` for support correlation.
 
 ```python
 """Construct an invalid notify call on purpose; inspect the HttpError."""
@@ -75,7 +83,8 @@ except aviso.HttpError as e:
     print(f"body={e.body[:200]}")
 ```
 
-Expected output (one block per run; the UUID changes every run, the rest is fixed for this specific bad input):
+Expected output (one block per run; the UUID changes every run, the rest is
+fixed for this specific bad input):
 
 ```text
 status=400
@@ -83,11 +92,14 @@ request_id=3dc3a144-e33c-465f-bfb8-bfcf01044e2f
 body={"code":"INVALID_NOTIFICATION_REQUEST","details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)",...}
 ```
 
-The `request_id` is the value you would quote to operations or in a support ticket to find the request in server logs.
+The `request_id` is the value you would quote to operations or in a support
+ticket to find the request in server logs.
 
 ## `HistoryGapError` carries a reason
 
-`HistoryGapError` is raised mid-stream when the supervisor detects a gap that would violate at-least-once. It carries a `.reason` discriminator plus reason-specific fields.
+`HistoryGapError` is raised mid-stream when the supervisor detects a gap that
+would violate at-least-once. It carries a `.reason` discriminator plus
+reason-specific fields.
 
 <!-- not-runnable -->
 ```python
@@ -106,11 +118,16 @@ except aviso.HistoryGapError as e:
         print(f"wire gap: expected {e.expected}, observed {e.observed}")
 ```
 
-A gap is terminal: the iterator stops and the supervisor exits. Decide what the right recovery is for your case. Common moves are restart from the live edge with `from_=None`, or restart from a specific known-good sequence with `from_=<n>`.
+A gap is terminal: the iterator stops and the supervisor exits. Decide what the
+right recovery is for your case. Common moves are restart from the live edge
+with `from_=None`, or restart from a specific known-good sequence with
+`from_=<n>`.
 
 ## `TriggerError` carries a kind and a sub-kind
 
-When a required trigger fails after all its retries, the watch terminates with `TriggerError`. The exception carries `.trigger_kind` (which trigger), `.error_kind` (what went wrong), and a set of per-kind fields:
+When a required trigger fails after all its retries, the watch terminates with
+`TriggerError`. The exception carries `.trigger_kind` (which trigger),
+`.error_kind` (what went wrong), and a set of per-kind fields:
 
 <!-- not-runnable -->
 ```python
@@ -140,18 +157,34 @@ except aviso.TriggerError as e:
         print(f"  context={e.context!r} field={e.field!r} template_kind={e.template_kind!r}")
 ```
 
-`trigger_kind` is one of `echo`, `log`, `command`, `webhook`, `teams`, `post`, or `unknown`. `error_kind` is one of `io`, `encode`, `command`, `timeout`, `webhook`, `webhook_build`, `template`, or `unknown`. Per-kind fields are populated only when relevant; the rest are `None`.
+`trigger_kind` is one of `echo`, `log`, `command`, `webhook`, `teams`, `post`,
+or `unknown`. `error_kind` is one of `io`, `encode`, `command`, `timeout`,
+`webhook`, `webhook_build`, `template`, or `unknown`. Per-kind fields are
+populated only when relevant; the rest are `None`.
 
 ## When errors propagate
 
-- `notify`, `schema`, `schema_for`, and the admin methods raise on error and return on success. Errors are not auto-retried (except the auth-refresh-on-401 round trip, which retries the original request once with refreshed credentials).
-- `listen` iteration raises errors mid-stream. The next `__next__` call yields the exception; subsequent calls behave as if the iterator is exhausted. The supervisor has already cancelled by that point.
-- A required trigger that fails after all retries terminates the watch with `TriggerError`. The committed cursor stays where it was, so the next process start re-delivers the notification whose trigger failed.
+- `notify`, `schema`, `schema_for`, and the admin methods raise on error and
+  return on success. Errors are not auto-retried (except the auth-refresh-on-401
+  round trip, which retries the original request once with refreshed
+  credentials).
+- `listen` iteration raises errors mid-stream. The next `__next__` call yields
+  the exception; subsequent calls behave as if the iterator is exhausted. The
+  supervisor has already cancelled by that point.
+- A required trigger that fails after all retries terminates the watch with
+  `TriggerError`. The committed cursor stays where it was, so the next process
+  start re-delivers the notification whose trigger failed.
 
 ## Catching is not the same as recovering
 
-Some errors are recoverable. An `HttpError` with a 5xx status is worth a retry. An `AuthError` after fixing the token is fine. Others are terminal: a `MalformedEventError` is fatal per the protocol because reconnecting would re-receive the same bad event. The library raises both classes through the same hierarchy; the caller decides whether to retry, alert, or stop.
+Some errors are recoverable. An `HttpError` with a 5xx status is worth a retry.
+An `AuthError` after fixing the token is fine. Others are terminal: a
+`MalformedEventError` is fatal per the protocol because reconnecting would
+re-receive the same bad event. The library raises both classes through the same
+hierarchy; the caller decides whether to retry, alert, or stop.
 
 ## With `AsyncAvisoClient`
 
-The async client raises the same exceptions through the same hierarchy. The difference is calling style: `await` on a method or `async for` over `listen` raises the same way `client.notify(...)` raises in the sync surface.
+The async client raises the same exceptions through the same hierarchy. The
+difference is calling style: `await` on a method or `async for` over `listen`
+raises the same way `client.notify(...)` raises in the sync surface.

@@ -1,14 +1,25 @@
 # Async
 
-The Python package includes two clients: `aviso.AvisoClient` (sync) and `aviso.AsyncAvisoClient` (async). The two share the same constructor, the same auth and state-store configuration, the same exception hierarchy, and return the same value types. The choice between them is about call style, not capability.
+The Python package includes two clients: `aviso.AvisoClient` (sync) and
+`aviso.AsyncAvisoClient` (async). The two share the same constructor, the same
+auth and state-store configuration, the same exception hierarchy, and return the
+same value types. The choice between them is about call style, not capability.
 
-This page is about when the async client is worth using, and what the patterns look like when it is.
+This page is about when the async client is worth using, and what the patterns
+look like when it is.
 
-The runnable examples on this page use `test_polygon` as the event type. If your server does not have it configured, replace the event type and identifier fields with one of your own; the call shape is the same. See [What is on your server](./quickstart.md#what-is-on-your-server) in the quickstart for how to discover what is configured.
+The runnable examples on this page use `test_polygon` as the event type. If your
+server does not have it configured, replace the event type and identifier fields
+with one of your own; the call shape is the same. See
+[What is on your server](./quickstart.md#what-is-on-your-server) in the
+quickstart for how to discover what is configured.
 
 ## Use `AvisoClient` by default
 
-For most aviso users, `AvisoClient` is what you want. Scripts, batch jobs, one-shot CLI tools, cron entries, notebooks: all of these benefit from straight-line code with no event loop ceremony. If your first `asyncio.run` would exist only because of aviso, stop. Use the sync client.
+For most aviso users, `AvisoClient` is what you want. Scripts, batch jobs,
+one-shot CLI tools, cron entries, notebooks: all of these benefit from
+straight-line code with no event loop ceremony. If your first `asyncio.run`
+would exist only because of aviso, stop. Use the sync client.
 
 ## When async helps
 
@@ -16,7 +27,8 @@ Three situations make the async client worth the extra ceremony.
 
 ### 1. You are already inside an event loop
 
-A FastAPI, Starlette, or aiohttp endpoint cannot block the calling thread with sync HTTP. Use `AsyncAvisoClient` and `await` directly.
+A FastAPI, Starlette, or aiohttp endpoint cannot block the calling thread with
+sync HTTP. Use `AsyncAvisoClient` and `await` directly.
 
 <!-- not-runnable -->
 ```python
@@ -39,11 +51,14 @@ async def publish(identifier: dict, payload: dict) -> dict:
     return {"request_id": response.request_id}
 ```
 
-The same applies to a Jupyter notebook with an active event loop (the IPython kernel) or to any framework that runs your code as a coroutine.
+The same applies to a Jupyter notebook with an active event loop (the IPython
+kernel) or to any framework that runs your code as a coroutine.
 
 ### 2. You want to drain several streams concurrently
 
-Sync iteration blocks the calling thread. If you need to listen on three streams from one process, sync forces you into threads. Async lets you express it directly.
+Sync iteration blocks the calling thread. If you need to listen on three streams
+from one process, sync forces you into threads. Async lets you express it
+directly.
 
 ```python
 """Listen on two test_polygon shapes at once and tag each notification.
@@ -79,11 +94,13 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-You could do this with two threads, but the async version is shorter, has no shared-state hazards, and uses a single HTTP connection pool.
+You could do this with two threads, but the async version is shorter, has no
+shared-state hazards, and uses a single HTTP connection pool.
 
 ### 3. You want to fan out publishes
 
-The shared HTTP client pool reuses connections across calls. `asyncio.gather` lets you push many publishes in flight at once.
+The shared HTTP client pool reuses connections across calls. `asyncio.gather`
+lets you push many publishes in flight at once.
 
 ```python
 """Publish a batch of test_polygon notifications concurrently."""
@@ -118,11 +135,14 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The five publishes complete in roughly the time of one round-trip plus the slowest of them. The serial sync equivalent would take five round-trips.
+The five publishes complete in roughly the time of one round-trip plus the
+slowest of them. The serial sync equivalent would take five round-trips.
 
 ## What stays the same
 
-The async client is the same shape as the sync one. The methods, parameters, return types, exceptions, auth providers, and state stores are identical. Only the calling style changes.
+The async client is the same shape as the sync one. The methods, parameters,
+return types, exceptions, auth providers, and state stores are identical. Only
+the calling style changes.
 
 | Sync | Async |
 |---|---|
@@ -133,13 +153,19 @@ The async client is the same shape as the sync one. The methods, parameters, ret
 | `client.wipe_stream(...)` | `await client.wipe_stream(...)` |
 | `iterator.close()` | `await iterator.aclose()` |
 
-Anywhere a sync method returns `T`, the async equivalent returns `Awaitable[T]`. Exceptions come from the same `aviso.AvisoError` hierarchy in both cases.
+Anywhere a sync method returns `T`, the async equivalent returns `Awaitable[T]`.
+Exceptions come from the same `aviso.AvisoError` hierarchy in both cases.
 
 ## Mixing the two is a mistake
 
-Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The sync surface drives the underlying tokio runtime with `block_on`, which blocks the asyncio thread until the call returns. Other coroutines stop making progress; timeouts and cancellations queued on the loop do not fire; on a long enough call the loop stalls visibly.
+Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The
+sync surface drives the underlying tokio runtime with `block_on`, which blocks
+the asyncio thread until the call returns. Other coroutines stop making
+progress; timeouts and cancellations queued on the loop do not fire; on a long
+enough call the loop stalls visibly.
 
-The only safe way to use the sync client from inside asyncio is to push it onto a thread:
+The only safe way to use the sync client from inside asyncio is to push it onto
+a thread:
 
 <!-- not-runnable -->
 ```python
@@ -153,4 +179,5 @@ result = await asyncio.to_thread(
 )
 ```
 
-If you are doing this often, switch to `AsyncAvisoClient` and stop fighting the loop.
+If you are doing this often, switch to `AsyncAvisoClient` and stop fighting the
+loop.
