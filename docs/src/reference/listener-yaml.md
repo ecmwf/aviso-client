@@ -2,7 +2,9 @@
 
 The file format `aviso listen` (and `aviso replay` with positional files) reads.
 
-A listener file has one top-level key, `listeners:`, with a list of listener definitions. The same shape is accepted inside the main config file (`~/.config/aviso/config.yaml`).
+A listener file has one top-level key, `listeners:`, with a list of listener
+definitions. The same shape is accepted inside the main config file
+(`~/.config/aviso/config.yaml`).
 
 ## Minimal example
 
@@ -44,7 +46,8 @@ Every trigger entry has a `type:` field plus per-kind fields. Shared options:
 - type: echo
 ```
 
-No required fields. Writes the notification to stdout (pretty JSON on a TTY, NDJSON otherwise).
+No required fields. Writes the notification to stdout (pretty JSON on a TTY,
+NDJSON otherwise).
 
 ### `log`
 
@@ -125,11 +128,14 @@ Builds the Adaptive Card body automatically from the notification.
 | `url` | yes | | Receiver URL. |
 | `headers` | no | | Map of header name → template-rendered value. |
 
-Body is always the server's original CloudEvent envelope. No `body_template`, no `method` (always `POST`).
+Body is always the server's original CloudEvent envelope. No `body_template`, no
+`method` (always `POST`).
 
 ## Templates
 
-The template engine for trigger fields is documented at [Triggers: template engine](../triggers/template-engine.md). Two namespaces inside `{{ ... }}`:
+The template engine for trigger fields is documented at
+[Triggers: template engine](../triggers/template-engine.md). Two namespaces
+inside `{{ ... }}`:
 
 - `{{ notification.<dotted.path> }}`: a field of the notification.
 - `{{ env.<NAME> }}`: a process environment variable.
@@ -138,12 +144,15 @@ The template engine for trigger fields is documented at [Triggers: template engi
 
 When you run `aviso listen`:
 
-1. Positional YAML files replace the global config's `listeners:` for this invocation. They do not merge with it.
-2. With multiple positional files, the listener lists are concatenated in argv order.
+1. Positional YAML files replace the global config's `listeners:` for this
+   invocation. They do not merge with it.
+2. With multiple positional files, the listener lists are concatenated in argv
+   order.
 3. With no positional files, the global config's `listeners:` block is used.
 4. With no listeners anywhere, `aviso listen` exits with code 2.
 
-`--event` and `--identifiers` (the inline mode) take precedence over positional YAML files when both are present.
+`--event` and `--identifiers` (the inline mode) take precedence over positional
+YAML files when both are present.
 
 ## What next
 

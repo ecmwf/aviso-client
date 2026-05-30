@@ -1,6 +1,8 @@
 # CLI flags reference
 
-Every flag for every subcommand. This is the long-form reference; for narrative usage, start at [CLI overview](../cli/overview.md). Refresh this page whenever the Clap command surface changes.
+Every flag for every subcommand. This is the long-form reference; for narrative
+usage, start at [CLI overview](../cli/overview.md). Refresh this page whenever
+the Clap command surface changes.
 
 To see the same information from the binary itself:
 
@@ -37,7 +39,8 @@ Publish one notification to `/api/v1/notification`.
 |---|---|
 | `<PARAMETERS>` | Comma-separated `key=value` list. `event=<TYPE>` is required; `data=<JSON>` is the optional payload; every other pair enters the identifier map. Wrap values containing commas in double quotes. |
 
-Returns exit code 0 on success, 1 on a server error or network failure, 2 on missing parameters.
+Returns exit code 0 on success, 1 on a server error or network failure, 2 on
+missing parameters.
 
 ## `aviso listen [LISTENER_FILES]...`
 
@@ -51,7 +54,8 @@ Run one or more listeners against `/api/v1/watch`.
 | `--event <TYPE>` | Inline ad-hoc listener: event type to listen for, without a YAML file. Requires `--identifiers`. Takes precedence over positional YAML files. |
 | `--identifiers <JSON>` | Inline ad-hoc listener: identifiers filter as a JSON object. Requires `--event`. The inline listener runs with a single `echo` trigger. |
 
-Returns 0 on a clean Ctrl+C, 1 if any listener task errored, 2 on no listeners resolved.
+Returns 0 on a clean Ctrl+C, 1 if any listener task errored, 2 on no listeners
+resolved.
 
 ## `aviso replay --from <VALUE> [LISTENER_FILES]...`
 
@@ -71,7 +75,9 @@ Replay never touches the state file. Returns 0 on completion, 1 on error.
 
 List event types the server knows about.
 
-No subcommand-specific flags. On a TTY the output is a header line and a bullet list of event types; piped or with `--json`, the output is NDJSON (one JSON object per line).
+No subcommand-specific flags. On a TTY the output is a header line and a bullet
+list of event types; piped or with `--json`, the output is NDJSON (one JSON
+object per line).
 
 ## `aviso schema get <EVENT_TYPE>`
 
@@ -147,4 +153,7 @@ Print a shell completion script to stdout.
 
 ## Signal handling
 
-The first Ctrl+C triggers a graceful drain: aviso closes the watch connection, flushes in-flight commits, then exits 0 (or 1 if a listener errored earlier). A second Ctrl+C within five seconds calls the OS exit directly with code 130, bypassing the drain.
+The first Ctrl+C triggers a graceful drain: aviso closes the watch connection,
+flushes in-flight commits, then exits 0 (or 1 if a listener errored earlier). A
+second Ctrl+C within five seconds calls the OS exit directly with code 130,
+bypassing the drain.

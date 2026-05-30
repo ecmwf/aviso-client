@@ -29,9 +29,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The client is `Clone`. Cloned handles share the same HTTP connection pool and the same authentication provider, so you can hand copies to multiple tasks without paying for extra sockets.
+The client is `Clone`. Cloned handles share the same HTTP connection pool and
+the same authentication provider, so you can hand copies to multiple tasks
+without paying for extra sockets.
 
-The builder normalises the base URL: a trailing slash is added if missing; a path prefix (`https://gw.example/aviso`) is preserved so the client works behind a reverse proxy. Endpoint paths are joined relatively, never absolutely; the absolute form would strip the proxy prefix.
+The builder normalises the base URL: a trailing slash is added if missing; a
+path prefix (`https://gw.example/aviso`) is preserved so the client works behind
+a reverse proxy. Endpoint paths are joined relatively, never absolutely; the
+absolute form would strip the proxy prefix.
 
 ## Authentication
 
@@ -46,9 +51,15 @@ let client = AvisoClient::builder()
     .build()?;
 ```
 
-Five built-in providers are available: `Basic`, `Bearer`, `Env`, `ConfigFile`, and `Chain`. The page on [authentication providers](../concepts/auth-providers.md) covers when to use each one. The full API is at [`aviso::auth`](https://docs.rs/aviso/latest/aviso/auth/).
+Five built-in providers are available: `Basic`, `Bearer`, `Env`, `ConfigFile`,
+and `Chain`. The page on
+[authentication providers](../concepts/auth-providers.md) covers when to use
+each one. The full API is at
+[`aviso::auth`](https://docs.rs/aviso/latest/aviso/auth/).
 
-For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider` trait. Always call `HeaderValue::set_sensitive(true)` on the value you return; that is what makes downstream loggers redact it.
+For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider`
+trait. Always call `HeaderValue::set_sensitive(true)` on the value you return;
+that is what makes downstream loggers redact it.
 
 ## Publishing a notification
 
@@ -82,9 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-On a 401, the client calls `AuthProvider::refresh` and retries once. A second 401 is surfaced as `ClientError::Http`.
+On a 401, the client calls `AuthProvider::refresh` and retries once. A second
+401 is surfaced as `ClientError::Http`.
 
-`notify` does not auto-retry on a transport error after the request body has been sent (the server may have already processed it; a blind retry would risk a duplicate).
+`notify` does not auto-retry on a transport error after the request body has
+been sent (the server may have already processed it; a blind retry would risk a
+duplicate).
 
 ## Listening for notifications
 
@@ -109,9 +123,13 @@ while let Some(item) = stream.recv().await {
 }
 ```
 
-The stream is an async `Stream<Item = Result<Notification, ClientError>>`. Drop it to cancel.
+The stream is an async `Stream<Item = Result<Notification, ClientError>>`. Drop
+it to cancel.
 
-The filter must include every identifier the event type's schema marks `required: true`. Omitting one returns `400 Required field '<name>' missing for watch operation`. Run `aviso schema get <TYPE>` to see which fields are required.
+The filter must include every identifier the event type's schema marks
+`required: true`. Omitting one returns
+`400 Required field '<name>' missing for watch operation`. Run
+`aviso schema get <TYPE>` to see which fields are required.
 
 ### Callback surface
 
@@ -160,7 +178,9 @@ filter.insert("polygon".to_string(),
 let req = WatchRequest::watch("mars").with_filter(filter);
 ```
 
-`ResumeStart::AfterSequence(n)` reads as "I already have everything up to n; give me n+1 onward". The supervisor sends `from_id = (n + 1).to_string()` on the wire.
+`ResumeStart::AfterSequence(n)` reads as "I already have everything up to n;
+give me n+1 onward". The supervisor sends `from_id = (n + 1).to_string()` on the
+wire.
 
 ## Triggers from the library
 
@@ -183,7 +203,9 @@ let req = WatchRequest::watch("mars")
 let mut stream = client.watch(req)?;
 ```
 
-Each trigger has the same four tunables: `retries`, `required`, `timeout`, `fail_fast`. For YAML equivalents and the trigger contracts, see [Triggers overview](../triggers/overview.md).
+Each trigger has the same four tunables: `retries`, `required`, `timeout`,
+`fail_fast`. For YAML equivalents and the trigger contracts, see
+[Triggers overview](../triggers/overview.md).
 
 ## State store: surviving restarts
 
@@ -203,13 +225,17 @@ let client = AvisoClient::builder()
 
 When a store is configured:
 
-- At watch start, if your `WatchRequest` has no explicit resume position, the supervisor reads the stored checkpoint and resumes from there.
-- After each successful notification dispatch, the supervisor commits the previous notification's sequence before letting the consumer pull the next.
+- At watch start, if your `WatchRequest` has no explicit resume position, the
+  supervisor reads the stored checkpoint and resumes from there.
+- After each successful notification dispatch, the supervisor commits the
+  previous notification's sequence before letting the consumer pull the next.
 - The user-facing contract is "pulling item N+1 implies item N is durable".
 
-`MemoryStore` is the in-process equivalent: useful for tests and short-lived processes.
+`MemoryStore` is the in-process equivalent: useful for tests and short-lived
+processes.
 
-For the on-disk format and edit safety, see [State file](../reference/state-file.md).
+For the on-disk format and edit safety, see
+[State file](../reference/state-file.md).
 
 ## Reading the schema
 
@@ -223,7 +249,8 @@ let one = client.schema_for("mars").await?;
 println!("identifier rules: {:?}", one.schema.identifier);
 ```
 
-aviso does not validate notifications against schemas. These methods are for discovery.
+aviso does not validate notifications against schemas. These methods are for
+discovery.
 
 ## Errors
 
@@ -240,7 +267,9 @@ aviso does not validate notifications against schemas. These methods are for dis
 | `HistoryGap { reason }` | The supervisor detected a non-consecutive sequence or a server-emitted replay-limit signal. Terminal for the same reason. |
 | `MalformedEvent` | A CloudEvents id did not parse as `<event_type>@<u64>`. Terminal to avoid livelocking. |
 
-The resilience layer absorbs transient errors internally (transport hiccups, 429/503, heartbeat timeouts) and reconnects with the right backoff. Those will not surface as errors to your code.
+The resilience layer absorbs transient errors internally (transport hiccups,
+429/503, heartbeat timeouts) and reconnects with the right backoff. Those will
+not surface as errors to your code.
 
 ## Building a custom state-store
 
@@ -264,7 +293,9 @@ impl StateStore for MyStore {
 }
 ```
 
-The contract is linearisable: a successful `put` is committed-before-visible. A failed `put` leaves all state unchanged. Strict monotonicity (no cursor moves backwards) is mandatory.
+The contract is linearisable: a successful `put` is committed-before-visible. A
+failed `put` leaves all state unchanged. Strict monotonicity (no cursor moves
+backwards) is mandatory.
 
 ## Where to go next
 
