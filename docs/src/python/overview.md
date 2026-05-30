@@ -57,6 +57,8 @@ The full guide is on [the Async page](./async.md).
 - [Auth](./auth.md), [State and resume](./state-and-resume.md), and
   [Error handling](./error-handling.md) cover the surrounding concerns.
 - [Triggers](./triggers.md) shows the six declarative side-effect kinds.
+- [Builder pattern](./builder-pattern.md) is the fluent way to build reusable
+  triggers and watch requests.
 - [Async](./async.md) is the page for the second client class.
 - [API reference](./api-reference.md) lists every public symbol.
 - [Troubleshooting](./troubleshooting.md) is the page to read when something is
