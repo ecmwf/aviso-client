@@ -1,8 +1,8 @@
 # Architectural decisions
 
-This document is the project's ADR (Architecture Decision Record) log. Every load-bearing decision lives here with the reasoning. New decisions are appended; existing ones are amended in place with a dated note. The decision IDs (D1, D2, and so on) are stable references used elsewhere in the docs and in commit messages.
+This document is the project's ADR (Architecture Decision Record) log. Durable architectural decisions live here with their reasoning; finer implementation choices live in the linked PRs and the code. New decisions are appended; existing ones are amended in place with a dated note. The decision IDs (D1, D2, and so on) are stable references used elsewhere in the docs and in commit messages.
 
-The roadmap and follow-up tracking live under [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans) and reference ADRs by id.
+What is next is in [`roadmap.md`](./roadmap.md); what has shipped is in [`progress.md`](./progress.md). Both reference ADRs by id. The server facts that drive these decisions are collected at the end of this file.
 
 ---
 
@@ -308,4 +308,23 @@ A single `AvisoClient` supports any number of concurrent `watch()` calls. Each c
 
 ---
 
-For the roadmap and follow-up tracking, see the planning documents in [`plans/`](https://github.com/ecmwf/aviso-client/tree/main/plans).
+## Reference: server facts that drive these decisions
+
+All verified from the `aviso-server` source. These constraints are why the ADRs above look the way they do.
+
+| Concern | Reality on the server | Client implication |
+|---|---|---|
+| SSE event format | `event: <type>\ndata: <json>\n\n`, no `id:` line | Standard `Last-Event-ID` reconnect does not apply. Sequence comes from the CloudEvent `id` field. |
+| Resume parameters | `from_id` (inclusive sequence) and `from_date`, mutually exclusive, in the POST body | Persist `(stream_key, last_committed_sequence)`; reconnect with `from_id = last_committed_sequence + 1`. |
+| Connection lifetime | Server closes after `connection_max_duration_sec` (default 3600 s), emitting `connection-closing` with `reason: "max_duration_reached"`. Other reasons: `server_shutdown`, `end_of_stream`. | Reconnects are routine, not failures. Must not trigger error backoff. |
+| Heartbeats | `heartbeat` event every `sse_heartbeat_interval_sec` (default 30 s). | Absence beyond `max(3 x interval, interval + 30 s)` triggers a reconnect. |
+| Event types | `live-notification`, `replay`, `heartbeat`, `connection-closing`, `error`, `replay-control` | Six frame kinds; the client uses a typed model. |
+| Correlation | `X-Request-ID` on every response, also in the first SSE event and every error/control payload | Surfaced in client logs so users can quote it when filing issues. |
+| Endpoints | `POST /api/v1/notification`, `POST /api/v1/watch`, `POST /api/v1/replay`, `GET /api/v1/schema[/{event_type}]`, `DELETE /api/v1/admin/{wipe/stream,wipe/all,notification/{id}}`, `GET /health`, `GET /metrics` (separate port) | Small, stable surface. |
+| Auth | OpenAPI declares `bearer_jwt` and `basic`; `direct` mode forwards Basic to auth-o-tron, `trusted_proxy` mode validates Bearer JWT locally | Client supports both Basic and Bearer; sources composable (env, file, explicit). |
+| Schemas | `GET /api/v1/schema` returns identifier rules per stream | Discovery only; no client-side validation (the server is the single source of truth). |
+| Wire payload | CloudEvent JSON. Each notification has `id = <event_type>@<sequence>`, `source = base_url`, `type = int.ecmwf.aviso.<event_type>`, `time`, `data = {identifier, payload}` | Client hides the CloudEvent envelope; users see a `Notification`. Sequence is parsed from `id` via `rsplit_once('@')`. |
+
+---
+
+For the roadmap and follow-up tracking, see [`roadmap.md`](./roadmap.md) and [`progress.md`](./progress.md).
