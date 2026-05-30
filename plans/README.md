@@ -1,15 +1,23 @@
 # Plans
 
-This directory carries the project's planning documents. Plans are the **only** place in the repo where phase numbers and roadmap dates appear (per the rule in [`AGENTS.md`](../AGENTS.md#time-bound-references)).
+Where the project is going and where it has been. Keep it short: the detail
+belongs in the linked PRs, in the code, and in the ADRs.
 
-Plans survive context compaction and fresh sessions: an agent or contributor coming in cold can read the current plan here and pick up without re-deriving everything from scratch.
-
-## Current plan
-
-- [`v0.3.md`](./v0.3.md): overall plan for the aviso-client suite (server facts that drive design, architecture summary, roadmap, follow-ups, open questions).
+- [`roadmap.md`](./roadmap.md): what is next.
+- [`progress.md`](./progress.md): what has shipped, newest first.
+- [`decisions.md`](./decisions.md): the architectural decision log (ADRs, stable
+  `D1`..`Dn` references) and the server facts that drive them.
+- [`constraints.md`](./constraints.md): standing product and process rules that
+  bound every decision.
 
 ## Conventions
 
-- One plan revision per file (`vMAJOR.MINOR.md`). When the plan changes meaningfully, write a new file and update this README.
-- Plans are descriptive, not prescriptive at the line level. Architectural decisions (the *why* of each design choice) live in [`decisions.md`](./decisions.md) and are referenced from plans by their stable ADR id (D1, D2, …).
-- Plans may name phases. Code, user-facing docs, and configuration files may not.
+- This folder is the only place that may name internal process detail: phase
+  names, review rounds, tool or reviewer names. Code, docs, commit messages, and
+  PR bodies must not.
+- `progress.md` gets one line per merged PR. If an entry needs more, link the PR
+  and stop.
+- `roadmap.md` stays forward-looking; move an item to `progress.md` when it
+  ships.
+- ADRs in `decisions.md` are appended, and amended in place with a dated note;
+  their ids are stable cross-references.
