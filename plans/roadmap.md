@@ -14,7 +14,12 @@ to a package registry yet.
 ## What's next
 
 - **Release.** Publish the `aviso` crate to crates.io (Linux only;
-  `cargo publish` ships source) and Python wheels to PyPI. Wheels need a
+  `cargo publish` ships source) and Python wheels to PyPI. The PyPI
+  distribution name `aviso` is taken by an unrelated altimetric-data library,
+  so the Python package must publish under a different distribution name
+  (`aviso-client` is free); the import name can stay `aviso`, since a PyPI
+  distribution name and its import name need not match. The name must be
+  settled before the first publish (see open questions). Wheels need a
   tag-triggered workflow building manylinux and musllinux (x86_64 and aarch64)
   plus macOS universal2, `abi3` if supportable. No Windows wheels. macOS
   regressions surface here rather than in everyday CI.
@@ -60,4 +65,6 @@ Smaller items, none gating. Pick up when the moment is right.
 
 ## Open questions
 
-None gating current work.
+- The PyPI distribution name to publish the Python package under. `aviso` is
+  taken by an unrelated project; `aviso-client` is free and is the leading
+  candidate. This must be settled before the first PyPI publish.
