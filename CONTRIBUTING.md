@@ -60,7 +60,7 @@ git push   --no-verify     # skip pre-push
 
 ## Continuous integration
 
-CI runs on ECMWF self-hosted Linux runners, inside the `eccr.ecmwf.int/aviso/cli-ci` container image, with Rust compilation cached through sccache. Branch protection requires one status check, `ci-pass`. It passes only when every gated job (Rust, cargo-deny, mdBook, and the Python matrix) succeeds.
+CI runs on ECMWF self-hosted Linux runners, inside the `eccr.ecmwf.int/aviso/cli-ci` container image, with Rust compilation cached through sccache. Branch protection requires one status check, `ci-pass`. It passes only when every gated job (Rust, cargo-deny, mdBook, the Python matrix, and the e2e compose-config check) succeeds. The full e2e suite (the real-stack `e2e` job) also runs, but is informational for now and not part of `ci-pass`.
 
 The gated jobs do not run on pull requests from forks. Self-hosted runners must never execute untrusted code, so a fork PR skips them and `ci-pass` stays red. If you open a PR from a fork, expect a maintainer to land your branch inside `ecmwf/aviso-client`, where the full gate runs. The local check set above is the same one CI runs, so a green local run is your best signal that the change will pass.
 
