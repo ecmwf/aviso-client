@@ -219,7 +219,13 @@ jobs:
           command -v curl >/dev/null || { echo "::error::curl missing on runner host"; exit 1; }
 
       - name: Log in to ECCR
-        run: echo "${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}" | docker login eccr.ecmwf.int -u "${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}" --password-stdin
+        # Secrets via env, not inline: a Harbor robot username like
+        # "robot$aviso" would otherwise be shell-expanded ($aviso -> "")
+        # and the login would fail unauthorized.
+        env:
+          ECCR_USER: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+          ECCR_TOKEN: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+        run: printf '%s' "$ECCR_TOKEN" | docker login eccr.ecmwf.int -u "$ECCR_USER" --password-stdin
 
       - name: Clear any stale stack or runner from a cancelled run
         run: |
@@ -230,6 +236,9 @@ jobs:
         run: bash tests/e2e/shared/stack.sh up
 
       - name: Run both e2e suites in the CI image on the compose network
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
         run: |
           docker run --rm \
             --label ci.e2e=aviso-client-e2e \
@@ -249,8 +258,7 @@ jobs:
             -e SCCACHE_S3_KEY_PREFIX=aviso-client/ \
             -e SCCACHE_BASEDIRS=/workspace \
             -e SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
-            -e AWS_ACCESS_KEY_ID="${{ secrets.S3_ACCESS_KEY_ID }}" \
-            -e AWS_SECRET_ACCESS_KEY="${{ secrets.S3_SECRET_ACCESS_KEY }}" \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
             -e AVISO_E2E_EXTERNAL_STACK=1 \
             -e AVISO_E2E_BASE_URL=http://aviso-server:8000 \
             "$CI_IMAGE" \
