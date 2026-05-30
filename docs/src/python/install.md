@@ -39,7 +39,7 @@ version).
 ## From PyPI
 
 Not available today. Install from a checkout as above. The wheel matrix
-(manylinux, macOS universal2, Windows) is the subject of a separate change; if
+(manylinux, macOS universal2) is the subject of a separate change; if
 and when it lands, `pip install aviso` becomes the simpler path.
 
 ## Python version

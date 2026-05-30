@@ -109,9 +109,6 @@ aviso completions zsh > ~/.local/share/zsh/site-functions/_aviso
 # Fish
 aviso completions fish > ~/.config/fish/completions/aviso.fish
 
-# PowerShell
-aviso completions powershell >> $PROFILE
-
 # Elvish
 aviso completions elvish > ~/.config/elvish/lib/aviso.elv
 ```
