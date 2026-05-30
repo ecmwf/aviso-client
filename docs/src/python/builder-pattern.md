@@ -156,13 +156,13 @@ The same two-line pattern repeats for each notification. Stop the listener with
 Ctrl+C. The resume and async variants of the same listener are on the
 [Listening](./listen.md) page.
 
-## Replay a closed range
+## Replay history and exit
 
-Swap the `watch` factory for `replay_only` and the same request drains a fixed
-range of history, then stops on its own when the server reaches end-of-stream.
-It is the builder form of the `from_=` and `mode="replay_only"` keywords. This
-script publishes three notifications under a polygon unique to it, then replays
-them and exits:
+Swap the `watch` factory for `replay_only` and the same request replays
+history from a start position up to the live edge, then stops on its own at
+end-of-stream. It is the builder form of the `from_=` and `mode="replay_only"`
+keywords. This script publishes three notifications under a polygon unique to
+it, then replays them and exits:
 
 ```python
 """Publish three notifications, then replay them with the builder and exit."""
