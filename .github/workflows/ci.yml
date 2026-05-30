@@ -210,9 +210,12 @@ jobs:
 
       - name: Preflight (host must orchestrate Docker)
         run: |
-          # Keep registry creds in a per-run dir, off the shared runner home.
+          # Keep registry creds in a fresh per-run dir, 0700 so the
+          # config.json token is not world-readable on the shared host.
           DOCKER_CONFIG="$RUNNER_TEMP/docker-$GITHUB_RUN_ID"
+          rm -rf "$DOCKER_CONFIG"
           mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
           echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
           command -v docker >/dev/null || { echo "::error::docker missing on runner host"; exit 1; }
           docker compose version >/dev/null 2>&1 || { echo "::error::docker compose plugin missing"; exit 1; }
