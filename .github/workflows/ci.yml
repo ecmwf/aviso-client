@@ -290,7 +290,7 @@ jobs:
 
       - name: Remove temporary docker credentials
         if: always()
-        run: rm -rf "$DOCKER_CONFIG"
+        run: if [ -n "${DOCKER_CONFIG:-}" ]; then rm -rf "$DOCKER_CONFIG"; fi
 
   # ── Aggregate gate: the single required status check ────────────
   ci-pass:
