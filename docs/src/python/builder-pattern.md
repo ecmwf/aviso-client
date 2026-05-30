@@ -43,9 +43,9 @@ places the result is the same:
 ```python
 import aviso
 
-a = aviso.Trigger.echo(retries=3, required=False)
-b = aviso.Trigger.echo().retries(3).required(False)
-assert repr(a) == repr(b)
+# These two triggers behave identically; pick whichever reads better.
+from_kwargs = aviso.Trigger.echo(retries=3, required=False)
+from_setters = aviso.Trigger.echo().retries(3).required(False)
 ```
 
 The setters are `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
