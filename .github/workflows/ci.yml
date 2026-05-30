@@ -6,28 +6,48 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: "1"
 
 jobs:
+  # ── Rust: fmt, clippy, build, test, doctests, lockfile ──────────
   rust:
-    name: Rust ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Rust
+    # Trusted path only: self-hosted runners must never run fork code.
+    # Fork PRs skip every trusted job; ci-pass then stays red so they
+    # cannot merge. A maintainer lands the work on a repo branch to gate it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
+      - run: mkdir -p "$TMPDIR"
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -45,38 +65,45 @@ jobs:
         run: cargo test --locked --workspace --doc
 
       - name: Lockfile unchanged
-        run: git diff --exit-code Cargo.lock
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code Cargo.lock
 
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target
+
+  # ── cargo-deny (no compile, no S3 creds) ────────────────────────
   deny:
     name: cargo-deny
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          log-level: warn
-          command: check
+      - uses: actions/checkout@v5
+      - name: cargo-deny
+        run: cargo deny --log-level warn check
 
+  # ── mdBook docs (no S3 creds) ───────────────────────────────────
   docs:
     name: mdBook
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: docs-tools
-
-      - name: Install mdBook (latest stable)
-        run: cargo install mdbook --locked --force
-
-      - name: Install mdbook-mermaid (latest stable)
-        run: cargo install mdbook-mermaid --locked --force
+      - uses: actions/checkout@v5
 
       - name: Build docs
         run: mdbook build docs
@@ -84,41 +111,43 @@ jobs:
       - name: Test docs (Rust code blocks)
         run: mdbook test docs
 
-  e2e-config:
-    name: e2e compose config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate docker-compose
-        run: docker compose -f tests/e2e/docker-compose.yml config --quiet
+      - name: Cleanup
+        if: always()
+        run: rm -rf docs/book
 
+  # ── Python bindings (matrix) ────────────────────────────────────
   python:
-    name: Python ${{ matrix.python }} ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Python ${{ matrix.python }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, python: "3.10" }
-          - { os: ubuntu-latest, python: "3.13" }
-          - { os: macos-latest,  python: "3.13" }
+        python: ["3.10", "3.14"]
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
+      UV_PYTHON: ${{ matrix.python }}
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        run: |
-          rustup show
-          rustc --version
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: python-build-${{ matrix.python }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Pin Python version for uv
-        run: uv python pin ${{ matrix.python }}
+      - uses: actions/checkout@v5
+      - run: mkdir -p "$TMPDIR"
 
       - name: Sync environment with dev dependency group
         run: uv sync --locked --group dev
@@ -137,3 +166,150 @@ jobs:
 
       - name: Tests
         run: uv run pytest python/tests/ -v
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target .venv
+
+  # ── e2e compose validation (GitHub-hosted; no compile, no secrets) ─
+  e2e-config:
+    name: e2e compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate docker-compose
+        run: docker compose -f tests/e2e/docker-compose.yml config --quiet
+
+  # ── e2e suite: real aviso-server + auth-o-tron + NATS stack ─────
+  # The host only orchestrates Docker; the suites build and run inside
+  # the CI image joined to the compose network (reaching services by
+  # name), which sidesteps the host toolchain and the 24.04->22.04
+  # glibc gap. Informational for now: NOT in ci-pass until a flake-free
+  # soak (reconnect tests do real-wire ~15-20s cycles).
+  e2e:
+    name: e2e
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    # The stack binds fixed 127.0.0.1 ports and one compose project on
+    # the shared host, so only one e2e job may run at a time repo-wide.
+    concurrency:
+      group: aviso-client-e2e
+      cancel-in-progress: false
+    env:
+      COMPOSE_PROJECT_NAME: aviso-client-e2e
+      COMPOSE: docker compose -f tests/e2e/docker-compose.yml
+      CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Preflight (host must orchestrate Docker)
+        run: |
+          # Keep registry creds in a fresh per-run dir, 0700 so the
+          # config.json token is not world-readable on the shared host.
+          DOCKER_CONFIG="$RUNNER_TEMP/docker-$GITHUB_RUN_ID"
+          rm -rf "$DOCKER_CONFIG"
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          command -v docker >/dev/null || { echo "::error::docker missing on runner host"; exit 1; }
+          docker compose version >/dev/null 2>&1 || { echo "::error::docker compose plugin missing"; exit 1; }
+          command -v curl >/dev/null || { echo "::error::curl missing on runner host"; exit 1; }
+
+      - name: Log in to ECCR
+        # Secrets via env, not inline: a Harbor robot username like
+        # "robot$aviso" would otherwise be shell-expanded ($aviso -> "")
+        # and the login would fail unauthorized.
+        env:
+          ECCR_USER: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+          ECCR_TOKEN: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+        run: printf '%s' "$ECCR_TOKEN" | docker login eccr.ecmwf.int -u "$ECCR_USER" --password-stdin
+
+      - name: Clear any stale stack or runner from a cancelled run
+        run: |
+          docker ps -aq --filter label=ci.e2e=aviso-client-e2e | xargs -r docker rm -f
+          $COMPOSE down -v --remove-orphans || true
+
+      - name: Bring the stack up (host orchestrates; polls readiness)
+        run: bash tests/e2e/shared/stack.sh up
+
+      - name: Run both e2e suites in the CI image on the compose network
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          docker run --rm \
+            --label ci.e2e=aviso-client-e2e \
+            --network "${COMPOSE_PROJECT_NAME}_default" \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/workspace -w /workspace \
+            -e HOME=/tmp -e TMPDIR=/tmp -e XDG_CACHE_HOME=/tmp/cache \
+            -e CARGO_HOME=/tmp/cargo -e CARGO_TARGET_DIR=/tmp/target \
+            -e SCCACHE_DIR=/tmp/sccache \
+            -e UV_CACHE_DIR=/tmp/uv -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+            -e CARGO_INCREMENTAL=0 \
+            -e RUSTC_WRAPPER=sccache \
+            -e SCCACHE_BUCKET=aviso-client-ci-cache \
+            -e SCCACHE_ENDPOINT=https://object-store.os-api.cci1.ecmwf.int \
+            -e SCCACHE_REGION=us-east-1 \
+            -e SCCACHE_S3_USE_SSL=true \
+            -e SCCACHE_S3_KEY_PREFIX=aviso-client/ \
+            -e SCCACHE_BASEDIRS=/workspace \
+            -e SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e AVISO_E2E_EXTERNAL_STACK=1 \
+            -e AVISO_E2E_BASE_URL=http://aviso-server:8000 \
+            "$CI_IMAGE" \
+            bash -ceux '
+              uv sync --locked --group dev
+              uv run maturin develop --locked
+              cargo build --locked -p aviso-cli
+              uv run pytest tests/e2e/python/ -v
+              cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
+            '
+
+      - name: Dump stack logs
+        if: always()
+        run: $COMPOSE logs --no-color > e2e-stack.log 2>&1 || true
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: |
+            e2e-stack.log
+            tests/e2e/last-failure.log
+          if-no-files-found: ignore
+
+      - name: Tear down the stack
+        if: always()
+        run: $COMPOSE down -v --remove-orphans || true
+
+      - name: Remove temporary docker credentials
+        if: always()
+        run: if [ -n "${DOCKER_CONFIG:-}" ]; then rm -rf "$DOCKER_CONFIG"; fi
+
+  # ── Aggregate gate: the single required status check ────────────
+  ci-pass:
+    name: ci-pass
+    if: always()
+    needs: [rust, deny, docs, python, e2e-config]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every required job succeeded
+        run: |
+          results='${{ join(needs.*.result, ',') }}'
+          echo "needs results: $results"
+          case ",$results," in
+            *,failure,*|*,cancelled,*|*,skipped,*)
+              echo "::error::a required job did not succeed (fork PRs skip the trusted jobs by design)"
+              exit 1
+              ;;
+          esac
+          echo "all required jobs succeeded"
