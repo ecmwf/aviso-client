@@ -2,7 +2,7 @@
 
 Moves the Linux CI load off GitHub-hosted runners onto ECMWF self-hosted runners, inside a project-owned container image, and adds an S3-backed `sccache` so cold Rust builds become incremental across runs and runners. Modelled on the `ecmwf/tensogram` CI (same infra, same secrets).
 
-No release or publish work is in scope here. The full e2e suite stays parked in [`e2e-ci-self-hosted.md`](./e2e-ci-self-hosted.md); only the cheap `docker compose config` pre-check is touched.
+No release or publish work is in scope here. This plan supersedes the sketch in [`e2e-ci-self-hosted.md`](./e2e-ci-self-hosted.md): besides the cheap `docker compose config` pre-check, it also adds the real-stack `e2e` job (see "e2e suite" below), which runs the full suites against live services but stays informational (not in `ci-pass`) until a flake-free soak.
 
 ## Decisions taken
 
