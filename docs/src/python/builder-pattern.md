@@ -153,8 +153,62 @@ seq=1 payload={'location': 's3://example/data/0.grib'}
 ```
 
 The same two-line pattern repeats for each notification. Stop the listener with
-Ctrl+C. For the resume, replay-only, and async variants of the same listener,
-see [Listening](./listen.md).
+Ctrl+C. The resume and async variants of the same listener are on the
+[Listening](./listen.md) page.
+
+## Replay a closed range
+
+Swap the `watch` factory for `replay_only` and the same request drains a fixed
+range of history, then stops on its own when the server reaches end-of-stream.
+It is the builder form of the `from_=` and `mode="replay_only"` keywords. This
+script publishes three notifications under a polygon unique to it, then replays
+them and exits:
+
+```python
+"""Publish three notifications, then replay them with the builder and exit."""
+
+import os
+import aviso
+
+# A polygon unique to this script, so the replay sees only its own data.
+polygon = "40,10,41,10,41,11,40,10"
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+for i in range(3):
+    client.notify(
+        event_type="test_polygon",
+        identifier={"polygon": polygon, "date": "20260101", "time": "0000"},
+        payload={"location": f"s3://example/backfill-{i}.grib"},
+    )
+
+request = aviso.WatchRequest.replay_only("test_polygon", 0).with_filter(
+    {"polygon": polygon}
+)
+
+count = 0
+with client.listen(request=request) as iterator:
+    for notification in iterator:
+        print(f"seq={notification.sequence} {notification.payload}")
+        count += 1
+print(f"replayed {count} notifications; exiting")
+```
+
+Expected output on a fresh stream (later runs replay more, since the data
+accumulates):
+
+```text
+seq=1 {'location': 's3://example/backfill-0.grib'}
+seq=2 {'location': 's3://example/backfill-1.grib'}
+seq=3 {'location': 's3://example/backfill-2.grib'}
+replayed 3 notifications; exiting
+```
+
+`replay_only(event_type, 0)` starts at the beginning of the stream; `0` means
+"everything after sequence 0". To resume from a checkpoint, pass the last
+sequence you saw instead. The iterator ends cleanly at end-of-stream, so the
+loop exits without Ctrl+C. See
+[Listening](./listen.md#replay-only) for the kwargs form.
 
 ## Setters return a new value
 
