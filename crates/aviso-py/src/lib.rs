@@ -17,7 +17,7 @@
 //! The `_provoke_error` test helper is registered but kept off the
 //! documented surface (used only by the python test suite).
 //!
-//! The full plan lives in `plans/python-api.md`.
+//! Architectural decisions live in `plans/decisions.md`.
 
 #![forbid(unsafe_code)]
 
