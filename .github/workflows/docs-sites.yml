@@ -1,0 +1,176 @@
+# Builds the mdBook docs and publishes them to ECMWF Sites:
+# - Same-repo PRs get a preview publish/unpublish under docs/aviso-client/pull-requests.
+# - Pushes to main and tags publish the canonical docs under docs/aviso-client.
+# - Manual runs build the artifact only; publishing is opt-in.
+name: Docs Sites Publish
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also publish docs to sites (default: build artifact only)"
+        required: false
+        type: boolean
+        default: false
+      publish_id:
+        description: "Optional publish id when publish=true (default: manual-<run_id>)"
+        required: false
+        type: string
+
+concurrency:
+  # One run per PR or ref. cancel-in-progress is on for PRs only, so rapid PR
+  # pushes drop their own stale rebuilds, while a push to main or a tag never
+  # cancels an in-flight canonical publish (no half-uploaded site).
+  group: docs-sites-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the publish artifact in the pinned CI image. The image bakes mdbook
+  # and mdbook-mermaid, so their versions are controlled in one place
+  # (.github/ci/Dockerfile), not duplicated here. No sccache or S3 creds:
+  # mdbook build renders Markdown and runs the mermaid preprocessor, it
+  # compiles no Rust, so there is nothing to cache.
+  build-docs:
+    # Trusted context only: the image is private and the runners are
+    # self-hosted, so fork PRs cannot build here. Skip on PR close.
+    if: >-
+      ${{
+        (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'pull_request' && github.event.action != 'closed'))
+        && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      }}
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    permissions:
+      contents: read
+    container:
+      # Pinned full tag, never :latest.
+      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    outputs:
+      artifact-id: ${{ steps.upload-docs.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build docs
+        run: mdbook build docs
+
+      - name: Archive documentation
+        id: upload-docs
+        uses: actions/upload-artifact@v7
+        with:
+          name: aviso-client-docs
+          path: docs/book
+          if-no-files-found: error
+          overwrite: true
+
+  # Publish a PR preview and comment the link. Same-repo only: fork PRs have no
+  # secrets and build-docs does not run for them.
+  preview-publish:
+    if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: build-docs
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ecmwf/reusable-workflows/.github/workflows/pr-preview-publish.yml@5a1d1cb1442aa632f7823e4088d639b980627afc
+    with:
+      artifact-id: ${{ needs.build-docs.outputs.artifact-id }}
+      space: docs
+      name: aviso-client
+      path: pull-requests
+      link-tag: PREVIEW-PUBLISH-AVISO-CLIENT-DOCS
+      link-text: "Docs Preview"
+    secrets:
+      sites-token: ${{ secrets.ECMWF_SITES_DOCS_AVISOCLIENT_TOKEN }}
+
+  # Remove the preview when the PR closes so stale preview content does not linger.
+  preview-unpublish:
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: ecmwf/reusable-workflows/.github/workflows/pr-preview-unpublish.yml@5a1d1cb1442aa632f7823e4088d639b980627afc
+    with:
+      space: docs
+      name: aviso-client
+      path: pull-requests
+    secrets:
+      sites-token: ${{ secrets.ECMWF_SITES_DOCS_AVISOCLIENT_TOKEN }}
+
+  # Compute a URL/path-safe publish id. Refs and the manual input arrive through
+  # env, never inline ${{ }} in the shell, so they cannot run as code.
+  compute-publish-id:
+    if: >-
+      ${{
+        (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_type == 'tag')) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+      }}
+    runs-on: ubuntu-latest
+    outputs:
+      publish-id: ${{ steps.sanitize.outputs.publish_id }}
+    steps:
+      - name: Compute raw publish id
+        id: raw
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PUBLISH_ID: ${{ github.event.inputs.publish_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          RAW_ID="$REF_NAME"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            RAW_ID="$INPUT_PUBLISH_ID"
+            if [ -z "$RAW_ID" ]; then
+              RAW_ID="manual-$RUN_ID"
+            fi
+          fi
+          {
+            echo "raw_id<<EOF"
+            printf '%s\n' "$RAW_ID"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sanitize publish id
+        id: sanitize
+        env:
+          RAW_ID: ${{ steps.raw.outputs.raw_id }}
+        run: |
+          set -euo pipefail
+          # Keep URL/path-safe chars only and collapse repeated separators.
+          SANITIZED="$(printf '%s' "$RAW_ID" | sed -E 's|/+|-|g; s|[^A-Za-z0-9._-]|-|g; s|-+|-|g; s|\.+|.|g; s|^[.-]+||; s|[.-]+$||')"
+          if [ -z "$SANITIZED" ]; then
+            echo "::error::sanitized publish id is empty; refusing to publish"
+            exit 1
+          fi
+          echo "publish_id=$SANITIZED" >> "$GITHUB_OUTPUT"
+
+  # Publish canonical docs on push to main/tags, or on a manual publish=true run.
+  publish-docs:
+    if: >-
+      ${{
+        (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_type == 'tag')) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+      }}
+    needs:
+      - build-docs
+      - compute-publish-id
+    uses: ecmwf/reusable-workflows/.github/workflows/docs-publish.yml@5a1d1cb1442aa632f7823e4088d639b980627afc
+    with:
+      artifact-id: ${{ needs.build-docs.outputs.artifact-id }}
+      space: docs
+      name: aviso-client
+      path: ""
+      id: ${{ needs.compute-publish-id.outputs.publish-id }}
+      # Push only: a tag is the stable release, main is latest.
+      softlink: ${{ github.event_name == 'push' && (github.ref_type == 'tag' && 'stable' || github.ref_name == 'main' && 'latest') || '' }}
+    secrets:
+      sites-token: ${{ secrets.ECMWF_SITES_DOCS_AVISOCLIENT_TOKEN }}
