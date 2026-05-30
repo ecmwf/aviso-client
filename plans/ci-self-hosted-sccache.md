@@ -35,7 +35,7 @@ Dedicated bucket `aviso-client-ci-cache` on the ECMWF object store (endpoint `ob
 
 ## Workflow shape (`ci.yml`)
 
-Workflow-level: `concurrency` group with `cancel-in-progress`, `permissions: contents: read`. Non-secret env (`CARGO_TERM_COLOR`, `RUST_BACKTRACE`) global. `RUSTFLAGS="-D warnings"` is **command-scoped** onto the build/test/clippy steps, not global, to avoid biting tool/proc-macro compiles.
+Workflow-level: `concurrency` group with `cancel-in-progress`, `permissions: contents: read`. Non-secret env (`CARGO_TERM_COLOR`, `RUST_BACKTRACE`) global. `RUSTFLAGS="-D warnings"` is set at the **job `env:`** level on the compiling jobs (`rust`, `python`) rather than workflow-global, so it never reaches the doc/lint jobs (`deny`, `docs`) or the host-side `e2e`/`ci-image` work.
 
 ### Trusted family (self-hosted + container)
 
