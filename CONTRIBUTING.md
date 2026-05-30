@@ -64,6 +64,8 @@ CI runs on ECMWF self-hosted Linux runners, inside the `eccr.ecmwf.int/aviso/cli
 
 The gated jobs do not run on pull requests from forks. Self-hosted runners must never execute untrusted code, so a fork PR skips them and `ci-pass` stays red. If you open a PR from a fork, expect a maintainer to land your branch inside `ecmwf/aviso-client`, where the full gate runs. The local check set above is the same one CI runs, so a green local run is your best signal that the change will pass.
 
+Documentation publishes on its own. The `Docs Sites Publish` workflow builds the mdBook in the same CI image and pushes it to ECMWF Sites at <https://sites.ecmwf.int/docs/aviso-client>. A push to `main` updates the canonical site that the `latest` link points at; a same-repo pull request gets a preview under `pull-requests/PR-<number>`, with the link posted on the PR and removed when it closes. This flow is not part of `ci-pass`; the `mdBook` gate above is what blocks a merge on a broken docs build.
+
 ## Python toolchain
 
 The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribution loads as `aviso._native`. The `uv` workflow drives every Python-side check:
