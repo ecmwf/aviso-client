@@ -69,7 +69,7 @@ The voice and the conventions are codified in [Docs style](./docs-style.md). The
 
 When you propose a structural change, update the relevant planning material instead of burying long rationale in user-facing docs.
 
-The current roadmap is at [`plans/v0.3.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/v0.3.md).
+The roadmap is at [`plans/roadmap.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/roadmap.md); shipped work is logged in [`plans/progress.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/progress.md).
 
 ## Filing a bug
 
