@@ -36,9 +36,9 @@ end to end.
 ## Build a trigger
 
 Every trigger starts at one of the six factories (`echo`, `log`, `command`,
-`webhook`, `teams`, `post`) and accepts tunables you can pass as keyword
-arguments, chain as setters, or mix the two. For a tunable that exists in both
-places the result is the same:
+`webhook`, `teams`, `post`). The tunables a kind supports can be passed as
+keyword arguments to the factory, set with a chainable setter, or a mix of the
+two. Where a tunable is available both ways, the result is the same:
 
 ```python
 import aviso
@@ -49,9 +49,12 @@ from_setters = aviso.Trigger.echo().retries(3).required(False)
 ```
 
 The setters are `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
-`.fail_fast(on)`, and `.label(name)`. The per-kind factory arguments (URLs,
-headers, command strings) live in the [Triggers](./triggers.md) guide and the
-[API reference](./api-reference.md#triggers); this page does not repeat them.
+`.fail_fast(on)`, and `.label(name)`. Not every tunable applies to every kind:
+`retries` and `required` work everywhere, `timeout` and `fail_fast` affect only
+the command and HTTP-based triggers, and `label` only the echo trigger. The
+[Triggers](./triggers.md) guide has the per-kind detail and the factory
+arguments (URLs, headers, command strings); the
+[API reference](./api-reference.md#triggers) lists the signatures.
 
 ## Build a watch request
 
