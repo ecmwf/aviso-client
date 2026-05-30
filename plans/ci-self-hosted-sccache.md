@@ -43,7 +43,7 @@ Jobs `rust`, `deny`, `docs`, `python` (matrix 3.10 / 3.14 — the supported floo
 
 - `runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]`
 - `container: { image: eccr.ecmwf.int/aviso/cli-ci:<FULL_VERSION>, credentials: ... }` — **pinned full tag, never `:latest`**.
-- `if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository`
+- `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository` (the `!= 'pull_request'` form so `push` and `workflow_dispatch` both run, and only PRs are origin-checked)
 
 **sccache env scoped to the Rust-compiling jobs only** (`rust`, `python`; `deny`/`docs` never receive S3 creds):
 
@@ -89,7 +89,7 @@ Key mechanics: the container runs `--user $(id -u):$(id -g)` with `HOME`/`CARGO_
 ## Roll-out (separate PRs)
 
 1. **Bootstrap image.** Add `Dockerfile` + `VERSION` (`0.1.0`) + `ci-image.yml`; merge and confirm `eccr.ecmwf.int/aviso/cli-ci:0.1.0` is pushed **before** anything consumes it. Run `create-cache-bucket.sh` once.
-2. **Migrate `ci.yml`.** Rewrite into the trusted family + `e2e-config` + `ci-pass`, pinned to `:0.1.0`. First real self-hosted run validates on this PR. Update branch protection to require `ci-pass`.
+2. **Migrate `ci.yml`.** Rewrite into the trusted family + `e2e-config` + `ci-pass`, pinned to the bootstrap tag (`:0.1.0` at first; bumped to `:0.2.0` once `python3-dev` was baked, see Status). First real self-hosted run validates on this PR. Update branch protection to require `ci-pass`.
 3. **Docs.** `CONTRIBUTING.md` (fork-PR policy: maintainers land external work on a repo branch for the gate to run), `README.md`, `tests/e2e/README.md` note.
 
 ## Open / to confirm at implementation
