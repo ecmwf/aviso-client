@@ -42,12 +42,6 @@ executable is plain `aviso` so it reads cleanly on the command line.
 # Linux, macOS
 which aviso
 # /home/you/.cargo/bin/aviso
-
-# Windows (PowerShell)
-Get-Command aviso
-# CommandType  Name   Version  Source
-# -----------  ----   -------  ------
-# Application  aviso  0.1.0    C:\Users\you\.cargo\bin\aviso.exe
 ```
 
 ## Shell completions
@@ -61,9 +55,6 @@ aviso completions zsh > ~/.local/share/zsh/site-functions/_aviso
 
 # Fish
 aviso completions fish > ~/.config/fish/completions/aviso.fish
-
-# PowerShell
-aviso completions powershell >> $PROFILE
 
 # Elvish
 aviso completions elvish > ~/.config/elvish/lib/aviso.elv
