@@ -50,7 +50,16 @@ PRODUCER_PASSWORD = "producer-pass"
 
 @pytest.fixture(scope="session", autouse=True)
 def e2e_stack() -> Iterator[None]:
-    """Brings the e2e stack up via stack.sh, leaves it running by default."""
+    """Brings the e2e stack up via stack.sh, leaves it running by default.
+
+    Set ``AVISO_E2E_EXTERNAL_STACK=1`` when the stack is managed outside the test
+    process: CI brings it up on the host and runs pytest in a container on the
+    compose network, where ``docker`` is not available. The fixture then assumes
+    the stack is already up and does not touch it.
+    """
+    if os.environ.get("AVISO_E2E_EXTERNAL_STACK") == "1":
+        yield
+        return
     subprocess.run(["bash", str(STACK), "up"], check=True)
     yield
     if os.environ.get("AVISO_E2E_TEARDOWN") == "1":
