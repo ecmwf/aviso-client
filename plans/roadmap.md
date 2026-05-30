@@ -14,15 +14,16 @@ to a package registry yet.
 ## What's next
 
 - **Release.** Publish the `aviso` crate to crates.io (Linux only;
-  `cargo publish` ships source) and Python wheels to PyPI. The PyPI
-  distribution name `aviso` is taken by an unrelated altimetric-data library,
-  so the Python package must publish under a different distribution name
-  (`aviso-client` is free); the import name can stay `aviso`, since a PyPI
-  distribution name and its import name need not match. The name must be
-  settled before the first publish (see open questions). Wheels need a
-  tag-triggered workflow building manylinux and musllinux (x86_64 and aarch64)
-  plus macOS universal2, `abi3` if supportable. No Windows wheels. macOS
-  regressions surface here rather than in everyday CI.
+  `cargo publish` ships source) and Python wheels to PyPI. The Python package
+  will reuse ECMWF's existing `pyaviso` PyPI name, published starting at
+  2.0.0 to continue that package's version line. The `aviso` PyPI name itself
+  is taken by an unrelated altimetric-data library, which is why the existing
+  `pyaviso` name is reclaimed rather than a new one minted. The current
+  `pyaviso` project will be archived with a deprecation notice in its README
+  and docs pointing here. Wheels need a tag-triggered workflow building
+  manylinux and musllinux (x86_64 and aarch64) plus macOS universal2, `abi3`
+  if supportable. No Windows wheels. macOS regressions surface here rather
+  than in everyday CI.
 - **Promote e2e to a merge gate.** The real-stack `e2e` job runs today but stays
   informational. After a flake-free soak, add it to `ci-pass` and require
   `ci-pass` in branch protection.
@@ -65,6 +66,4 @@ Smaller items, none gating. Pick up when the moment is right.
 
 ## Open questions
 
-- The PyPI distribution name to publish the Python package under. `aviso` is
-  taken by an unrelated project; `aviso-client` is free and is the leading
-  candidate. This must be settled before the first PyPI publish.
+None gating current work.
