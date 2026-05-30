@@ -18,7 +18,7 @@ how you work.
 ## From the command line
 
 The `aviso` binary publishes notifications, listens for new ones, and replays
-history. It runs on Linux, macOS, and Windows.
+history. It runs on Linux and macOS.
 
 ```bash
 aviso listen --event mars --identifiers '{"class":"od"}'

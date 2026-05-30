@@ -128,7 +128,7 @@ Print a shell completion script to stdout.
 
 | Argument | Description |
 |---|---|
-| `<SHELL>` | One of `bash`, `zsh`, `fish`, `powershell`, `elvish`. |
+| `<SHELL>` | One of `bash`, `zsh`, `fish`, `elvish`. |
 
 ## Environment variables
 

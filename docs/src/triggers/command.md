@@ -2,8 +2,7 @@
 
 Spawns `/bin/sh -c <rendered>` per notification, with the notification's fields
 exposed as `AVISO_*` environment variables. Useful for any operator task that
-fits in a shell command. **Unix only** (`#[cfg(unix)]`); not available on
-Windows.
+fits in a shell command. **Unix only** (`#[cfg(unix)]`).
 
 ## YAML
 
