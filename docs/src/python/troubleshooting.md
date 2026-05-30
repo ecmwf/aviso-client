@@ -11,9 +11,13 @@ uv sync --locked --group dev
 uv run maturin develop --release --locked
 ```
 
-The `--group dev` flag is what makes `maturin` available in the environment; without it `uv run maturin` will not find the executable. `--locked` on both commands matches the CI workflow and avoids unexpected `Cargo.lock` modifications during local builds.
+The `--group dev` flag is what makes `maturin` available in the environment;
+without it `uv run maturin` will not find the executable. `--locked` on both
+commands matches the CI workflow and avoids unexpected `Cargo.lock`
+modifications during local builds.
 
-If the build itself fails, check that you have Rust installed (`rustc --version`) and a C compiler on the path.
+If the build itself fails, check that you have Rust installed
+(`rustc --version`) and a C compiler on the path.
 
 ## `aviso.ConfigError: invalid base_url`
 
@@ -24,29 +28,42 @@ Pass a full URL including the scheme:
 aviso.AvisoClient(base_url="https://aviso.example.org")
 ```
 
-`localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected because the underlying URL parser cannot read them as absolute.
+`localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected
+because the underlying URL parser cannot read them as absolute.
 
 ## `aviso.HttpError: 401`
 
-The configured auth source did not produce credentials the server accepts. Check that:
+The configured auth source did not produce credentials the server accepts. Check
+that:
 
 - `Bearer` was constructed with a token the server's auth backend recognises.
 - `Basic` was constructed with the right username and password.
-- `Env()` is reading the env vars you expect (`AVISO_TOKEN`, `AVISO_USERNAME`, `AVISO_PASSWORD`).
-- `ConfigFile(...)` points at a file with exactly one of `bearer:` or `basic:` at the top level.
+- `Env()` is reading the env vars you expect (`AVISO_TOKEN`, `AVISO_USERNAME`,
+  `AVISO_PASSWORD`).
+- `ConfigFile(...)` points at a file with exactly one of `bearer:` or `basic:`
+  at the top level.
 
 ## `aviso.TransportError`
 
-Network failure before the response begins. The error message names the cause (DNS, TCP, TLS). For self-signed certificates in dev, use `aviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept the loud warning that comes with it.
+Network failure before the response begins. The error message names the cause
+(DNS, TCP, TLS). For self-signed certificates in dev, use
+`aviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept
+the loud warning that comes with it.
 
 ## `aviso.HistoryGapError`
 
 A gap was detected in the watch stream. Two reasons:
 
-- `reason == "replay_limit_reached"`: the server's `notification_replay_limit_reached` payload says some of the requested backfill is older than its retention. `.max_allowed` tells you how many notifications can be replayed at most.
-- `reason == "sequence_jump"`: the wire delivered a non-consecutive sequence. `.expected` and `.observed` name the boundary.
+- `reason == "replay_limit_reached"`: the server's
+  `notification_replay_limit_reached` payload says some of the requested
+  backfill is older than its retention. `.max_allowed` tells you how many
+  notifications can be replayed at most.
+- `reason == "sequence_jump"`: the wire delivered a non-consecutive sequence.
+  `.expected` and `.observed` name the boundary.
 
-A gap is terminal: continuing past it would silently violate at-least-once. The client raises and exits the iterator. Decide what the right recovery is (for example, restart from the live edge with `from_=None`).
+A gap is terminal: continuing past it would silently violate at-least-once. The
+client raises and exits the iterator. Decide what the right recovery is (for
+example, restart from the live edge with `from_=None`).
 
 ## `aviso.TriggerError: command failed`
 
@@ -55,11 +72,15 @@ A required command trigger exited non-zero or timed out. The exception carries:
 - `.exit_code`: the child's exit code (`-1` for signal-terminated).
 - `.stderr_tail`: the last 4 KiB of the child's stderr.
 
-If the failure is transient, raise the trigger's `retries=` count or set `required=False` so the watch continues past a failed dispatch.
+If the failure is transient, raise the trigger's `retries=` count or set
+`required=False` so the watch continues past a failed dispatch.
 
 ## `Ctrl+C` does not stop a listening loop
 
-The sync iterator polls the channel every 100 ms and checks for pending signals between polls. If it takes longer than that to respond, you may have a Python operation in the loop body that does not yield. Move heavy work into a background thread or use the async client.
+The sync iterator polls the channel every 100 ms and checks for pending signals
+between polls. If it takes longer than that to respond, you may have a Python
+operation in the loop body that does not yield. Move heavy work into a
+background thread or use the async client.
 
 ## `aviso.StateStoreError` on first run
 
@@ -86,7 +107,11 @@ print(f"using state file: {path}")
 
 ## Mixing sync and async clients
 
-Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The sync surface drives the underlying tokio runtime with `block_on`, which blocks the asyncio thread until the call returns. Other coroutines stop making progress until then. Use `AsyncAvisoClient` from inside async code, or push the sync client onto a thread:
+Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The
+sync surface drives the underlying tokio runtime with `block_on`, which blocks
+the asyncio thread until the call returns. Other coroutines stop making progress
+until then. Use `AsyncAvisoClient` from inside async code, or push the sync
+client onto a thread:
 
 <!-- not-runnable -->
 ```python
@@ -99,8 +124,10 @@ result = await asyncio.to_thread(
 )
 ```
 
-See [the Async page](./async.md) for the situations where the async client actually helps.
+See [the Async page](./async.md) for the situations where the async client
+actually helps.
 
 ## Wheels on PyPI
 
-Not available today. Install from source with `uv run maturin develop`. If and when the wheel matrix lands, `pip install aviso` becomes the simpler path.
+Not available today. Install from source with `uv run maturin develop`. If and
+when the wheel matrix lands, `pip install aviso` becomes the simpler path.

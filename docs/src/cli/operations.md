@@ -1,10 +1,13 @@
 # Operations
 
-The supporting commands: schema inspection, destructive admin, configuration introspection, shell completions.
+The supporting commands: schema inspection, destructive admin, configuration
+introspection, shell completions.
 
 ## Schemas {#schemas}
 
-The server publishes a schema per event type, describing which identifier fields exist, which are required, and what types they hold. Two commands let you look at them.
+The server publishes a schema per event type, describing which identifier fields
+exist, which are required, and what types they hold. Two commands let you look
+at them.
 
 ### List event types
 
@@ -12,7 +15,8 @@ The server publishes a schema per event type, describing which identifier fields
 aviso schema list
 ```
 
-On a terminal you get a header line and a bullet list of event types. When piped (or with `--json`), each entry comes out as a JSON object, one per line:
+On a terminal you get a header line and a bullet list of event types. When piped
+(or with `--json`), each entry comes out as a JSON object, one per line:
 
 ```bash
 aviso schema list | jq -r .event_type
@@ -24,7 +28,8 @@ aviso schema list | jq -r .event_type
 aviso schema get mars
 ```
 
-You get the schema as pretty JSON. Use it to discover which identifiers the server insists on when publishing or filtering.
+You get the schema as pretty JSON. Use it to discover which identifiers the
+server insists on when publishing or filtering.
 
 To fetch every schema in one command:
 
@@ -32,11 +37,14 @@ To fetch every schema in one command:
 aviso schema list | jq -r .event_type | xargs -I{} aviso schema get {}
 ```
 
-aviso does not validate notifications against schemas locally. The server is the single source of truth; these commands are for human discovery.
+aviso does not validate notifications against schemas locally. The server is the
+single source of truth; these commands are for human discovery.
 
 ## Admin {#admin}
 
-Three destructive commands sit under `aviso admin`. They all require a `--yes` flag on the command line; the flag cannot be set in the configuration file, by design.
+Three destructive commands sit under `aviso admin`. They all require a `--yes`
+flag on the command line; the flag cannot be set in the configuration file, by
+design.
 
 ### Wipe one event-type stream
 
@@ -44,7 +52,8 @@ Three destructive commands sit under `aviso admin`. They all require a `--yes` f
 aviso admin wipe-stream mars --yes
 ```
 
-Deletes every notification of type `mars` on the server. Useful in test environments. Operator-level credentials required.
+Deletes every notification of type `mars` on the server. Useful in test
+environments. Operator-level credentials required.
 
 ### Wipe everything
 
@@ -52,7 +61,8 @@ Deletes every notification of type `mars` on the server. Useful in test environm
 aviso admin wipe-all --yes
 ```
 
-Deletes every notification of every type. Useful when you want a completely clean slate.
+Deletes every notification of every type. Useful when you want a completely
+clean slate.
 
 ### Delete a single notification
 
@@ -60,7 +70,8 @@ Deletes every notification of every type. Useful when you want a completely clea
 aviso admin delete 'mars@42' --yes
 ```
 
-The argument is the notification id (the `<event_type>@<sequence>` form the server emits).
+The argument is the notification id (the `<event_type>@<sequence>` form the
+server emits).
 
 ## Configuration introspection {#config-dump}
 
@@ -68,9 +79,13 @@ The argument is the notification id (the `<event_type>@<sequence>` form the serv
 aviso config dump --redact
 ```
 
-Prints the resolved configuration to stdout with a comment on each line saying where the value came from (flag, env, file, or default). `--redact` masks tokens and passwords.
+Prints the resolved configuration to stdout with a comment on each line saying
+where the value came from (flag, env, file, or default). `--redact` masks tokens
+and passwords.
 
-The dump is what aviso would use right now, given your current flags, environment, and config file. It is the fastest way to debug "why is aviso not picking up my setting".
+The dump is what aviso would use right now, given your current flags,
+environment, and config file. It is the fastest way to debug "why is aviso not
+picking up my setting".
 
 For JSON output (so you can `jq` it):
 
@@ -78,7 +93,9 @@ For JSON output (so you can `jq` it):
 aviso config dump --redact --json
 ```
 
-The `auth` block is summarised as `provider: <set>` or `<unset>` rather than per-field; the listeners block is summarised by name, event, identifier count, and trigger count.
+The `auth` block is summarised as `provider: <set>` or `<unset>` rather than
+per-field; the listeners block is summarised by name, event, identifier count,
+and trigger count.
 
 ## Shell completions {#shell-completions}
 
@@ -112,5 +129,6 @@ Restart the shell (or source the file) for the completions to take effect.
 
 ## What next
 
-- [Configuration](./configuration.md): where settings come from and how to override them.
+- [Configuration](./configuration.md): where settings come from and how to
+  override them.
 - [Troubleshooting](./troubleshooting.md): the common things that go wrong.

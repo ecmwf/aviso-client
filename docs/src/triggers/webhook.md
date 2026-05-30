@@ -1,6 +1,9 @@
 # Webhook trigger
 
-Generic HTTP request per notification. Operators get full control of method, URL, headers, and body via the [template engine](./template-engine.md). Use this trigger to forward notifications to any REST endpoint: Slack, Discord, PagerDuty, custom internal services, GitHub Actions, log aggregators, and so on.
+Generic HTTP request per notification. Operators get full control of method,
+URL, headers, and body via the [template engine](./template-engine.md). Use this
+trigger to forward notifications to any REST endpoint: Slack, Discord,
+PagerDuty, custom internal services, GitHub Actions, log aggregators, and so on.
 
 ## YAML
 
@@ -21,21 +24,33 @@ triggers:
 
 ## Method, URL, headers
 
-- `method`: one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (uppercase required). Default `POST`.
-- `url`: template-rendered at dispatch time. Operators commonly use `{{ env.WEBHOOK_URL }}` to keep the URL out of the YAML.
-- `headers`: header NAMES are taken literally; header VALUES are template-rendered. The YAML `headers` block is a map so each header name appears once; multi-value headers (e.g. multiple `Set-Cookie`) are not representable via the YAML config. Operators needing repeated header names should use the lib's `Trigger::webhook(...).header(name, value)` programmatic builder, which is repeatable.
+- `method`: one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (uppercase required).
+  Default `POST`.
+- `url`: template-rendered at dispatch time. Operators commonly use
+  `{{ env.WEBHOOK_URL }}` to keep the URL out of the YAML.
+- `headers`: header NAMES are taken literally; header VALUES are
+  template-rendered. The YAML `headers` block is a map so each header name
+  appears once; multi-value headers (e.g. multiple `Set-Cookie`) are not
+  representable via the YAML config. Operators needing repeated header names
+  should use the lib's `Trigger::webhook(...).header(name, value)` programmatic
+  builder, which is repeatable.
 
-The dispatcher auto-injects `Content-Type: application/json` when the operator does not supply one. If you set your own `Content-Type`, the dispatcher does NOT override it.
+The dispatcher auto-injects `Content-Type: application/json` when the operator
+does not supply one. If you set your own `Content-Type`, the dispatcher does NOT
+override it.
 
 ## Body template
 
-When `body_template` is **absent**, the body defaults to the notification serialised as compact JSON (matching the [echo](./echo.md) trigger's pipe-mode shape):
+When `body_template` is **absent**, the body defaults to the notification
+serialised as compact JSON (matching the [echo](./echo.md) trigger's pipe-mode
+shape):
 
 ```text
 {"event_type":"mars","sequence":42,"identifier":{...},"payload":{...}}
 ```
 
-When `body_template` is **set**, that string is template-rendered at dispatch. Two patterns are common:
+When `body_template` is **set**, that string is template-rendered at dispatch.
+Two patterns are common:
 
 **Forward selected fields**:
 
@@ -56,7 +71,11 @@ body_template: |
   }
 ```
 
-When embedding JSON-typed notification fields (`identifier`, `payload`) inside a JSON string literal, see [Template engine: value rendering](./template-engine.md#value-rendering-rules) for the escaping rules - short version, embed them OUTSIDE a string field (as in the example above), not inside `"text": "..."`.
+When embedding JSON-typed notification fields (`identifier`, `payload`) inside a
+JSON string literal, see
+[Template engine: value rendering](./template-engine.md#value-rendering-rules)
+for the escaping rules - short version, embed them OUTSIDE a string field (as in
+the example above), not inside `"text": "..."`.
 
 ## Retry classifier
 
@@ -70,11 +89,16 @@ When embedding JSON-typed notification fields (`identifier`, `payload`) inside a
 | HTTP client refused the rendered request (invalid URL, bad header) | **terminal** | retryable (every failure is retryable when `fail_fast` is off, even ones that are deterministic against the same notification) |
 | Template render error | **terminal** | retryable (same caveat: deterministic failures will fail identically on retry, but the dispatcher honours the retry budget) |
 
-Terminal failures bypass the `retries` budget. Retryable failures are retried up to `retries + 1` total attempts with the supervisor's exponential backoff (250 ms base, doubling, 30 s cap, full jitter).
+Terminal failures bypass the `retries` budget. Retryable failures are retried up
+to `retries + 1` total attempts with the supervisor's exponential backoff (250
+ms base, doubling, 30 s cap, full jitter).
 
 ## Response body capture
 
-The response body is captured into a 4 KiB ring buffer via streaming chunks. Operators see the tail of the response on a failure error. This is essential for debugging 4xx responses from services that include validation details in the body.
+The response body is captured into a 4 KiB ring buffer via streaming chunks.
+Operators see the tail of the response on a failure error. This is essential for
+debugging 4xx responses from services that include validation details in the
+body.
 
 Example failure surface for a 4xx:
 
@@ -84,21 +108,29 @@ Error in listener my-listener: trigger webhook failed: webhook: status=400 body_
   Other listeners continue.
 ```
 
-The 4 KiB cap is per-response, not per-listener-session. A server streaming a multi-gigabyte body in the timeout window does not cause memory bloat: the ring buffer caps at 4 KiB regardless of total body size.
+The 4 KiB cap is per-response, not per-listener-session. A server streaming a
+multi-gigabyte body in the timeout window does not cause memory bloat: the ring
+buffer caps at 4 KiB regardless of total body size.
 
 ## Security: secret-bearing surfaces
 
-The URL, header values, and body template can carry secrets (bearer tokens, signed payloads, embedded API keys). The dispatcher's `Debug` impl for the trigger config **redacts** all three:
+The URL, header values, and body template can carry secrets (bearer tokens,
+signed payloads, embedded API keys). The dispatcher's `Debug` impl for the
+trigger config **redacts** all three:
 
 ```text
 Trigger { kind: Webhook(WebhookConfig { url_template: <compiled-url-template-redacted>, method: Post, header_count: 2, body_template: <compiled-body-template-redacted> }), ... }
 ```
 
-So a `Debug`-formatted error chain through trigger configs won't leak secrets, even when a template fails to compile. The raw URL / header values / body templates surface only at DEBUG-level tracing (which is off by default).
+So a `Debug`-formatted error chain through trigger configs won't leak secrets,
+even when a template fails to compile. The raw URL / header values / body
+templates surface only at DEBUG-level tracing (which is off by default).
 
 ## TLS
 
-The webhook reuses the supervisor's shared `reqwest::Client`. Any TLS configuration (`--ca-bundle`, `--danger-accept-invalid-certs`) inherits automatically.
+The webhook reuses the supervisor's shared `reqwest::Client`. Any TLS
+configuration (`--ca-bundle`, `--danger-accept-invalid-certs`) inherits
+automatically.
 
 ## Examples
 
@@ -162,5 +194,7 @@ triggers:
 ## When NOT to use
 
 - Microsoft Teams: use [`teams`](./teams.md) for the Adaptive Card auto-build.
-- Generic CloudEvent forwarding: use [`post`](./post.md) for the server's verbatim CloudEvent.
-- Heavy receivers that need timeouts > 30 s: increase `timeout:` explicitly (the default is 30 s).
+- Generic CloudEvent forwarding: use [`post`](./post.md) for the server's
+  verbatim CloudEvent.
+- Heavy receivers that need timeouts > 30 s: increase `timeout:` explicitly (the
+  default is 30 s).

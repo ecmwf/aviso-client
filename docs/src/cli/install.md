@@ -1,6 +1,7 @@
 # Install the CLI
 
-The fastest way to get `aviso` is `cargo install`. You will need [Rust installed](https://rustup.rs/) first.
+The fastest way to get `aviso` is `cargo install`. You will need
+[Rust installed](https://rustup.rs/) first.
 
 ## From crates.io
 
@@ -9,7 +10,8 @@ cargo install aviso-cli
 aviso --version
 ```
 
-`cargo install` builds from source and puts the binary in `~/.cargo/bin/aviso`. That directory is on your PATH when you installed Rust through rustup.
+`cargo install` builds from source and puts the binary in `~/.cargo/bin/aviso`.
+That directory is on your PATH when you installed Rust through rustup.
 
 ## From a git checkout
 
@@ -32,7 +34,9 @@ You should see the subcommands listed.
 
 ## Where the binary lives
 
-The binary is called `aviso`, not `aviso-cli`. The crate name carries the `-cli` suffix to leave the unprefixed `aviso` for the library, but the installed executable is plain `aviso` so it reads cleanly on the command line.
+The binary is called `aviso`, not `aviso-cli`. The crate name carries the `-cli`
+suffix to leave the unprefixed `aviso` for the library, but the installed
+executable is plain `aviso` so it reads cleanly on the command line.
 
 ```bash
 # Linux, macOS
@@ -69,7 +73,8 @@ Restart the shell (or source the file) for completions to take effect.
 
 ## Upgrading
 
-`cargo install aviso-cli` again. Cargo replaces the binary in place. To force a rebuild from scratch, add `--force`.
+`cargo install aviso-cli` again. Cargo replaces the binary in place. To force a
+rebuild from scratch, add `--force`.
 
 ## Uninstalling
 
@@ -77,7 +82,8 @@ Restart the shell (or source the file) for completions to take effect.
 cargo uninstall aviso-cli
 ```
 
-You can also delete `~/.cargo/bin/aviso` by hand. Configuration and state files in `~/.config/aviso/` are left alone; remove them if you want a clean slate:
+You can also delete `~/.cargo/bin/aviso` by hand. Configuration and state files
+in `~/.config/aviso/` are left alone; remove them if you want a clean slate:
 
 ```bash
 rm -rf ~/.config/aviso
@@ -86,4 +92,5 @@ rm -rf ~/.config/aviso
 ## What next
 
 - [Quickstart](./quickstart.md): your first run.
-- [Configuration](./configuration.md): config files, environment variables, TLS settings.
+- [Configuration](./configuration.md): config files, environment variables, TLS
+  settings.

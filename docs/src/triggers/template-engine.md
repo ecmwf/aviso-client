@@ -1,6 +1,8 @@
 # Template engine
 
-The shared template engine that `command`, `webhook`, `teams`, and `post` triggers use to substitute notification fields and environment variables into their templated inputs.
+The shared template engine that `command`, `webhook`, `teams`, and `post`
+triggers use to substitute notification fields and environment variables into
+their templated inputs.
 
 ## Syntax
 
@@ -11,11 +13,13 @@ Two expression forms inside `{{ ... }}`:
 {{ env.<NAME> }}                    -- substitutes a process environment variable
 ```
 
-Literal `{{` is escaped as `\{{`. Everything outside `{{ ... }}` is passed through verbatim.
+Literal `{{` is escaped as `\{{`. Everything outside `{{ ... }}` is passed
+through verbatim.
 
 ## Notification paths
 
-The `notification` namespace walks the notification's serialised JSON tree. Empty path means the whole notification:
+The `notification` namespace walks the notification's serialised JSON tree.
+Empty path means the whole notification:
 
 | Expression | Resolves to |
 |---|---|
@@ -27,7 +31,8 @@ The `notification` namespace walks the notification's serialised JSON tree. Empt
 | `{{ notification.payload }}` | The payload as compact JSON: `{"seed":"x"}` (or `null`) |
 | `{{ notification.payload.seed }}` | A specific payload field, unquoted: `x` |
 
-Paths can go arbitrarily deep into nested objects. Array indexing is not supported (the engine walks object keys only).
+Paths can go arbitrarily deep into nested objects. Array indexing is not
+supported (the engine walks object keys only).
 
 ## Env paths
 
@@ -38,10 +43,13 @@ body_template: '{"token": "{{ env.SECRET }}"}'
 
 `{{ env.<NAME> }}` reads `std::env::var(NAME)`. Two failure modes:
 
-- **Variable not set**: `TemplateErrorKind::EnvNotSet`. Operator must `export NAME=value` before running.
-- **Variable set but not UTF-8**: `TemplateErrorKind::EnvNotUnicode`. Rare; usually means a misconfigured deployment.
+- **Variable not set**: `TemplateErrorKind::EnvNotSet`. Operator must
+  `export NAME=value` before running.
+- **Variable set but not UTF-8**: `TemplateErrorKind::EnvNotUnicode`. Rare;
+  usually means a misconfigured deployment.
 
-Both surface as `TriggerError::Template` at first dispatch (the constructor is infallible; errors are deferred to render time).
+Both surface as `TriggerError::Template` at first dispatch (the constructor is
+infallible; errors are deferred to render time).
 
 ## Value rendering rules
 
@@ -56,7 +64,8 @@ How each JSON value type renders into the template's output:
 | Object | Compact JSON, **including the surrounding braces** | `{"class":"od","date":"20260601"}` |
 | Array | Compact JSON | `["a","b","c"]` |
 
-The string-unquoted rule is the load-bearing one for safe embedding in JSON bodies. Compare:
+The string-unquoted rule is the load-bearing one for safe embedding in JSON
+bodies. Compare:
 
 ```text
 "value": "{{ notification.identifier.class }}"
@@ -104,9 +113,12 @@ Renders to: `{"id": {"class":"od","date":"20260601",...}, "seq": 42}`
 body_template: '{{ notification }}'
 ```
 
-Renders to: `{"event_type":"mars","sequence":42,"identifier":{...},"payload":{...}}`
+Renders to:
+`{"event_type":"mars","sequence":42,"identifier":{...},"payload":{...}}`
 
-This is the default body when `body_template:` is omitted on the [webhook](./webhook.md) trigger. The [echo](./echo.md) trigger emits the same shape in pipe mode.
+This is the default body when `body_template:` is omitted on the
+[webhook](./webhook.md) trigger. The [echo](./echo.md) trigger emits the same
+shape in pipe mode.
 
 ### Secret-bearing URL
 
@@ -114,7 +126,8 @@ This is the default body when `body_template:` is omitted on the [webhook](./web
 url: "{{ env.WEBHOOK_URL }}"
 ```
 
-The URL never appears in YAML, in logs, or in error messages. Set the env var in your deployment:
+The URL never appears in YAML, in logs, or in error messages. Set the env var in
+your deployment:
 
 ```bash
 export WEBHOOK_URL='https://hooks.example.com/notify?token=xxx'
@@ -126,11 +139,13 @@ export WEBHOOK_URL='https://hooks.example.com/notify?token=xxx'
 title_template: "[{{ env.DEPLOYMENT_TIER }}] aviso {{ notification.event_type }}"
 ```
 
-`{{ env.DEPLOYMENT_TIER }}` can be `prod`, `staging`, `dev`, etc., setting different prefixes per deployment.
+`{{ env.DEPLOYMENT_TIER }}` can be `prod`, `staging`, `dev`, etc., setting
+different prefixes per deployment.
 
 ## Error categories
 
-Template errors fall into one of five `TemplateErrorKind` values, surfaced via `TriggerError::Template { context, field, kind }`:
+Template errors fall into one of five `TemplateErrorKind` values, surfaced via
+`TriggerError::Template { context, field, kind }`:
 
 | Kind | When | Example template |
 |---|---|---|
@@ -140,15 +155,28 @@ Template errors fall into one of five `TemplateErrorKind` values, surfaced via `
 | `BadSyntax` | Template parse failure: unclosed `{{`, empty path segment, unknown namespace | `{{ unclosed`, `{{ notification..empty }}`, `{{ unknown.foo }}` |
 | `NotificationEncode` | The notification could not be serialised to JSON when resolving a path | Practically unreachable for well-typed notifications; the variant exists so the operator's diagnosis points at the notification rather than chasing a missing-path template bug |
 
-All five are **terminal** under `fail_fast: true` (the default): retrying with the same notification and environment will produce the same template error.
+All five are **terminal** under `fail_fast: true` (the default): retrying with
+the same notification and environment will produce the same template error.
 
-The `context` carried on `TriggerError::Template` is the safe static label (`"webhook url"`, `"command"`, `"teams title"`, etc.) of where the failure occurred. `field` carries the JSON path / env-var name / parse-failure category (whichever applies to the kind). Neither echoes the raw template, which may carry secrets.
+The `context` carried on `TriggerError::Template` is the safe static label
+(`"webhook url"`, `"command"`, `"teams title"`, etc.) of where the failure
+occurred. `field` carries the JSON path / env-var name / parse-failure category
+(whichever applies to the kind). Neither echoes the raw template, which may
+carry secrets.
 
 ## What the template engine does NOT support
 
-- **Conditionals** - no `{% if %}` / `{% else %}`. Use Rust code outside aviso if you need branching.
-- **Loops** - no `{% for %}` over object keys or array elements. Templates render specific paths; the [teams](./teams.md) and [post](./post.md) triggers iterate identifier fields at dispatch time via Rust code (not via the template engine).
-- **Filters / pipes** - no `{{ value | uppercase }}` or `{{ value | json }}`. Operators wanting transformation should do it in the receiver.
+- **Conditionals** - no `{% if %}` / `{% else %}`. Use Rust code outside aviso
+  if you need branching.
+- **Loops** - no `{% for %}` over object keys or array elements. Templates
+  render specific paths; the [teams](./teams.md) and [post](./post.md) triggers
+  iterate identifier fields at dispatch time via Rust code (not via the template
+  engine).
+- **Filters / pipes** - no `{{ value | uppercase }}` or `{{ value | json }}`.
+  Operators wanting transformation should do it in the receiver.
 - **Macros / includes** - templates are flat strings; no recursion.
 
-This is intentional: a more featureful template engine adds attack surface and complexity for marginal value. Operators wanting full programmability should use the [`command`](./command.md) trigger (which runs arbitrary shell code) or process the notification downstream.
+This is intentional: a more featureful template engine adds attack surface and
+complexity for marginal value. Operators wanting full programmability should use
+the [`command`](./command.md) trigger (which runs arbitrary shell code) or
+process the notification downstream.
