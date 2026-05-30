@@ -88,6 +88,71 @@ Pass the request with the `request=` keyword. It is mutually exclusive with
 request and any of those together raises `aviso.AvisoError`, so it stays clear
 which surface you meant.
 
+## A complete example
+
+Run these two scripts against the same server. `client.notify(...)` takes
+keyword arguments and has no builder, so the publisher uses them directly; the
+builder pattern is for the watch side, where the listener builds both its
+`WatchRequest` and its `Trigger`.
+
+Save the publisher as `publish.py`. It publishes three notifications and exits:
+
+```python
+"""Publish three test_polygon notifications, then exit."""
+
+import os
+import aviso
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+for i in range(3):
+    response = client.notify(
+        event_type="test_polygon",
+        identifier={
+            "polygon": "0,0,1,0,1,1,0,0",
+            "date": "20260601",
+            "time": f"120{i}",
+        },
+        payload={"location": f"s3://example/data/{i}.grib"},
+    )
+    print(f"published {i}: request_id={response.request_id}")
+```
+
+Save the listener as `listen_builder.py` and start it first, so it is watching
+when the publisher runs:
+
+```python
+"""Listen with a WatchRequest and Trigger built through the fluent API."""
+
+import os
+import aviso
+
+client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+
+request = (
+    aviso.WatchRequest.watch("test_polygon")
+    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_triggers([aviso.Trigger.echo(label="demo")])
+)
+
+with client.listen(request=request) as iterator:
+    for notification in iterator:
+        print(f"seq={notification.sequence} payload={notification.payload}")
+```
+
+Each notification produces two lines: one compact-JSON line from the echo
+trigger, and one `seq=... payload=...` line from the loop body. The sequence
+numbers depend on the server's history, so yours will differ:
+
+```text
+seq=1 payload={'location': 's3://example/data/0.grib'}
+seq=2 payload={'location': 's3://example/data/1.grib'}
+seq=3 payload={'location': 's3://example/data/2.grib'}
+```
+
+Stop the listener with Ctrl+C. For the resume, replay-only, and async variants
+of the same listener, see [Listening](./listen.md).
+
 ## Setters return a new value
 
 Both builders are immutable. A setter never changes the value you call it on; it
