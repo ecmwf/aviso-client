@@ -1,16 +1,19 @@
 # Configuration
 
-How aviso decides what server to talk to, how to authenticate, what TLS settings to use, and where to keep state.
+How aviso decides what server to talk to, how to authenticate, what TLS settings
+to use, and where to keep state.
 
 ## Tell aviso where the server is
 
-The minimum aviso needs is a server URL and (usually) credentials. You have three ways to supply each one. They are checked in this order:
+The minimum aviso needs is a server URL and (usually) credentials. You have
+three ways to supply each one. They are checked in this order:
 
 1. Command-line flag (`--base-url`, `--token`, ...).
 2. Environment variable (`AVISO_BASE_URL`, `AVISO_TOKEN`, ...).
 3. Config file (default `~/.config/aviso/config.yaml`).
 
-A flag beats an env var beats a config file. Layering is per-field: passing `--base-url` does not blank out a file-set `auth.bearer_token`.
+A flag beats an env var beats a config file. Layering is per-field: passing
+`--base-url` does not blank out a file-set `auth.bearer_token`.
 
 To see what aviso actually resolved, run `aviso config dump --redact`.
 
@@ -48,7 +51,8 @@ listeners:
         path: /var/log/aviso/mars-od.log
 ```
 
-To point at a config file in another location, use `--config <PATH>` or set `AVISO_CLIENT_CONFIG_FILE`.
+To point at a config file in another location, use `--config <PATH>` or set
+`AVISO_CLIENT_CONFIG_FILE`.
 
 ## Environment variables
 
@@ -64,7 +68,8 @@ To point at a config file in another location, use `--config <PATH>` or set `AVI
 
 ## Authentication
 
-aviso supports anonymous access (no `Authorization` header), HTTP Basic, and Bearer. The five built-in providers are:
+aviso supports anonymous access (no `Authorization` header), HTTP Basic, and
+Bearer. The five built-in providers are:
 
 | Provider | Where credentials come from |
 |---|---|
@@ -74,19 +79,28 @@ aviso supports anonymous access (no `Authorization` header), HTTP Basic, and Bea
 | `ConfigFile` | Reads from a separate YAML file with `bearer:` or `basic:` blocks. |
 | `Chain` | Tries multiple providers in order and uses the first one that produces a header. |
 
-aviso composes the layered settings into whichever provider fits. See [Authentication providers](../concepts/auth-providers.md) for when to use each one.
+aviso composes the layered settings into whichever provider fits. See
+[Authentication providers](../concepts/auth-providers.md) for when to use each
+one.
 
 ### On a 401, aviso retries once
 
-If the server returns `401 Unauthorized`, aviso asks the auth provider to refresh and retries the request once. For static credentials (bearer, basic) the refresh is a no-op; for providers backed by an OAuth or OIDC cache, the refresh rotates the token. A second 401 in the same attempt cycle is surfaced as an error.
+If the server returns `401 Unauthorized`, aviso asks the auth provider to
+refresh and retries the request once. For static credentials (bearer, basic) the
+refresh is a no-op; for providers backed by an OAuth or OIDC cache, the refresh
+rotates the token. A second 401 in the same attempt cycle is surfaced as an
+error.
 
 ## TLS
 
-aviso talks HTTPS by default and uses the system trust store. Two flags adjust validation when that is not enough.
+aviso talks HTTPS by default and uses the system trust store. Two flags adjust
+validation when that is not enough.
 
 ### Trust an internal CA
 
-When your aviso-server is fronted by a TLS endpoint whose certificate is signed by an internal certificate authority (a corporate root, a self-hosted ACME, a private cluster), point aviso at the CA file:
+When your aviso-server is fronted by a TLS endpoint whose certificate is signed
+by an internal certificate authority (a corporate root, a self-hosted ACME, a
+private cluster), point aviso at the CA file:
 
 ```bash
 aviso --base-url https://aviso.internal --ca-bundle ~/.config/aviso/internal-ca.pem schema list
@@ -100,9 +114,12 @@ tls:
     - /home/you/.config/aviso/internal-ca.pem
 ```
 
-The `--ca-bundle` flag is repeatable, so you can pass intermediate and root certificates separately (or put them all in one PEM file). The system trust store stays in effect; `--ca-bundle` only adds.
+The `--ca-bundle` flag is repeatable, so you can pass intermediate and root
+certificates separately (or put them all in one PEM file). The system trust
+store stays in effect; `--ca-bundle` only adds.
 
-To fetch the CA's certificate from a running server (for inspection or for use here):
+To fetch the CA's certificate from a running server (for inspection or for use
+here):
 
 ```bash
 openssl s_client -connect aviso.internal:443 -showcerts < /dev/null 2>/dev/null \
@@ -114,19 +131,26 @@ openssl x509 -in internal-ca.pem -noout -subject -issuer
 
 ### Bypass TLS validation (insecure)
 
-For short-lived development against a self-signed certificate when shipping the CA file is impractical:
+For short-lived development against a self-signed certificate when shipping the
+CA file is impractical:
 
 ```bash
 aviso --base-url https://localhost:8443 --danger-accept-invalid-certs schema list
 ```
 
-aviso logs a `WARN` at every startup when this is set, so log scrapers can flag misuse. Do not use this in production.
+aviso logs a `WARN` at every startup when this is set, so log scrapers can flag
+misuse. Do not use this in production.
 
-The recommended order: try the system trust store first, fall back to `--ca-bundle`, use `--danger-accept-invalid-certs` only as a last resort during development.
+The recommended order: try the system trust store first, fall back to
+`--ca-bundle`, use `--danger-accept-invalid-certs` only as a last resort during
+development.
 
 ## The state file
 
-Each successful listener run records its cursor in `~/.config/aviso/state.json`. On restart, the listener resumes from the next sequence so it does not skip ahead. A notification can still be redelivered after a crash or failed checkpoint.
+Each successful listener run records its cursor in `~/.config/aviso/state.json`.
+On restart, the listener resumes from the next sequence so it does not skip
+ahead. A notification can still be redelivered after a crash or failed
+checkpoint.
 
 Change the location:
 
@@ -148,11 +172,14 @@ aviso listen --no-state-store ...
 
 The file is for `aviso listen` only. `aviso replay` does not touch it.
 
-For the file format, edit safety, and how to genuinely reset a cursor, see [State file](../reference/state-file.md).
+For the file format, edit safety, and how to genuinely reset a cursor, see
+[State file](../reference/state-file.md).
 
 ## `--from` value formats {#from-value-formats}
 
-Both `aviso replay --from <VALUE>` (required) and `aviso listen --from <VALUE>` (optional, overrides the listener's defaults) accept these forms, tried in order:
+Both `aviso replay --from <VALUE>` (required) and `aviso listen --from <VALUE>`
+(optional, overrides the listener's defaults) accept these forms, tried in
+order:
 
 1. **Pure digits** → sequence id. `42`, `1234567`.
 2. `YYYY-MM-DD` → midnight UTC. `2026-05-01`.
@@ -162,18 +189,25 @@ Both `aviso replay --from <VALUE>` (required) and `aviso listen --from <VALUE>` 
 6. `YYYY-MM-DDTHH:MM:SSZ` (T separator with Z) → UTC.
 7. `YYYY-MM-DDTHH:MM:SS.ffffffZ` (with microseconds and Z) → UTC.
 
-**The pure-digit case is always a sequence id**, never a date. `20260601` is sequence id 20260601, not 1 June 2026. To pass a date, use the dashed form (`2026-06-01`).
+**The pure-digit case is always a sequence id**, never a date. `20260601` is
+sequence id 20260601, not 1 June 2026. To pass a date, use the dashed form
+(`2026-06-01`).
 
 ### How `--from` interacts with the state file
 
-On `aviso listen`, when you pass `--from <VALUE>` *and* the state file already has a cursor for the listener:
+On `aviso listen`, when you pass `--from <VALUE>` *and* the state file already
+has a cursor for the listener:
 
 - aviso uses your `--from` for the initial seek.
-- As the rewind delivers notifications, the state file ignores updates whose sequence is at or below what is already on disk. Your `--from` cannot regress the cursor.
-- Once the run advances past the previous high-water mark, normal updates resume.
+- As the rewind delivers notifications, the state file ignores updates whose
+  sequence is at or below what is already on disk. Your `--from` cannot regress
+  the cursor.
+- Once the run advances past the previous high-water mark, normal updates
+  resume.
 - Restarting without `--from` honours the state file again.
 
-Use `--from` as a one-shot rewind. Leaving it in a systemd unit means redelivery from that point on every restart.
+Use `--from` as a one-shot rewind. Leaving it in a systemd unit means redelivery
+from that point on every restart.
 
 ## Logging verbosity
 
@@ -193,12 +227,18 @@ AVISO_LOG=h2=debug,hyper=debug,aviso=debug  # also see HTTP transport
 
 ## Color
 
-`--color auto|always|never`. The default is `never`. The `auto` mode emits color when the target stream is a TTY and `NO_COLOR` is unset. `always` overrides `NO_COLOR`.
+`--color auto|always|never`. The default is `never`. The `auto` mode emits color
+when the target stream is a TTY and `NO_COLOR` is unset. `always` overrides
+`NO_COLOR`.
 
-Color only ever applies to human-readable output. JSON output (piped or redirected) is always plain.
+Color only ever applies to human-readable output. JSON output (piped or
+redirected) is always plain.
 
 ## What next
 
-- [Listener YAML reference](../reference/listener-yaml.md): the file format the CLI reads.
-- [State file reference](../reference/state-file.md): annotated example, edit safety.
-- [Authentication providers](../concepts/auth-providers.md): when to use which one.
+- [Listener YAML reference](../reference/listener-yaml.md): the file format the
+  CLI reads.
+- [State file reference](../reference/state-file.md): annotated example, edit
+  safety.
+- [Authentication providers](../concepts/auth-providers.md): when to use which
+  one.

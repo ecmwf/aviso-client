@@ -1,11 +1,15 @@
 # CLI overview
 
-`aviso` is a single binary that talks to an aviso-server. Use it to publish notifications, listen for new ones, replay history, and look around (schemas, configuration).
+`aviso` is a single binary that talks to an aviso-server. Use it to publish
+notifications, listen for new ones, replay history, and look around (schemas,
+configuration).
 
 Use it when you want to:
 
-- Subscribe to a stream and pipe the output to `jq`, a log file, or any line-oriented tool.
-- Run a long-lived listener that ships notifications to a webhook, a Teams channel, a log file, or a custom shell command.
+- Subscribe to a stream and pipe the output to `jq`, a log file, or any
+  line-oriented tool.
+- Run a long-lived listener that ships notifications to a webhook, a Teams
+  channel, a log file, or a custom shell command.
 - Drop a notification into a stream from a script.
 - Inspect what schemas the server publishes, or wipe a stream during testing.
 
@@ -30,10 +34,12 @@ Use it when you want to:
 | You want a quick one-liner against a stream. | You want to share an authentication or connection pool across many subscriptions. |
 | You want triggers configured in YAML. | You want triggers and listeners constructed programmatically. |
 
-Both surfaces are built on the same code, so behaviour is identical at the wire level.
+Both surfaces are built on the same code, so behaviour is identical at the wire
+level.
 
 ## What comes next
 
 - [Install](./install.md) the binary.
 - [Quickstart](./quickstart.md): the smallest useful run, end to end.
-- [Publish and listen](./publish-and-listen.md): the two commands you will use most.
+- [Publish and listen](./publish-and-listen.md): the two commands you will use
+  most.

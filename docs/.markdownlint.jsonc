@@ -1,0 +1,27 @@
+// markdownlint config for the mdBook sources under docs/.
+// Prose is hard-wrapped to 80 columns; the few rules disabled below are
+// the ones that fight that style or the book's intentional content.
+{
+  "default": true,
+
+  // Line length is owned by the 80-column prose wrap. MD013 cannot break
+  // code blocks, table rows, or long inline links, so it would only emit
+  // false positives on lines we keep intact on purpose.
+  "MD013": false,
+
+  // The landing page renders the logo with a small HTML block, and some
+  // pages carry `<!-- not-runnable -->` markers for the example harness.
+  "MD033": false,
+
+  // The landing page opens with the logo HTML, not a heading.
+  "MD041": false,
+
+  // Sibling sections may legitimately repeat a heading (for example
+  // "Overview" under different parents); only flag true duplicates.
+  "MD024": { "siblings_only": true },
+
+  // Table pipe spacing / alignment. GFM and mdBook render every spacing
+  // variant identically, the rule is not reliably auto-fixable, and
+  // enforcing one style would churn every table for no rendered gain.
+  "MD060": false
+}

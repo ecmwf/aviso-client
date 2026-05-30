@@ -1,10 +1,13 @@
 # Quickstart
 
-Three end-to-end scripts. Each one runs against an `aviso-server` you point at with two environment variables. Pick the one that matches what you want to do.
+Three end-to-end scripts. Each one runs against an `aviso-server` you point at
+with two environment variables. Pick the one that matches what you want to do.
 
 ## Set the environment
 
-Every script in this page reads two environment variables: `AVISO_BASE_URL` for the server URL and one of `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD` for credentials. `aviso.Env()` picks up whichever is set.
+Every script in this page reads two environment variables: `AVISO_BASE_URL` for
+the server URL and one of `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD` for
+credentials. `aviso.Env()` picks up whichever is set.
 
 ```bash
 export AVISO_BASE_URL=https://aviso.example.org
@@ -16,7 +19,10 @@ If you have a bearer token instead, `export AVISO_TOKEN=...` works the same way.
 
 ## What is on your server
 
-An aviso-server publishes notifications for one or more streams its operator has configured. Each stream is an "event type" with a schema that names the identifier fields the stream uses and which of them are required. The Python client never defines schemas: it discovers and consumes them.
+An aviso-server publishes notifications for one or more streams its operator has
+configured. Each stream is an "event type" with a schema that names the
+identifier fields the stream uses and which of them are required. The Python
+client never defines schemas: it discovers and consumes them.
 
 List what your server has configured:
 
@@ -30,7 +36,9 @@ client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env
 print(client.schema().event_types)
 ```
 
-The output is a list of event-type names. It will look like `['mars', 'test_polygon']` or whatever your operator has configured. The exact set depends on your deployment.
+The output is a list of event-type names. It will look like
+`['mars', 'test_polygon']` or whatever your operator has configured. The exact
+set depends on your deployment.
 
 Inspect what one stream expects:
 
@@ -70,17 +78,35 @@ A schema response looks like this (your fields and types will differ):
 }
 ```
 
-So a `test_polygon` notification is keyed on three identifier fields: `polygon` (a string of comma-separated lat,lon pairs forming a closed shape), `date` (YYYYMMDD), and `time` (HHMM). Identifier values are always strings on the wire; the `type` is the validator the server runs against the string. The `payload` is whatever JSON the publisher attached.
+So a `test_polygon` notification is keyed on three identifier fields: `polygon`
+(a string of comma-separated lat,lon pairs forming a closed shape), `date`
+(YYYYMMDD), and `time` (HHMM). Identifier values are always strings on the wire;
+the `type` is the validator the server runs against the string. The `payload` is
+whatever JSON the publisher attached.
 
-**What `"required": true` means.** The `required` flag on each identifier field says whether a **filter or watch** call must include it. For `test_polygon`, the only `required: true` field is `polygon`, so a listener can subscribe with just `{"polygon": "..."}` and the rest narrow the match further if you want. A **notify** call is different: it must supply every identifier field the schema defines, regardless of the flag, because the schema enumerates the complete identifier of a notification. Publishing `test_polygon` without `date` or `time` returns `400 Required field 'date' missing for notify operation`. If a publish fails with `Required field X missing`, add X and retry.
+**What `"required": true` means.** The `required` flag on each identifier field
+says whether a **filter or watch** call must include it. For `test_polygon`, the
+only `required: true` field is `polygon`, so a listener can subscribe with just
+`{"polygon": "..."}` and the rest narrow the match further if you want. A
+**notify** call is different: it must supply every identifier field the schema
+defines, regardless of the flag, because the schema enumerates the complete
+identifier of a notification. Publishing `test_polygon` without `date` or `time`
+returns `400 Required field 'date' missing for notify operation`. If a publish
+fails with `Required field X missing`, add X and retry.
 
-**The rest of this page uses `test_polygon` as the example event type.** It is one stream that may exist on your server.
+**The rest of this page uses `test_polygon` as the example event type.** It is
+one stream that may exist on your server.
 
 If your server has no `test_polygon` configured, you have two paths:
 
-1. **Use the local stack from this repo.** From a checkout, `bash tests/e2e/shared/stack.sh up` brings up an aviso-server with `test_polygon` pre-configured (auth required, write role `producer`). See [`python/examples/README.md`](https://github.com/ecmwf/aviso-client/tree/main/python/examples#run-the-examples-against-the-local-stack-recommended) for the env-var setup. This is the fastest way to try the rest of this page.
+1. **Use the local stack from this repo.** From a checkout,
+   `bash tests/e2e/shared/stack.sh up` brings up an aviso-server with
+   `test_polygon` pre-configured (auth required, write role `producer`). See
+   [`python/examples/README.md`](https://github.com/ecmwf/aviso-client/tree/main/python/examples#run-the-examples-against-the-local-stack-recommended)
+   for the env-var setup. This is the fastest way to try the rest of this page.
 
-2. **Add the schema to your own aviso-server.** If you have access to the server's config, paste this snippet into `notification_schema:` and restart:
+2. **Add the schema to your own aviso-server.** If you have access to the
+   server's config, paste this snippet into `notification_schema:` and restart:
 
    ```yaml
    notification_schema:
@@ -103,9 +129,14 @@ If your server has no `test_polygon` configured, you have two paths:
            required: false
    ```
 
-   The same schema lives in [`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml). After restart, `client.schema().event_types` should include `test_polygon`.
+   The same schema lives in
+   [`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml).
+   After restart, `client.schema().event_types` should include `test_polygon`.
 
-If you do not run the server yourself and cannot reach a server that has `test_polygon`, substitute your own event type and identifier fields in every example below. The shape of every call is the same; only the event-type string and the identifier keys change.
+If you do not run the server yourself and cannot reach a server that has
+`test_polygon`, substitute your own event type and identifier fields in every
+example below. The shape of every call is the same; only the event-type string
+and the identifier keys change.
 
 ## 1. Publish one notification
 
@@ -140,11 +171,13 @@ status=success request_id=06348659-a3bb-45bd-8541-6e49557c1400
 processed_at=2026-05-25T09:01:46Z
 ```
 
-The `status` is always `success` on a 2xx response; anything else raises `aviso.HttpError` before the print line.
+The `status` is always `success` on a 2xx response; anything else raises
+`aviso.HttpError` before the print line.
 
 ## 2. Listen for notifications
 
-Save as `listen.py` and run it. While it runs, run `publish.py` from a second terminal a few times and watch the listener pick up each notification.
+Save as `listen.py` and run it. While it runs, run `publish.py` from a second
+terminal a few times and watch the listener pick up each notification.
 
 ```python
 """Listen for test_polygon notifications and print each one as it arrives.
@@ -162,18 +195,22 @@ for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,
     print(f"seq={notification.sequence} time={notification.identifier.get('time')} payload={notification.payload}")
 ```
 
-Expected output (one line per matching publish; sequences differ between servers and advance over time):
+Expected output (one line per matching publish; sequences differ between servers
+and advance over time):
 
 ```text
 seq=80 time=1200 payload={'location': 's3://example/data.grib'}
 seq=81 time=1201 payload={'location': 's3://example/data.grib'}
 ```
 
-The `sequence` number increases monotonically across the stream. Filtering by `polygon` value means the listener only sees notifications whose polygon matches.
+The `sequence` number increases monotonically across the stream. Filtering by
+`polygon` value means the listener only sees notifications whose polygon
+matches.
 
 ## 3. Resume across restarts
 
-The first two scripts hold no state. If you stop the listener and restart it, you miss whatever was published in between. Attaching a state store fixes that.
+The first two scripts hold no state. If you stop the listener and restart it,
+you miss whatever was published in between. Attaching a state store fixes that.
 
 ```python
 """Listen for notifications, remembering where we left off across restarts."""
@@ -195,13 +232,21 @@ for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,
     print(f"seq={notification.sequence}")
 ```
 
-The first run reads from the live edge. Subsequent runs pick up at the last committed sequence, so a Ctrl+C followed by a fresh start replays nothing it has already processed.
+The first run reads from the live edge. Subsequent runs pick up at the last
+committed sequence, so a Ctrl+C followed by a fresh start replays nothing it has
+already processed.
 
-The file is locked across cooperating processes on local filesystems (ext4, xfs, apfs, ntfs). See [State and resume](./state-and-resume.md) for the commit policy.
+The file is locked across cooperating processes on local filesystems (ext4, xfs,
+apfs, ntfs). See [State and resume](./state-and-resume.md) for the commit
+policy.
 
 ## Filters
 
-`filter=` is a dict of identifier predicates. A field flagged `"required": true` in the schema must appear in your filter; the rest are optional and narrow what you see further. (A notify call has to supply every identifier field defined in the schema regardless of the flag, but a listener only has to commit to the required ones; see "What is on your server" above.)
+`filter=` is a dict of identifier predicates. A field flagged `"required": true`
+in the schema must appear in your filter; the rest are optional and narrow what
+you see further. (A notify call has to supply every identifier field defined in
+the schema regardless of the flag, but a listener only has to commit to the
+required ones; see "What is on your server" above.)
 
 ## What about async?
 
@@ -224,4 +269,5 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-If your script is just running aviso, the sync version is what you want. See [Async](./async.md) for the situations where the async client actually helps.
+If your script is just running aviso, the sync version is what you want. See
+[Async](./async.md) for the situations where the async client actually helps.
