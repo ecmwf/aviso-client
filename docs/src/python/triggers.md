@@ -162,6 +162,10 @@ aviso.Trigger.echo().retries(3).required(False)
 - `fail_fast`: meaningful for command and HTTP-based triggers; treats
   deterministic failures (non-zero exit, 4xx HTTP) as terminal. Default `True`.
 
+Both forms produce the same trigger. The
+[Builder pattern](./builder-pattern.md) page covers the fluent style in full,
+including how to reuse a built trigger across watch requests.
+
 ## When to use which
 
 | You want to | Use |

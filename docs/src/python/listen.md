@@ -245,8 +245,10 @@ with client.listen(request=request) as iterator:
 
 `request=` is mutually exclusive with `event_type=`, `filter=`, `from_=`,
 `mode=`, and `triggers=`. Passing any of those alongside `request=` raises
-`aviso.AvisoError` so it is always clear which surface you meant. For the
-side-by-side comparison see the
+`aviso.AvisoError` so it is always clear which surface you meant. The
+[Builder pattern](./builder-pattern.md) page covers `WatchRequest` in full,
+including how to branch one base request into variants. For the side-by-side
+comparison see the
 [`advanced/01_builder_pattern.py`](https://github.com/ecmwf/aviso-client/tree/main/python/examples/advanced/01_builder_pattern.py)
 example.
 

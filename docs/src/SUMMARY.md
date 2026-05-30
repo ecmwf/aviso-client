@@ -34,6 +34,7 @@
 - [Publishing](./python/publish.md)
 - [Listening](./python/listen.md)
 - [Triggers](./python/triggers.md)
+- [Builder pattern](./python/builder-pattern.md)
 - [Auth](./python/auth.md)
 - [State and resume](./python/state-and-resume.md)
 - [Error handling](./python/error-handling.md)
