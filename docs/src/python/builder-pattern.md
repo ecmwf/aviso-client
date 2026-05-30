@@ -140,18 +140,18 @@ with client.listen(request=request) as iterator:
         print(f"seq={notification.sequence} payload={notification.payload}")
 ```
 
-Each notification produces two lines: one compact-JSON line from the echo
-trigger, and one `seq=... payload=...` line from the loop body. The sequence
+Each notification produces two lines: a compact-JSON line from the echo
+trigger, then a `seq=... payload=...` line from the loop body. The sequence
 numbers depend on the server's history, so yours will differ:
 
 ```text
+{"event_type":"test_polygon","sequence":1,"identifier":{"date":"20260601","polygon":"0,0,1,0,1,1,0,0","time":"1200"},"payload":{"location":"s3://example/data/0.grib"}}
 seq=1 payload={'location': 's3://example/data/0.grib'}
-seq=2 payload={'location': 's3://example/data/1.grib'}
-seq=3 payload={'location': 's3://example/data/2.grib'}
 ```
 
-Stop the listener with Ctrl+C. For the resume, replay-only, and async variants
-of the same listener, see [Listening](./listen.md).
+The same two-line pattern repeats for each notification. Stop the listener with
+Ctrl+C. For the resume, replay-only, and async variants of the same listener,
+see [Listening](./listen.md).
 
 ## Setters return a new value
 
