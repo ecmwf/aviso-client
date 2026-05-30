@@ -65,10 +65,6 @@ uv run pytest python/tests/
 
 The Python toolchain (`uv`, `ruff`, `ty`, `pytest`, `maturin`) is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## End-to-end tests
-
-A real three-service stack (`aviso-server` + `auth-o-tron` + JetStream-backed NATS) lives at [`tests/e2e/`](tests/e2e/) for behaviour the hermetic suites cannot reach (real-wire reconnect, auth + role enforcement, CLI subcommands). `bash tests/e2e/shared/stack.sh up` brings the stack up (then `down`, `restart`, `logs`, or `status` for the rest of the lifecycle). Then run the Python suite via `uv run pytest tests/e2e/python/` and the Rust suite via `cargo build -p aviso-cli && cargo test -p aviso-e2e -- --include-ignored --test-threads=1` (the build step is required because the CLI tests expect `target/debug/aviso`). See [`tests/e2e/README.md`](tests/e2e/README.md) for the test accounts and the bump procedure for the pinned container images; see [`CONTRIBUTING.md`](CONTRIBUTING.md#end-to-end-tests) for the full local workflow.
-
 ## Documentation
 
 The full documentation is hosted at <https://sites.ecmwf.int/docs/aviso-client/main/>. Good starting points:
@@ -83,10 +79,6 @@ To build and preview the book locally:
 cargo install mdbook mdbook-mermaid
 mdbook serve docs --open
 ```
-
-## Project plan
-
-The current plan and roadmap live under [`plans/`](plans/). Architectural decisions (the *why* of each design choice) live in [`plans/decisions.md`](plans/decisions.md) and are referenced from plans by their stable ADR id.
 
 ## Working in this repo
 
