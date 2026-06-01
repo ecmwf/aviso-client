@@ -30,3 +30,8 @@ without the user saying so. Quoted phrases are the user's own words.
 - **Plan-only commits may push straight to `main`;** source-code changes go
   through a PR.
 - **Never add `Co-authored-by:` trailers.**
+- **Never name a specific downstream consumer.** "never ever mention [the
+  consumer] anywhere, only stick to work you do." Describe the C++ binding and
+  its target by capability only (a C++17 application built on HPC, spack-stack,
+  and conda-forge that needs a prebuilt, no-Rust-toolchain binary), never by
+  product name, in code, docs, commits, PRs, or these planning files.
