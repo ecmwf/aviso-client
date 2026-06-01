@@ -791,12 +791,17 @@ JSON `String`, leaving JSON modelling to the C++ side. Marshalling a map or a
 tagged variant per field buys nothing for a notification client and would couple
 the ABI to serde internals.
 
-**Async-to-sync boundary.** The core is `tokio`-async; the C++ surface is
-synchronous. The adapter owns one multi-thread `tokio` runtime, built at client
-construction and stored in the opaque `Client`. The request/response verbs
-(`notify`, `schema`, `schema_for`, `wipe_stream`, `wipe_all`,
-`delete_notification`) are blocking methods that `block_on` internally and
-return `Result`. No async is exposed to C++.
+**Two surfaces over one runtime.** The core is `tokio`-async; the adapter owns
+one multi-thread `tokio` runtime, built at client construction and stored in the
+opaque `Client`, and exposes the client through two surfaces over it. A
+*synchronous* surface, for consumers without C++20 coroutines: the
+request/response verbs (`notify`, `schema`, `schema_for`, `wipe_stream`,
+`wipe_all`, `delete_notification`) are blocking methods that `block_on`
+internally, and the watch is callback-driven (below). An *async* surface, for
+C++20-coroutine consumers, built with `cxx-async`: the same verbs also exist as
+`*_async` methods returning awaitable futures, and the watch is also exposed as
+an awaitable stream. Both surfaces drive the one runtime; a consumer picks per
+call site and may mix them.
 
 **Watch surface (the reason D19 exists).** Watching is callback-driven, built on
 the core's handler-shaped `watch_with_handler` (D19), not the `Stream`. C++
@@ -819,6 +824,11 @@ method `on_notification(self, &Notification) -> bool`. Rust holds it as a
 `UniquePtr<NotificationHandler>` and calls the method; the C++ user subclasses
 the generated abstract base. Returning `false` requests a graceful stop.
 
+For the async surface, `Client::watch_stream(request)` returns a `cxx-async`
+stream of notifications that a C++20 coroutine drains with `co_await`; dropping
+the stream cancels the supervisor through the same oneshot (D19). The two
+callback shapes and the stream are three front-ends over one supervisor.
+
 **Construction.** A `ClientBuilder` opaque type mirrors the Rust builder with
 chainable, infallible setters and a fallible `build`:
 `new_client_builder(base_url) -> Box<ClientBuilder>`, then `with_basic_auth`,
@@ -830,6 +840,20 @@ Rust-internal; the C++ surface picks among them by builder method, never by
 handle. `WatchRequest` is built the same way: `new_watch_request(event_type)`
 plus `with_filter_json`, `watch_from`, and `replay_only`.
 
+**Triggers.** A `TriggerBuilder` opaque type mirrors the Rust `Trigger` builder
+(D11). Factory functions `trigger_echo()`, `trigger_log(path)`,
+`trigger_command(cmd)`, `trigger_webhook(url)`, `trigger_teams(url)`, and
+`trigger_post(url)` each return `Box<TriggerBuilder>`, with chainable setters
+`retries`, `required`, `timeout_secs`, `fail_fast`, `label`, `env(key, value)`,
+`working_dir`, `method`, `header(name, value)`, and `body_template` matching
+their Rust counterparts (setters that do not apply to a kind are ignored, as in
+the core). `HttpMethod` crosses as a `cxx` shared enum (`Post`, `Get`, `Put`,
+`Patch`, `Delete`). Triggers attach with
+`WatchRequestBuilder::with_trigger(Box<TriggerBuilder>)`, called once per
+trigger (a `Vec` of opaque builders is awkward across `cxx`; moving one boxed
+builder at a time is the clean shape), and the same request feeds all three
+watch front-ends. The command trigger stays `#[cfg(unix)]` (D11).
+
 **Notification access.** `Notification` is an opaque Rust type with const
 accessors: `event_type`, `sequence`, `identifier_json`, `payload_json`, and
 `request_id`, each returning an owned `String` (or `u64` for `sequence`).
@@ -837,13 +861,22 @@ Opaque-plus-accessors avoids marshalling a map and a JSON value across the
 bridge per notification and keeps the model `#[non_exhaustive]`-friendly (D9):
 adding an envelope field later is a new accessor, not an ABI break.
 
-**Errors.** Adapter functions return `Result<T, ...>`; `cxx` raises them as C++
-exceptions carrying the `Display` string. The message is prefixed with a stable
-kind token (`http:`, `auth:`, `transport:`, `decode:`, `config:`, `trigger:`,
-and so on) derived from the `ClientError` variant so C++ callers can branch on
-category without a richer ABI. A structured error (a numeric code plus fields)
-is a follow-up if a consumer needs programmatic access. Secrets never reach the
-message: the core's D12 redaction already applies.
+**Structured errors.** The error surface is structured at the ABI, not a bare
+string. A `cxx` shared enum `AvisoErrorKind` (`Transport`, `Http`, `Auth`,
+`Decode`, `MalformedEvent`, `HistoryGap`, `StreamProtocol`, `Config`,
+`StateStore`, `Trigger`) plus a shared `AvisoError` struct carry the kind, an
+`http_status` (`0` when not HTTP), the `request_id` (empty when unknown), a
+redacted human `message`, and the trigger-failure fields (`trigger_kind`,
+`error_kind`) when the kind is `Trigger`. Fallible verbs return an outcome that
+holds either the value or a populated `AvisoError`, so the structured fields are
+always inspectable from C++ without parsing exception text. The curated
+`include/aviso.hpp` facade layers an ergonomic throwing API on top: inline
+wrappers that return the value or throw `aviso::Error`, a `std::exception`
+subclass whose `what()` is the message and whose `error()` returns the full
+`AvisoError`. Consumers choose: inspect the struct, or `try` / `catch` with the
+same structured data on the caught exception. Async results resolve the same
+outcome, and the facade's awaiting wrappers throw identically. Secrets never
+reach the struct: the core's D12 redaction already applies.
 
 **Build and consumption.** `crates/aviso-cxx` runs `cxx-build` in `build.rs` to
 compile the generated C++ shim and emits a static library plus the generated
@@ -852,18 +885,20 @@ imports the Cargo crate as a CMake target and links the static lib; a small
 curated `include/aviso.hpp` facade over the generated header is the public
 include surface. A worked CMake consumer lands under `examples/cxx/`. A plain
 `cargo build` produces the same staticlib and headers for non-CMake build
-systems.
+systems. The async surface pulls in `cxx-async`, which needs a C++20 coroutine
+library on the consumer side (`cppcoro` or `folly::coro`); the synchronous and
+callback surfaces need neither, so a consumer that avoids coroutines links only
+those and skips the coroutine dependency.
 
 **Platforms.** Linux and macOS first, matching the rest of the suite; no Windows
 in the first cut (the command trigger is already `#[cfg(unix)]`, D11). A C++
 toolchain is required at build time, as it already is transitively for the shim.
 
-**Out of scope (first cut), all additive follow-ups over the unchanged core:**
-triggers driven from C++ (a C++ consumer uses its handler instead; builder
-methods mirroring D11 land later); an async C++ API; a structured, multi-field
-error ABI; Windows; and a stable prebuilt binary (the `cxx` ABI is not stable
-across toolchains, so the staticlib is built against the consumer's toolchain
-rather than shipped as an artifact).
+**Out of scope (first cut), additive follow-ups over the unchanged core:**
+Windows (not needed; the command trigger is already `#[cfg(unix)]`, D11) and a
+stable prebuilt binary artifact (the `cxx` ABI is not stable across toolchains,
+so the staticlib is built against the consumer's toolchain rather than shipped).
+Triggers, the async API, and the structured error ABI are all in scope above.
 
 ---
 
