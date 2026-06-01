@@ -59,8 +59,8 @@ impl AvisoOutcome {
 ///
 /// # Safety
 ///
-/// `outcome` must be a non-null pointer returned by this library and not yet
-/// freed. A null pointer returns `false`.
+/// `outcome`, when non-null, must be a live pointer returned by this library
+/// and not yet freed. A null pointer is tolerated and returns `false`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_is_ok(outcome: *const AvisoOutcome) -> bool {
     let Some(outcome) = (unsafe { outcome.as_ref() }) else {
@@ -74,8 +74,8 @@ pub unsafe extern "C" fn aviso_outcome_is_ok(outcome: *const AvisoOutcome) -> bo
 ///
 /// # Safety
 ///
-/// `outcome` must be a non-null pointer returned by this library and not yet
-/// freed.
+/// `outcome`, when non-null, must be a live pointer returned by this library
+/// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_error(outcome: *const AvisoOutcome) -> *const AvisoError {
     let Some(outcome) = (unsafe { outcome.as_ref() }) else {
@@ -94,8 +94,8 @@ pub unsafe extern "C" fn aviso_outcome_error(outcome: *const AvisoOutcome) -> *c
 ///
 /// # Safety
 ///
-/// `outcome` must be a non-null pointer returned by this library and not yet
-/// freed.
+/// `outcome`, when non-null, must be a live pointer returned by this library
+/// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_take_string(outcome: *mut AvisoOutcome) -> *mut c_char {
     let Some(outcome) = (unsafe { outcome.as_mut() }) else {
@@ -116,8 +116,8 @@ pub unsafe extern "C" fn aviso_outcome_take_string(outcome: *mut AvisoOutcome) -
 ///
 /// # Safety
 ///
-/// `outcome` must be a non-null pointer returned by this library and not yet
-/// freed.
+/// `outcome`, when non-null, must be a live pointer returned by this library
+/// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_take_client(outcome: *mut AvisoOutcome) -> *mut AvisoClient {
     let Some(outcome) = (unsafe { outcome.as_mut() }) else {
