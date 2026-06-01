@@ -1,6 +1,6 @@
 # Post trigger
 
-HTTP POST per notification with the CloudEvent envelope from pyaviso-server as the
+HTTP POST per notification with the CloudEvent envelope from aviso-server as the
 request body. Custom headers are supported. Use this when migrating from
 pyaviso's `post` trigger or sending to any receiver that expects CloudEvents.
 
