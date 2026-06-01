@@ -431,10 +431,10 @@ fn init_tracing(verbose: u8, ansi: bool) -> Result<()> {
     // operator's terminal human-friendly while the file gets the
     // operator's chosen trigger output.
     // `try_init` returns Err only when a global subscriber is already
-    // installed. That happens on a second in-process call via the bundled
-    // console command (the `pyaviso` wheel keeps the extension loaded across
-    // invocations), so a failed install is treated as success: the first
-    // subscriber stays in place.
+    // installed. That happens when `run` is called more than once in a single
+    // process: the test suite calls `_run_cli` repeatedly, and a host program
+    // embedding the extension could too. A failed install is treated as
+    // success there, leaving the first subscriber in place.
     if std::io::stderr().is_terminal() {
         let _ = fmt()
             .with_env_filter(filter)
