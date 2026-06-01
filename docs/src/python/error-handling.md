@@ -1,7 +1,7 @@
 # Error handling
 
-Every exception the library raises subclasses `pyaviso.AvisoError`. Catch that to
-handle anything from the library; catch a specific class for fine-grained
+Every exception the library raises subclasses `pyaviso.AvisoError`. Catch that
+to handle anything from the library; catch a specific class for fine-grained
 dispatch.
 
 The runnable examples on this page use `test_polygon` as the event type. If your

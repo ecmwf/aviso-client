@@ -25,9 +25,10 @@ cargo install --path crates/aviso-cli
 
 ## From the Python package
 
-If you already use Python, `pip install pyaviso` installs the same `aviso`
-binary alongside the importable library, so you do not need a separate Rust
-toolchain. See the [Python install page](../python/install.md).
+If you already use Python, `pip install pyaviso` gives you the same `aviso`
+command alongside the importable library: it installs a console script that runs
+the Rust CLI in-process through the extension, so you do not need a separate
+Rust toolchain. See the [Python install page](../python/install.md).
 
 ## Verify
 

@@ -79,9 +79,9 @@ Two store implementations are included with the package:
 - `pyaviso.MemoryStore()` keeps the cursor in process memory. It dies with the
   process. Use it in tests and one-shot scripts that do not need to survive
   restart.
-- `pyaviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic rename
-  and a sidecar lockfile so cooperating processes on a local filesystem can
-  share the cursor.
+- `pyaviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic
+  rename and a sidecar lockfile so cooperating processes on a local filesystem
+  can share the cursor.
 
 <!-- not-runnable -->
 ```python
