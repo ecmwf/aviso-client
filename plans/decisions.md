@@ -886,7 +886,17 @@ conda-forge with `rust` as a build-only dependency of *that* package. A consumer
 links the prebuilt library and compiles the facade with its own C++ toolchain,
 so no `cargo` or `rustc` is needed in the consumer's build. For source builds,
 `corrosion` (or a plain `cargo build`) can still import the crate into CMake,
-but it is not required. A worked CMake consumer lands under `examples/cpp/`.
+but it is not required.
+
+**Example, CI, and docs.** The `examples/cpp/` consumer ships in the same PR as
+`crates/aviso-ffi` and is the binding's primary validation, not a sample: it
+CMake-links the prebuilt library plus the facade (the no-Rust consumer path),
+publishes, runs a callback `watch` to a bounded count, and inspects a structured
+error. CI builds it on every change and runs it against the real-stack e2e
+environment (as `tests/e2e/python/` does), so the ABI, facade, and CMake wiring
+cannot rot silently. The `docs/src/cpp/` pages reference this example as the
+single source of truth rather than pasting code that drifts, matching how the
+Python docs point at `python/examples/`.
 
 **Target consumer: ecFlow.** The first C++ consumer is `ecflow_server`: C++17
 (no coroutines), `ecbuild`-based, deployed on offline HPC and through
