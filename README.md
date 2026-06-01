@@ -57,6 +57,7 @@ Python:
 ```bash
 uv sync --locked --group dev
 uv run maturin develop --locked
+uv run aviso --version            # the wheel bundles the aviso CLI as a console command
 uv run ruff check python/
 uv run ruff format --check python/
 uv run ty check python/
