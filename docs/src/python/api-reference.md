@@ -39,9 +39,9 @@ Methods:
   `with` and supports `iterator.close()` for explicit teardown)
 - `__enter__` / `__exit__` for `with` blocks.
 
-`pyaviso.AsyncAvisoClient` is the same shape. `notify` / `schema` / `schema_for` /
-`wipe_*` / `delete_notification` return awaitables; `listen` returns an
-`AsyncNotificationIterator`.
+`pyaviso.AsyncAvisoClient` is the same shape. `notify` / `schema` /
+`schema_for` / `wipe_*` / `delete_notification` return awaitables; `listen`
+returns an `AsyncNotificationIterator`.
 
 ## Value types
 
@@ -85,9 +85,9 @@ Builders: `.with_filter(dict)`, `.with_triggers(list)`. Properties:
 `pyaviso.WatchMode` is a `str + Enum` with members `WATCH = "watch"` and
 `REPLAY_ONLY = "replay_only"`.
 
-`pyaviso.NotificationIterator` and `pyaviso.AsyncNotificationIterator`: returned by
-`listen`. The sync one implements `__iter__` / `__next__` / `close`; the async
-one implements `__aiter__` / `__anext__` / `aclose`.
+`pyaviso.NotificationIterator` and `pyaviso.AsyncNotificationIterator`: returned
+by `listen`. The sync one implements `__iter__` / `__next__` / `close`; the
+async one implements `__aiter__` / `__anext__` / `aclose`.
 
 ## Triggers
 
@@ -104,13 +104,13 @@ one implements `__aiter__` / `__anext__` / `aclose`.
 Chainable setters: `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
 `.fail_fast(on)`, `.label(name)`.
 
-`pyaviso.HttpMethod` is a `str + Enum` with members `POST`, `GET`, `PUT`, `PATCH`,
-`DELETE`.
+`pyaviso.HttpMethod` is a `str + Enum` with members `POST`, `GET`, `PUT`,
+`PATCH`, `DELETE`.
 
 ## Auth providers
 
-`pyaviso.Bearer(token)`, `pyaviso.Basic(username, password="")`, `pyaviso.Env()`,
-`pyaviso.ConfigFile(path)`, `pyaviso.Chain(*providers)`.
+`pyaviso.Bearer(token)`, `pyaviso.Basic(username, password="")`,
+`pyaviso.Env()`, `pyaviso.ConfigFile(path)`, `pyaviso.Chain(*providers)`.
 
 Type alias: `pyaviso.AuthProvider = Bearer | Basic | Env | ConfigFile | Chain`.
 
@@ -142,6 +142,6 @@ Subclasses:
 
 ## Version
 
-`pyaviso.__version__` is the Python distribution version. `pyaviso.VERSION` is the
-Rust crate version. They are pinned to the same value via maturin's
+`pyaviso.__version__` is the Python distribution version. `pyaviso.VERSION`
+is the Rust crate version. They are pinned to the same value via maturin's
 `dynamic = ["version"]`.

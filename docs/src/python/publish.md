@@ -143,8 +143,8 @@ except pyaviso.AuthError as e:
   with server logs.
 - `pyaviso.TransportError` for failures before the response begins (DNS, TCP,
   TLS). The message names the cause.
-- `pyaviso.AuthError` if the configured auth source cannot produce credentials at
-  all.
+- `pyaviso.AuthError` if the configured auth source cannot produce credentials
+  at all.
 
 Publish errors are not auto-retried. A transport failure after the request body
 has been sent may already have been processed by the server, and the client

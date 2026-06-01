@@ -35,7 +35,7 @@ unrelated project, so the package reuses ECMWF's existing `pyaviso` name (see
 `roadmap.md`). The Rust crates (`aviso`, `aviso-cli`, `aviso-py`) and the
 installed CLI binary (`aviso`) keep their names. The `pyaviso` wheel also
 bundles the `aviso` command-line tool as a console script, so a single
-`pip install pyaviso` provides both `import pyaviso` and the `aviso` binary,
+`pip install pyaviso` provides both `import pyaviso` and the `aviso` command,
 matching the single-wheel ergonomics of tools like `uv`. maturin cannot ship a
 PyO3 extension and a separate `bin` artefact in one wheel, so the bundling works
 by exposing the CLI through the extension: `aviso-cli` grows a library target

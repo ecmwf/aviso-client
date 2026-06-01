@@ -47,8 +47,8 @@ that:
 
 Network failure before the response begins. The error message names the cause
 (DNS, TCP, TLS). For self-signed certificates in dev, use
-`pyaviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept
-the loud warning that comes with it.
+`pyaviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and
+accept the loud warning that comes with it.
 
 ## `pyaviso.HistoryGapError`
 

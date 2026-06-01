@@ -45,11 +45,12 @@ single `pip install` gives you both the importable library and the CLI:
 uv run aviso --version
 ```
 
-It is the same `aviso` binary documented in the [CLI section](../cli/overview.md)
-and published as the `aviso-cli` crate; the Python package simply bundles it so
-you do not need a separate `cargo install`. Pick whichever install path you
-prefer: `pip install pyaviso` or `cargo install aviso-cli` give you the same
-command.
+It is the same `aviso` command-line tool documented in the
+[CLI section](../cli/overview.md). The wheel installs it as a console script
+that runs the Rust CLI in-process through the extension (rather than shipping a
+separate compiled binary), so you do not need a `cargo install`. Pick whichever
+install path you prefer: `pip install pyaviso` and `cargo install aviso-cli`
+give you the same `aviso` command and behaviour.
 
 ## From PyPI
 
@@ -59,9 +60,9 @@ and when it lands, `pip install pyaviso` becomes the simpler path.
 
 ## Python version
 
-`pyaviso` targets Python 3.10 and newer. The extension is built with `abi3-py310`,
-so a single wheel works across every supported Python version on the same
-platform.
+`pyaviso` targets Python 3.10 and newer. The extension is built with
+`abi3-py310`, so a single wheel works across every supported Python version on
+the same platform.
 
 ## What next
 
