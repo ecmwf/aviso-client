@@ -327,6 +327,12 @@ is eventually built, it lives in a *separate adapter crate* (hand-written C ABI
 plus `cbindgen` as a header mirror, or `cxx` for a richer C++ bridge) and
 translates from the Rust API.
 
+*Amendment, 2026-06-01*: the C++ surface is now scheduled (see `roadmap.md`) and
+the route is committed to `cxx` (the richer C++ bridge) over the
+hand-written-C-ABI-plus-`cbindgen` alternative; the detailed design is D21. The
+`cbindgen` / bare-`extern "C"` option stays on the table only if a pure-C
+consumer (not C++) ever appears.
+
 ---
 
 ## D11. Triggers
@@ -756,6 +762,108 @@ emits that variant.
 - A single `AvisoClient` that owns one supervisor regardless of how many
   `watch()` calls happen. Rejected because that would require multiplexing all
   events into one stream and erasing the per-watch checkpoint distinction.
+
+---
+
+## D21. C++ binding via a `cxx` adapter crate
+
+Commits the deferred C/C++ surface from D10 to the `cxx` route and records the
+design. A new workspace crate `crates/aviso-cxx` (published as `aviso-cxx`) is a
+*peer consumer* of the core `aviso` crate, exactly like `aviso-cli` and
+`aviso-py`: it depends on `aviso`, never the reverse, and the core gains no
+`cxx` or FFI machinery (D1, D10).
+
+**Why `cxx`, not a hand-rolled C ABI.** The target consumer is C++, not C.
+`cxx` gives a type-checked Rust-to-C++ bridge with idiomatic types
+(`rust::String`, `rust::Vec`, `Box` / `UniquePtr`, shared structs), compile-time
+agreement between the two sides, and `Result`-to-exception mapping, with no
+hand-written, hand-synced header. The bare `extern "C"` plus `cbindgen`
+alternative from D10 stays available if a pure-C consumer ever appears, but is
+not built now: it would re-introduce the manual marshalling and unsafe-boundary
+burden `cxx` removes.
+
+**Bridge shape.** All FFI lives in one `#[cxx::bridge] mod ffi` in
+`crates/aviso-cxx/src/lib.rs`. Opaque Rust types cross as `Box<T>` /
+`UniquePtr<T>`; values cross as `cxx` shared structs or owned strings; no Rust
+generics, trait objects, or closures appear in bridge signatures (`cxx` cannot
+express them). JSON-shaped data (`identifier`, `payload`) crosses as compact
+JSON `String`, leaving JSON modelling to the C++ side. Marshalling a map or a
+tagged variant per field buys nothing for a notification client and would couple
+the ABI to serde internals.
+
+**Async-to-sync boundary.** The core is `tokio`-async; the C++ surface is
+synchronous. The adapter owns one multi-thread `tokio` runtime, built at client
+construction and stored in the opaque `Client`. The request/response verbs
+(`notify`, `schema`, `schema_for`, `wipe_stream`, `wipe_all`,
+`delete_notification`) are blocking methods that `block_on` internally and
+return `Result`. No async is exposed to C++.
+
+**Watch surface (the reason D19 exists).** Watching is callback-driven, built on
+the core's handler-shaped `watch_with_handler` (D19), not the `Stream`. C++
+implements a handler; Rust drives the supervisor and invokes it per
+notification. Two shapes:
+
+- `Client::watch_blocking(request, handler)` runs the supervisor on the runtime
+  and blocks the calling C++ thread, invoking the handler per notification until
+  end-of-stream, a fatal error (raised as a C++ exception), or the handler
+  asking to stop (returns `false`).
+- `Client::watch_spawn(request, handler) -> Box<WatchHandle>` runs the
+  supervisor on a runtime-owned background thread and returns at once;
+  `WatchHandle::stop()` and its destructor cancel cooperatively through the
+  existing drop-to-cancel oneshot (D19). The handler is then invoked from the
+  watch thread, so the C++ implementation must be thread-safe; this is
+  documented, not enforced.
+
+The handler is a C++ opaque type declared in `unsafe extern "C++"`, holding one
+method `on_notification(self, &Notification) -> bool`. Rust holds it as a
+`UniquePtr<NotificationHandler>` and calls the method; the C++ user subclasses
+the generated abstract base. Returning `false` requests a graceful stop.
+
+**Construction.** A `ClientBuilder` opaque type mirrors the Rust builder with
+chainable, infallible setters and a fallible `build`:
+`new_client_builder(base_url) -> Box<ClientBuilder>`, then `with_basic_auth`,
+`with_bearer`, `with_env_auth`, `with_config_file`, `with_timeout_secs`,
+`with_state_file` (selects `JsonFileStore`; the default is `MemoryStore`),
+`with_danger_accept_invalid_certs`, and `build() -> Result<Box<Client>>`. The
+`AuthProvider` and `StateStore` traits and their implementations stay
+Rust-internal; the C++ surface picks among them by builder method, never by
+handle. `WatchRequest` is built the same way: `new_watch_request(event_type)`
+plus `with_filter_json`, `watch_from`, and `replay_only`.
+
+**Notification access.** `Notification` is an opaque Rust type with const
+accessors: `event_type`, `sequence`, `identifier_json`, `payload_json`, and
+`request_id`, each returning an owned `String` (or `u64` for `sequence`).
+Opaque-plus-accessors avoids marshalling a map and a JSON value across the
+bridge per notification and keeps the model `#[non_exhaustive]`-friendly (D9):
+adding an envelope field later is a new accessor, not an ABI break.
+
+**Errors.** Adapter functions return `Result<T, ...>`; `cxx` raises them as C++
+exceptions carrying the `Display` string. The message is prefixed with a stable
+kind token (`http:`, `auth:`, `transport:`, `decode:`, `config:`, `trigger:`,
+and so on) derived from the `ClientError` variant so C++ callers can branch on
+category without a richer ABI. A structured error (a numeric code plus fields)
+is a follow-up if a consumer needs programmatic access. Secrets never reach the
+message: the core's D12 redaction already applies.
+
+**Build and consumption.** `crates/aviso-cxx` runs `cxx-build` in `build.rs` to
+compile the generated C++ shim and emits a static library plus the generated
+`lib.rs.h` header. C++ projects consume it from CMake via `corrosion`, which
+imports the Cargo crate as a CMake target and links the static lib; a small
+curated `include/aviso.hpp` facade over the generated header is the public
+include surface. A worked CMake consumer lands under `examples/cxx/`. A plain
+`cargo build` produces the same staticlib and headers for non-CMake build
+systems.
+
+**Platforms.** Linux and macOS first, matching the rest of the suite; no Windows
+in the first cut (the command trigger is already `#[cfg(unix)]`, D11). A C++
+toolchain is required at build time, as it already is transitively for the shim.
+
+**Out of scope (first cut), all additive follow-ups over the unchanged core:**
+triggers driven from C++ (a C++ consumer uses its handler instead; builder
+methods mirroring D11 land later); an async C++ API; a structured, multi-field
+error ABI; Windows; and a stable prebuilt binary (the `cxx` ABI is not stable
+across toolchains, so the staticlib is built against the consumer's toolchain
+rather than shipped as an artifact).
 
 ---
 
