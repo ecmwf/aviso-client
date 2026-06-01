@@ -9,25 +9,25 @@ structured attributes.
 
 from __future__ import annotations
 
-import aviso
+import pyaviso
 import pytest
-from aviso import _native
+from pyaviso import _native
 
 
 def test_aviso_error_is_the_root_class() -> None:
-    assert issubclass(aviso.AvisoError, Exception)
+    assert issubclass(pyaviso.AvisoError, Exception)
 
 
 def test_transport_error_subclasses_aviso_error() -> None:
-    assert issubclass(aviso.TransportError, aviso.AvisoError)
+    assert issubclass(pyaviso.TransportError, pyaviso.AvisoError)
 
 
 def test_http_error_subclasses_aviso_error() -> None:
-    assert issubclass(aviso.HttpError, aviso.AvisoError)
+    assert issubclass(pyaviso.HttpError, pyaviso.AvisoError)
 
 
 def test_http_error_carries_structured_attributes() -> None:
-    with pytest.raises(aviso.HttpError) as excinfo:
+    with pytest.raises(pyaviso.HttpError) as excinfo:
         _native._provoke_error(
             "http",
             status=418,
@@ -41,13 +41,13 @@ def test_http_error_carries_structured_attributes() -> None:
 
 
 def test_http_error_with_no_request_id_has_none_attribute() -> None:
-    with pytest.raises(aviso.HttpError) as excinfo:
+    with pytest.raises(pyaviso.HttpError) as excinfo:
         _native._provoke_error("http", status=500, body="boom")
     assert excinfo.value.request_id is None
 
 
 def test_http_error_message_includes_status_and_body() -> None:
-    with pytest.raises(aviso.HttpError) as excinfo:
+    with pytest.raises(pyaviso.HttpError) as excinfo:
         _native._provoke_error("http", status=404, body="not found", request_id="req-abc")
     rendered = str(excinfo.value)
     assert "404" in rendered
@@ -56,7 +56,7 @@ def test_http_error_message_includes_status_and_body() -> None:
 
 
 def test_catching_http_via_aviso_error_works() -> None:
-    with pytest.raises(aviso.AvisoError):
+    with pytest.raises(pyaviso.AvisoError):
         _native._provoke_error("http", status=400, body="bad")
 
 

@@ -6,7 +6,7 @@ environment variables; the command string can reference them with
 {{ notification.<dotted.path> }} and {{ env.<NAME> }} templates.
 
 Unix only. On non-Unix platforms the Trigger.command constructor
-raises aviso.ConfigError; this example exits gracefully in that case.
+raises pyaviso.ConfigError; this example exits gracefully in that case.
 
 Run this script in one terminal and basics/01_publish.py in another;
 the publisher's 3-publish window covers the listener's SSE handshake.
@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env, temp_dir
 
 
@@ -38,14 +38,14 @@ def main() -> None:
         return
 
     base_url = require_env()
-    client = aviso.AvisoClient(base_url=base_url, auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=base_url, auth=pyaviso.Env())
 
     with temp_dir() as workdir:
         print(f"workdir: {workdir}")
         command = "touch handled_{{ notification.sequence }}.touch"
         try:
-            trigger = aviso.Trigger.command(command, working_dir=workdir)
-        except aviso.ConfigError as e:
+            trigger = pyaviso.Trigger.command(command, working_dir=workdir)
+        except pyaviso.ConfigError as e:
             print(f"Trigger.command unavailable on this platform: {e}")
             return
 

@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import require_env
 
 # Polygon unique to this example so replay sees only what this script publishes.
@@ -39,7 +39,7 @@ EXAMPLE_POLYGON = "40,10,41,10,41,11,40,10"
 
 
 def main() -> None:
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
 
     print("publishing 3 notifications to seed the stream")
     for i in range(1, 4):

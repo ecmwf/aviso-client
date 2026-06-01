@@ -29,6 +29,24 @@ the repo is the *project*, while the crates inside it live in the unprefixed
 Rationale: one code path, two surfaces. Adding a future C/C++ surface becomes a
 new adapter crate, not a redesign.
 
+*Amendment, 2026-06-10*: the Python distribution and importable module are named
+`pyaviso`, not `aviso`. The unprefixed `aviso` name is taken on PyPI by an
+unrelated project, so the package reuses ECMWF's existing `pyaviso` name (see
+`roadmap.md`). The Rust crates (`aviso`, `aviso-cli`, `aviso-py`) and the
+installed CLI binary (`aviso`) keep their names. The `pyaviso` wheel also
+bundles the `aviso` command-line tool as a console script, so a single
+`pip install pyaviso` provides both `import pyaviso` and the `aviso` binary,
+matching the single-wheel ergonomics of tools like `uv`. maturin cannot ship a
+PyO3 extension and a separate `bin` artefact in one wheel, so the bundling works
+by exposing the CLI through the extension: `aviso-cli` grows a library target
+whose `run` entry point both the `aviso` binary and the extension call, the
+`aviso-py` extension depends on that library target and exposes a private
+`_run_cli`, and a PEP 621 `[project.scripts]` entry bridges the `aviso` console
+command to it. This narrows the original "the CLI and the Python extension never
+depend on each other" clause: `aviso-py` may depend on `aviso-cli` solely to
+bundle the console command. The core crate (`aviso`) stays free of PyO3 and CLI
+machinery, and the CLI stays independent of the extension.
+
 ---
 
 ## D2. Reconnect-as-norm, at-least-once, checkpointing

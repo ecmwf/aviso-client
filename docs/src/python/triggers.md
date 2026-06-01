@@ -8,7 +8,7 @@ the same semantics: retries, optional-vs-required, fail-fast.
 Triggers attach to a watch via the `triggers=` kwarg on `client.listen(...)`.
 The supervisor dispatches each trigger for each notification before the iterator
 yields it. A required trigger that fails after retries stops the watch with
-`aviso.TriggerError`.
+`pyaviso.TriggerError`.
 
 The listener example below uses `test_polygon` as the event type. If your server
 does not have it configured, replace the event type and identifier fields with
@@ -27,17 +27,17 @@ file (`log`). Stop with Ctrl+C.
 import os
 import pathlib
 import tempfile
-import aviso
+import pyaviso
 
 log_path = pathlib.Path(tempfile.gettempdir()) / "aviso-doc-example.log"
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 print(f"writing log to {log_path}")
 with client.listen(
     "test_polygon",
     filter={"polygon": "0,0,1,0,1,1,0,0"},
-    triggers=[aviso.Trigger.echo(), aviso.Trigger.log(log_path)],
+    triggers=[pyaviso.Trigger.echo(), pyaviso.Trigger.log(log_path)],
 ) as iterator:
     for _ in iterator:
         pass  # the echo trigger already printed; the log trigger already wrote
@@ -57,10 +57,10 @@ Writes one line of compact JSON per notification to standard output. The
 simplest way to see what is arriving in a stream.
 
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.echo()
-aviso.Trigger.echo(label="test-stream")  # adds a label leader line on TTY
+pyaviso.Trigger.echo()
+pyaviso.Trigger.echo(label="test-stream")  # adds a label leader line on TTY
 ```
 
 ### Log
@@ -69,10 +69,10 @@ Appends one line of compact JSON per notification to a file. The file opens
 lazily on first dispatch.
 
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.log("/var/log/aviso/test-polygon.log")
-aviso.Trigger.log("/var/log/aviso/test-polygon.log", retries=2, required=False)
+pyaviso.Trigger.log("/var/log/aviso/test-polygon.log")
+pyaviso.Trigger.log("/var/log/aviso/test-polygon.log", retries=2, required=False)
 ```
 
 ### Command (Unix only)
@@ -84,9 +84,9 @@ templates.
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.command(
+pyaviso.Trigger.command(
     "./process.sh {{ notification.identifier.date }}",
     env={"DEST": "/data"},
     working_dir="/srv/jobs",
@@ -95,7 +95,7 @@ aviso.Trigger.command(
 )
 ```
 
-On non-Unix builds, the constructor raises `aviso.ConfigError`.
+On non-Unix builds, the constructor raises `pyaviso.ConfigError`.
 
 ### Webhook
 
@@ -104,11 +104,11 @@ and body all run through the template engine.
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.webhook(
+pyaviso.Trigger.webhook(
     "https://hooks.example.org/notify",
-    method=aviso.HttpMethod.POST,
+    method=pyaviso.HttpMethod.POST,
     headers={"Authorization": "Bearer {{ env.HOOK_TOKEN }}"},
     body_template='{"sequence": "{{ notification.sequence }}"}',
 )
@@ -124,9 +124,9 @@ workflow webhooks.
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.teams("https://prod-x.westeurope.logic.azure.com/workflows/...")
+pyaviso.Trigger.teams("https://prod-x.westeurope.logic.azure.com/workflows/...")
 ```
 
 ### Post
@@ -137,9 +137,9 @@ expects the full CloudEvent shape.
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.post("https://collector.example.org/events")
+pyaviso.Trigger.post("https://collector.example.org/events")
 ```
 
 ## Tunables
@@ -148,10 +148,10 @@ Every trigger accepts the same four tunables, either as keyword arguments to the
 constructor or as chainable setters:
 
 ```python
-import aviso
+import pyaviso
 
-aviso.Trigger.echo(retries=3, required=False)
-aviso.Trigger.echo().retries(3).required(False)
+pyaviso.Trigger.echo(retries=3, required=False)
+pyaviso.Trigger.echo().retries(3).required(False)
 ```
 
 - `retries`: number of additional attempts after the first failure. Default `0`.

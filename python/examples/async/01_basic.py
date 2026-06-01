@@ -20,12 +20,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import require_env
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=require_env(), auth=pyaviso.Env())
     count = 0
     async with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
         async for n in iterator:

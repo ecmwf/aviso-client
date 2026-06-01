@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-import aviso
+import pyaviso
 from _helpers import receive_within_async
 
 POLYGON = "80,0,81,0,81,1,80,0"
@@ -10,7 +10,7 @@ EVENT_TYPE = "test_polygon"
 PARALLELISM = 5
 
 
-async def _publish(client: aviso.AsyncAvisoClient, seq: int) -> aviso.NotifyResponse:
+async def _publish(client: pyaviso.AsyncAvisoClient, seq: int) -> pyaviso.NotifyResponse:
     return await client.notify(
         event_type=EVENT_TYPE,
         identifier={"polygon": POLYGON, "date": "20260609", "time": f"{seq:04d}"},
@@ -19,9 +19,9 @@ async def _publish(client: aviso.AsyncAvisoClient, seq: int) -> aviso.NotifyResp
 
 
 async def test_five_parallel_publishes_get_unique_request_ids_and_all_arrive_on_listen(
-    base_url: str, producer_auth: aviso.Basic
+    base_url: str, producer_auth: pyaviso.Basic
 ) -> None:
-    client = aviso.AsyncAvisoClient(base_url=base_url, auth=producer_auth)
+    client = pyaviso.AsyncAvisoClient(base_url=base_url, auth=producer_auth)
     received: set[int] = set()
     async with client.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator:
         await asyncio.sleep(0.5)

@@ -2,7 +2,7 @@
 
 Common failure modes and how to fix them.
 
-## `import aviso` fails with `ModuleNotFoundError: No module named 'aviso._native'`
+## `import pyaviso` fails with `ModuleNotFoundError: No module named 'pyaviso._native'`
 
 The compiled extension was not built. From a checkout:
 
@@ -19,19 +19,19 @@ modifications during local builds.
 If the build itself fails, check that you have Rust installed
 (`rustc --version`) and a C compiler on the path.
 
-## `aviso.ConfigError: invalid base_url`
+## `pyaviso.ConfigError: invalid base_url`
 
 Pass a full URL including the scheme:
 
 <!-- not-runnable -->
 ```python
-aviso.AvisoClient(base_url="https://aviso.example.org")
+pyaviso.AvisoClient(base_url="https://aviso.example.org")
 ```
 
 `localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected
 because the underlying URL parser cannot read them as absolute.
 
-## `aviso.HttpError: 401`
+## `pyaviso.HttpError: 401`
 
 The configured auth source did not produce credentials the server accepts. Check
 that:
@@ -43,14 +43,14 @@ that:
 - `ConfigFile(...)` points at a file with exactly one of `bearer:` or `basic:`
   at the top level.
 
-## `aviso.TransportError`
+## `pyaviso.TransportError`
 
 Network failure before the response begins. The error message names the cause
 (DNS, TCP, TLS). For self-signed certificates in dev, use
-`aviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept
+`pyaviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and accept
 the loud warning that comes with it.
 
-## `aviso.HistoryGapError`
+## `pyaviso.HistoryGapError`
 
 A gap was detected in the watch stream. Two reasons:
 
@@ -65,7 +65,7 @@ A gap is terminal: continuing past it would silently violate at-least-once. The
 client raises and exits the iterator. Decide what the right recovery is (for
 example, restart from the live edge with `from_=None`).
 
-## `aviso.TriggerError: command failed`
+## `pyaviso.TriggerError: command failed`
 
 A required command trigger exited non-zero or timed out. The exception carries:
 
@@ -82,7 +82,7 @@ between polls. If it takes longer than that to respond, you may have a Python
 operation in the loop body that does not yield. Move heavy work into a
 background thread or use the async client.
 
-## `aviso.StateStoreError` on first run
+## `pyaviso.StateStoreError` on first run
 
 `JsonFileStore` does not create parent directories. Create them first:
 
@@ -91,15 +91,15 @@ background thread or use the async client.
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 path = pathlib.Path("~/.config/aviso/state.json").expanduser()
 path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(path),
 )
 
 print(f"using state file: {path}")
@@ -130,4 +130,4 @@ actually helps.
 ## Wheels on PyPI
 
 Not available today. Install from source with `uv run maturin develop`. If and
-when the wheel matrix lands, `pip install aviso` becomes the simpler path.
+when the wheel matrix lands, `pip install pyaviso` becomes the simpler path.

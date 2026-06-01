@@ -3,14 +3,14 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import aviso
+import pyaviso
 from _helpers import receive_within
 
 POLYGON = "20,0,21,0,21,1,20,0"
 EVENT_TYPE = "test_polygon"
 
 
-def _publish(client: aviso.AvisoClient, seq: int) -> None:
+def _publish(client: pyaviso.AvisoClient, seq: int) -> None:
     client.notify(
         event_type=EVENT_TYPE,
         identifier={"polygon": POLYGON, "date": "20260604", "time": f"{seq:04d}"},
@@ -20,17 +20,17 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
 
 def test_resume_picks_up_after_simulated_restart(
     base_url: str,
-    producer_auth: aviso.Basic,
+    producer_auth: pyaviso.Basic,
     tmp_path: Path,
 ) -> None:
     state_path = tmp_path / "state.json"
 
     first_received: list[int] = []
     with (
-        aviso.AvisoClient(
+        pyaviso.AvisoClient(
             base_url=base_url,
             auth=producer_auth,
-            state_store=aviso.JsonFileStore(str(state_path)),
+            state_store=pyaviso.JsonFileStore(str(state_path)),
         ) as first,
         first.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):
@@ -45,10 +45,10 @@ def test_resume_picks_up_after_simulated_restart(
 
     second_received: list[int] = []
     with (
-        aviso.AvisoClient(
+        pyaviso.AvisoClient(
             base_url=base_url,
             auth=producer_auth,
-            state_store=aviso.JsonFileStore(str(state_path)),
+            state_store=pyaviso.JsonFileStore(str(state_path)),
         ) as second,
         second.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
     ):

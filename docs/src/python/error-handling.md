@@ -1,6 +1,6 @@
 # Error handling
 
-Every exception the library raises subclasses `aviso.AvisoError`. Catch that to
+Every exception the library raises subclasses `pyaviso.AvisoError`. Catch that to
 handle anything from the library; catch a specific class for fine-grained
 dispatch.
 
@@ -35,12 +35,12 @@ The simplest pattern catches `AvisoError` for any library-originated failure:
 
 import logging
 import os
-import aviso
+import pyaviso
 
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("publish")
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 try:
     response = client.notify(
@@ -53,7 +53,7 @@ try:
         payload={"location": "s3://example/data.grib"},
     )
     print(f"ok: {response.request_id}")
-except aviso.AvisoError as e:
+except pyaviso.AvisoError as e:
     log.warning("aviso publish failed: %s", e)
 ```
 
@@ -67,9 +67,9 @@ message, and the same `request_id` for support correlation.
 """Construct an invalid notify call on purpose; inspect the HttpError."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 try:
     client.notify(
@@ -77,7 +77,7 @@ try:
         identifier={"polygon": "not-a-polygon", "date": "20260601", "time": "1200"},
         payload={"location": "s3://example/data.grib"},
     )
-except aviso.HttpError as e:
+except pyaviso.HttpError as e:
     print(f"status={e.status}")
     print(f"request_id={e.request_id}")
     print(f"body={e.body[:200]}")
@@ -104,14 +104,14 @@ reason-specific fields.
 <!-- not-runnable -->
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 try:
     for n in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
         ...
-except aviso.HistoryGapError as e:
+except pyaviso.HistoryGapError as e:
     if e.reason == "replay_limit_reached":
         print(f"server cap hit; max replayable = {e.max_allowed}")
     elif e.reason == "sequence_jump":
@@ -132,20 +132,20 @@ When a required trigger fails after all its retries, the watch terminates with
 <!-- not-runnable -->
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 request = (
-    aviso.WatchRequest.watch("test_polygon")
+    pyaviso.WatchRequest.watch("test_polygon")
     .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([aviso.Trigger.command("./process.sh {{ notification.sequence }}")])
+    .with_triggers([pyaviso.Trigger.command("./process.sh {{ notification.sequence }}")])
 )
 
 try:
     for n in client.listen(request=request):
         ...
-except aviso.TriggerError as e:
+except pyaviso.TriggerError as e:
     print(f"trigger={e.trigger_kind} kind={e.error_kind}")
     if e.error_kind == "command":
         print(f"  exit_code={e.exit_code} stderr_tail={e.stderr_tail!r}")

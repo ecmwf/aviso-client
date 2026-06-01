@@ -1,9 +1,9 @@
 //! `PyO3` bindings for [`aviso`].
 //!
-//! The Python extension exports a single module `aviso._native`. The Python
-//! wrapper in `python/aviso/__init__.py` re-exports a curated subset under
-//! the `aviso` package namespace; users `import aviso`, never
-//! `import aviso._native`.
+//! The Python extension exports a single module `pyaviso._native`. The Python
+//! wrapper in `python/pyaviso/__init__.py` re-exports a curated subset under
+//! the `pyaviso` package namespace; users `import pyaviso`, never
+//! `import pyaviso._native`.
 //!
 //! Public Python surface: `VERSION`, the synchronous `AvisoClient` and
 //! asynchronous `AsyncAvisoClient` with their `notify` / `schema` / admin /
@@ -28,6 +28,7 @@ use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
 
 mod auth;
+mod cli;
 mod clients;
 mod error;
 mod error_test_helper;
@@ -48,10 +49,10 @@ pub const VERSION: &str = aviso::VERSION;
 
 static LOGGER_INSTALLED: OnceLock<()> = OnceLock::new();
 
-/// `aviso._native` `PyO3` extension module entry point.
+/// `pyaviso._native` `PyO3` extension module entry point.
 ///
 /// Maturin builds the crate as a `cdylib` and embeds this function as the
-/// module init under the name `aviso._native`. The function installs the
+/// module init under the name `pyaviso._native`. The function installs the
 /// tracing-to-logging bridge once per process and registers the public
 /// names listed on the module.
 #[pymodule]
@@ -66,6 +67,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     watch::register_watch(m)?;
     streams::register_streams(m)?;
     clients::register_clients(m)?;
+    cli::register_cli(m)?;
     m.add("VERSION", VERSION)?;
     Ok(())
 }
@@ -83,7 +85,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// installation) propagates as `PyRuntimeError` and aborts module init
 /// loudly. `OnceLock::get_or_init` is deliberately not used because its
 /// closure cannot return `Result`; a failure would commit `()` to the cell
-/// and a subsequent `import aviso` would short-circuit without retrying.
+/// and a subsequent `import pyaviso` would short-circuit without retrying.
 fn install_logging_bridge(py: Python<'_>) -> PyResult<()> {
     if LOGGER_INSTALLED.get().is_some() {
         return Ok(());
