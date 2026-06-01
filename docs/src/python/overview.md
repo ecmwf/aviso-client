@@ -1,6 +1,6 @@
 # Python
 
-`aviso` is a Python library for publishing to and listening on an
+`pyaviso` is a Python library for publishing to and listening on an
 `aviso-server`. The package wraps the Rust core through PyO3 bindings, so the
 same delivery guarantees, reconnect behaviour, and trigger surface that back the
 CLI are available from Python.
@@ -11,9 +11,9 @@ client, call `notify`, iterate `listen`. No event loop, no `async def`, no
 
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
     print(notification.sequence, notification.payload)
@@ -25,7 +25,7 @@ for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,
   `delete_notification` on the client.
 - `listen`, returning an iterator of `Notification` instances. Sync iteration
   with `for`.
-- A real exception hierarchy rooted at `aviso.AvisoError` with structured
+- A real exception hierarchy rooted at `pyaviso.AvisoError` with structured
   attributes per error kind.
 - Auth providers: `Bearer`, `Basic`, `Env`, `ConfigFile`, `Chain`.
 - State stores: `MemoryStore`, `JsonFileStore`.

@@ -30,7 +30,7 @@ use pythonize::pythonize;
 /// `PyO3` wrapper carrying a received notification's fields.
 #[pyclass(
     name = "Notification",
-    module = "aviso._native",
+    module = "pyaviso._native",
     frozen,
     eq,
     skip_from_py_object
@@ -141,7 +141,7 @@ impl PyNotification {
 /// `PyO3` wrapper for a successful publish response.
 #[pyclass(
     name = "NotifyResponse",
-    module = "aviso._native",
+    module = "pyaviso._native",
     frozen,
     eq,
     skip_from_py_object
@@ -211,7 +211,7 @@ impl PyNotifyResponse {
 /// `PyO3` wrapper for the full schema catalog.
 #[pyclass(
     name = "SchemaCatalog",
-    module = "aviso._native",
+    module = "pyaviso._native",
     frozen,
     eq,
     skip_from_py_object
@@ -303,7 +303,7 @@ impl PySchemaCatalog {
 /// `PyO3` wrapper for a single schema response.
 #[pyclass(
     name = "SchemaResponse",
-    module = "aviso._native",
+    module = "pyaviso._native",
     frozen,
     eq,
     skip_from_py_object

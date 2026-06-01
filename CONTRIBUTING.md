@@ -68,7 +68,7 @@ Documentation publishes on its own. The `Docs Sites Publish` workflow builds the
 
 ## Python toolchain
 
-The aviso-py crate builds a `cdylib` extension that the `aviso` Python distribution loads as `aviso._native`. The `uv` workflow drives every Python-side check:
+The aviso-py crate builds a `cdylib` extension that the `pyaviso` Python distribution loads as `pyaviso._native`. The `uv` workflow drives every Python-side check:
 
 ```bash
 uv sync --locked --group dev
@@ -79,7 +79,7 @@ uv run ty check python/ tests/e2e/python/
 uv run pytest python/tests/
 ```
 
-`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `aviso/` package (writes `python/aviso/_native*.so` on the system Python and an editable install into `.venv`). The lint, format-check, and type-check commands shown above run against `python/ tests/e2e/python/` as the recommended local superset; the GitHub Actions `python` job currently runs them against `python/` only, so adding `tests/e2e/python/` here protects the e2e suite from drift between local and CI runs.
+`uv sync` materialises a Python virtualenv in `.venv/` from `uv.lock`. `maturin develop --locked` compiles the Rust extension and copies it into the venv's `pyaviso/` package (writes `python/pyaviso/_native*.so` on the system Python and an editable install into `.venv`), and installs the bundled `aviso` console command into `.venv/bin`. The lint, format-check, and type-check commands shown above run against `python/ tests/e2e/python/` as the recommended local superset; the GitHub Actions `python` job currently runs them against `python/` only, so adding `tests/e2e/python/` here protects the e2e suite from drift between local and CI runs.
 
 ## End-to-end tests
 
@@ -87,7 +87,7 @@ E2E tests run against a real three-service stack (`aviso-server` + `auth-o-tron`
 
 ### Python e2e suite
 
-Assumes the [Python toolchain](#python-toolchain) setup above has already been run (`uv sync` + `uv run maturin develop` builds the `aviso._native` extension into the local venv; without it, `uv run pytest tests/e2e/python/` fails on first import).
+Assumes the [Python toolchain](#python-toolchain) setup above has already been run (`uv sync` + `uv run maturin develop` builds the `pyaviso._native` extension into the local venv; without it, `uv run pytest tests/e2e/python/` fails on first import).
 
 ```bash
 bash tests/e2e/shared/stack.sh up

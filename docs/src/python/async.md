@@ -1,7 +1,7 @@
 # Async
 
-The Python package includes two clients: `aviso.AvisoClient` (sync) and
-`aviso.AsyncAvisoClient` (async). The two share the same constructor, the same
+The Python package includes two clients: `pyaviso.AvisoClient` (sync) and
+`pyaviso.AsyncAvisoClient` (async). The two share the same constructor, the same
 auth and state-store configuration, the same exception hierarchy, and return the
 same value types. The choice between them is about call style, not capability.
 
@@ -33,12 +33,12 @@ sync HTTP. Use `AsyncAvisoClient` and `await` directly.
 <!-- not-runnable -->
 ```python
 from fastapi import FastAPI
-import aviso
+import pyaviso
 
 app = FastAPI()
-client = aviso.AsyncAvisoClient(
+client = pyaviso.AsyncAvisoClient(
     base_url="https://aviso.example.org",
-    auth=aviso.Env(),
+    auth=pyaviso.Env(),
 )
 
 @app.post("/publish")
@@ -69,13 +69,13 @@ interleaved on stdout, tagged by the polygon they matched.
 
 import asyncio
 import os
-import aviso
+import pyaviso
 
 BASE_URL = os.environ["AVISO_BASE_URL"]
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=BASE_URL, auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=BASE_URL, auth=pyaviso.Env())
 
     async def drain(tag: str, polygon: str) -> None:
         count = 0
@@ -107,13 +107,13 @@ lets you push many publishes in flight at once.
 
 import asyncio
 import os
-import aviso
+import pyaviso
 
 BASE_URL = os.environ["AVISO_BASE_URL"]
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=BASE_URL, auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=BASE_URL, auth=pyaviso.Env())
 
     responses = await asyncio.gather(*[
         client.notify(
@@ -154,7 +154,7 @@ the calling style changes.
 | `iterator.close()` | `await iterator.aclose()` |
 
 Anywhere a sync method returns `T`, the async equivalent returns `Awaitable[T]`.
-Exceptions come from the same `aviso.AvisoError` hierarchy in both cases.
+Exceptions come from the same `pyaviso.AvisoError` hierarchy in both cases.
 
 ## Mixing the two is a mistake
 

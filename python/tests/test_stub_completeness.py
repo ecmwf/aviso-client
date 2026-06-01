@@ -1,6 +1,6 @@
-"""Stub-completeness gate: every public name in aviso.__all__ has a stub.
+"""Stub-completeness gate: every public name in pyaviso.__all__ has a stub.
 
-The stub file ``python/aviso/__init__.pyi`` describes the public surface
+The stub file ``python/pyaviso/__init__.pyi`` describes the public surface
 that ``ty check`` enforces; if a name lands in ``__all__`` without a
 corresponding stub entry, the gate fails and the binding maintainer must
 either remove it from ``__all__`` or add a stub.
@@ -16,9 +16,9 @@ from __future__ import annotations
 import pathlib
 import re
 
-import aviso
+import pyaviso
 
-_STUB_PATH = pathlib.Path(aviso.__file__).with_suffix(".pyi")
+_STUB_PATH = pathlib.Path(pyaviso.__file__).with_suffix(".pyi")
 
 
 def _stub_source() -> str:
@@ -41,9 +41,9 @@ def test_stub_file_exists() -> None:
 
 def test_every_public_name_appears_in_the_stub() -> None:
     source = _stub_source()
-    missing = [name for name in aviso.__all__ if not _stub_has_symbol(source, name)]
+    missing = [name for name in pyaviso.__all__ if not _stub_has_symbol(source, name)]
     assert not missing, (
-        f"these names are in aviso.__all__ but absent from {_STUB_PATH.name}: {missing}. "
+        f"these names are in pyaviso.__all__ but absent from {_STUB_PATH.name}: {missing}. "
         "Either add a stub entry or drop the name from __all__."
     )
 
@@ -53,6 +53,7 @@ def test_stub_lists_the_same_all() -> None:
     match = re.search(r"__all__\s*=\s*\[(?P<body>.+?)\]", source, re.DOTALL)
     assert match, "stub file must declare __all__"
     stub_names = set(re.findall(r"\"([A-Za-z_][A-Za-z0-9_]*)\"", match.group("body")))
-    assert stub_names == set(aviso.__all__), (
-        f"stub __all__ {sorted(stub_names)} does not match runtime __all__ {sorted(aviso.__all__)}"
+    assert stub_names == set(pyaviso.__all__), (
+        f"stub __all__ {sorted(stub_names)} does not match runtime "
+        f"__all__ {sorted(pyaviso.__all__)}"
     )

@@ -8,7 +8,7 @@ use pyo3::types::{PyDict, PyInt};
 
 use crate::triggers::PyTrigger;
 
-#[pyclass(name = "WatchRequest", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "WatchRequest", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyWatchRequest {
     inner: WatchRequest,

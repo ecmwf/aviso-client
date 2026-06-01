@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-import aviso
+import pyaviso
 import pytest
 from _helpers import receive_within
 
@@ -12,7 +12,7 @@ POLYGON = "40,0,41,0,41,1,40,0"
 EVENT_TYPE = "test_polygon"
 
 
-def _publish(client: aviso.AvisoClient, seq: int) -> None:
+def _publish(client: pyaviso.AvisoClient, seq: int) -> None:
     client.notify(
         event_type=EVENT_TYPE,
         identifier={"polygon": POLYGON, "date": "20260606", "time": f"{seq:04d}"},
@@ -21,7 +21,7 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
 
 
 def test_echo_log_webhook_triggers_fire_on_each_notification(
-    producer_client: aviso.AvisoClient,
+    producer_client: pyaviso.AvisoClient,
     httpserver,  # pytest-httpserver provides this; its public type is unstable
     capfd: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -30,9 +30,9 @@ def test_echo_log_webhook_triggers_fire_on_each_notification(
     httpserver.expect_request("/hook").respond_with_data("ok", status=200)
 
     triggers = [
-        aviso.Trigger.echo(),
-        aviso.Trigger.log(str(log_path)),
-        aviso.Trigger.webhook(httpserver.url_for("/hook")),
+        pyaviso.Trigger.echo(),
+        pyaviso.Trigger.log(str(log_path)),
+        pyaviso.Trigger.webhook(httpserver.url_for("/hook")),
     ]
 
     received: list[int] = []

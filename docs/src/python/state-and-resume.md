@@ -54,15 +54,15 @@ from the last sequence the supervisor committed.
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(state_path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(state_path),
 )
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
@@ -76,20 +76,20 @@ iterator picks up at the sequence after the last one that was committed.
 
 Two store implementations are included with the package:
 
-- `aviso.MemoryStore()` keeps the cursor in process memory. It dies with the
+- `pyaviso.MemoryStore()` keeps the cursor in process memory. It dies with the
   process. Use it in tests and one-shot scripts that do not need to survive
   restart.
-- `aviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic rename
+- `pyaviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic rename
   and a sidecar lockfile so cooperating processes on a local filesystem can
   share the cursor.
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url="https://aviso.example.org",
-    state_store=aviso.JsonFileStore("/var/lib/aviso/state.json"),
+    state_store=pyaviso.JsonFileStore("/var/lib/aviso/state.json"),
 )
 ```
 
@@ -101,15 +101,15 @@ it first:
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(path),
 )
 
 print(f"using state file: {path}")
@@ -138,15 +138,15 @@ For interactive operators who want a clean Ctrl+C, set
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(state_path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(state_path),
     flush_cursor_on_exit=True,
 )
 
@@ -168,12 +168,12 @@ an `async with` context manager that calls `aclose()` on exit:
 <!-- not-runnable -->
 ```python
 import asyncio
-import aviso
+import pyaviso
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(
+    client = pyaviso.AsyncAvisoClient(
         base_url="https://aviso.example.org",
-        state_store=aviso.JsonFileStore("/var/lib/aviso/state.json"),
+        state_store=pyaviso.JsonFileStore("/var/lib/aviso/state.json"),
         flush_cursor_on_exit=True,
     )
     async with client.listen(

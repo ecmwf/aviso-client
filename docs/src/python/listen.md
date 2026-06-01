@@ -25,9 +25,9 @@ pending Python signals between polls, so Ctrl+C responds within ~100 ms.
 """
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
     print(
@@ -61,9 +61,9 @@ richer constraint that the field's handler interprets.
 """Listen for test_polygon notifications on a specific polygon and date."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen(
     "test_polygon",
@@ -94,15 +94,15 @@ committed cursor.
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(state_path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(state_path),
 )
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
@@ -124,9 +124,9 @@ and converts to a sequence cursor after the first commit.
 """Listen starting just after sequence 100."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen(
     "test_polygon",
@@ -159,9 +159,9 @@ keep listening forever.
 """Backfill from sequence 100 up to the live edge, then exit."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 count = 0
 for notification in client.listen(
@@ -190,15 +190,15 @@ before the process exits:
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(state_path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(state_path),
     flush_cursor_on_exit=True,
 )
 
@@ -228,14 +228,14 @@ directly:
 """Build a WatchRequest once, then pass it to listen()."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 request = (
-    aviso.WatchRequest.watch("test_polygon")
+    pyaviso.WatchRequest.watch("test_polygon")
     .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([aviso.Trigger.echo()])
+    .with_triggers([pyaviso.Trigger.echo()])
 )
 
 with client.listen(request=request) as iterator:
@@ -245,7 +245,7 @@ with client.listen(request=request) as iterator:
 
 `request=` is mutually exclusive with `event_type=`, `filter=`, `from_=`,
 `mode=`, and `triggers=`. Passing any of those alongside `request=` raises
-`aviso.AvisoError` so it is always clear which surface you meant. The
+`pyaviso.AvisoError` so it is always clear which surface you meant. The
 [Builder pattern](./builder-pattern.md) page covers `WatchRequest` in full,
 including how to branch one base request into variants. For the side-by-side
 comparison see the
@@ -262,11 +262,11 @@ The async client yields `Notification` instances from `async for`, and
 
 import asyncio
 import os
-import aviso
+import pyaviso
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
     async with client.listen(
         "test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}
     ) as iterator:

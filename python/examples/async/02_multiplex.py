@@ -22,11 +22,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import require_env
 
 
-async def drain(client: aviso.AsyncAvisoClient, tag: str, polygon: str) -> None:
+async def drain(client: pyaviso.AsyncAvisoClient, tag: str, polygon: str) -> None:
     count = 0
     async with client.listen("test_polygon", filter={"polygon": polygon}) as iterator:
         async for n in iterator:
@@ -37,7 +37,7 @@ async def drain(client: aviso.AsyncAvisoClient, tag: str, polygon: str) -> None:
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=require_env(), auth=pyaviso.Env())
     await asyncio.gather(
         drain(client, "square-a", "0,0,1,0,1,1,0,0"),
         drain(client, "square-b", "2,2,3,2,3,3,2,2"),

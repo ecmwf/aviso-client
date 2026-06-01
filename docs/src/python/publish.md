@@ -20,9 +20,9 @@ Save as `publish.py` and run it. The script expects `AVISO_BASE_URL` plus either
 """Publish one test_polygon notification and print the result."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 response = client.notify(
     event_type="test_polygon",
@@ -50,9 +50,9 @@ Before calling `notify`, ask the server what fields it expects:
 
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 response = client.schema_for("test_polygon")
 identifier_schema = response.schema["identifier"]
@@ -76,7 +76,7 @@ notification, and the schema's identifier section enumerates the complete
 identifier. The `required` flag in the schema tells you what a filter or watch
 call has to specify; for `test_polygon` the only required-for-filter field is
 `polygon`, but a publish still needs all three. When in doubt, publish a test
-value and read the error message from the resulting `aviso.HttpError`.
+value and read the error message from the resulting `pyaviso.HttpError`.
 
 ## Publishing many notifications in a loop
 
@@ -86,9 +86,9 @@ There is no batch API. Publish in a loop:
 """Publish a series of test_polygon notifications at one-minute increments."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for minute in range(5):
     response = client.notify(
@@ -114,9 +114,9 @@ Three exceptions cover almost every publish failure:
 """Handle the three common publish error categories."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 try:
     response = client.notify(
@@ -129,21 +129,21 @@ try:
         payload={"location": "s3://example/data.grib"},
     )
     print(f"ok: {response.request_id}")
-except aviso.HttpError as e:
+except pyaviso.HttpError as e:
     print(f"server rejected: status={e.status} request_id={e.request_id}")
     print(f"  body: {e.body[:200]}")
-except aviso.TransportError as e:
+except pyaviso.TransportError as e:
     print(f"network failed before response: {e}")
-except aviso.AuthError as e:
+except pyaviso.AuthError as e:
     print(f"could not produce credentials: {e}")
 ```
 
-- `aviso.HttpError` for a non-2xx response. The exception carries `.status`,
+- `pyaviso.HttpError` for a non-2xx response. The exception carries `.status`,
   `.body`, and `.request_id` so you can log structured diagnostics and correlate
   with server logs.
-- `aviso.TransportError` for failures before the response begins (DNS, TCP,
+- `pyaviso.TransportError` for failures before the response begins (DNS, TCP,
   TLS). The message names the cause.
-- `aviso.AuthError` if the configured auth source cannot produce credentials at
+- `pyaviso.AuthError` if the configured auth source cannot produce credentials at
   all.
 
 Publish errors are not auto-retried. A transport failure after the request body
@@ -200,11 +200,11 @@ The async client takes the same arguments and raises the same exceptions:
 
 import asyncio
 import os
-import aviso
+import pyaviso
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
     response = await client.notify(
         event_type="test_polygon",
         identifier={

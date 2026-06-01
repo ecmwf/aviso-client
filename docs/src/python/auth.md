@@ -5,17 +5,17 @@ providers the CLI uses; pick the one that matches where your credentials live.
 
 Every example on this page constructs a client. Replace the placeholder
 credentials with real values for your server (or set the matching environment
-variables and switch to `aviso.Env()`).
+variables and switch to `pyaviso.Env()`).
 
 ## Bearer token
 
 <!-- not-runnable -->
 ```python
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url="https://aviso.example.org",
-    auth=aviso.Bearer("opaque-jwt-or-token"),
+    auth=pyaviso.Bearer("opaque-jwt-or-token"),
 )
 
 print(client.schema().event_types)
@@ -30,11 +30,11 @@ Substitute your own token for the placeholder.
 """Authenticate with username and password."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Basic(os.environ["AVISO_USERNAME"], os.environ["AVISO_PASSWORD"]),
+    auth=pyaviso.Basic(os.environ["AVISO_USERNAME"], os.environ["AVISO_PASSWORD"]),
 )
 
 print(client.schema().event_types)
@@ -44,17 +44,17 @@ The password is redacted from `repr()` and from logs.
 
 ## Environment
 
-`aviso.Env()` reads `AVISO_TOKEN`, `AVISO_USERNAME`, and `AVISO_PASSWORD` at
+`pyaviso.Env()` reads `AVISO_TOKEN`, `AVISO_USERNAME`, and `AVISO_PASSWORD` at
 construction. A bearer token wins over the user/password pair when both are set.
-If nothing is set, `Env()` raises `aviso.AuthError`.
+If nothing is set, `Env()` raises `pyaviso.AuthError`.
 
 ```python
 """Pick credentials up from environment variables."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 print(client.schema().event_types)
 ```
@@ -67,11 +67,11 @@ where credentials live in the environment.
 <!-- not-runnable -->
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.ConfigFile("~/.config/aviso/auth.yaml"),
+    auth=pyaviso.ConfigFile("~/.config/aviso/auth.yaml"),
 )
 
 print(client.schema().event_types)
@@ -92,7 +92,7 @@ basic:
   password: wonderland
 ```
 
-Both sections, or neither, is an `aviso.ConfigError`. The path is expanded with
+Both sections, or neither, is an `pyaviso.ConfigError`. The path is expanded with
 `os.path.expanduser` so `~` works.
 
 ## Chain
@@ -103,21 +103,21 @@ tried in order; the first one to produce a credential wins.
 <!-- not-runnable -->
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Chain(
-        aviso.Env(),
-        aviso.ConfigFile("~/.config/aviso/auth.yaml"),
-        aviso.Bearer("emergency-fallback-token"),
+    auth=pyaviso.Chain(
+        pyaviso.Env(),
+        pyaviso.ConfigFile("~/.config/aviso/auth.yaml"),
+        pyaviso.Bearer("emergency-fallback-token"),
     ),
 )
 
 print(client.schema().event_types)
 ```
 
-If every member fails, the last error propagates as `aviso.AuthError`.
+If every member fails, the last error propagates as `pyaviso.AuthError`.
 
 ## Refresh on 401
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import aviso
+import pyaviso
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -46,7 +46,7 @@ _filter_dict = st.dictionaries(
 
 @given(filt=_filter_dict)
 def test_watch_request_with_filter_accepts_any_json_compatible_dict(filt: dict[str, Any]) -> None:
-    req = aviso.WatchRequest.watch("mars").with_filter(filt)
+    req = pyaviso.WatchRequest.watch("mars").with_filter(filt)
     assert req.event_type == "mars"
 
 
@@ -54,7 +54,7 @@ def test_watch_request_with_filter_accepts_any_json_compatible_dict(filt: dict[s
     sequence=st.integers(min_value=0, max_value=2**64 - 1),
 )
 def test_watch_from_accepts_any_u64(sequence: int) -> None:
-    req = aviso.WatchRequest.watch_from("mars", sequence)
+    req = pyaviso.WatchRequest.watch_from("mars", sequence)
     assert req.event_type == "mars"
 
 
@@ -65,4 +65,4 @@ def test_watch_from_rejects_int_exceeding_u64(sequence: int) -> None:
     import pytest
 
     with pytest.raises(ValueError):
-        aviso.WatchRequest.watch_from("mars", sequence)
+        pyaviso.WatchRequest.watch_from("mars", sequence)
