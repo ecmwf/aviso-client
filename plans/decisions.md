@@ -327,11 +327,12 @@ is eventually built, it lives in a *separate adapter crate* (hand-written C ABI
 plus `cbindgen` as a header mirror, or `cxx` for a richer C++ bridge) and
 translates from the Rust API.
 
-*Amendment, 2026-06-01*: the C++ surface is now scheduled (see `roadmap.md`) and
-the route is committed to `cxx` (the richer C++ bridge) over the
-hand-written-C-ABI-plus-`cbindgen` alternative; the detailed design is D21. The
-`cbindgen` / bare-`extern "C"` option stays on the table only if a pure-C
-consumer (not C++) ever appears.
+*Amendment, 2026-06-01*: the C++ surface is now scheduled (see `roadmap.md`).
+The route is a stable C ABI (a `cbindgen`-generated header) plus a header-only
+C++ facade over it, not `cxx`: the first consumer (ecFlow) needs a prebuilt
+binary so its HPC / spack / conda build carries no Rust toolchain, which a
+stable C ABI allows and `cxx`'s unstable ABI does not. The detailed design is
+D21.
 
 ---
 
@@ -765,140 +766,149 @@ emits that variant.
 
 ---
 
-## D21. C++ binding via a `cxx` adapter crate
+## D21. C++ binding via a C ABI and a header-only C++ facade
 
-Commits the deferred C/C++ surface from D10 to the `cxx` route and records the
-design. A new workspace crate `crates/aviso-cxx` (published as `aviso-cxx`) is a
-*peer consumer* of the core `aviso` crate, exactly like `aviso-cli` and
-`aviso-py`: it depends on `aviso`, never the reverse, and the core gains no
-`cxx` or FFI machinery (D1, D10).
+Commits the deferred C/C++ surface from D10 to a stable **C ABI** (a
+`cbindgen`-generated header) plus a hand-written **header-only C++ facade** over
+it, rather than `cxx`. A new workspace crate `crates/aviso-ffi` (published as
+`aviso-ffi`) is a *peer consumer* of the core `aviso` crate, exactly like
+`aviso-cli` and `aviso-py`: it depends on `aviso`, never the reverse, and the
+core gains no FFI machinery (D1, D10).
 
-**Why `cxx`, not a hand-rolled C ABI.** The target consumer is C++, not C.
-`cxx` gives a type-checked Rust-to-C++ bridge with idiomatic types
-(`rust::String`, `rust::Vec`, `Box` / `UniquePtr`, shared structs), compile-time
-agreement between the two sides, and `Result`-to-exception mapping, with no
-hand-written, hand-synced header. The bare `extern "C"` plus `cbindgen`
-alternative from D10 stays available if a pure-C consumer ever appears, but is
-not built now: it would re-introduce the manual marshalling and unsafe-boundary
-burden `cxx` removes.
+**Why a C ABI plus a facade, not `cxx`.** Packaging drives the choice. The first
+consumer is ecFlow (below): C++17, built on HPC, spack-stack, and conda-forge,
+where adding a Rust toolchain to the *consumer's* build is the real cost. A C
+ABI is stable across compilers, standard libraries, and C++ standards, so we
+build a small prebuilt matrix of `libaviso_ffi` in our CI and ship it; the
+consumer links it with no `cargo` in its own build. `cxx` has no stable ABI: its
+generated glue is tied to the cxx version and the C++ toolchain, so a `cxx`
+consumer effectively rebuilds from source, pulling Rust into its build and into
+every spack / conda recipe. The idiomatic-C++ ergonomics `cxx` would buy back
+are recovered by the facade, which the consumer compiles over the stable C ABI
+with its own compiler. `cxx` (and `cxx-async`) are the rejected alternative,
+recorded here for the reasoning.
 
-**Bridge shape.** All FFI lives in one `#[cxx::bridge] mod ffi` in
-`crates/aviso-cxx/src/lib.rs`. Opaque Rust types cross as `Box<T>` /
-`UniquePtr<T>`; values cross as `cxx` shared structs or owned strings; no Rust
-generics, trait objects, or closures appear in bridge signatures (`cxx` cannot
-express them). JSON-shaped data (`identifier`, `payload`) crosses as compact
-JSON `String`, leaving JSON modelling to the C++ side. Marshalling a map or a
-tagged variant per field buys nothing for a notification client and would couple
-the ABI to serde internals.
+**ABI shape.** A hand-written `extern "C"` surface in
+`crates/aviso-ffi/src/lib.rs`; `cbindgen` generates `aviso.h` (checked in and
+guarded by a CI regenerate-and-diff step, per the drift rule). Opaque Rust
+values cross as owning handles (`AvisoClient*`, `AvisoNotification*`,
+`AvisoWatch*`, and the builder handles), each paired with an `aviso_*_free`.
+Strings cross as UTF-8 `const char*`; JSON-shaped data (`identifier`, `payload`)
+crosses as compact-JSON `const char*`, leaving JSON modelling to the consumer.
+Callbacks are C function pointers plus a `void* ctx`; no Rust generics, traits,
+or closures cross. The boundary is `unsafe` and hand-written, with per-function
+ownership rules documented; that hand-written burden is the price paid for the
+prebuilt-binary packaging above.
 
-**Two surfaces over one runtime.** The core is `tokio`-async; the adapter owns
-one multi-thread `tokio` runtime, built at client construction and stored in the
-opaque `Client`, and exposes the client through two surfaces over it. A
-*synchronous* surface, for consumers without C++20 coroutines: the
-request/response verbs (`notify`, `schema`, `schema_for`, `wipe_stream`,
-`wipe_all`, `delete_notification`) are blocking methods that `block_on`
-internally, and the watch is callback-driven (below). An *async* surface, for
-C++20-coroutine consumers, built with `cxx-async`: the same verbs also exist as
-`*_async` methods returning awaitable futures, and the watch is also exposed as
-an awaitable stream. Both surfaces drive the one runtime; a consumer picks per
-call site and may mix them.
+**Surfaces over one runtime.** The core is `tokio`-async; the adapter owns one
+multi-thread `tokio` runtime, built at client construction and stored in the
+opaque `AvisoClient`. It exposes the verbs three ways over that runtime. A
+*blocking* form: `notify`, `schema`, `schema_for`, `wipe_stream`, `wipe_all`,
+and `delete_notification` `block_on` internally and return an outcome (a value
+handle plus a structured error). A *completion-callback async* form: each verb
+also has an `*_async` variant taking
+`void (*on_complete)(void* ctx, const AvisoOutcome*)`, invoked on a runtime
+thread; no C++20 coroutines are needed, so it works under
+C++17. The watch is the third (below). The facade turns the completion-callback
+form into a `std::future` (it fills a promise from the callback), giving C++17
+consumers future-based async; a C++20 `co_await` adapter over that future is an
+optional facade extra.
 
 **Watch surface (the reason D19 exists).** Watching is callback-driven, built on
-the core's handler-shaped `watch_with_handler` (D19), not the `Stream`. C++
-implements a handler; Rust drives the supervisor and invokes it per
-notification. Two shapes:
+the core's handler-shaped `watch_with_handler` (D19), not the `Stream`:
+`aviso_client_watch(client, request, on_notification, on_end, ctx) ->
+AvisoWatch*` runs the supervisor on a runtime-owned thread and returns at once,
+invoking `on_notification(void* ctx, const AvisoNotification*) -> bool` per
+notification (returning `false` requests a graceful stop) and `on_end(void* ctx,
+const AvisoOutcome*)` once when the stream ends or fails. `aviso_watch_stop` and
+`aviso_watch_free` cancel cooperatively through the existing drop-to-cancel
+oneshot (D19). The handler runs on the watch thread, so the C++ side must be
+thread-safe; this is documented, not enforced. The facade wraps this as a
+`NotificationHandler` interface (a virtual `on_notification`) plus an RAII
+`Watch` whose destructor stops the watch. The watch is inherently async (it
+arrives on a runtime thread), so it needs no separate `*_async` form; a
+coroutine async-generator over it is an optional facade follow-up.
 
-- `Client::watch_blocking(request, handler)` runs the supervisor on the runtime
-  and blocks the calling C++ thread, invoking the handler per notification until
-  end-of-stream, a fatal error (raised as a C++ exception), or the handler
-  asking to stop (returns `false`).
-- `Client::watch_spawn(request, handler) -> Box<WatchHandle>` runs the
-  supervisor on a runtime-owned background thread and returns at once;
-  `WatchHandle::stop()` and its destructor cancel cooperatively through the
-  existing drop-to-cancel oneshot (D19). The handler is then invoked from the
-  watch thread, so the C++ implementation must be thread-safe; this is
-  documented, not enforced.
-
-The handler is a C++ opaque type declared in `unsafe extern "C++"`, holding one
-method `on_notification(self, &Notification) -> bool`. Rust holds it as a
-`UniquePtr<NotificationHandler>` and calls the method; the C++ user subclasses
-the generated abstract base. Returning `false` requests a graceful stop.
-
-For the async surface, `Client::watch_stream(request)` returns a `cxx-async`
-stream of notifications that a C++20 coroutine drains with `co_await`; dropping
-the stream cancels the supervisor through the same oneshot (D19). The two
-callback shapes and the stream are three front-ends over one supervisor.
-
-**Construction.** A `ClientBuilder` opaque type mirrors the Rust builder with
-chainable, infallible setters and a fallible `build`:
-`new_client_builder(base_url) -> Box<ClientBuilder>`, then `with_basic_auth`,
-`with_bearer`, `with_env_auth`, `with_config_file`, `with_timeout_secs`,
-`with_state_file` (selects `JsonFileStore`; the default is `MemoryStore`),
-`with_danger_accept_invalid_certs`, and `build() -> Result<Box<Client>>`. The
+**Construction.** An `AvisoClientBuilder*` handle mirrors the Rust builder:
+`aviso_client_builder_new(base_url)`, then `aviso_client_builder_basic_auth`,
+`_bearer`, `_env_auth`, `_config_file`, `_timeout_secs`, `_state_file` (selects
+`JsonFileStore`; the default is `MemoryStore`), `_danger_accept_invalid_certs`,
+and `aviso_client_builder_build(builder, out_client)` returning an outcome. The
 `AuthProvider` and `StateStore` traits and their implementations stay
-Rust-internal; the C++ surface picks among them by builder method, never by
-handle. `WatchRequest` is built the same way: `new_watch_request(event_type)`
-plus `with_filter_json`, `watch_from`, and `replay_only`.
+Rust-internal; the consumer picks among them by builder call, never by handle. A
+`WatchRequest` is built the same way: `aviso_watch_request_new(event_type)` plus
+`_filter_json`, `_watch_from`, and `_replay_only`. The facade wraps both as
+fluent C++ builder objects.
 
-**Triggers.** A `TriggerBuilder` opaque type mirrors the Rust `Trigger` builder
-(D11). Factory functions `trigger_echo()`, `trigger_log(path)`,
-`trigger_command(cmd)`, `trigger_webhook(url)`, `trigger_teams(url)`, and
-`trigger_post(url)` each return `Box<TriggerBuilder>`, with chainable setters
-`retries`, `required`, `timeout_secs`, `fail_fast`, `label`, `env(key, value)`,
-`working_dir`, `method`, `header(name, value)`, and `body_template` matching
-their Rust counterparts (setters that do not apply to a kind are ignored, as in
-the core). `HttpMethod` crosses as a `cxx` shared enum (`Post`, `Get`, `Put`,
-`Patch`, `Delete`). Triggers attach with
-`WatchRequestBuilder::with_trigger(Box<TriggerBuilder>)`, called once per
-trigger (a `Vec` of opaque builders is awkward across `cxx`; moving one boxed
-builder at a time is the clean shape), and the same request feeds all three
-watch front-ends. The command trigger stays `#[cfg(unix)]` (D11).
+**Triggers.** An `AvisoTrigger*` handle mirrors the Rust `Trigger` builder
+(D11). Factory functions `aviso_trigger_echo()`, `aviso_trigger_log(path)`,
+`aviso_trigger_command(cmd)`, `aviso_trigger_webhook(url)`,
+`aviso_trigger_teams(url)`, and `aviso_trigger_post(url)` each return an
+`AvisoTrigger*`, with setters `aviso_trigger_retries`, `_required`,
+`_timeout_secs`, `_fail_fast`, `_label`, `_env(key, value)`, `_working_dir`,
+`_method`, `_header(name, value)`, and `_body_template` matching their Rust
+counterparts (setters that do not apply to a kind are ignored, as in the core).
+`AvisoHttpMethod` is a C enum (`Post`, `Get`, `Put`, `Patch`, `Delete`).
+`aviso_watch_request_add_trigger(request, trigger)` attaches one trigger and
+consumes its handle. The command trigger stays `#[cfg(unix)]` (D11).
 
-**Notification access.** `Notification` is an opaque Rust type with const
-accessors: `event_type`, `sequence`, `identifier_json`, `payload_json`, and
-`request_id`, each returning an owned `String` (or `u64` for `sequence`).
-Opaque-plus-accessors avoids marshalling a map and a JSON value across the
-bridge per notification and keeps the model `#[non_exhaustive]`-friendly (D9):
+**Notification access.** `AvisoNotification*` is an opaque handle with accessors
+`aviso_notification_event_type`, `_sequence` (`uint64_t`), `_identifier_json`,
+`_payload_json`, and `_request_id`. The `const char*` results borrow from the
+notification and stay valid for its lifetime, so the hot callback path frees
+nothing per field. Opaque-plus-accessors avoids marshalling a map and a JSON
+value per notification and keeps the model `#[non_exhaustive]`-friendly (D9):
 adding an envelope field later is a new accessor, not an ABI break.
 
-**Structured errors.** The error surface is structured at the ABI, not a bare
-string. A `cxx` shared enum `AvisoErrorKind` (`Transport`, `Http`, `Auth`,
+**Structured errors.** The error surface is structured at the ABI, which a C ABI
+suits naturally. A C enum `AvisoErrorKind` (`Transport`, `Http`, `Auth`,
 `Decode`, `MalformedEvent`, `HistoryGap`, `StreamProtocol`, `Config`,
-`StateStore`, `Trigger`) plus a shared `AvisoError` struct carry the kind, an
+`StateStore`, `Trigger`) plus a C `AvisoError` struct carry the kind, an
 `http_status` (`0` when not HTTP), the `request_id` (empty when unknown), a
 redacted human `message`, and the trigger-failure fields (`trigger_kind`,
-`error_kind`) when the kind is `Trigger`. Fallible verbs return an outcome that
-holds either the value or a populated `AvisoError`, so the structured fields are
-always inspectable from C++ without parsing exception text. The curated
+`error_kind`) when the kind is `Trigger`. Every fallible call returns an
+`AvisoOutcome` (a value handle or a populated `AvisoError`), so the structured
+fields are always inspectable from C without exceptions in the ABI. The curated
 `include/aviso.hpp` facade layers an ergonomic throwing API on top: inline
 wrappers that return the value or throw `aviso::Error`, a `std::exception`
 subclass whose `what()` is the message and whose `error()` returns the full
-`AvisoError`. Consumers choose: inspect the struct, or `try` / `catch` with the
-same structured data on the caught exception. Async results resolve the same
-outcome, and the facade's awaiting wrappers throw identically. Secrets never
-reach the struct: the core's D12 redaction already applies.
+structured error. Consumers choose: inspect the outcome, or `try` / `catch` with
+the same data on the caught exception. Async completions and watch `on_end`
+carry the same outcome. Secrets never reach the struct: the core's D12 redaction
+already applies.
 
-**Build and consumption.** `crates/aviso-cxx` runs `cxx-build` in `build.rs` to
-compile the generated C++ shim and emits a static library plus the generated
-`lib.rs.h` header. C++ projects consume it from CMake via `corrosion`, which
-imports the Cargo crate as a CMake target and links the static lib; a small
-curated `include/aviso.hpp` facade over the generated header is the public
-include surface. A worked CMake consumer lands under `examples/cxx/`. A plain
-`cargo build` produces the same staticlib and headers for non-CMake build
-systems. The async surface pulls in `cxx-async`, which needs a C++20 coroutine
-library on the consumer side (`cppcoro` or `folly::coro`); the synchronous and
-callback surfaces need neither, so a consumer that avoids coroutines links only
-those and skips the coroutine dependency.
+**Build and consumption.** `crates/aviso-ffi` builds as `crate-type =
+["staticlib", "cdylib"]`; `build.rs` runs `cbindgen` to (re)generate `aviso.h`.
+Our CI builds a small prebuilt matrix (Linux `x86_64` and `aarch64`, macOS) of
+`libaviso_ffi.{a,so,dylib}` and ships it with `aviso.h` and the header-only
+`aviso.hpp` as release artifacts; these are also packageable for spack-stack and
+conda-forge with `rust` as a build-only dependency of *that* package. A consumer
+links the prebuilt library and compiles the facade with its own C++ toolchain,
+so no `cargo` or `rustc` is needed in the consumer's build. For source builds,
+`corrosion` (or a plain `cargo build`) can still import the crate into CMake,
+but it is not required. A worked CMake consumer lands under `examples/cpp/`.
 
-**Platforms.** Linux and macOS first, matching the rest of the suite; no Windows
-in the first cut (the command trigger is already `#[cfg(unix)]`, D11). A C++
-toolchain is required at build time, as it already is transitively for the shim.
+**Target consumer: ecFlow.** The first C++ consumer is `ecflow_server`: C++17
+(no coroutines), `ecbuild`-based, deployed on offline HPC and through
+spack-stack and conda-forge, removing its legacy etcd-based aviso service to
+drive the new aviso-server through this binding. It is also why the route is a
+prebuilt C ABI: that keeps Rust out of ecFlow's build and packaging, and the
+`std::future` facade async works under C++17. The fit is the callback surface: a
+queued `aviso` node attribute starts one watch on a *shared* `AvisoClient`, and
+`on_notification` enqueues into ecFlow's mutex-guarded controller and nudges the
+single-threaded `boost::asio` server loop (its existing
+background-thread-to-main-loop path). One shared client (one runtime) with many
+watches (D20) is the shape, not a client per attribute.
+
+**Platforms.** Linux and macOS, matching the rest of the suite; no Windows (not
+needed; the command trigger is already `#[cfg(unix)]`, D11).
 
 **Out of scope (first cut), additive follow-ups over the unchanged core:**
-Windows (not needed; the command trigger is already `#[cfg(unix)]`, D11) and a
-stable prebuilt binary artifact (the `cxx` ABI is not stable across toolchains,
-so the staticlib is built against the consumer's toolchain rather than shipped).
-Triggers, the async API, and the structured error ABI are all in scope above.
+Windows; a C++20 `co_await` adapter and a coroutine async-generator over the
+watch in the facade (the `std::future` async and the callback watch already
+cover C++17). The structured error ABI, triggers, blocking and
+completion-callback async, and the prebuilt-binary distribution are all in scope
+above.
 
 ---
 
