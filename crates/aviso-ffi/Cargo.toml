@@ -1,0 +1,44 @@
+[package]
+name = "aviso-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Stable C ABI for aviso, the aviso-server client library, with a header-only C++ facade."
+readme = "README.md"
+
+[lib]
+# `staticlib` and `cdylib` so a C or C++ consumer can link the prebuilt
+# `libaviso_ffi.{a,so,dylib}` with its own toolchain, no Rust toolchain in its
+# build. No `rlib`: this crate is consumed through its C ABI, and its Rust unit
+# tests still compile because the test harness builds the crate as a test
+# binary regardless of `crate-type`.
+crate-type = ["staticlib", "cdylib"]
+
+[lints]
+workspace = true
+
+[features]
+# `gen-header` pulls in `cbindgen` and enables the `gen-header` binary that
+# (re)writes the checked-in `include/aviso.h`. Off by default so a normal
+# `cargo build` of the library never compiles `cbindgen`.
+default = []
+gen-header = ["dep:cbindgen"]
+
+[dependencies]
+aviso = { path = "../aviso", version = "=0.1.0" }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dependencies.cbindgen]
+workspace = true
+optional = true
+
+[[bin]]
+name = "gen-header"
+path = "src/bin/gen_header.rs"
+required-features = ["gen-header"]
