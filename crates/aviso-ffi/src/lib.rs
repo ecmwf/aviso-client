@@ -120,9 +120,9 @@ mod tests {
     }
 
     #[test]
-    fn builder_build_without_base_url_reports_config_error() {
-        // A builder built with no base_url surfaces a Config error from the
-        // core, exercising the outcome + error mapping end to end.
+    fn builder_build_with_invalid_base_url_reports_config_error() {
+        // An unparseable base_url surfaces a Config error from the core,
+        // exercising the outcome + error mapping end to end.
         // SAFETY: a NUL-terminated literal.
         let base = CString::new("not a url").expect("cstring");
         // SAFETY: valid C string pointer.
