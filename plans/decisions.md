@@ -329,10 +329,9 @@ translates from the Rust API.
 
 *Amendment, 2026-06-01*: the C++ surface is now scheduled (see `roadmap.md`).
 The route is a stable C ABI (a `cbindgen`-generated header) plus a header-only
-C++ facade over it, not `cxx`: the first consumer (ecFlow) needs a prebuilt
-binary so its HPC / spack / conda build carries no Rust toolchain, which a
-stable C ABI allows and `cxx`'s unstable ABI does not. The detailed design is
-D21.
+C++ facade over it, not `cxx`: the target consumer needs a prebuilt binary so
+its HPC / spack / conda build carries no Rust toolchain, which a stable C ABI
+allows and `cxx`'s unstable ABI does not. The detailed design is D21.
 
 ---
 
@@ -775,9 +774,10 @@ it, rather than `cxx`. A new workspace crate `crates/aviso-ffi` (published as
 `aviso-cli` and `aviso-py`: it depends on `aviso`, never the reverse, and the
 core gains no FFI machinery (D1, D10).
 
-**Why a C ABI plus a facade, not `cxx`.** Packaging drives the choice. The first
-consumer is ecFlow (below): C++17, built on HPC, spack-stack, and conda-forge,
-where adding a Rust toolchain to the *consumer's* build is the real cost. A C
+**Why a C ABI plus a facade, not `cxx`.** Packaging drives the choice. The
+target consumer (below) is a C++17 application built on HPC, spack-stack, and
+conda-forge, where adding a Rust toolchain to the *consumer's* build is the real
+cost. A C
 ABI is stable across compilers, standard libraries, and C++ standards, so we
 build a small prebuilt matrix of `libaviso_ffi` in our CI and ship it; the
 consumer links it with no `cargo` in its own build. `cxx` has no stable ABI: its
@@ -898,17 +898,15 @@ cannot rot silently. The `docs/src/cpp/` pages reference this example as the
 single source of truth rather than pasting code that drifts, matching how the
 Python docs point at `python/examples/`.
 
-**Target consumer: ecFlow.** The first C++ consumer is `ecflow_server`: C++17
-(no coroutines), `ecbuild`-based, deployed on offline HPC and through
-spack-stack and conda-forge, removing its legacy etcd-based aviso service to
-drive the new aviso-server through this binding. It is also why the route is a
-prebuilt C ABI: that keeps Rust out of ecFlow's build and packaging, and the
-`std::future` facade async works under C++17. The fit is the callback surface: a
-queued `aviso` node attribute starts one watch on a *shared* `AvisoClient`, and
-`on_notification` enqueues into ecFlow's mutex-guarded controller and nudges the
-single-threaded `boost::asio` server loop (its existing
-background-thread-to-main-loop path). One shared client (one runtime) with many
-watches (D20) is the shape, not a client per attribute.
+**Target consumer profile.** The binding targets a C++17 application (no
+coroutines), built with CMake on offline HPC and through spack-stack and
+conda-forge. That profile is why the route is a prebuilt C ABI: it keeps Rust
+out of the consumer's build and packaging, and the `std::future` facade async
+works under C++17. The fit is the callback surface: the consumer starts one
+watch on a *shared* `AvisoClient` and, from `on_notification` (which runs on a
+runtime thread), enqueues into its own mutex-guarded queue and nudges its main
+loop, the standard background-thread-to-main-loop pattern. One shared client
+with many watches (D20) is the shape, not a client per listener.
 
 **Platforms.** Linux and macOS, matching the rest of the suite; no Windows (not
 needed; the command trigger is already `#[cfg(unix)]`, D11).
@@ -919,6 +917,94 @@ watch in the facade (the `std::future` async and the callback watch already
 cover C++17). The structured error ABI, triggers, blocking and
 completion-callback async, and the prebuilt-binary distribution are all in scope
 above.
+
+*Amendment, 2026-06-11*: a pre-implementation review of the ABI contract
+tightened the design before any code. The substance above stands; these points
+override the details where they differ, and the crate is built as the sequence
+of small green PRs at the end.
+
+1. **One process-global runtime, not one per client.** `AvisoClient` is already
+   `Send + Sync + Clone`, so the handle needs no runtime of its own for
+   isolation. A multi-thread `tokio` runtime lives in a process-global
+   `OnceLock` and stays up for the process lifetime. A client-owned runtime
+   makes `aviso_client_free` unsafe from a callback or runtime thread, because
+   `Runtime::drop` blocks (and panics in async context). Dropping the shared
+   client just drops its refcounts.
+2. **Blocking verbs refuse to run inside the runtime.** Each blocking verb
+   checks `tokio::runtime::Handle::try_current()` and a thread-local
+   in-callback flag before `block_on`; if either says it is already on a runtime
+   thread it returns an `InvalidUsage` error instead of triggering tokio's
+   "cannot start a runtime from within a runtime" panic. Callbacks enqueue work
+   or use the async verbs, never the blocking ones.
+3. **Watch is driven by `watch()` plus `recv()`, not `watch_with_handler`.** The
+   C `on_notification` returns `bool` (`false` means graceful stop), which the
+   handler-shaped core method (it stops only on `Err`) cannot express without a
+   fake error. A spawned runtime task calls the synchronous `watch()` and loops
+   `NotificationStream::recv().await`, calling `on_notification` per item and
+   `on_end` exactly once at the end. `watch_with_handler` (D19) stays the
+   Rust-facing sugar; the FFI does not build on it.
+4. **Watch cancellation is an explicit stop/wait/free triple.** An idempotent
+   stop signal (an `AtomicBool` plus `tokio::sync::Notify`) is `select!`ed
+   against `recv()`; on stop the task drops or `close()`s the stream so the D19
+   drop-to-cancel path runs. `aviso_watch_stop` is nonblocking, idempotent, and
+   callback-safe; `aviso_watch_wait` blocks until `on_end` has returned (and
+   refuses to run from inside a callback); `aviso_watch_free` releases the
+   handle. A callback already running when stop arrives finishes; no new
+   callback starts after stop is observed. The facade's RAII `Watch` stops then
+   waits in its destructor.
+5. **`AvisoOutcome` is one owning heap handle everywhere.** Not a by-value
+   struct with `const char*` fields (those would dangle). Blocking calls return
+   an owned `AvisoOutcome*`; async `on_complete` and watch `on_end` receive
+   ownership of one. The receiver frees it with `aviso_outcome_free`. The
+   `AvisoError` strings borrow from the outcome and are valid until it is freed.
+   A success value is removed with a typed `aviso_outcome_take_*` that nulls the
+   internal slot; freeing an untaken outcome frees the value it still holds.
+6. **More error kinds, and wildcard arms.** Beyond the ten kinds that mirror
+   `ClientError`, the ABI adds `InvalidInput` (null pointer, non-UTF-8, interior
+   NUL, malformed JSON argument), `InvalidUsage` (misuse such as a blocking call
+   on a runtime thread), `Internal`, `Panic`, and `Unknown`. `ClientError` is
+   `#[non_exhaustive]`, so every match mapping it carries a `_ => Unknown` arm.
+7. **No notification request-id accessor.** Core `Notification` has no
+   per-notification `request_id` (D9), so the accessors are `_event_type`,
+   `_sequence`, `_identifier_json`, and `_payload_json` only. The blocking
+   verbs' responses still carry their `request_id`. The `AvisoNotification*`
+   and its borrowed strings are valid only for the `on_notification` call; the
+   wrapper pre-serialises `identifier` and `payload` into owned C strings for
+   that call.
+8. **Consuming handles use pointer-to-pointer.** `aviso_client_builder_build`
+   takes `AvisoClientBuilder**`, watch-start takes `AvisoWatchRequest**`, and
+   `add_trigger` takes `AvisoTrigger**`: the call takes ownership and nulls the
+   caller's pointer (even on error) so a later free is a safe no-op. Setters
+   borrow their handle.
+9. **The header is generated by a checked command, not `build.rs`.** A dedicated
+   step (an `xtask` or a `cargo run` target) writes the checked-in
+   `crates/aviso-ffi/include/aviso.h` from `cbindgen.toml`; CI regenerates to a
+   temp path and `git diff --exit-code`s the committed header. `build.rs` may
+   write only inside `OUT_DIR`. The hand-written `include/aviso.hpp` facade
+   includes the generated C header and is never itself generated.
+10. **Every `extern "C"` entrypoint catches unwinds.** Each wraps its body in
+    `std::panic::catch_unwind` and turns a panic into `AvisoErrorKind::Panic`,
+    because unwinding across the boundary is undefined behaviour. C and C++
+    callbacks must not throw or `longjmp` through Rust; the facade trampoline
+    catches C++ exceptions. The `void* ctx` is moved into the watch task through
+    a `SendPtr` newtype with a documented `unsafe impl Send`. Reliance on
+    `panic = "abort"` is not the design answer. A `ca_bundle` path builder call
+    ships alongside `danger_accept_invalid_certs` (HPC needs custom trust
+    roots). Unloading the shared library (`dlclose`) while watches or async
+    calls are live is unsupported.
+
+**Build sequence (small green PRs, each reviewable on its own).** (1) crate
+skeleton, global runtime, panic guard, the outcome and error model, `cbindgen`
+config, the generated header and its drift guard, the minimal `aviso.hpp`, one
+blocking verb (`schema`), and a CMake smoke target that links the built library.
+(2) the remaining blocking verbs, full `ClientError` mapping, the RAII client
+and error facade, and blocking-usage docs. (3) the watch surface: request
+builder, notification views, the `watch()`-plus-`recv()` driver, stop/wait/free,
+and the callback example. (4) triggers. (5) completion-callback async and the
+`std::future` facade. (6) the prebuilt Linux and macOS matrix, the CMake
+consumer under `examples/cpp/`, the real-stack e2e job, and the `docs/src/cpp/`
+pages. The example and e2e centerpiece lands with the surface it exercises and
+grows with each PR.
 
 ---
 

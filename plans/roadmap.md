@@ -45,8 +45,8 @@ to a package registry yet.
   construction, `identifier` / `payload` as compact-JSON strings, and a
   structured error ABI (a kind enum plus an `AvisoError` struct) with an
   ergonomic throwing facade. Shipped as a prebuilt per-platform binary so the
-  consumer's build needs no Rust toolchain (ecFlow is the first consumer); Linux
-  and macOS, no Windows. Detailed design in D21.
+  consumer's build needs no Rust toolchain; Linux and macOS, no Windows.
+  Detailed design in D21.
 
 ## Follow-ups
 
