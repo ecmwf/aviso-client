@@ -298,11 +298,38 @@ jobs:
         if: always()
         run: if [ -n "${DOCKER_CONFIG:-}" ]; then rm -rf "$DOCKER_CONFIG"; fi
 
+  # ── C++ binding: build the C ABI, guard the header, build+run the example ─
+  # GitHub-hosted (no compile secrets), so it also runs on fork PRs. The
+  # example here runs without a server; the real-stack run lands with the
+  # prebuilt-artifact work.
+  cpp:
+    name: C++ binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the C ABI library
+        run: cargo build --locked -p aviso-ffi
+
+      - name: Generated C header is up to date
+        run: |
+          cargo run --locked -p aviso-ffi --features gen-header --bin gen-header
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code crates/aviso-ffi/include/aviso.h
+
+      - name: Build the C++ example against the library and facade
+        run: |
+          cmake -S examples/cpp -B build/cpp -DAVISO_FFI_LIB_DIR="$PWD/target/debug"
+          cmake --build build/cpp
+
+      - name: Run the schema smoke (no server needed)
+        run: ./build/cpp/schema_smoke
+
   # ── Aggregate gate: the single required status check ────────────
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config]
+    needs: [rust, deny, docs, python, e2e-config, cpp]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded
