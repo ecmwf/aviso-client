@@ -18,7 +18,7 @@ pub struct AvisoClient {
 
 /// Opaque client-builder handle. Setters mutate it in place; the first error
 /// (a bad argument or an auth-construction failure) is remembered and surfaced
-/// at [`aviso_client_builder_build`].
+/// at `aviso_client_builder_build`.
 pub struct AvisoClientBuilder {
     inner: Option<aviso::AvisoClientBuilder>,
     error: Option<OutcomeError>,
@@ -48,7 +48,7 @@ unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
 /// Creates a client builder for `base_url`. Returns a builder handle (null only
 /// if an internal panic is trapped); a null or non-UTF-8 `base_url` is
 /// remembered and reported at build time. Free an abandoned builder with
-/// [`aviso_client_builder_free`].
+/// `aviso_client_builder_free`.
 ///
 /// # Safety
 ///
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn aviso_client_builder_new(
 ///
 /// # Safety
 ///
-/// `builder` must be a live builder handle from [`aviso_client_builder_new`].
+/// `builder` must be a live builder handle from `aviso_client_builder_new`.
 /// `username` and `password`, when non-null, must be NUL-terminated C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_builder_basic_auth(
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
 /// # Safety
 ///
 /// `builder` must point to a builder-handle pointer. `*builder`, when non-null,
-/// must be a live handle from [`aviso_client_builder_new`].
+/// must be a live handle from `aviso_client_builder_new`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_builder_build(
     builder: *mut *mut AvisoClientBuilder,
@@ -148,13 +148,13 @@ pub unsafe extern "C" fn aviso_client_builder_build(
 }
 
 /// Frees an abandoned client builder. Builders consumed by
-/// [`aviso_client_builder_build`] are already freed; calling this on the
+/// `aviso_client_builder_build` are already freed; calling this on the
 /// nulled-out pointer is a safe no-op.
 ///
 /// # Safety
 ///
 /// `builder`, when non-null, must be a live handle from
-/// [`aviso_client_builder_new`] that was not consumed by a build.
+/// `aviso_client_builder_new` that was not consumed by a build.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_builder_free(builder: *mut AvisoClientBuilder) {
     if builder.is_null() {
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn aviso_client_free(client: *mut AvisoClient) {
 ///
 /// This call blocks. It must not be called from a thread already inside the
 /// runtime (for example a watch or async callback); doing so returns an
-/// [`crate::error::AvisoErrorKind::InvalidUsage`] error.
+/// `AvisoErrorKind_InvalidUsage` error.
 ///
 /// # Safety
 ///

@@ -1,8 +1,8 @@
 //! The structured error surface of the C ABI.
 //!
-//! Every fallible call returns an [`crate::outcome::AvisoOutcome`] that either
+//! Every fallible call returns an `AvisoOutcome` that either
 //! carries a success value or owns an error. The error is exposed to C as the
-//! [`AvisoError`] struct, whose `const char*` fields borrow from the owning
+//! `AvisoError` struct, whose `const char*` fields borrow from the owning
 //! outcome and stay valid until the outcome is freed.
 
 use std::ffi::{CString, c_char};
@@ -13,7 +13,7 @@ use aviso::watch::TriggerKindLabel;
 
 use crate::outcome::AvisoOutcome;
 
-/// Discriminates an [`AvisoError`].
+/// Discriminates an `AvisoError`.
 ///
 /// The first ten kinds mirror the core `ClientError`; the rest are conditions
 /// the ABI itself reports: bad arguments, misuse, internal faults, a caught
@@ -56,27 +56,27 @@ pub enum AvisoErrorKind {
 }
 
 /// C-visible error detail. The `const char*` fields borrow from the owning
-/// [`crate::outcome::AvisoOutcome`] and are valid until it is freed. A pointer
+/// `AvisoOutcome` and are valid until it is freed. A pointer
 /// is null when the field does not apply (`request_id` when unknown,
-/// `trigger_kind` / `error_kind` unless `kind` is [`AvisoErrorKind::Trigger`]).
+/// `trigger_kind` / `error_kind` unless `kind` is `AvisoErrorKind_Trigger`).
 #[repr(C)]
 pub struct AvisoError {
     /// The error kind.
     pub kind: AvisoErrorKind,
-    /// HTTP status when `kind` is [`AvisoErrorKind::Http`], else `0`.
+    /// HTTP status when `kind` is `AvisoErrorKind_Http`, else `0`.
     pub http_status: u16,
     /// Human-readable message (never null). Credentials are never included;
     /// server-supplied error text (such as an HTTP response body) may be.
     pub message: *const c_char,
     /// Server-supplied request id, or null when unknown.
     pub request_id: *const c_char,
-    /// Trigger label when `kind` is [`AvisoErrorKind::Trigger`], else null.
+    /// Trigger label when `kind` is `AvisoErrorKind_Trigger`, else null.
     pub trigger_kind: *const c_char,
     /// Trigger inner-error label when applicable, else null.
     pub error_kind: *const c_char,
 }
 
-/// Owned backing for an [`AvisoError`]. The `CString` fields keep the heap
+/// Owned backing for an `AvisoError`. The `CString` fields keep the heap
 /// buffers that `view`'s pointers reference alive for the outcome's lifetime.
 pub(crate) struct OutcomeError {
     message: CString,
@@ -142,7 +142,7 @@ fn cstring_lossy(s: String) -> CString {
     CString::new(bytes).unwrap_or_default()
 }
 
-/// Maps a core [`ClientError`] onto an owned [`OutcomeError`]. The wildcard arm
+/// Maps a core `ClientError` onto an owned `OutcomeError`. The wildcard arm
 /// keeps the mapping total across the `#[non_exhaustive]` core enum.
 pub(crate) fn map_error(err: &ClientError) -> OutcomeError {
     use AvisoErrorKind as K;
@@ -256,7 +256,7 @@ pub(crate) fn internal(message: &str) -> OutcomeError {
     )
 }
 
-/// The outcome handed back when [`std::panic::catch_unwind`] traps a panic at
+/// The outcome handed back when `std::panic::catch_unwind` traps a panic at
 /// the boundary.
 pub(crate) fn panic_outcome() -> *mut AvisoOutcome {
     OutcomeError::build(

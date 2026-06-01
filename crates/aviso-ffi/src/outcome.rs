@@ -1,9 +1,9 @@
 //! The owning result handle returned by every fallible C ABI call.
 //!
-//! An [`AvisoOutcome`] either carries a success value or an error, never both.
-//! The consumer inspects it ([`aviso_outcome_is_ok`], [`aviso_outcome_error`]),
+//! An `AvisoOutcome` either carries a success value or an error, never both.
+//! The consumer inspects it (`aviso_outcome_is_ok`, `aviso_outcome_error`),
 //! optionally removes the success value with the matching typed `take`, then
-//! frees it with [`aviso_outcome_free`]. Freeing an outcome whose success value
+//! frees it with `aviso_outcome_free`. Freeing an outcome whose success value
 //! was never taken frees that value too, so a dropped outcome never leaks.
 
 use std::ffi::{CString, c_char};
@@ -13,7 +13,7 @@ use crate::client::AvisoClient;
 use crate::error::{AvisoError, OutcomeError};
 
 /// Result of a fallible C ABI call. Opaque to C; always freed with
-/// [`aviso_outcome_free`].
+/// `aviso_outcome_free`.
 pub struct AvisoOutcome {
     success: Success,
     error: Option<OutcomeError>,
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn aviso_outcome_error(outcome: *const AvisoOutcome) -> *c
 }
 
 /// Removes and returns the outcome's string success value, transferring
-/// ownership to the caller, who must free it with [`aviso_string_free`].
+/// ownership to the caller, who must free it with `aviso_string_free`.
 /// Returns null when the outcome holds no string (an error, an empty success,
 /// or a value already taken).
 ///
