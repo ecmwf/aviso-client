@@ -37,15 +37,16 @@ to a package registry yet.
   ProtonMail Bridge, a self-hosted Postfix, any RFC-5321 relay); credentials via
   `{{ env.<NAME> }}`. The retry classifier treats SMTP auth failures, malformed
   addresses, and permanent 5xx as terminal. Text-only to start.
-- **C++ binding.** A `cxx`-based adapter crate (`crates/aviso-cxx`) that exposes
-  the client to C++: the request/response verbs and a callback-driven `watch`
-  (over the handler-shaped surface, D19) in both blocking and `cxx-async`
-  C++20-coroutine forms, builder-style client, watch-request, and trigger
+- **C++ binding.** A `crates/aviso-ffi` adapter exposing the client to C++ as a
+  stable C ABI (a `cbindgen` header) plus a header-only C++ facade over it: the
+  request/response verbs (blocking and completion-callback async, with a
+  `std::future` form in the facade), a callback-driven `watch` (over the
+  handler-shaped surface, D19), builder-style client, watch-request, and trigger
   construction, `identifier` / `payload` as compact-JSON strings, and a
-  structured error ABI (a kind enum plus fields) with an ergonomic throwing
-  facade on top. The adapter owns the tokio runtime; generated headers are
-  consumed from CMake via `corrosion`; Linux and macOS, no Windows. Detailed
-  design in D21.
+  structured error ABI (a kind enum plus an `AvisoError` struct) with an
+  ergonomic throwing facade. Shipped as a prebuilt per-platform binary so the
+  consumer's build needs no Rust toolchain (ecFlow is the first consumer); Linux
+  and macOS, no Windows. Detailed design in D21.
 
 ## Follow-ups
 
