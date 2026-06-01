@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/aviso",
     "crates/aviso-cli",
+    "crates/aviso-ffi",
     "crates/aviso-py",
     "crates/finesse",
     "tests/e2e/rust",
@@ -28,6 +29,7 @@ assert_cmd = "2.0"
 async-trait = "0.1"
 atomicwrites = "0.4"
 base64 = "0.22"
+cbindgen = { version = "0.29", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 fd-lock = "4.0"
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
