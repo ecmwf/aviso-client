@@ -35,12 +35,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # python3-dev: the interpreter + libpython that pyo3 (abi3 +
 # auto-initialize, extension-module off) needs to build and run
 # aviso-py under workspace cargo commands.
-# No g++, make, pkg-config, OpenSSL, node, cmake or wasm: nothing here
-# needs them (reqwest is rustls, ring drives gcc directly).
+# g++ + make + cmake: build the aviso-ffi C++ example and header-only
+# facade against the prebuilt C ABI (the C++ binding CI job).
+# No pkg-config, OpenSSL, node or wasm: nothing here needs them (reqwest
+# is rustls, ring drives gcc directly).
 RUN set -eux \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      gcc libc6-dev git curl ca-certificates python3-dev \
+      gcc g++ make cmake libc6-dev git curl ca-certificates python3-dev \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
            /usr/share/doc /usr/share/man /usr/share/info
