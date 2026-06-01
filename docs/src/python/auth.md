@@ -92,7 +92,7 @@ basic:
   password: wonderland
 ```
 
-Both sections, or neither, is an `pyaviso.ConfigError`. The path is expanded with
+Both sections, or neither, is a `pyaviso.ConfigError`. The path is expanded with
 `os.path.expanduser` so `~` works.
 
 ## Chain
