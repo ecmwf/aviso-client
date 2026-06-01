@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 /**
- * Discriminates an [`AvisoError`].
+ * Discriminates an `AvisoError`.
  *
  * The first ten kinds mirror the core `ClientError`; the rest are conditions
  * the ABI itself reports: bad arguments, misuse, internal faults, a caught
@@ -88,21 +88,21 @@ typedef struct AvisoClient AvisoClient;
 /**
  * Opaque client-builder handle. Setters mutate it in place; the first error
  * (a bad argument or an auth-construction failure) is remembered and surfaced
- * at [`aviso_client_builder_build`].
+ * at `aviso_client_builder_build`.
  */
 typedef struct AvisoClientBuilder AvisoClientBuilder;
 
 /**
  * Result of a fallible C ABI call. Opaque to C; always freed with
- * [`aviso_outcome_free`].
+ * `aviso_outcome_free`.
  */
 typedef struct AvisoOutcome AvisoOutcome;
 
 /**
  * C-visible error detail. The `const char*` fields borrow from the owning
- * [`crate::outcome::AvisoOutcome`] and are valid until it is freed. A pointer
+ * `AvisoOutcome` and are valid until it is freed. A pointer
  * is null when the field does not apply (`request_id` when unknown,
- * `trigger_kind` / `error_kind` unless `kind` is [`AvisoErrorKind::Trigger`]).
+ * `trigger_kind` / `error_kind` unless `kind` is `AvisoErrorKind_Trigger`).
  */
 typedef struct {
   /**
@@ -110,7 +110,7 @@ typedef struct {
    */
   AvisoErrorKind kind;
   /**
-   * HTTP status when `kind` is [`AvisoErrorKind::Http`], else `0`.
+   * HTTP status when `kind` is `AvisoErrorKind_Http`, else `0`.
    */
   uint16_t http_status;
   /**
@@ -123,7 +123,7 @@ typedef struct {
    */
   const char *request_id;
   /**
-   * Trigger label when `kind` is [`AvisoErrorKind::Trigger`], else null.
+   * Trigger label when `kind` is `AvisoErrorKind_Trigger`, else null.
    */
   const char *trigger_kind;
   /**
@@ -146,7 +146,7 @@ const char *aviso_version(void);
  * Creates a client builder for `base_url`. Returns a builder handle (null only
  * if an internal panic is trapped); a null or non-UTF-8 `base_url` is
  * remembered and reported at build time. Free an abandoned builder with
- * [`aviso_client_builder_free`].
+ * `aviso_client_builder_free`.
  *
  * # Safety
  *
@@ -160,7 +160,7 @@ AvisoClientBuilder *aviso_client_builder_new(const char *base_url);
  *
  * # Safety
  *
- * `builder` must be a live builder handle from [`aviso_client_builder_new`].
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
  * `username` and `password`, when non-null, must be NUL-terminated C strings.
  */
 void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
@@ -176,19 +176,19 @@ void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
  * # Safety
  *
  * `builder` must point to a builder-handle pointer. `*builder`, when non-null,
- * must be a live handle from [`aviso_client_builder_new`].
+ * must be a live handle from `aviso_client_builder_new`.
  */
 AvisoOutcome *aviso_client_builder_build(AvisoClientBuilder **builder);
 
 /**
  * Frees an abandoned client builder. Builders consumed by
- * [`aviso_client_builder_build`] are already freed; calling this on the
+ * `aviso_client_builder_build` are already freed; calling this on the
  * nulled-out pointer is a safe no-op.
  *
  * # Safety
  *
  * `builder`, when non-null, must be a live handle from
- * [`aviso_client_builder_new`] that was not consumed by a build.
+ * `aviso_client_builder_new` that was not consumed by a build.
  */
 void aviso_client_builder_free(AvisoClientBuilder *builder);
 
@@ -208,7 +208,7 @@ void aviso_client_free(AvisoClient *client);
  *
  * This call blocks. It must not be called from a thread already inside the
  * runtime (for example a watch or async callback); doing so returns an
- * [`crate::error::AvisoErrorKind::InvalidUsage`] error.
+ * `AvisoErrorKind_InvalidUsage` error.
  *
  * # Safety
  *
@@ -239,7 +239,7 @@ const AvisoError *aviso_outcome_error(const AvisoOutcome *outcome);
 
 /**
  * Removes and returns the outcome's string success value, transferring
- * ownership to the caller, who must free it with [`aviso_string_free`].
+ * ownership to the caller, who must free it with `aviso_string_free`.
  * Returns null when the outcome holds no string (an error, an empty success,
  * or a value already taken).
  *
