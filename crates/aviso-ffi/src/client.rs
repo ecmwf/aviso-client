@@ -66,7 +66,7 @@ pub unsafe extern "C" fn aviso_client_builder_new(
             Some(url) => builder.apply(|b| b.base_url(url)),
             None => {
                 builder.error = Some(error::invalid_input(
-                    "base_url must be a non-null UTF-8 string",
+                    "base_url must be non-null and valid UTF-8",
                 ));
             }
         }
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
             (unsafe { cstr_opt(username) }, unsafe { cstr_opt(password) })
         else {
             builder.error = Some(error::invalid_input(
-                "basic_auth username and password must be non-null UTF-8 strings",
+                "basic_auth username and password must be non-null and valid UTF-8",
             ));
             return;
         };
