@@ -221,8 +221,8 @@ AvisoOutcome *aviso_client_schema(const AvisoClient *client);
  *
  * # Safety
  *
- * `outcome` must be a non-null pointer returned by this library and not yet
- * freed. A null pointer returns `false`.
+ * `outcome`, when non-null, must be a live pointer returned by this library
+ * and not yet freed. A null pointer is tolerated and returns `false`.
  */
 bool aviso_outcome_is_ok(const AvisoOutcome *outcome);
 
@@ -232,8 +232,8 @@ bool aviso_outcome_is_ok(const AvisoOutcome *outcome);
  *
  * # Safety
  *
- * `outcome` must be a non-null pointer returned by this library and not yet
- * freed.
+ * `outcome`, when non-null, must be a live pointer returned by this library
+ * and not yet freed. A null pointer is tolerated and returns null.
  */
 const AvisoError *aviso_outcome_error(const AvisoOutcome *outcome);
 
@@ -245,8 +245,8 @@ const AvisoError *aviso_outcome_error(const AvisoOutcome *outcome);
  *
  * # Safety
  *
- * `outcome` must be a non-null pointer returned by this library and not yet
- * freed.
+ * `outcome`, when non-null, must be a live pointer returned by this library
+ * and not yet freed. A null pointer is tolerated and returns null.
  */
 char *aviso_outcome_take_string(AvisoOutcome *outcome);
 
@@ -257,8 +257,8 @@ char *aviso_outcome_take_string(AvisoOutcome *outcome);
  *
  * # Safety
  *
- * `outcome` must be a non-null pointer returned by this library and not yet
- * freed.
+ * `outcome`, when non-null, must be a live pointer returned by this library
+ * and not yet freed. A null pointer is tolerated and returns null.
  */
 AvisoClient *aviso_outcome_take_client(AvisoOutcome *outcome);
 
