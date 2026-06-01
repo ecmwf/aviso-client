@@ -14,8 +14,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 - Build a client from a base URL, optionally with HTTP Basic credentials.
 - Fetch the schema catalogue (`GET /api/v1/schema`) as a JSON string.
 - Read structured errors: every failure throws an `aviso::Error` whose `what()`
-  is a redacted message and whose `error()` returns the kind, HTTP status, and
-  request id.
+  is a human-readable message and whose `error()` returns the kind, HTTP status,
+  and request id.
 
 More of the surface (the other verbs, watching, triggers, and an async form)
 lands as the binding grows.

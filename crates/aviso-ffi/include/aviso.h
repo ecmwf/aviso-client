@@ -114,7 +114,8 @@ typedef struct {
    */
   uint16_t http_status;
   /**
-   * Redacted, human-readable message (never null).
+   * Human-readable message (never null). Credentials are never included;
+   * server-supplied error text (such as an HTTP response body) may be.
    */
   const char *message;
   /**
@@ -142,9 +143,10 @@ extern "C" {
 const char *aviso_version(void);
 
 /**
- * Creates a client builder for `base_url`. Always returns a non-null handle;
- * a null or non-UTF-8 `base_url` is remembered and reported at build time.
- * Free an abandoned builder with [`aviso_client_builder_free`].
+ * Creates a client builder for `base_url`. Returns a builder handle (null only
+ * if an internal panic is trapped); a null or non-UTF-8 `base_url` is
+ * remembered and reported at build time. Free an abandoned builder with
+ * [`aviso_client_builder_free`].
  *
  * # Safety
  *
