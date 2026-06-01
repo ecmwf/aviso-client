@@ -28,8 +28,8 @@ struct ErrorInfo {
   std::optional<std::string> error_kind;
 };
 
-// Thrown by the facade when a call fails. `what()` is the redacted message;
-// `error()` exposes the full structured detail.
+// Thrown by the facade when a call fails. `what()` is the human-readable
+// message; `error()` exposes the full structured detail.
 class Error : public std::exception {
  public:
   explicit Error(ErrorInfo info) : info_(std::move(info)) {}

@@ -65,7 +65,8 @@ pub struct AvisoError {
     pub kind: AvisoErrorKind,
     /// HTTP status when `kind` is [`AvisoErrorKind::Http`], else `0`.
     pub http_status: u16,
-    /// Redacted, human-readable message (never null).
+    /// Human-readable message (never null). Credentials are never included;
+    /// server-supplied error text (such as an HTTP response body) may be.
     pub message: *const c_char,
     /// Server-supplied request id, or null when unknown.
     pub request_id: *const c_char,

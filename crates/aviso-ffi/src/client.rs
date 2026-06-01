@@ -45,9 +45,10 @@ unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
     unsafe { CStr::from_ptr(ptr) }.to_str().ok()
 }
 
-/// Creates a client builder for `base_url`. Always returns a non-null handle;
-/// a null or non-UTF-8 `base_url` is remembered and reported at build time.
-/// Free an abandoned builder with [`aviso_client_builder_free`].
+/// Creates a client builder for `base_url`. Returns a builder handle (null only
+/// if an internal panic is trapped); a null or non-UTF-8 `base_url` is
+/// remembered and reported at build time. Free an abandoned builder with
+/// [`aviso_client_builder_free`].
 ///
 /// # Safety
 ///

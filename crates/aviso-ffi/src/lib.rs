@@ -65,8 +65,8 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
 pub(crate) fn reject_blocking_on_runtime() -> Option<OutcomeError> {
     if tokio::runtime::Handle::try_current().is_ok() {
         Some(error::invalid_usage(
-            "blocking aviso call from inside the runtime (or a callback thread) is not allowed; \
-             use the async variants instead",
+            "blocking aviso call from inside the runtime (a callback runs on a runtime thread) \
+             is not allowed",
         ))
     } else {
         None
