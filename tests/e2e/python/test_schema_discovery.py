@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import aviso
+import pyaviso
 
 
-def test_schema_lists_both_configured_event_types(reader_client: aviso.AvisoClient) -> None:
+def test_schema_lists_both_configured_event_types(reader_client: pyaviso.AvisoClient) -> None:
     catalog = reader_client.schema()
     assert "test_event" in catalog.event_types
     assert "test_polygon" in catalog.event_types
@@ -11,7 +11,7 @@ def test_schema_lists_both_configured_event_types(reader_client: aviso.AvisoClie
 
 
 def test_schema_for_test_polygon_returns_expected_shape(
-    reader_client: aviso.AvisoClient,
+    reader_client: pyaviso.AvisoClient,
 ) -> None:
     response = reader_client.schema_for("test_polygon")
     assert response.event_type == "test_polygon"

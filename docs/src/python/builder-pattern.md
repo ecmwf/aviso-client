@@ -1,6 +1,6 @@
 # Builder pattern
 
-`aviso` constructs two values with a fluent, chainable style: `Trigger` and
+`pyaviso` constructs two values with a fluent, chainable style: `Trigger` and
 `WatchRequest`. Each factory returns a value, and each setter returns a new
 value, so you keep chaining until the value describes what you want. There is no
 final `.build()` step. You pass the value straight to the client.
@@ -16,12 +16,12 @@ so you can run it as written:
 ```python
 """Build a Trigger and a WatchRequest with the fluent API. No server needed."""
 
-import aviso
+import pyaviso
 
-trigger = aviso.Trigger.echo(label="demo").retries(2).required(False)
+trigger = pyaviso.Trigger.echo(label="demo").retries(2).required(False)
 
 request = (
-    aviso.WatchRequest.watch("test_polygon")
+    pyaviso.WatchRequest.watch("test_polygon")
     .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
     .with_triggers([trigger])
 )
@@ -41,11 +41,11 @@ keyword arguments to the factory, set with a chainable setter, or a mix of the
 two. Where a tunable is available both ways, the result is the same:
 
 ```python
-import aviso
+import pyaviso
 
 # These two triggers behave identically; pick whichever reads better.
-from_kwargs = aviso.Trigger.echo(retries=3, required=False)
-from_setters = aviso.Trigger.echo().retries(3).required(False)
+from_kwargs = pyaviso.Trigger.echo(retries=3, required=False)
+from_setters = pyaviso.Trigger.echo().retries(3).required(False)
 ```
 
 The setters are `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
@@ -62,25 +62,25 @@ A `WatchRequest` starts at one of three factories, then takes a filter and a
 list of triggers:
 
 ```python
-import aviso
+import pyaviso
 
 request = (
-    aviso.WatchRequest.watch("test_polygon")
+    pyaviso.WatchRequest.watch("test_polygon")
     .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([aviso.Trigger.echo()])
+    .with_triggers([pyaviso.Trigger.echo()])
 )
 ```
 
 The other two factories fix the start position and the mode in one call:
 
 ```python
-import aviso
+import pyaviso
 
 # resume after a sequence; mode stays "watch"
-aviso.WatchRequest.watch_from("test_polygon", 1024)
+pyaviso.WatchRequest.watch_from("test_polygon", 1024)
 
 # replay a closed range, then stop; mode becomes "replay_only"
-aviso.WatchRequest.replay_only("test_polygon", 1024)
+pyaviso.WatchRequest.replay_only("test_polygon", 1024)
 ```
 
 See [State and resume](./state-and-resume.md) for what the start position means,
@@ -88,7 +88,7 @@ and [Listening](./listen.md#replay-only) for how replay-only ends.
 
 Pass the request with the `request=` keyword. It is mutually exclusive with
 `event_type=`, `filter=`, `from_=`, `mode=`, and `triggers=`. Passing the
-request and any of those together raises `aviso.AvisoError`, so it stays clear
+request and any of those together raises `pyaviso.AvisoError`, so it stays clear
 which surface you meant.
 
 ## A complete example
@@ -104,9 +104,9 @@ Save the publisher as `publish.py`. It publishes three notifications and exits:
 """Publish three test_polygon notifications, then exit."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for i in range(3):
     response = client.notify(
@@ -128,14 +128,14 @@ when the publisher runs:
 """Listen with a WatchRequest and Trigger built through the fluent API."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 request = (
-    aviso.WatchRequest.watch("test_polygon")
+    pyaviso.WatchRequest.watch("test_polygon")
     .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-    .with_triggers([aviso.Trigger.echo(label="demo")])
+    .with_triggers([pyaviso.Trigger.echo(label="demo")])
 )
 
 with client.listen(request=request) as iterator:
@@ -168,12 +168,12 @@ it, then replays them and exits:
 """Publish three notifications, then replay them with the builder and exit."""
 
 import os
-import aviso
+import pyaviso
 
 # A polygon unique to this script, so the replay sees only its own data.
 polygon = "40,10,41,10,41,11,40,10"
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for i in range(3):
     client.notify(
@@ -182,7 +182,7 @@ for i in range(3):
         payload={"location": f"s3://example/backfill-{i}.grib"},
     )
 
-request = aviso.WatchRequest.replay_only("test_polygon", 0).with_filter(
+request = pyaviso.WatchRequest.replay_only("test_polygon", 0).with_filter(
     {"polygon": polygon}
 )
 
@@ -219,9 +219,9 @@ First, you have to keep the result. A setter call whose return value you discard
 does nothing:
 
 ```python
-import aviso
+import pyaviso
 
-request = aviso.WatchRequest.watch("test_polygon")
+request = pyaviso.WatchRequest.watch("test_polygon")
 request.with_filter({"polygon": "0,0,1,0,1,1,0,0"})  # discarded: no effect
 request = request.with_filter({"polygon": "0,0,1,0,1,1,0,0"})  # kept
 ```
@@ -230,10 +230,10 @@ Second, a shared base is safe to branch. Build the base once, then derive
 variants that do not affect each other:
 
 ```python
-import aviso
+import pyaviso
 
-base = aviso.WatchRequest.watch("test_polygon").with_triggers(
-    [aviso.Trigger.echo()]
+base = pyaviso.WatchRequest.watch("test_polygon").with_triggers(
+    [pyaviso.Trigger.echo()]
 )
 
 north = base.with_filter({"polygon": "0,0,1,0,1,1,0,0"})

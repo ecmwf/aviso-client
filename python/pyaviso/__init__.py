@@ -1,9 +1,9 @@
 """Python client for aviso-server, ECMWF's notification service.
 
 The package wraps the Rust `aviso` crate via PyO3 bindings. The compiled
-extension lives at ``aviso._native``; user-facing names are re-exported
-from this module so callers always ``import aviso`` and never reach for
-``aviso._native`` directly.
+extension lives at ``pyaviso._native``; user-facing names are re-exported
+from this module so callers always ``import pyaviso`` and never reach for
+``pyaviso._native`` directly.
 
 The public surface covers the publish, schema-discovery, and listen
 verbs on both ``AvisoClient`` (sync) and ``AsyncAvisoClient`` (async),
@@ -18,7 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 
-from aviso._native import (
+from pyaviso._native import (
     VERSION,
     AsyncAvisoClient,
     AsyncNotificationIterator,
@@ -73,7 +73,7 @@ class WatchMode(str, Enum):
 
 
 try:
-    __version__ = version("aviso")
+    __version__ = version("pyaviso")
 except PackageNotFoundError:
     __version__ = "0.0.0+uninstalled"
 

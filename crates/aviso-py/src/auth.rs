@@ -16,7 +16,7 @@ use pyo3::types::PyTuple;
 use crate::error::map_client_error;
 
 /// Thin Python wrapper around `aviso::auth::Bearer`.
-#[pyclass(name = "Bearer", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "Bearer", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyBearer {
     inner: Arc<dyn AuthProvider>,
@@ -44,7 +44,7 @@ impl PyBearer {
 }
 
 /// Thin Python wrapper around `aviso::auth::Basic`.
-#[pyclass(name = "Basic", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "Basic", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyBasic {
     inner: Arc<dyn AuthProvider>,
@@ -73,7 +73,7 @@ impl PyBasic {
 }
 
 /// Thin Python wrapper around `aviso::auth::Env`.
-#[pyclass(name = "Env", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "Env", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyEnv {
     inner: Arc<dyn AuthProvider>,
@@ -101,7 +101,7 @@ impl PyEnv {
 }
 
 /// Thin Python wrapper around `aviso::auth::ConfigFile`.
-#[pyclass(name = "ConfigFile", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "ConfigFile", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyConfigFile {
     inner: Arc<dyn AuthProvider>,
@@ -130,7 +130,7 @@ impl PyConfigFile {
 }
 
 /// Thin Python wrapper around `aviso::auth::Chain`.
-#[pyclass(name = "Chain", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "Chain", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyChain {
     inner: Arc<dyn AuthProvider>,

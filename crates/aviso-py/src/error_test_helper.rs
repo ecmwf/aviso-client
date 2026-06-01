@@ -5,7 +5,7 @@
 //! [`aviso::ClientError`] of the requested `kind`, runs it through
 //! [`super::error::map_client_error`], and raises the resulting Python
 //! exception. The Python test suite calls this through the registered
-//! `aviso._native._provoke_error` symbol so each `ClientError` variant
+//! `pyaviso._native._provoke_error` symbol so each `ClientError` variant
 //! round-trips through the mapper.
 //!
 //! Not part of the public Python surface. Production code never calls

@@ -11,32 +11,32 @@ plus the matching arm in ``crates/aviso-py/src/error.rs::map_client_error``.
 
 from __future__ import annotations
 
-import aviso
+import pyaviso
 import pytest
-from aviso import _native
+from pyaviso import _native
 
 
 def test_auth_error_carries_message() -> None:
-    with pytest.raises(aviso.AuthError) as excinfo:
+    with pytest.raises(pyaviso.AuthError) as excinfo:
         _native._provoke_error("auth", message="bad credentials")
     assert "bad credentials" in str(excinfo.value)
 
 
 def test_decode_error_carries_inner_message() -> None:
-    with pytest.raises(aviso.DecodeError) as excinfo:
+    with pytest.raises(pyaviso.DecodeError) as excinfo:
         _native._provoke_error("decode")
     rendered = str(excinfo.value)
     assert rendered, "decode error should render a non-empty message"
 
 
 def test_malformed_event_error_carries_detail() -> None:
-    with pytest.raises(aviso.MalformedEventError) as excinfo:
+    with pytest.raises(pyaviso.MalformedEventError) as excinfo:
         _native._provoke_error("malformed_event", detail="missing '@' separator: 'mars'")
     assert "missing '@' separator" in str(excinfo.value)
 
 
 def test_history_gap_replay_limit_attributes() -> None:
-    with pytest.raises(aviso.HistoryGapError) as excinfo:
+    with pytest.raises(pyaviso.HistoryGapError) as excinfo:
         _native._provoke_error("history_gap_replay_limit", max_allowed=10_000)
     err = excinfo.value
     assert err.reason == "replay_limit_reached"
@@ -46,7 +46,7 @@ def test_history_gap_replay_limit_attributes() -> None:
 
 
 def test_history_gap_sequence_jump_attributes() -> None:
-    with pytest.raises(aviso.HistoryGapError) as excinfo:
+    with pytest.raises(pyaviso.HistoryGapError) as excinfo:
         _native._provoke_error("history_gap_sequence_jump", expected=42, observed=99)
     err = excinfo.value
     assert err.reason == "sequence_jump"
@@ -56,7 +56,7 @@ def test_history_gap_sequence_jump_attributes() -> None:
 
 
 def test_stream_protocol_error_attributes() -> None:
-    with pytest.raises(aviso.StreamProtocolError) as excinfo:
+    with pytest.raises(pyaviso.StreamProtocolError) as excinfo:
         _native._provoke_error(
             "stream_protocol",
             message="stream_processing_failed",
@@ -68,25 +68,25 @@ def test_stream_protocol_error_attributes() -> None:
 
 
 def test_stream_protocol_error_with_no_request_id() -> None:
-    with pytest.raises(aviso.StreamProtocolError) as excinfo:
+    with pytest.raises(pyaviso.StreamProtocolError) as excinfo:
         _native._provoke_error("stream_protocol", message="boom")
     assert excinfo.value.request_id is None
 
 
 def test_config_error_carries_message() -> None:
-    with pytest.raises(aviso.ConfigError) as excinfo:
+    with pytest.raises(pyaviso.ConfigError) as excinfo:
         _native._provoke_error("config", message="missing base_url")
     assert "missing base_url" in str(excinfo.value)
 
 
 def test_state_store_error_carries_inner_message() -> None:
-    with pytest.raises(aviso.StateStoreError) as excinfo:
+    with pytest.raises(pyaviso.StateStoreError) as excinfo:
         _native._provoke_error("state_store_io", message="disk full")
     assert "disk full" in str(excinfo.value)
 
 
 def test_trigger_failed_echo_io_attributes() -> None:
-    with pytest.raises(aviso.TriggerError) as excinfo:
+    with pytest.raises(pyaviso.TriggerError) as excinfo:
         _native._provoke_error("trigger_failed_echo_io", message="broken pipe")
     err = excinfo.value
     assert err.trigger_kind == "echo"
@@ -97,7 +97,7 @@ def test_trigger_failed_echo_io_attributes() -> None:
 
 
 def test_trigger_failed_log_io_attributes() -> None:
-    with pytest.raises(aviso.TriggerError) as excinfo:
+    with pytest.raises(pyaviso.TriggerError) as excinfo:
         _native._provoke_error(
             "trigger_failed_log_io",
             log_path="/var/log/aviso.log",
@@ -110,7 +110,7 @@ def test_trigger_failed_log_io_attributes() -> None:
 
 
 def test_trigger_failed_webhook_4xx_attributes() -> None:
-    with pytest.raises(aviso.TriggerError) as excinfo:
+    with pytest.raises(pyaviso.TriggerError) as excinfo:
         _native._provoke_error(
             "trigger_failed_webhook_4xx",
             status=429,
@@ -124,7 +124,7 @@ def test_trigger_failed_webhook_4xx_attributes() -> None:
 
 
 def test_trigger_failed_template_missing_attributes() -> None:
-    with pytest.raises(aviso.TriggerError) as excinfo:
+    with pytest.raises(pyaviso.TriggerError) as excinfo:
         _native._provoke_error(
             "trigger_failed_template_missing",
             detail="webhook url",
@@ -141,17 +141,17 @@ def test_trigger_failed_template_missing_attributes() -> None:
 @pytest.mark.parametrize(
     "exception_class",
     [
-        aviso.AuthError,
-        aviso.ConfigError,
-        aviso.DecodeError,
-        aviso.HistoryGapError,
-        aviso.HttpError,
-        aviso.MalformedEventError,
-        aviso.StateStoreError,
-        aviso.StreamProtocolError,
-        aviso.TransportError,
-        aviso.TriggerError,
+        pyaviso.AuthError,
+        pyaviso.ConfigError,
+        pyaviso.DecodeError,
+        pyaviso.HistoryGapError,
+        pyaviso.HttpError,
+        pyaviso.MalformedEventError,
+        pyaviso.StateStoreError,
+        pyaviso.StreamProtocolError,
+        pyaviso.TransportError,
+        pyaviso.TriggerError,
     ],
 )
 def test_every_specific_class_subclasses_aviso_error(exception_class: type) -> None:
-    assert issubclass(exception_class, aviso.AvisoError)
+    assert issubclass(exception_class, pyaviso.AvisoError)

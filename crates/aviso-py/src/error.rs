@@ -31,19 +31,19 @@ use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
-create_exception!(aviso._native, AvisoError, PyException);
-create_exception!(aviso._native, TransportError, AvisoError);
-create_exception!(aviso._native, HttpError, AvisoError);
-create_exception!(aviso._native, AuthError, AvisoError);
-create_exception!(aviso._native, DecodeError, AvisoError);
-create_exception!(aviso._native, MalformedEventError, AvisoError);
-create_exception!(aviso._native, HistoryGapError, AvisoError);
-create_exception!(aviso._native, StreamProtocolError, AvisoError);
-create_exception!(aviso._native, ConfigError, AvisoError);
-create_exception!(aviso._native, StateStoreError, AvisoError);
-create_exception!(aviso._native, TriggerError, AvisoError);
+create_exception!(pyaviso._native, AvisoError, PyException);
+create_exception!(pyaviso._native, TransportError, AvisoError);
+create_exception!(pyaviso._native, HttpError, AvisoError);
+create_exception!(pyaviso._native, AuthError, AvisoError);
+create_exception!(pyaviso._native, DecodeError, AvisoError);
+create_exception!(pyaviso._native, MalformedEventError, AvisoError);
+create_exception!(pyaviso._native, HistoryGapError, AvisoError);
+create_exception!(pyaviso._native, StreamProtocolError, AvisoError);
+create_exception!(pyaviso._native, ConfigError, AvisoError);
+create_exception!(pyaviso._native, StateStoreError, AvisoError);
+create_exception!(pyaviso._native, TriggerError, AvisoError);
 
-/// Registers the exception classes on the `aviso._native` module.
+/// Registers the exception classes on the `pyaviso._native` module.
 ///
 /// Called once from the `#[pymodule]` entry point.
 pub(crate) fn register_exceptions(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

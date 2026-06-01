@@ -19,7 +19,7 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
-import aviso
+import pyaviso
 import pytest
 
 E2E_DIR = Path(__file__).resolve().parents[1]
@@ -72,29 +72,29 @@ def base_url() -> str:
 
 
 @pytest.fixture
-def producer_auth() -> aviso.Basic:
-    return aviso.Basic(PRODUCER_USERNAME, PRODUCER_PASSWORD)
+def producer_auth() -> pyaviso.Basic:
+    return pyaviso.Basic(PRODUCER_USERNAME, PRODUCER_PASSWORD)
 
 
 @pytest.fixture
-def reader_auth() -> aviso.Basic:
-    return aviso.Basic(READER_USERNAME, READER_PASSWORD)
+def reader_auth() -> pyaviso.Basic:
+    return pyaviso.Basic(READER_USERNAME, READER_PASSWORD)
 
 
 @pytest.fixture
-def admin_auth() -> aviso.Basic:
-    return aviso.Basic(ADMIN_USERNAME, ADMIN_PASSWORD)
+def admin_auth() -> pyaviso.Basic:
+    return pyaviso.Basic(ADMIN_USERNAME, ADMIN_PASSWORD)
 
 
 @pytest.fixture
-def producer_client(base_url: str, producer_auth: aviso.Basic) -> Iterator[aviso.AvisoClient]:
-    with aviso.AvisoClient(base_url=base_url, auth=producer_auth) as client:
+def producer_client(base_url: str, producer_auth: pyaviso.Basic) -> Iterator[pyaviso.AvisoClient]:
+    with pyaviso.AvisoClient(base_url=base_url, auth=producer_auth) as client:
         yield client
 
 
 @pytest.fixture
-def reader_client(base_url: str, reader_auth: aviso.Basic) -> Iterator[aviso.AvisoClient]:
-    with aviso.AvisoClient(base_url=base_url, auth=reader_auth) as client:
+def reader_client(base_url: str, reader_auth: pyaviso.Basic) -> Iterator[pyaviso.AvisoClient]:
+    with pyaviso.AvisoClient(base_url=base_url, auth=reader_auth) as client:
         yield client
 
 

@@ -28,7 +28,7 @@ const SYNC_RECV_POLL: Duration = Duration::from_millis(100);
 
 #[pyclass(
     name = "NotificationIterator",
-    module = "aviso._native",
+    module = "pyaviso._native",
     skip_from_py_object
 )]
 pub(crate) struct PyNotificationIterator {
@@ -118,7 +118,7 @@ enum PollOutcome {
 
 #[pyclass(
     name = "AsyncNotificationIterator",
-    module = "aviso._native",
+    module = "pyaviso._native",
     skip_from_py_object
 )]
 pub(crate) struct PyAsyncNotificationIterator {

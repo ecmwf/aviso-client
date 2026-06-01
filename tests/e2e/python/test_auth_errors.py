@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import aviso
+import pyaviso
 import pytest
 
 EVENT_TYPE = "test_polygon"
@@ -8,10 +8,10 @@ EVENT_TYPE = "test_polygon"
 
 def test_invalid_credentials_get_401(base_url: str) -> None:
     with (
-        aviso.AvisoClient(
-            base_url=base_url, auth=aviso.Basic("reader-user", "definitely-wrong-pass")
+        pyaviso.AvisoClient(
+            base_url=base_url, auth=pyaviso.Basic("reader-user", "definitely-wrong-pass")
         ) as client,
-        pytest.raises(aviso.HttpError) as exc_info,
+        pytest.raises(pyaviso.HttpError) as exc_info,
     ):
         client.notify(
             event_type=EVENT_TYPE,
@@ -25,8 +25,8 @@ def test_invalid_credentials_get_401(base_url: str) -> None:
     assert exc_info.value.status == 401
 
 
-def test_role_mismatch_gets_403(reader_client: aviso.AvisoClient) -> None:
-    with pytest.raises(aviso.HttpError) as exc_info:
+def test_role_mismatch_gets_403(reader_client: pyaviso.AvisoClient) -> None:
+    with pytest.raises(pyaviso.HttpError) as exc_info:
         reader_client.notify(
             event_type=EVENT_TYPE,
             identifier={

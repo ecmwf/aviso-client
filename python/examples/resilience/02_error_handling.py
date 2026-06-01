@@ -1,6 +1,6 @@
 """Catch HttpError, TransportError, and the broader AvisoError hierarchy.
 
-Every library-raised exception subclasses ``aviso.AvisoError``. Catch
+Every library-raised exception subclasses ``pyaviso.AvisoError``. Catch
 that to handle anything the library throws; catch a specific subclass
 for fine-grained dispatch.
 
@@ -21,12 +21,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import require_env
 
 
 def main() -> None:
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     try:
         client.notify(
             event_type="test_polygon",
@@ -37,12 +37,12 @@ def main() -> None:
             },
             payload={"location": "s3://example/data"},
         )
-    except aviso.HttpError as e:
+    except pyaviso.HttpError as e:
         print(f"HttpError: status={e.status} request_id={e.request_id}")
         print(f"  body: {e.body[:200]}")
-    except aviso.TransportError as e:
+    except pyaviso.TransportError as e:
         print(f"TransportError before response: {e}")
-    except aviso.AvisoError as e:
+    except pyaviso.AvisoError as e:
         print(f"AvisoError ({type(e).__name__}): {e}")
 
 

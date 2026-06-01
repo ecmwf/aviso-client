@@ -1,4 +1,4 @@
-"""Smoke tests for the aviso Python package.
+"""Smoke tests for the pyaviso Python package.
 
 These tests run on every CI cell and the pre-push hook. They verify that
 the extension imports, that the documented public surface is the expected
@@ -10,26 +10,26 @@ from __future__ import annotations
 
 import re
 
-import aviso
+import pyaviso
 
 
 def test_package_imports() -> None:
-    assert aviso is not None
+    assert pyaviso is not None
 
 
 def test_version_is_a_string() -> None:
-    assert isinstance(aviso.__version__, str)
-    assert aviso.__version__
+    assert isinstance(pyaviso.__version__, str)
+    assert pyaviso.__version__
 
 
 def test_native_version_matches_rust_crate() -> None:
-    assert isinstance(aviso.VERSION, str)
-    assert re.match(r"^\d+\.\d+\.\d+", aviso.VERSION)
-    assert aviso.__version__ == aviso.VERSION
+    assert isinstance(pyaviso.VERSION, str)
+    assert re.match(r"^\d+\.\d+\.\d+", pyaviso.VERSION)
+    assert pyaviso.__version__ == pyaviso.VERSION
 
 
 def test_public_surface_matches_documented_set() -> None:
-    assert set(aviso.__all__) == {
+    assert set(pyaviso.__all__) == {
         "VERSION",
         "AsyncAvisoClient",
         "AsyncNotificationIterator",

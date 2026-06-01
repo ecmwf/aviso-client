@@ -16,7 +16,7 @@ use crate::paths::normalize_path;
 use crate::runtime::runtime;
 
 /// Thin Python wrapper around `aviso::state::MemoryStore`.
-#[pyclass(name = "MemoryStore", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "MemoryStore", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyMemoryStore {
     inner: Arc<dyn StateStore>,
@@ -43,7 +43,11 @@ impl PyMemoryStore {
 }
 
 /// Thin Python wrapper around `aviso::state::JsonFileStore`.
-#[pyclass(name = "JsonFileStore", module = "aviso._native", skip_from_py_object)]
+#[pyclass(
+    name = "JsonFileStore",
+    module = "pyaviso._native",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub(crate) struct PyJsonFileStore {
     inner: Arc<dyn StateStore>,

@@ -7,7 +7,7 @@ with two environment variables. Pick the one that matches what you want to do.
 
 Every script in this page reads two environment variables: `AVISO_BASE_URL` for
 the server URL and one of `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD` for
-credentials. `aviso.Env()` picks up whichever is set.
+credentials. `pyaviso.Env()` picks up whichever is set.
 
 ```bash
 export AVISO_BASE_URL=https://aviso.example.org
@@ -30,9 +30,9 @@ List what your server has configured:
 """List the event types this server publishes."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 print(client.schema().event_types)
 ```
 
@@ -47,9 +47,9 @@ Inspect what one stream expects:
 
 import json
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 print(json.dumps(client.schema_for("test_polygon").schema, indent=2))
 ```
 
@@ -146,9 +146,9 @@ Save as `publish.py` and run it.
 """Publish one notification and print the server's request_id."""
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 response = client.notify(
     event_type="test_polygon",
@@ -172,7 +172,7 @@ processed_at=2026-05-25T09:01:46Z
 ```
 
 The `status` is always `success` on a 2xx response; anything else raises
-`aviso.HttpError` before the print line.
+`pyaviso.HttpError` before the print line.
 
 ## 2. Listen for notifications
 
@@ -187,9 +187,9 @@ pending Python signals between polls, so Ctrl+C responds within ~100 ms.
 """
 
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
     print(f"seq={notification.sequence} time={notification.identifier.get('time')} payload={notification.payload}")
@@ -217,15 +217,15 @@ you miss whatever was published in between. Attaching a state store fixes that.
 
 import os
 import pathlib
-import aviso
+import pyaviso
 
 state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 
-client = aviso.AvisoClient(
+client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
-    auth=aviso.Env(),
-    state_store=aviso.JsonFileStore(state_path),
+    auth=pyaviso.Env(),
+    state_store=pyaviso.JsonFileStore(state_path),
 )
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
@@ -257,11 +257,11 @@ The async equivalent of recipe 2 looks like this:
 
 import asyncio
 import os
-import aviso
+import pyaviso
 
 
 async def main() -> None:
-    client = aviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+    client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
     async for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
         print(f"seq={notification.sequence}")
 

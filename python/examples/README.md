@@ -1,10 +1,10 @@
-# aviso Python examples
+# pyaviso examples
 
 Runnable scripts that show what the Python API does, one scenario per file. Every script reads `AVISO_BASE_URL` plus either `AVISO_TOKEN` or `AVISO_USERNAME` / `AVISO_PASSWORD` from the environment and connects to whatever aviso-server you point it at. The examples use the `test_polygon` event type, which the local e2e stack in this repo ships pre-configured.
 
-## Install the aviso package
+## Install the pyaviso package
 
-The `aviso` package must be installed in the active Python environment. From a checkout:
+The `pyaviso` package must be installed in the active Python environment. From a checkout:
 
 ```bash
 uv sync --locked --group dev

@@ -43,15 +43,15 @@ Start with the [library guide](./developers/lib-guide.md).
 
 ## From Python
 
-The `aviso` package wraps the Rust core through PyO3, so you get a real Python
+The `pyaviso` package wraps the Rust core through PyO3, so you get a real Python
 API: typed value objects, structured exceptions, `for`-iteration over a watch
 stream, and the same trigger surface the CLI uses.
 
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen("mars", filter={"class": "od"}):
     print(notification.sequence, notification.payload)

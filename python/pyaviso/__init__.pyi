@@ -1,4 +1,4 @@
-"""Type stubs for the curated public surface of the aviso Python package.
+"""Type stubs for the curated public surface of the pyaviso Python package.
 
 Hand-written. Kept in sync with the runtime ``__all__`` via
 ``python/tests/test_stub_completeness.py``.
