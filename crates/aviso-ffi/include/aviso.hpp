@@ -149,7 +149,11 @@ class Client {
 class ClientBuilder {
  public:
   explicit ClientBuilder(const std::string& base_url)
-      : handle_(aviso_client_builder_new(base_url.c_str())) {}
+      : handle_(aviso_client_builder_new(base_url.c_str())) {
+    if (!handle_) {
+      detail::throw_internal("aviso: failed to allocate a client builder");
+    }
+  }
 
   ClientBuilder& basic_auth(const std::string& username,
                             const std::string& password) {
