@@ -37,6 +37,14 @@ to a package registry yet.
   ProtonMail Bridge, a self-hosted Postfix, any RFC-5321 relay); credentials via
   `{{ env.<NAME> }}`. The retry classifier treats SMTP auth failures, malformed
   addresses, and permanent 5xx as terminal. Text-only to start.
+- **C++ binding.** A `cxx`-based adapter crate (`crates/aviso-cxx`) that exposes
+  the client to C++: blocking `notify` / `schema` / admin verbs, a
+  callback-driven `watch` built on the handler-shaped surface (D19),
+  builder-style client and watch-request construction, `identifier` and
+  `payload` as compact-JSON strings, and `Result`-to-C++-exception errors. The
+  adapter owns the tokio runtime (a synchronous surface, no async exposed to
+  C++); generated headers are consumed from CMake via `corrosion`; Linux and
+  macOS first. Detailed design in D21.
 
 ## Follow-ups
 
