@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import aviso
+import pyaviso
 import pytest
 
 POLYGON = "30,0,31,0,31,1,30,0"
@@ -28,7 +28,7 @@ def _time_str(seq: int) -> str:
     )
 )
 def test_replay_from_pruned_sequence_raises_history_gap(
-    producer_client: aviso.AvisoClient,
+    producer_client: pyaviso.AvisoClient,
 ) -> None:
     overflow = MAX_HISTORICAL_NOTIFICATIONS * 2 + 1
     last_response = None
@@ -44,9 +44,9 @@ def test_replay_from_pruned_sequence_raises_history_gap(
         )
     assert last_response is not None
 
-    request = aviso.WatchRequest.watch_from(EVENT_TYPE, 1).with_filter({"polygon": POLYGON})
+    request = pyaviso.WatchRequest.watch_from(EVENT_TYPE, 1).with_filter({"polygon": POLYGON})
     with (
-        pytest.raises(aviso.HistoryGapError) as exc_info,
+        pytest.raises(pyaviso.HistoryGapError) as exc_info,
         producer_client.listen(request=request) as iterator,
     ):
         next(iterator)

@@ -17,7 +17,7 @@ The `--group dev` flag pulls in `maturin`, `ruff`, `ty`, `pytest`, and the other
 dev tools alongside the runtime dependencies. `--locked` on both commands keeps
 the install reproducible from the committed `uv.lock` and `Cargo.lock`. The
 second command builds the Rust extension into the local virtualenv so
-`import aviso` works. The first build pulls the workspace's Rust dependencies
+`import pyaviso` works. The first build pulls the workspace's Rust dependencies
 and compiles them; subsequent builds are incremental.
 
 You need:
@@ -30,23 +30,39 @@ You need:
 ## Verifying the install
 
 ```bash
-uv run python -c "import aviso; print(aviso.__version__)"
+uv run python -c "import pyaviso; print(pyaviso.__version__)"
 ```
 
 Expected output: a version string like `0.1.0` (matching the Rust workspace
 version).
 
+## The bundled `aviso` command
+
+Installing `pyaviso` also puts the `aviso` command-line tool on your PATH, so a
+single `pip install` gives you both the importable library and the CLI:
+
+```bash
+uv run aviso --version
+```
+
+It is the same `aviso` command-line tool documented in the
+[CLI section](../cli/overview.md). The wheel installs it as a console script
+that runs the Rust CLI in-process through the extension (rather than shipping a
+separate compiled binary), so you do not need a `cargo install`. Pick whichever
+install path you prefer: `pip install pyaviso` and `cargo install aviso-cli`
+give you the same `aviso` command and behaviour.
+
 ## From PyPI
 
 Not available today. Install from a checkout as above. The wheel matrix
 (manylinux, macOS universal2) is the subject of a separate change; if
-and when it lands, `pip install aviso` becomes the simpler path.
+and when it lands, `pip install pyaviso` becomes the simpler path.
 
 ## Python version
 
-`aviso` targets Python 3.10 and newer. The extension is built with `abi3-py310`,
-so a single wheel works across every supported Python version on the same
-platform.
+`pyaviso` targets Python 3.10 and newer. The extension is built with
+`abi3-py310`, so a single wheel works across every supported Python version on
+the same platform.
 
 ## What next
 

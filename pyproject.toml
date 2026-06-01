@@ -3,7 +3,7 @@ requires = ["maturin>=1.13,<2"]
 build-backend = "maturin"
 
 [project]
-name = "aviso"
+name = "pyaviso"
 dynamic = ["version"]
 description = "Python client for aviso-server, a notification service for data-driven workflows."
 readme = "python/README.md"
@@ -35,6 +35,9 @@ Homepage = "https://github.com/ecmwf/aviso-client"
 Repository = "https://github.com/ecmwf/aviso-client"
 Issues = "https://github.com/ecmwf/aviso-client/issues"
 
+[project.scripts]
+aviso = "pyaviso.__main__:main"
+
 [dependency-groups]
 dev = [
     "maturin>=1.13,<2",
@@ -50,7 +53,7 @@ dev = [
 [tool.maturin]
 manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
-module-name = "aviso._native"
+module-name = "pyaviso._native"
 features = ["extension-module"]
 
 [tool.uv]

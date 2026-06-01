@@ -1,8 +1,10 @@
-# aviso (Python)
+# pyaviso
 
-Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows. The repo this package ships from is [`aviso-client`](https://github.com/ecmwf/aviso-client); the installable distribution and the importable module are both named `aviso`.
+Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows. The repo this package ships from is [`aviso-client`](https://github.com/ecmwf/aviso-client); the installable distribution and the importable module are both named `pyaviso`.
 
-The package wraps the Rust core via PyO3 bindings. The compiled extension lives at `aviso._native` and a curated Python wrapper at `aviso.__init__` exposes a Pythonic surface: synchronous `AvisoClient` and asynchronous `AsyncAvisoClient`, value types (`Notification`, `NotifyResponse`, `SchemaCatalog`, `SchemaResponse`), the `Trigger` builder, the five auth providers (`Bearer`, `Basic`, `Env`, `ConfigFile`, `Chain`), the two state stores (`MemoryStore`, `JsonFileStore`), and the exception hierarchy rooted at `AvisoError`.
+The package wraps the Rust core via PyO3 bindings. The compiled extension lives at `pyaviso._native` and a curated Python wrapper at `pyaviso.__init__` exposes a Pythonic surface: synchronous `AvisoClient` and asynchronous `AsyncAvisoClient`, value types (`Notification`, `NotifyResponse`, `SchemaCatalog`, `SchemaResponse`), the `Trigger` builder, the five auth providers (`Bearer`, `Basic`, `Env`, `ConfigFile`, `Chain`), the two state stores (`MemoryStore`, `JsonFileStore`), and the exception hierarchy rooted at `AvisoError`.
+
+Installing `pyaviso` also puts the `aviso` command-line tool on your PATH, so one install gives you both the importable library and the CLI.
 
 ## Install
 
@@ -14,12 +16,13 @@ cd aviso-client
 uv venv
 uv sync --locked --group dev
 uv run maturin develop --release --locked
-uv run python -c "import aviso; print(aviso.__version__)"
+uv run python -c "import pyaviso; print(pyaviso.__version__)"
+uv run aviso --version
 ```
 
 ## Quickstart
 
-Set two environment variables for the server URL and credentials, then run a listener. `aviso.Env()` reads `AVISO_TOKEN` (preferred) or the `AVISO_USERNAME`/`AVISO_PASSWORD` pair.
+Set two environment variables for the server URL and credentials, then run a listener. `pyaviso.Env()` reads `AVISO_TOKEN` (preferred) or the `AVISO_USERNAME`/`AVISO_PASSWORD` pair.
 
 ```bash
 export AVISO_BASE_URL=https://aviso.example.org
@@ -29,9 +32,9 @@ export AVISO_PASSWORD=wonderland
 
 ```python
 import os
-import aviso
+import pyaviso
 
-client = aviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=aviso.Env())
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
     print(notification.sequence, notification.payload)

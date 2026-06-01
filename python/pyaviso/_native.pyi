@@ -1,7 +1,7 @@
-"""Type stubs for the PyO3 extension module `aviso._native`.
+"""Type stubs for the PyO3 extension module `pyaviso._native`.
 
 Hand-written. Users never import this module directly; the public Python
-surface lives in `aviso.__init__`. These stubs describe the compiled
+surface lives in `pyaviso.__init__`. These stubs describe the compiled
 extension's exports so `ty check` can resolve imports from the wrapper
 package.
 """
@@ -318,3 +318,4 @@ def _provoke_error(
     observed: int | None = None,
     log_path: str | None = None,
 ) -> None: ...
+def _run_cli(argv: list[str]) -> int: ...

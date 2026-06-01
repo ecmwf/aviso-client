@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-import aviso
+import pyaviso
 from _helpers import receive_within
 
 POLYGON = "0,0,1,0,1,1,0,0"
@@ -10,7 +10,7 @@ EVENT_TYPE = "test_polygon"
 
 
 def test_publish_listen_roundtrips_three_notifications(
-    producer_client: aviso.AvisoClient,
+    producer_client: pyaviso.AvisoClient,
 ) -> None:
     expected = [1, 2, 3]
     received: list[dict] = []

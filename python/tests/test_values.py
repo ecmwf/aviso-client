@@ -15,12 +15,12 @@ server harness for those calls lands in a follow-up.
 
 from __future__ import annotations
 
-import aviso
+import pyaviso
 import pytest
 
 
 def test_notification_constructs_and_exposes_fields() -> None:
-    n = aviso.Notification(
+    n = pyaviso.Notification(
         event_type="mars",
         sequence=42,
         identifier={"class": "od", "stream": "oper"},
@@ -34,7 +34,7 @@ def test_notification_constructs_and_exposes_fields() -> None:
 
 
 def test_notification_as_dict_carries_documented_keys() -> None:
-    n = aviso.Notification(
+    n = pyaviso.Notification(
         event_type="mars",
         sequence=42,
         identifier={"class": "od"},
@@ -46,15 +46,15 @@ def test_notification_as_dict_carries_documented_keys() -> None:
 
 
 def test_notification_equality_is_value_based() -> None:
-    a = aviso.Notification(event_type="m", sequence=1, identifier={"k": "v"}, payload=None)
-    b = aviso.Notification(event_type="m", sequence=1, identifier={"k": "v"}, payload=None)
-    c = aviso.Notification(event_type="m", sequence=2, identifier={"k": "v"}, payload=None)
+    a = pyaviso.Notification(event_type="m", sequence=1, identifier={"k": "v"}, payload=None)
+    b = pyaviso.Notification(event_type="m", sequence=1, identifier={"k": "v"}, payload=None)
+    c = pyaviso.Notification(event_type="m", sequence=2, identifier={"k": "v"}, payload=None)
     assert a == b
     assert a != c
 
 
 def test_notification_is_unhashable() -> None:
-    n = aviso.Notification(
+    n = pyaviso.Notification(
         event_type="m",
         sequence=1,
         identifier={"k": "v"},
@@ -65,7 +65,7 @@ def test_notification_is_unhashable() -> None:
 
 
 def test_notification_repr_includes_key_fields() -> None:
-    n = aviso.Notification(
+    n = pyaviso.Notification(
         event_type="mars",
         sequence=42,
         identifier={"class": "od"},
@@ -77,7 +77,7 @@ def test_notification_repr_includes_key_fields() -> None:
 
 
 def test_notify_response_round_trips() -> None:
-    r = aviso.NotifyResponse(status="success", request_id="req-1", processed_at="2026-05-17")
+    r = pyaviso.NotifyResponse(status="success", request_id="req-1", processed_at="2026-05-17")
     assert r.status == "success"
     assert r.request_id == "req-1"
     assert r.processed_at == "2026-05-17"
@@ -89,6 +89,6 @@ def test_notify_response_round_trips() -> None:
 
 
 def test_notify_response_is_unhashable() -> None:
-    r = aviso.NotifyResponse(status="success", request_id="req-1", processed_at="t")
+    r = pyaviso.NotifyResponse(status="success", request_id="req-1", processed_at="t")
     with pytest.raises(TypeError):
         hash(r)

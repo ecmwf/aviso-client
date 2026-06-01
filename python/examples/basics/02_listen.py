@@ -16,11 +16,12 @@ starts) is delivered to zero subscribers. Three publishes ensure the
 listener catches at least one even if it lost the race on the first.
 
 Expected output (one line per matching publish; sequences differ between
-servers and advance over time):
+servers and advance over time, and the server returns identifier keys in
+alphabetical order):
 
-    seq=80 identifier={'polygon': '0,0,1,0,1,1,0,0', 'date': '20260601'} ...
-    seq=81 identifier=... payload=...
-    seq=82 identifier=... payload=...
+    seq=80 identifier={'date': ..., 'polygon': ..., 'time': ...} payload={...}
+    seq=81 identifier={...} payload={...}
+    seq=82 identifier={...} payload={...}
     received 3 notifications; exiting
 """
 
@@ -31,12 +32,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env
 
 
 def main() -> None:
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     count = 0
     with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
         for n in break_after(iterator, 3):

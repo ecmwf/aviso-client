@@ -27,7 +27,7 @@ from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env
 
 
@@ -48,7 +48,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         pass
 
 
-def publish_after_delay(client: aviso.AvisoClient, delay: float) -> None:
+def publish_after_delay(client: pyaviso.AvisoClient, delay: float) -> None:
     """Publish one notification after ``delay`` seconds.
 
     Runs in a background thread so the main thread can subscribe before
@@ -75,7 +75,7 @@ def main() -> None:
     http_thread = threading.Thread(target=server.serve_forever, daemon=True)
     http_thread.start()
 
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     publisher_thread = threading.Thread(target=publish_after_delay, args=(client, 2.0), daemon=True)
     publisher_thread.start()
     print("publisher will fire in ~2 s")
@@ -86,9 +86,9 @@ def main() -> None:
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
             triggers=[
-                aviso.Trigger.webhook(
+                pyaviso.Trigger.webhook(
                     f"http://127.0.0.1:{port}/notify",
-                    method=aviso.HttpMethod.POST,
+                    method=pyaviso.HttpMethod.POST,
                 )
             ],
         ) as iterator:

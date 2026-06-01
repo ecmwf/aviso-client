@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::error::duration_from_seconds;
 use crate::paths::normalize_path;
 
-#[pyclass(name = "Trigger", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "Trigger", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct PyTrigger {
     inner: Trigger,

@@ -165,6 +165,7 @@ name = "aviso-py"
 version = "0.1.0"
 dependencies = [
  "aviso",
+ "aviso-cli",
  "futures-util",
  "pyo3",
  "pyo3-async-runtimes",

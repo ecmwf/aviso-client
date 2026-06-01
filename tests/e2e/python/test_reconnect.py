@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-import aviso
+import pyaviso
 from _helpers import background_publishes, receive_within
 
 POLYGON = "10,0,11,0,11,1,10,0"
@@ -10,7 +10,7 @@ EVENT_TYPE = "test_polygon"
 CONNECTION_MAX_DURATION_SEC = 15
 
 
-def _publish(client: aviso.AvisoClient, seq: int) -> None:
+def _publish(client: pyaviso.AvisoClient, seq: int) -> None:
     client.notify(
         event_type=EVENT_TYPE,
         identifier={"polygon": POLYGON, "date": "20260602", "time": f"{seq:04d}"},
@@ -19,7 +19,7 @@ def _publish(client: aviso.AvisoClient, seq: int) -> None:
 
 
 def test_listener_survives_max_duration_reached_cut(
-    producer_client: aviso.AvisoClient,
+    producer_client: pyaviso.AvisoClient,
 ) -> None:
     expected = {1, 2, 3, 4}
     received: list[int] = []

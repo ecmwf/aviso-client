@@ -62,7 +62,7 @@ bash tests/e2e/shared/stack.sh restart  # wipe JetStream and bring back up
 bash tests/e2e/shared/stack.sh logs     # tail the last 100 lines of docker compose logs
 ```
 
-The `uv sync` + `uv run maturin develop` setup builds the `aviso._native` extension into the local venv so the Python suite can `import aviso`; without it, `uv run pytest tests/e2e/python/` fails on first import. The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.
+The `uv sync` + `uv run maturin develop` setup builds the `pyaviso._native` extension into the local venv so the Python suite can `import pyaviso`; without it, `uv run pytest tests/e2e/python/` fails on first import. The `cargo build -p aviso-cli` step is required because the Rust e2e CLI tests use `assert_cmd::Command::cargo_bin("aviso")`, which expects the binary to exist at `target/debug/aviso`.
 
 Per-pytest-session teardown is opt-in via `AVISO_E2E_TEARDOWN=1` so successive `uv run pytest` invocations skip the docker startup cost; tests will leave the stack running otherwise.
 

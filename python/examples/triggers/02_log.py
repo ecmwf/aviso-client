@@ -34,12 +34,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env, temp_dir
 
 
 def main() -> None:
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     with temp_dir() as workdir:
         log_path = workdir / "notifications.log"
         print(f"log path: {log_path}")
@@ -48,7 +48,7 @@ def main() -> None:
         with client.listen(
             "test_polygon",
             filter={"polygon": "0,0,1,0,1,1,0,0"},
-            triggers=[aviso.Trigger.log(log_path)],
+            triggers=[pyaviso.Trigger.log(log_path)],
         ) as iterator:
             for n in break_after(iterator, 3):
                 count += 1

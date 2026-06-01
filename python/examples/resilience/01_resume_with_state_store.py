@@ -35,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env, temp_dir
 
 
@@ -44,10 +44,10 @@ def main() -> None:
         state_path = workdir / "state.json"
         print(f"state file: {state_path}")
 
-        client = aviso.AvisoClient(
+        client = pyaviso.AvisoClient(
             base_url=require_env(),
-            auth=aviso.Env(),
-            state_store=aviso.JsonFileStore(state_path),
+            auth=pyaviso.Env(),
+            state_store=pyaviso.JsonFileStore(state_path),
             flush_cursor_on_exit=True,
         )
         with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:

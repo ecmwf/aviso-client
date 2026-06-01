@@ -25,7 +25,7 @@ use crate::watch::{PyWatchRequest, parse_resume_start};
 
 /// Synchronous `PyO3` client. Methods block the current Python thread
 /// while the underlying async future runs on the shared tokio runtime.
-#[pyclass(name = "AvisoClient", module = "aviso._native", skip_from_py_object)]
+#[pyclass(name = "AvisoClient", module = "pyaviso._native", skip_from_py_object)]
 pub(crate) struct PyAvisoClient {
     inner: AvisoClient,
 }
@@ -198,7 +198,7 @@ impl PyAvisoClient {
 /// shared tokio runtime via `pyo3-async-runtimes`.
 #[pyclass(
     name = "AsyncAvisoClient",
-    module = "aviso._native",
+    module = "pyaviso._native",
     skip_from_py_object
 )]
 pub(crate) struct PyAsyncAvisoClient {

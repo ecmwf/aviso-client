@@ -13,23 +13,23 @@ Two snippets shown side-by-side in this docstring so you can compare
     with client.listen(
         "test_polygon",
         filter={"polygon": "0,0,1,0,1,1,0,0"},
-        triggers=[aviso.Trigger.echo()],
+        triggers=[pyaviso.Trigger.echo()],
     ) as iterator:
         for n in iterator:
             ...
 
     # builder style (this file):
     request = (
-        aviso.WatchRequest.watch("test_polygon")
+        pyaviso.WatchRequest.watch("test_polygon")
         .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-        .with_triggers([aviso.Trigger.echo()])
+        .with_triggers([pyaviso.Trigger.echo()])
     )
     with client.listen(request=request) as iterator:
         for n in iterator:
             ...
 
 The two produce identical iterators against the same server. Passing
-both triggers= and request= raises aviso.AvisoError.
+both triggers= and request= raises pyaviso.AvisoError.
 
 Run this script in one terminal and basics/01_publish.py in another;
 the publisher's 3-publish window covers the listener's SSE handshake.
@@ -48,16 +48,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aviso
+import pyaviso
 from _common import break_after, require_env
 
 
 def main() -> None:
-    client = aviso.AvisoClient(base_url=require_env(), auth=aviso.Env())
+    client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     request = (
-        aviso.WatchRequest.watch("test_polygon")
+        pyaviso.WatchRequest.watch("test_polygon")
         .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-        .with_triggers([aviso.Trigger.echo()])
+        .with_triggers([pyaviso.Trigger.echo()])
     )
     count = 0
     with client.listen(request=request) as iterator:

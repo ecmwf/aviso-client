@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-import aviso
+import pyaviso
 from _helpers import receive_within_async
 
 POLYGON_A = "50,0,51,0,51,1,50,0"
@@ -10,7 +10,7 @@ POLYGON_B = "60,0,61,0,61,1,60,0"
 EVENT_TYPE = "test_polygon"
 
 
-async def _consume(client: aviso.AsyncAvisoClient, polygon: str, count: int) -> list[int]:
+async def _consume(client: pyaviso.AsyncAvisoClient, polygon: str, count: int) -> list[int]:
     received: list[int] = []
     async with client.listen(EVENT_TYPE, filter={"polygon": polygon}) as iterator:
         for _ in range(count):
@@ -20,7 +20,7 @@ async def _consume(client: aviso.AsyncAvisoClient, polygon: str, count: int) -> 
 
 
 async def _publish_one(
-    client: aviso.AsyncAvisoClient, polygon: str, date: str, time_str: str, seq: int
+    client: pyaviso.AsyncAvisoClient, polygon: str, date: str, time_str: str, seq: int
 ) -> None:
     await client.notify(
         event_type=EVENT_TYPE,
@@ -30,9 +30,9 @@ async def _publish_one(
 
 
 async def test_two_async_listeners_drain_disjoint_polygons(
-    base_url: str, producer_auth: aviso.Basic
+    base_url: str, producer_auth: pyaviso.Basic
 ) -> None:
-    client = aviso.AsyncAvisoClient(base_url=base_url, auth=producer_auth)
+    client = pyaviso.AsyncAvisoClient(base_url=base_url, auth=producer_auth)
 
     async def feed_a() -> None:
         await asyncio.sleep(0.7)
