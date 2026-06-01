@@ -53,8 +53,20 @@ inline std::optional<std::string> optional_string(const char* value) {
   return std::string(value);
 }
 
+[[noreturn]] inline void throw_internal(std::string message) {
+  ErrorInfo info;
+  info.kind = AvisoErrorKind_Internal;
+  info.message = std::move(message);
+  throw Error(std::move(info));
+}
+
 inline ErrorInfo to_error_info(const AvisoError* error) {
   ErrorInfo info;
+  if (error == nullptr) {
+    info.kind = AvisoErrorKind_Internal;
+    info.message = "aviso: outcome reported a failure but carried no error";
+    return info;
+  }
   info.kind = error->kind;
   info.http_status = error->http_status;
   info.message =
@@ -95,10 +107,7 @@ using BuilderPtr = std::unique_ptr<AvisoClientBuilder, BuilderDeleter>;
 // unchanged otherwise so the caller can take a success value out of it.
 inline OutcomePtr check(OutcomePtr outcome) {
   if (!outcome) {
-    ErrorInfo info;
-    info.kind = AvisoErrorKind_Internal;
-    info.message = "aviso: received a null outcome";
-    throw Error(std::move(info));
+    throw_internal("aviso: received a null outcome");
   }
   if (!aviso_outcome_is_ok(outcome.get())) {
     throw Error(to_error_info(aviso_outcome_error(outcome.get())));
@@ -124,7 +133,10 @@ class Client {
     detail::OutcomePtr outcome =
         detail::check(detail::OutcomePtr(aviso_client_schema(handle_.get())));
     detail::StringPtr text(aviso_outcome_take_string(outcome.get()));
-    return text ? std::string(text.get()) : std::string();
+    if (!text) {
+      detail::throw_internal("aviso: schema succeeded but returned no value");
+    }
+    return std::string(text.get());
   }
 
  private:
@@ -152,7 +164,11 @@ class ClientBuilder {
     AvisoClientBuilder* raw = handle_.release();
     detail::OutcomePtr outcome =
         detail::check(detail::OutcomePtr(aviso_client_builder_build(&raw)));
-    return Client(aviso_outcome_take_client(outcome.get()));
+    AvisoClient* client = aviso_outcome_take_client(outcome.get());
+    if (client == nullptr) {
+      detail::throw_internal("aviso: build succeeded but returned no client");
+    }
+    return Client(client);
   }
 
  private:
