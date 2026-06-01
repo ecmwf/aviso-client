@@ -38,13 +38,14 @@ to a package registry yet.
   `{{ env.<NAME> }}`. The retry classifier treats SMTP auth failures, malformed
   addresses, and permanent 5xx as terminal. Text-only to start.
 - **C++ binding.** A `cxx`-based adapter crate (`crates/aviso-cxx`) that exposes
-  the client to C++: blocking `notify` / `schema` / admin verbs, a
-  callback-driven `watch` built on the handler-shaped surface (D19),
-  builder-style client and watch-request construction, `identifier` and
-  `payload` as compact-JSON strings, and `Result`-to-C++-exception errors. The
-  adapter owns the tokio runtime (a synchronous surface, no async exposed to
-  C++); generated headers are consumed from CMake via `corrosion`; Linux and
-  macOS first. Detailed design in D21.
+  the client to C++: the request/response verbs and a callback-driven `watch`
+  (over the handler-shaped surface, D19) in both blocking and `cxx-async`
+  C++20-coroutine forms, builder-style client, watch-request, and trigger
+  construction, `identifier` / `payload` as compact-JSON strings, and a
+  structured error ABI (a kind enum plus fields) with an ergonomic throwing
+  facade on top. The adapter owns the tokio runtime; generated headers are
+  consumed from CMake via `corrosion`; Linux and macOS, no Windows. Detailed
+  design in D21.
 
 ## Follow-ups
 
