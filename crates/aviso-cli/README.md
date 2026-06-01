@@ -9,6 +9,8 @@ cargo install aviso-cli
 aviso --help
 ```
 
+The same `aviso` binary is also bundled in the [`pyaviso`](https://github.com/ecmwf/aviso-client/tree/main/python) Python package, so `pip install pyaviso` puts it on your PATH too.
+
 See the [workspace repository](https://github.com/ecmwf/aviso-client) for usage and architectural background.
 
 ## License
