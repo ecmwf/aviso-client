@@ -32,7 +32,7 @@ Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF'
 - **`crates/aviso-py`**: PyO3 binding crate. Builds as a `cdylib` extension named `pyaviso._native` plus an `rlib` so the workspace's `cargo test` sees its types.
 - **`python/pyaviso/`**: pure-Python wrapper around `pyaviso._native`. The installable distribution and the importable module are both named `pyaviso`. The wheel also bundles the `aviso` CLI as a console command (a script that runs the Rust CLI through the extension), so `pip install pyaviso` provides both `import pyaviso` and the `aviso` command. Built locally with `uv run maturin develop`; PyPI wheels are not published yet, so install from a checkout.
 - **`crates/aviso-ffi`**: C/C++ binding crate. Builds `libaviso_ffi` (a `staticlib` and a `cdylib`) exposing a stable C ABI through a `cbindgen`-generated header (`include/aviso.h`), plus a hand-written header-only C++ facade (`include/aviso.hpp`) with RAII handles and a throwing `aviso::Error`. A C or C++ application links the prebuilt library with its own toolchain and needs no Rust toolchain in its build.
-- **`examples/cpp/`**: worked C++ consumers of the binding (publish, watch, triggers, async), built with CMake against the library and facade. They double as the binding's tested reference.
+- **`examples/cpp/`**: worked C++ consumers of the binding, built with CMake against the library and facade. They double as the binding's tested reference.
 - **`docs/`**: mdBook user-facing documentation (CLI, Rust library, Python package, C++ binding).
 
 ## Running the full check set
