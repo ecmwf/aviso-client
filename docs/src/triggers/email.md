@@ -74,11 +74,12 @@ triggers:
 
 This is cross-platform and goes through the same
 [template engine](./template-engine.md) as the other HTTP triggers. That engine
-substitutes values verbatim and does not JSON-escape them, so keep substitutions
-in quoted, scalar positions (`event_type`, `sequence`) as above. Do not drop
-`{{ notification.payload }}` in unquoted: a string payload would render without
-quotes and an object payload would change the field's type, either of which
-breaks the JSON. If the body needs the full payload, send it through the
+substitutes values verbatim and does not quote or JSON-escape them, so keep
+substitutions in quoted, scalar positions (`event_type`, `sequence`) as above.
+Avoid dropping a raw `{{ notification.payload }}` into the body: a string or
+number payload renders unquoted and produces invalid JSON, while an object or
+array payload stays valid JSON but changes the field's type and likely violates
+the receiver's schema. If the body needs the full payload, send it through the
 command trigger using `AVISO_PAYLOAD_JSON` / `AVISO_NOTIFICATION_JSON` instead.
 
 ## From code
