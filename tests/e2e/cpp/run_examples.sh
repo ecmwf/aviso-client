@@ -18,8 +18,10 @@ export AVISO_USERNAME="${AVISO_USERNAME:-producer-user}"
 export AVISO_PASSWORD="${AVISO_PASSWORD:-producer-pass}"
 
 # Run from a scratch directory so example output (the trigger's log file) does
-# not land in the checkout.
-cd "$(mktemp -d)"
+# not land in the checkout; clean it up on exit.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+cd "$work"
 
 echo "== schema_smoke ==" && "$BUILD_DIR/schema_smoke"
 echo "== publish ==" && "$BUILD_DIR/publish"
@@ -41,7 +43,12 @@ drive() {
     sleep 0.5
   done
   if kill -0 "$pid" 2>/dev/null; then
+    # Bounded shutdown: SIGTERM, a short grace period, then SIGKILL, so a stuck
+    # process cannot make the wait below hang.
     kill "$pid" 2>/dev/null || true
+    local g
+    for g in 1 2 3 4 5; do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+    kill -9 "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
     cat "$out"
     echo "FAIL: $name did not finish after 40 publishes" >&2
