@@ -7,9 +7,11 @@ that bound every choice are in [`constraints.md`](./constraints.md).
 ## Where things stand
 
 aviso-client is unreleased. The Rust core library, the `aviso` CLI, the Python
-(PyO3) package, the end-to-end test suite, self-hosted CI with sccache, and
-documentation published to ECMWF Sites are all in `main`. Nothing is published
-to a package registry yet.
+(PyO3) package, the C++ binding (a stable C ABI plus a header-only C++ facade,
+covering the blocking and async verbs, watch, and triggers; D21 steps 1-5), the
+end-to-end test suite, self-hosted CI with sccache, and documentation published
+to ECMWF Sites are all in `main`. Nothing is published to a package registry
+yet.
 
 ## What's next
 
@@ -37,16 +39,22 @@ to a package registry yet.
   ProtonMail Bridge, a self-hosted Postfix, any RFC-5321 relay); credentials via
   `{{ env.<NAME> }}`. The retry classifier treats SMTP auth failures, malformed
   addresses, and permanent 5xx as terminal. Text-only to start.
-- **C++ binding.** A `crates/aviso-ffi` adapter exposing the client to C++ as a
-  stable C ABI (a `cbindgen` header) plus a header-only C++ facade over it: the
-  request/response verbs (blocking and completion-callback async, with a
-  `std::future` form in the facade), a callback-driven `watch` (over the
-  handler-shaped surface, D19), builder-style client, watch-request, and trigger
-  construction, `identifier` / `payload` as compact-JSON strings, and a
-  structured error ABI (a kind enum plus an `AvisoError` struct) with an
-  ergonomic throwing facade. Shipped as a prebuilt per-platform binary so the
-  consumer's build needs no Rust toolchain; Linux and macOS, no Windows.
-  Detailed design in D21.
+- **Prebuilt C++ artifacts.** The C++ binding itself is in `main` (the C ABI,
+  the header-only facade, the blocking and async verbs, watch, triggers,
+  examples, and docs; D21 steps 1-5). What remains is the packaging deliverable
+  that motivated the C-ABI choice: shipping a prebuilt per-platform library so a
+  consumer links it with no Rust toolchain. crates.io distributes source only
+  (`cargo` compiles it in the consumer's build), so there is no way to fetch a
+  compiled `libaviso_ffi.{a,so,dylib}` from it; the libraries must be
+  distributed as release assets. Plan: a tag-triggered release workflow that
+  cross-builds `libaviso_ffi.{a,so,dylib}` for Linux `x86_64`, Linux `aarch64`,
+  and macOS, and attaches each together with `aviso.h` and `aviso.hpp` as GitHub
+  Release assets (the drop a CMake consumer points `AVISO_FFI_INCLUDE_DIR` and
+  `AVISO_FFI_LIB_DIR` at). The same artifacts are packageable for spack-stack
+  and conda-forge with `rust` as a build-only dependency of that recipe.
+  Followed by `docs/src/cpp` install/packaging pages. A real-stack C++ e2e CI
+  job (the examples run against the e2e stack) lands first, ahead of the release
+  matrix. Future work; design context in D21. No Windows.
 
 ## Follow-ups
 
