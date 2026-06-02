@@ -13,6 +13,11 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#34](https://github.com/ecmwf/aviso-client/pull/34) ffi: the rest of the
+  blocking C++ surface. Adds `notify`, `schema_for`, `wipe_stream`, `wipe_all`,
+  and `delete_notification` to the C ABI and the C++ facade, derives `Serialize`
+  on `NotifyResponse`, and ships a `publish` example plus Publishing and
+  Operations docs. Verified end to end against the e2e stack.
 - [#33](https://github.com/ecmwf/aviso-client/pull/33) ffi: C++ binding
   foundation. A peer crate `crates/aviso-ffi` exposes the client as a stable C
   ABI (cbindgen-generated `aviso.h`, owning handles, a structured-error
