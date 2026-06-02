@@ -137,7 +137,7 @@ fn opt_ptr(s: Option<&CString>) -> *const c_char {
 
 /// Builds a `CString`, dropping any interior NUL bytes so construction never
 /// fails on an arbitrary message.
-fn cstring_lossy(s: String) -> CString {
+pub(crate) fn cstring_lossy(s: String) -> CString {
     let bytes: Vec<u8> = s.into_bytes().into_iter().filter(|b| *b != 0).collect();
     CString::new(bytes).unwrap_or_default()
 }
@@ -256,9 +256,9 @@ pub(crate) fn internal(message: &str) -> OutcomeError {
     )
 }
 
-/// The outcome handed back when `std::panic::catch_unwind` traps a panic at
-/// the boundary.
-pub(crate) fn panic_outcome() -> *mut AvisoOutcome {
+/// The error built when `std::panic::catch_unwind` traps a panic at the
+/// boundary.
+pub(crate) fn panic_error() -> OutcomeError {
     OutcomeError::build(
         AvisoErrorKind::Panic,
         0,
@@ -267,5 +267,10 @@ pub(crate) fn panic_outcome() -> *mut AvisoOutcome {
         None,
         None,
     )
-    .into_outcome()
+}
+
+/// The outcome handed back when `std::panic::catch_unwind` traps a panic at
+/// the boundary.
+pub(crate) fn panic_outcome() -> *mut AvisoOutcome {
+    panic_error().into_outcome()
 }

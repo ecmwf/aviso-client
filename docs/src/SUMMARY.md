@@ -48,6 +48,7 @@
 
 - [Overview](./cpp/overview.md)
 - [Publishing](./cpp/publish.md)
+- [Watching](./cpp/watch.md)
 - [Operations](./cpp/operations.md)
 
 ---
