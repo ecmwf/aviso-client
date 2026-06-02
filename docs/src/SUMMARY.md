@@ -47,7 +47,8 @@
 # C++
 
 - [Overview](./cpp/overview.md)
-- [Blocking verbs](./cpp/verbs.md)
+- [Publishing](./cpp/publish.md)
+- [Operations](./cpp/operations.md)
 
 ---
 
