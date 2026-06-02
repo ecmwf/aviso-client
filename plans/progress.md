@@ -13,6 +13,12 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#33](https://github.com/ecmwf/aviso-client/pull/33) ffi: C++ binding
+  foundation. A peer crate `crates/aviso-ffi` exposes the client as a stable C
+  ABI (cbindgen-generated `aviso.h`, owning handles, a structured-error
+  outcome, a process-global runtime, panic-guarded entry points) plus a
+  header-only C++ facade, with client construction and the blocking schema verb.
+  A CMake example and a self-hosted, sccache-backed CI job build and run it.
 - [#26](https://github.com/ecmwf/aviso-client/pull/26) docs: README aviso logo,
   badges, and hosted-docs links.
 - [#25](https://github.com/ecmwf/aviso-client/pull/25) ci: publish the mdBook to
