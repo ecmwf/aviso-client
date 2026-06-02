@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <future>
 #include <map>
 #include <memory>
 #include <optional>
@@ -179,6 +180,63 @@ inline OutcomePtr check(OutcomePtr outcome) {
   return outcome;
 }
 
+// Completion trampolines for the async verbs. Each owns the heap-allocated
+// promise passed as `ctx`, fulfils it from the outcome (value or an
+// `aviso::Error`), and frees the outcome. A C++ exception is never allowed to
+// unwind across the boundary into Rust.
+extern "C" inline void async_complete_string(void* ctx, AvisoOutcome* outcome) {
+  std::unique_ptr<std::promise<std::string>> promise(
+      static_cast<std::promise<std::string>*>(ctx));
+  OutcomePtr owned(outcome);
+  try {
+    if (!owned || !aviso_outcome_is_ok(owned.get())) {
+      const AvisoError* error = owned ? aviso_outcome_error(owned.get()) : nullptr;
+      promise->set_exception(std::make_exception_ptr(Error(to_error_info(error))));
+    } else {
+      StringPtr text(aviso_outcome_take_string(owned.get()));
+      if (!text) {
+        // A success that carries no string is an internal protocol bug, not an
+        // empty value; surface it like the blocking facade does.
+        ErrorInfo info;
+        info.kind = AvisoErrorKind_Internal;
+        info.message = "aviso: async call succeeded but returned no value";
+        promise->set_exception(std::make_exception_ptr(Error(std::move(info))));
+      } else {
+        promise->set_value(std::string(text.get()));
+      }
+    }
+  } catch (...) {
+    // Building the value/exception threw (e.g. bad_alloc): still fulfil the
+    // promise so .get() raises something deterministic instead of
+    // broken_promise. The inner guard covers an already-satisfied promise.
+    try {
+      promise->set_exception(std::current_exception());
+    } catch (...) {
+    }
+  }
+}
+
+extern "C" inline void async_complete_void(void* ctx, AvisoOutcome* outcome) {
+  std::unique_ptr<std::promise<void>> promise(
+      static_cast<std::promise<void>*>(ctx));
+  OutcomePtr owned(outcome);
+  try {
+    if (!owned || !aviso_outcome_is_ok(owned.get())) {
+      const AvisoError* error = owned ? aviso_outcome_error(owned.get()) : nullptr;
+      promise->set_exception(std::make_exception_ptr(Error(to_error_info(error))));
+    } else {
+      promise->set_value();
+    }
+  } catch (...) {
+    // Fulfil the promise even if the above threw, so .get() raises something
+    // deterministic instead of broken_promise.
+    try {
+      promise->set_exception(std::current_exception());
+    } catch (...) {
+    }
+  }
+}
+
 }  // namespace detail
 
 // Version of the underlying library.
@@ -285,6 +343,76 @@ class Client {
   void delete_notification(const std::string& notification_id) {
     detail::check(detail::OutcomePtr(
         aviso_client_delete_notification(handle_.get(), notification_id.c_str())));
+  }
+
+  // Async forms of the blocking verbs. Each returns a std::future that becomes
+  // ready when the call completes, holding the response (or throwing the
+  // aviso::Error via the future). Unlike the blocking verbs these are safe to
+  // call from a watch or async callback.
+  [[nodiscard]] std::future<std::string> notify_async(
+      const std::string& event_type,
+      const std::map<std::string, std::string>& identifier = {},
+      const std::optional<std::string>& payload = std::nullopt) {
+    std::string identifier_json;
+    const char* identifier_ptr = nullptr;
+    if (!identifier.empty()) {
+      identifier_json = detail::to_identifier_json(identifier);
+      identifier_ptr = identifier_json.c_str();
+    }
+    const char* payload_ptr = payload ? payload->c_str() : nullptr;
+    auto promise = std::make_unique<std::promise<std::string>>();
+    std::future<std::string> future = promise->get_future();
+    aviso_client_notify_async(handle_.get(), event_type.c_str(), identifier_ptr,
+                              payload_ptr, detail::async_complete_string,
+                              promise.release());
+    return future;
+  }
+
+  [[nodiscard]] std::future<std::string> schema_async() {
+    auto promise = std::make_unique<std::promise<std::string>>();
+    std::future<std::string> future = promise->get_future();
+    aviso_client_schema_async(handle_.get(), detail::async_complete_string,
+                              promise.release());
+    return future;
+  }
+
+  [[nodiscard]] std::future<std::string> schema_for_async(
+      const std::string& event_type) {
+    auto promise = std::make_unique<std::promise<std::string>>();
+    std::future<std::string> future = promise->get_future();
+    aviso_client_schema_for_async(handle_.get(), event_type.c_str(),
+                                  detail::async_complete_string,
+                                  promise.release());
+    return future;
+  }
+
+  [[nodiscard]] std::future<void> wipe_stream_async(
+      const std::string& stream_name) {
+    auto promise = std::make_unique<std::promise<void>>();
+    std::future<void> future = promise->get_future();
+    aviso_client_wipe_stream_async(handle_.get(), stream_name.c_str(),
+                                   detail::async_complete_void,
+                                   promise.release());
+    return future;
+  }
+
+  [[nodiscard]] std::future<void> wipe_all_async() {
+    auto promise = std::make_unique<std::promise<void>>();
+    std::future<void> future = promise->get_future();
+    aviso_client_wipe_all_async(handle_.get(), detail::async_complete_void,
+                                promise.release());
+    return future;
+  }
+
+  [[nodiscard]] std::future<void> delete_notification_async(
+      const std::string& notification_id) {
+    auto promise = std::make_unique<std::promise<void>>();
+    std::future<void> future = promise->get_future();
+    aviso_client_delete_notification_async(handle_.get(),
+                                           notification_id.c_str(),
+                                           detail::async_complete_void,
+                                           promise.release());
+    return future;
   }
 
   // Starts a watch, consuming `request`. Notifications are delivered to

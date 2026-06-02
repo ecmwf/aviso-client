@@ -84,3 +84,10 @@ export AVISO_PASSWORD=producer-pass
   ```bash
   ./build/cpp/trigger
   ```
+
+- `async.cpp`: fires two async verbs (`notify_async` and `schema_async`) at once
+  and waits on their `std::future`s, showing the future-based async form.
+
+  ```bash
+  ./build/cpp/async
+  ```
