@@ -200,9 +200,10 @@ const char *aviso_version(void);
 
 /**
  * Publishes a notification asynchronously. When it finishes, `on_complete` is
- * called exactly once on a runtime thread with an owning outcome (the response
- * JSON, or a structured error): free it with `aviso_outcome_free`. The
- * callback must not unwind across the boundary. No-op if `on_complete` is null.
+ * called exactly once (normally on a runtime thread) with an owning outcome
+ * (the response JSON, or a structured error): free it with
+ * `aviso_outcome_free`. The callback must not unwind across the boundary.
+ * No-op if `on_complete` is null.
  *
  * # Safety
  *
@@ -219,8 +220,8 @@ void aviso_client_notify_async(const AvisoClient *client,
 
 /**
  * Fetches the full schema catalog asynchronously. When it finishes,
- * `on_complete` is called exactly once on a runtime thread with an owning
- * outcome (the catalog JSON, or a structured error): free it with
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (the catalog JSON, or a structured error): free it with
  * `aviso_outcome_free`. The callback must not unwind across the boundary.
  * No-op if `on_complete` is null.
  *
@@ -235,7 +236,7 @@ void aviso_client_schema_async(const AvisoClient *client,
 
 /**
  * Fetches one stream's schema asynchronously. When it finishes, `on_complete`
- * is called exactly once on a runtime thread with an owning outcome (the
+ * is called exactly once (normally on a runtime thread) with an owning outcome (the
  * schema JSON, or a structured error): free it with `aviso_outcome_free`. The
  * callback must not unwind across the boundary. No-op if `on_complete` is null.
  *
@@ -252,8 +253,8 @@ void aviso_client_schema_for_async(const AvisoClient *client,
 
 /**
  * Wipes one stream asynchronously (operator-only). When it finishes,
- * `on_complete` is called exactly once on a runtime thread with an owning
- * outcome (an empty success, or a structured error): free it with
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (an empty success, or a structured error): free it with
  * `aviso_outcome_free`. The callback must not unwind across the boundary.
  * No-op if `on_complete` is null.
  *
@@ -270,8 +271,8 @@ void aviso_client_wipe_stream_async(const AvisoClient *client,
 
 /**
  * Wipes every stream asynchronously (operator-only). When it finishes,
- * `on_complete` is called exactly once on a runtime thread with an owning
- * outcome (an empty success, or a structured error): free it with
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (an empty success, or a structured error): free it with
  * `aviso_outcome_free`. The callback must not unwind across the boundary.
  * No-op if `on_complete` is null.
  *
@@ -286,10 +287,10 @@ void aviso_client_wipe_all_async(const AvisoClient *client,
 
 /**
  * Deletes one notification by its `<event_type>@<sequence>` id asynchronously
- * (operator-only). When it finishes, `on_complete` is called exactly once on a
- * runtime thread with an owning outcome (an empty success, or a structured
- * error): free it with `aviso_outcome_free`. The callback must not unwind
- * across the boundary. No-op if `on_complete` is null.
+ * (operator-only). When it finishes, `on_complete` is called exactly once
+ * (normally on a runtime thread) with an owning outcome (an empty success, or
+ * a structured error): free it with `aviso_outcome_free`. The callback must
+ * not unwind across the boundary. No-op if `on_complete` is null.
  *
  * # Safety
  *

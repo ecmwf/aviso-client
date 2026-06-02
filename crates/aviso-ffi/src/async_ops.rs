@@ -2,12 +2,13 @@
 //!
 //! Each `aviso_client_*_async` function returns immediately after spawning a
 //! task on the process-global runtime; when the verb finishes, `on_complete`
-//! is called exactly once on a runtime thread with an owning `AvisoOutcome`
-//! (the receiver frees it). The callback must not unwind across the boundary;
-//! if it does, that outcome may be leaked rather than risk a double free.
-//! Unlike the blocking verbs these never `block_on`, so they are safe to call
-//! from a watch or async callback. The facade builds a `std::future` on top of
-//! this surface.
+//! is called exactly once with an owning `AvisoOutcome` (the receiver frees
+//! it). It normally runs on a runtime thread, and on the calling thread only in
+//! the rare case where the runtime cannot be started (so completion never
+//! unwinds across the boundary). The callback itself must not unwind; if it
+//! does, that outcome may be leaked rather than risk a double free. Unlike the
+//! blocking verbs these never `block_on`, so they are safe to call from a watch
+//! or async callback. The facade builds a `std::future` on top of this surface.
 
 use std::collections::BTreeMap;
 use std::ffi::{c_char, c_void};
@@ -74,9 +75,10 @@ fn deliver_error(on_complete: OnComplete, ctx: *mut c_void, error: OutcomeError)
 }
 
 /// Publishes a notification asynchronously. When it finishes, `on_complete` is
-/// called exactly once on a runtime thread with an owning outcome (the response
-/// JSON, or a structured error): free it with `aviso_outcome_free`. The
-/// callback must not unwind across the boundary. No-op if `on_complete` is null.
+/// called exactly once (normally on a runtime thread) with an owning outcome
+/// (the response JSON, or a structured error): free it with
+/// `aviso_outcome_free`. The callback must not unwind across the boundary.
+/// No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -172,8 +174,8 @@ pub unsafe extern "C" fn aviso_client_notify_async(
 }
 
 /// Fetches the full schema catalog asynchronously. When it finishes,
-/// `on_complete` is called exactly once on a runtime thread with an owning
-/// outcome (the catalog JSON, or a structured error): free it with
+/// `on_complete` is called exactly once (normally on a runtime thread) with an
+/// owning outcome (the catalog JSON, or a structured error): free it with
 /// `aviso_outcome_free`. The callback must not unwind across the boundary.
 /// No-op if `on_complete` is null.
 ///
@@ -213,7 +215,7 @@ pub unsafe extern "C" fn aviso_client_schema_async(
 }
 
 /// Fetches one stream's schema asynchronously. When it finishes, `on_complete`
-/// is called exactly once on a runtime thread with an owning outcome (the
+/// is called exactly once (normally on a runtime thread) with an owning outcome (the
 /// schema JSON, or a structured error): free it with `aviso_outcome_free`. The
 /// callback must not unwind across the boundary. No-op if `on_complete` is null.
 ///
@@ -264,8 +266,8 @@ pub unsafe extern "C" fn aviso_client_schema_for_async(
 }
 
 /// Wipes one stream asynchronously (operator-only). When it finishes,
-/// `on_complete` is called exactly once on a runtime thread with an owning
-/// outcome (an empty success, or a structured error): free it with
+/// `on_complete` is called exactly once (normally on a runtime thread) with an
+/// owning outcome (an empty success, or a structured error): free it with
 /// `aviso_outcome_free`. The callback must not unwind across the boundary.
 /// No-op if `on_complete` is null.
 ///
@@ -316,8 +318,8 @@ pub unsafe extern "C" fn aviso_client_wipe_stream_async(
 }
 
 /// Wipes every stream asynchronously (operator-only). When it finishes,
-/// `on_complete` is called exactly once on a runtime thread with an owning
-/// outcome (an empty success, or a structured error): free it with
+/// `on_complete` is called exactly once (normally on a runtime thread) with an
+/// owning outcome (an empty success, or a structured error): free it with
 /// `aviso_outcome_free`. The callback must not unwind across the boundary.
 /// No-op if `on_complete` is null.
 ///
@@ -357,10 +359,10 @@ pub unsafe extern "C" fn aviso_client_wipe_all_async(
 }
 
 /// Deletes one notification by its `<event_type>@<sequence>` id asynchronously
-/// (operator-only). When it finishes, `on_complete` is called exactly once on a
-/// runtime thread with an owning outcome (an empty success, or a structured
-/// error): free it with `aviso_outcome_free`. The callback must not unwind
-/// across the boundary. No-op if `on_complete` is null.
+/// (operator-only). When it finishes, `on_complete` is called exactly once
+/// (normally on a runtime thread) with an owning outcome (an empty success, or
+/// a structured error): free it with `aviso_outcome_free`. The callback must
+/// not unwind across the boundary. No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
