@@ -13,6 +13,13 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#37](https://github.com/ecmwf/aviso-client/pull/37) ffi: triggers for the
+  C++ watch surface. Adds an `AvisoTrigger` builder (echo, log, command,
+  webhook, Teams, post) and `aviso_watch_request_add_trigger` to the C ABI, an
+  `HttpMethod` enum and a `Trigger` builder to the facade, and maps the trigger
+  failure detail to `error_kind`. Reworks all the C++ examples to read
+  connection settings from the environment (no credentials on the command line)
+  and to read declaratively; the watch and trigger examples now only watch.
 - [#36](https://github.com/ecmwf/aviso-client/pull/36) ffi: the C++ watch
   surface. Adds streaming notifications to the C ABI and the C++ facade: a
   watch-request builder (filter, resume, replay), per-notification views, an
