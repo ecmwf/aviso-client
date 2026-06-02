@@ -51,6 +51,7 @@
 - [Watching](./cpp/watch.md)
 - [Triggers](./cpp/triggers.md)
 - [Operations](./cpp/operations.md)
+- [Async](./cpp/async.md)
 
 ---
 
