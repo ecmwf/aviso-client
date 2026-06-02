@@ -69,13 +69,16 @@ headers and the build directory:
 cargo build -p aviso-ffi
 cmake -S examples/cpp -B build/cpp
 cmake --build build/cpp
-./build/cpp/schema_smoke            # no server: catches and prints the error
-./build/cpp/schema_smoke http://localhost:8000
+./build/cpp/schema_smoke                          # no server: catches the error
+AVISO_BASE_URL=http://localhost:8000 ./build/cpp/schema_smoke
 ```
 
-The two CMake cache variables `AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR`
-default to the in-tree locations; point them at a prebuilt drop to build against
-shipped artifacts with no Rust toolchain.
+The examples read their connection settings (`AVISO_BASE_URL`, and the optional
+`AVISO_USERNAME` / `AVISO_PASSWORD`) from the environment, so credentials never
+appear on the command line. The two CMake cache variables
+`AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR` default to the in-tree
+locations; point them at a prebuilt drop to build against shipped artifacts with
+no Rust toolchain.
 
 ## The C header and the facade
 
