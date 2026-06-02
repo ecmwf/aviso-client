@@ -59,5 +59,5 @@ The watch surface lands in a later release.
 ## A worked publisher
 
 The [`examples/cpp/publish.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
-consumer publishes a notification and then reads the stream's schema against a
+example publishes a notification and then reads the stream's schema against a
 running server. It is the tested reference for these verbs.
