@@ -88,6 +88,7 @@ int main(int argc, char** argv) {
           static_cast<void>(client.notify(event_type, identifier));
         } catch (const aviso::Error& error) {
           std::cerr << "publish failed: " << error.what() << '\n';
+          watch.stop();  // unblock watch.wait() so the program can exit
           return;
         }
       }
