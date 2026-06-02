@@ -23,9 +23,11 @@
 //!
 //! [`aviso`]: https://docs.rs/aviso
 
+mod async_ops;
 mod client;
 mod error;
 mod outcome;
+mod send;
 mod triggers;
 mod watch;
 

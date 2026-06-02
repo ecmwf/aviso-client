@@ -1,7 +1,7 @@
 //! Client and client-builder handles, and the blocking verbs over them.
 
 use std::collections::BTreeMap;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, c_char};
 use std::ptr;
 use std::sync::Arc;
 
@@ -68,7 +68,7 @@ pub(crate) unsafe fn cstr_nullable<'a>(ptr: *const c_char) -> Result<Option<&'a 
 
 /// Parses the `identifier_json` argument: a JSON object whose values are all
 /// strings, matching the core `BTreeMap<String, String>` identifier shape.
-fn parse_identifier(text: &str) -> Result<BTreeMap<String, String>, OutcomeError> {
+pub(crate) fn parse_identifier(text: &str) -> Result<BTreeMap<String, String>, OutcomeError> {
     let value: Value = serde_json::from_str(text).map_err(|err| {
         error::invalid_input(&format!("identifier_json is not valid JSON: {err}"))
     })?;
@@ -89,19 +89,10 @@ fn parse_identifier(text: &str) -> Result<BTreeMap<String, String>, OutcomeError
     Ok(identifier)
 }
 
-/// Wraps a serialized response as a string success outcome, mapping a
-/// serialization failure or an interior NUL to an `Internal` error. Shared by
-/// every verb whose success value is JSON text.
+/// Wraps a serialized response as a string success outcome (see
+/// [`AvisoOutcome::json_text`]) and hands it to C as a raw pointer.
 fn json_text_outcome(json: serde_json::Result<String>) -> *mut AvisoOutcome {
-    match json {
-        Ok(json) => match CString::new(json) {
-            Ok(text) => AvisoOutcome::text(text).into_raw(),
-            Err(_) => error::internal("response JSON contained an interior NUL").into_outcome(),
-        },
-        Err(err) => {
-            error::internal(&format!("response serialization failed: {err}")).into_outcome()
-        }
-    }
+    AvisoOutcome::json_text(json).into_raw()
 }
 
 /// Creates a client builder for `base_url`. Returns a builder handle (null only
@@ -476,6 +467,7 @@ mod tests {
     use super::*;
     use crate::AvisoErrorKind;
     use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
+    use std::ffi::CString;
 
     fn build_client() -> *mut AvisoClient {
         let base = CString::new("http://127.0.0.1:1").expect("cstring");

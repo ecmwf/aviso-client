@@ -43,6 +43,23 @@ impl AvisoOutcome {
         }
     }
 
+    /// Wraps an already-serialized response as a string success outcome,
+    /// mapping a serialization failure or an interior NUL to an `Internal`
+    /// error. Shared by the blocking and async verbs that return JSON text.
+    pub(crate) fn json_text(json: serde_json::Result<String>) -> Self {
+        match json {
+            Ok(json) => match CString::new(json) {
+                Ok(text) => Self::text(text),
+                Err(_) => Self::error(crate::error::internal(
+                    "response JSON contained an interior NUL",
+                )),
+            },
+            Err(err) => Self::error(crate::error::internal(&format!(
+                "response serialization failed: {err}"
+            ))),
+        }
+    }
+
     pub(crate) fn client(client: Box<AvisoClient>) -> Self {
         Self {
             success: Success::Client(client),

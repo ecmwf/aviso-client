@@ -20,11 +20,11 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
   calls `wipe_stream`, `wipe_all`, and `delete_notification`; see
   [Operations](./operations.md).
+- Call any verb asynchronously: each has a `*_async` form returning a
+  `std::future`; see [Async](./async.md).
 - Read structured errors: every failure throws an `aviso::Error` whose `what()`
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
-
-An async form of the verbs lands as the binding grows.
 
 ## A first call
 
