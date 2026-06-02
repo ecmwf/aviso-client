@@ -29,31 +29,58 @@ Both `-D` paths default to the in-tree locations above, so on a normal checkout
 (its `include/` and library directory) to build against shipped artifacts with
 no Rust toolchain.
 
+## Configuration
+
+Every example reads its connection settings from the environment
+([`aviso_env.hpp`](./aviso_env.hpp)), so credentials never appear on the command
+line:
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `AVISO_BASE_URL` | Server base URL | `http://localhost:8000` |
+| `AVISO_USERNAME` | HTTP Basic username (optional) | unset |
+| `AVISO_PASSWORD` | HTTP Basic password (optional) | unset |
+
+Against the [`tests/e2e`](../../tests/e2e) stack, export the producer account
+once and run any example:
+
+```bash
+export AVISO_BASE_URL=http://localhost:8000
+export AVISO_USERNAME=producer-user
+export AVISO_PASSWORD=producer-pass
+```
+
 ## Examples
 
-- `schema_smoke.cpp`: prints the library version, builds a client, and calls the
-  blocking `schema()` verb. With no argument it targets an unreachable URL and
-  catches the resulting `aviso::Error`, so it runs without a server. Pass a
-  reachable base URL to fetch a real schema:
+- `schema_smoke.cpp`: prints the version, connects, and calls `schema()`. With
+  no server reachable it catches the transport error and exits cleanly, so it
+  runs (and is exercised by CI) without a server.
 
   ```bash
-  ./build/cpp/schema_smoke http://localhost:8000
+  ./build/cpp/schema_smoke
   ```
 
-- `publish.cpp`: publishes a notification with `notify()` and then reads the
-  stream's schema with `schema_for()`. It needs a running server and, for an
-  auth-required stream, credentials. Against the [`tests/e2e`](../../tests/e2e)
-  stack, publish to `test_event` as the producer account:
+- `publish.cpp`: publishes a notification with `notify()` and reads the stream's
+  schema with `schema_for()`. The stream and identifier are declared at the top
+  of the file. Against an auth-required stream, set the producer account above.
 
   ```bash
-  ./build/cpp/publish http://localhost:8000 producer-user producer-pass
+  ./build/cpp/publish
   ```
 
-- `watch.cpp`: starts a callback `watch()` and, from another thread on the same
-  client, publishes a few notifications so the live watch receives them. It
-  prints each one and stops after a target count. Against the `tests/e2e` stack,
-  watch and publish to `test_event` as the producer account, stopping after 3:
+- `watch.cpp`: watches a stream (declared at the top of the file) and prints
+  each notification, stopping after a fixed count. It only watches; publish to
+  the stream from another terminal to see notifications:
 
   ```bash
-  ./build/cpp/watch http://localhost:8000 producer-user producer-pass test_event 3
+  ./build/cpp/watch      # in one terminal
+  ./build/cpp/publish    # in another, a few times
+  ```
+
+- `trigger.cpp`: watches a stream with a `log` trigger attached, so the trigger
+  appends each notification to a file as the watch runs, then prints the file.
+  Drive it by publishing from another terminal as with `watch`.
+
+  ```bash
+  ./build/cpp/trigger
   ```

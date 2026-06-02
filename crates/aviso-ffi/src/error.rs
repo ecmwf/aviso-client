@@ -9,7 +9,7 @@ use std::ffi::{CString, c_char};
 use std::ptr;
 
 use aviso::ClientError;
-use aviso::watch::TriggerKindLabel;
+use aviso::watch::{TriggerError, TriggerKindLabel};
 
 use crate::outcome::AvisoOutcome;
 
@@ -196,15 +196,31 @@ pub(crate) fn map_error(err: &ClientError) -> OutcomeError {
         ClientError::StateStore(inner) => {
             OutcomeError::build(K::StateStore, 0, inner.to_string(), None, None, None)
         }
-        ClientError::TriggerFailed { kind, source: _ } => OutcomeError::build(
+        ClientError::TriggerFailed { kind, source } => OutcomeError::build(
             K::Trigger,
             0,
             err.to_string(),
             None,
             Some(trigger_kind_label(kind)),
-            None,
+            Some(trigger_error_label(source).to_string()),
         ),
         _ => OutcomeError::build(K::Unknown, 0, err.to_string(), None, None, None),
+    }
+}
+
+/// Stable label for the trigger's inner failure. Wildcard arm covers the
+/// `#[non_exhaustive]` core enum.
+fn trigger_error_label(source: &TriggerError) -> &'static str {
+    match source {
+        TriggerError::Io(_) => "io",
+        TriggerError::Encode(_) => "encode",
+        #[cfg(unix)]
+        TriggerError::Command { .. } => "command",
+        TriggerError::Timeout(_) => "timeout",
+        TriggerError::Webhook { .. } => "webhook",
+        TriggerError::WebhookBuild { .. } => "webhook_build",
+        TriggerError::Template { .. } => "template",
+        _ => "unknown",
     }
 }
 

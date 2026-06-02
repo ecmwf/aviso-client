@@ -15,6 +15,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 - Publish notifications with `notify`; see [Publishing](./publish.md).
 - Watch a stream with a callback handler, with filtering and replay; see
   [Watching](./watch.md).
+- Attach triggers (echo, log, command, webhook, Teams, post) to a watch; see
+  [Triggers](./triggers.md).
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
   calls `wipe_stream`, `wipe_all`, and `delete_notification`; see
   [Operations](./operations.md).
@@ -22,7 +24,7 @@ under C++17 and needs no Rust toolchain in the consumer's build.
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
 
-More of the surface (triggers and an async form) lands as the binding grows.
+An async form of the verbs lands as the binding grows.
 
 ## A first call
 
@@ -67,13 +69,16 @@ headers and the build directory:
 cargo build -p aviso-ffi
 cmake -S examples/cpp -B build/cpp
 cmake --build build/cpp
-./build/cpp/schema_smoke            # no server: catches and prints the error
-./build/cpp/schema_smoke http://localhost:8000
+./build/cpp/schema_smoke                          # no server: catches the error
+AVISO_BASE_URL=http://localhost:8000 ./build/cpp/schema_smoke
 ```
 
-The two CMake cache variables `AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR`
-default to the in-tree locations; point them at a prebuilt drop to build against
-shipped artifacts with no Rust toolchain.
+The examples read their connection settings (`AVISO_BASE_URL`, and the optional
+`AVISO_USERNAME` / `AVISO_PASSWORD`) from the environment, so credentials never
+appear on the command line. The two CMake cache variables
+`AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR` default to the in-tree
+locations; point them at a prebuilt drop to build against shipped artifacts with
+no Rust toolchain.
 
 ## The C header and the facade
 
