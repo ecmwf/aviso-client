@@ -31,7 +31,9 @@ Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF'
 - **`crates/aviso-cli`**: Rust binary crate producing the `aviso` command-line tool.
 - **`crates/aviso-py`**: PyO3 binding crate. Builds as a `cdylib` extension named `pyaviso._native` plus an `rlib` so the workspace's `cargo test` sees its types.
 - **`python/pyaviso/`**: pure-Python wrapper around `pyaviso._native`. The installable distribution and the importable module are both named `pyaviso`. The wheel also bundles the `aviso` CLI as a console command (a script that runs the Rust CLI through the extension), so `pip install pyaviso` provides both `import pyaviso` and the `aviso` command. Built locally with `uv run maturin develop`; PyPI wheels are not published yet, so install from a checkout.
-- **`docs/`**: mdBook user-facing documentation (CLI, Rust library, Python package).
+- **`crates/aviso-ffi`**: C/C++ binding crate. Builds `libaviso_ffi` (a `staticlib` and a `cdylib`) exposing a stable C ABI through a `cbindgen`-generated header (`include/aviso.h`), plus a hand-written header-only C++ facade (`include/aviso.hpp`) with RAII handles and a throwing `aviso::Error`. A C or C++ application links the prebuilt library with its own toolchain and needs no Rust toolchain in its build.
+- **`examples/cpp/`**: worked C++ consumers of the binding (publish, watch, triggers, async), built with CMake against the library and facade. They double as the binding's tested reference.
+- **`docs/`**: mdBook user-facing documentation (CLI, Rust library, Python package, C++ binding).
 
 ## Running the full check set
 
@@ -66,6 +68,17 @@ uv run pytest python/tests/
 
 The Python toolchain (`uv`, `ruff`, `ty`, `pytest`, `maturin`) is documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+C++ binding (needs CMake and a C++17 compiler; the generated header is checked in and guarded against drift):
+
+```bash
+cargo build --locked -p aviso-ffi
+cargo run --locked -p aviso-ffi --features gen-header --bin gen-header
+git diff --exit-code crates/aviso-ffi/include/aviso.h   # header is up to date
+cmake -S examples/cpp -B build/cpp -DAVISO_FFI_LIB_DIR="$PWD/target/debug"
+cmake --build build/cpp
+./build/cpp/schema_smoke                                # runs without a server
+```
+
 ## Documentation
 
 The full documentation is hosted at <https://sites.ecmwf.int/docs/aviso-client/main/>. Good starting points:
@@ -73,6 +86,7 @@ The full documentation is hosted at <https://sites.ecmwf.int/docs/aviso-client/m
 - [Getting started](docs/src/getting-started/overview.md) for install and first steps.
 - [Command-line interface](docs/src/cli/quickstart.md) for the `aviso` CLI.
 - [Python package](docs/src/python/overview.md) for the `pyaviso` library.
+- [C++ binding](docs/src/cpp/overview.md) for the `aviso-ffi` C ABI and C++ facade.
 
 To build and preview the book locally:
 
