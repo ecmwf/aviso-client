@@ -32,8 +32,8 @@ echo "== async ==" && "$BUILD_DIR/async"
 # count). Bounded so a missed connect cannot hang the job.
 drive() {
   local name="$1"
-  local out
-  out="$(mktemp)"
+  # Keep the output file under $work so the EXIT trap cleans it up.
+  local out="$work/$name.out"
   "$BUILD_DIR/$name" >"$out" 2>&1 &
   local pid=$!
   local i
