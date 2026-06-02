@@ -241,7 +241,7 @@ jobs:
       - name: Bring the stack up (host orchestrates; polls readiness)
         run: bash tests/e2e/shared/stack.sh up
 
-      - name: Run both e2e suites in the CI image on the compose network
+      - name: Run the e2e suites (Python, Rust, C++) in the CI image on the compose network
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
@@ -274,6 +274,10 @@ jobs:
               cargo build --locked -p aviso-cli
               uv run pytest tests/e2e/python/ -v
               cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
+              cargo build --locked -p aviso-ffi
+              cmake -S examples/cpp -B /tmp/build/cpp -DAVISO_FFI_LIB_DIR=/tmp/target/debug
+              cmake --build /tmp/build/cpp
+              BUILD_DIR=/tmp/build/cpp AVISO_BASE_URL=http://aviso-server:8000 bash tests/e2e/cpp/run_examples.sh
             '
 
       - name: Dump stack logs
