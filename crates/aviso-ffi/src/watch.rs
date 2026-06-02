@@ -23,6 +23,7 @@ use tokio::sync::Notify;
 use crate::client::{AvisoClient, cstr_nullable, cstr_opt};
 use crate::error::{self, OutcomeError};
 use crate::outcome::AvisoOutcome;
+use crate::send::{SendOutcome, SendPtr};
 use crate::triggers::AvisoTrigger;
 use crate::{guard, guard_outcome, reject_blocking_on_runtime, runtime};
 
@@ -34,24 +35,6 @@ type OnNotification =
 /// C callback invoked exactly once when the watch ends or fails. It takes
 /// ownership of `outcome` and must free it with `aviso_outcome_free`.
 type OnEnd = extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome);
-
-/// Moves a caller-supplied `void* ctx` into the watch task. The consumer owns
-/// `ctx` and guarantees it stays valid for the watch's lifetime and is safe to
-/// touch from the watch thread; the ABI documents that contract.
-#[derive(Clone, Copy)]
-struct SendPtr(*mut c_void);
-
-// SAFETY: see `SendPtr`. The pointer is opaque to this library; the consumer's
-// documented contract is that it is safe to use from the watch thread.
-unsafe impl Send for SendPtr {}
-
-/// Moves an owned outcome pointer into the watch task (used for a start error
-/// built before the task is spawned).
-struct SendOutcome(*mut AvisoOutcome);
-
-// SAFETY: the pointed-to outcome is uniquely owned and is only ever touched by
-// the single task it is moved into, so there is no aliasing across threads.
-unsafe impl Send for SendOutcome {}
 
 /// Opaque builder for a watch request. Setters mutate it in place; the first
 /// bad argument is remembered and surfaced through `on_end` when the watch

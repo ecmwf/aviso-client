@@ -199,6 +199,111 @@ extern "C" {
 const char *aviso_version(void);
 
 /**
+ * Publishes a notification asynchronously. When it finishes, `on_complete` is
+ * called exactly once (normally on a runtime thread) with an owning outcome
+ * (the response JSON, or a structured error): free it with
+ * `aviso_outcome_free`. The callback must not unwind across the boundary.
+ * No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `event_type`,
+ * `identifier_json`, and `payload_json`, when non-null, must be NUL-terminated
+ * C strings. `ctx` is passed verbatim to `on_complete`.
+ */
+void aviso_client_notify_async(const AvisoClient *client,
+                               const char *event_type,
+                               const char *identifier_json,
+                               const char *payload_json,
+                               void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                               void *ctx);
+
+/**
+ * Fetches the full schema catalog asynchronously. When it finishes,
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (the catalog JSON, or a structured error): free it with
+ * `aviso_outcome_free`. The callback must not unwind across the boundary.
+ * No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `ctx` is passed
+ * verbatim to `on_complete`.
+ */
+void aviso_client_schema_async(const AvisoClient *client,
+                               void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                               void *ctx);
+
+/**
+ * Fetches one stream's schema asynchronously. When it finishes, `on_complete`
+ * is called exactly once (normally on a runtime thread) with an owning outcome (the
+ * schema JSON, or a structured error): free it with `aviso_outcome_free`. The
+ * callback must not unwind across the boundary. No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `event_type`, when
+ * non-null, must be a NUL-terminated C string. `ctx` is passed verbatim to
+ * `on_complete`.
+ */
+void aviso_client_schema_for_async(const AvisoClient *client,
+                                   const char *event_type,
+                                   void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                                   void *ctx);
+
+/**
+ * Wipes one stream asynchronously (operator-only). When it finishes,
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (an empty success, or a structured error): free it with
+ * `aviso_outcome_free`. The callback must not unwind across the boundary.
+ * No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `stream_name`, when
+ * non-null, must be a NUL-terminated C string. `ctx` is passed verbatim to
+ * `on_complete`.
+ */
+void aviso_client_wipe_stream_async(const AvisoClient *client,
+                                    const char *stream_name,
+                                    void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                                    void *ctx);
+
+/**
+ * Wipes every stream asynchronously (operator-only). When it finishes,
+ * `on_complete` is called exactly once (normally on a runtime thread) with an
+ * owning outcome (an empty success, or a structured error): free it with
+ * `aviso_outcome_free`. The callback must not unwind across the boundary.
+ * No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `ctx` is passed
+ * verbatim to `on_complete`.
+ */
+void aviso_client_wipe_all_async(const AvisoClient *client,
+                                 void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                                 void *ctx);
+
+/**
+ * Deletes one notification by its `<event_type>@<sequence>` id asynchronously
+ * (operator-only). When it finishes, `on_complete` is called exactly once
+ * (normally on a runtime thread) with an owning outcome (an empty success, or
+ * a structured error): free it with `aviso_outcome_free`. The callback must
+ * not unwind across the boundary. No-op if `on_complete` is null.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `notification_id`,
+ * when non-null, must be a NUL-terminated C string. `ctx` is passed verbatim
+ * to `on_complete`.
+ */
+void aviso_client_delete_notification_async(const AvisoClient *client,
+                                            const char *notification_id,
+                                            void (*on_complete)(void *ctx, AvisoOutcome *outcome),
+                                            void *ctx);
+
+/**
  * Creates a client builder for `base_url`. Returns a builder handle (null only
  * if an internal panic is trapped); a null or non-UTF-8 `base_url` is
  * remembered and reported at build time. Free an abandoned builder with
