@@ -53,7 +53,7 @@ already uses.
 
 These calls must not run inside a watch or async callback (a runtime thread);
 doing so throws an `aviso::Error` with kind `AvisoErrorKind_InvalidUsage` rather
-than deadlocking. The watch surface lands in a later release.
+than deadlocking. See [Watching](./watch.md) for the callback surface.
 
 ## Building against the library
 
