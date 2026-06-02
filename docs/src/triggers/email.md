@@ -14,10 +14,11 @@ Two paths, depending on what you have:
   Cross-platform.
 
 Either way, **email is not idempotent**: at-least-once delivery means a
-redelivered notification sends a second message. Set `required: false` (a failed
-or duplicate send does not block the listener and does not force redelivery on
-restart), or deduplicate on `event_type@sequence`. See
-[Idempotency](./command.md#idempotency).
+redelivered notification (for example after a crash before the cursor is
+checkpointed) sends a second message. `required: false` keeps an email *failure*
+from terminating the listener or forcing a retry-on-restart, but it does not
+prevent duplicate sends. If duplicate emails are unacceptable, deduplicate on
+`event_type@sequence`. See [Idempotency](./command.md#idempotency).
 
 ## With the command trigger (SMTP)
 
@@ -44,10 +45,11 @@ listeners:
 ```
 
 The notification fields arrive as the `AVISO_*` environment variables the
-command trigger injects (`AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
-`AVISO_NOTIFICATION_JSON`, and so on, see the
-[command trigger](./command.md#environment-variables-injected-by-the-dispatcher)).
-Keep credentials out of the YAML: `msmtp` reads them from its own config, or
+command trigger injects: `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
+`AVISO_NOTIFICATION_JSON`, and so on. See the
+[command trigger reference](./command.md#environment-variables-injected-by-the-dispatcher)
+for the full list. Keep credentials out of the YAML: `msmtp` reads them from its
+own config, or
 export them in the environment running aviso and reference them as `$VAR` in the
 command (the child inherits the environment). If your host already has a
 configured MTA, `printf ... | sendmail -t` or `mailx` works the same way.
