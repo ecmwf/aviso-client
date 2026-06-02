@@ -13,6 +13,15 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#39](https://github.com/ecmwf/aviso-client/pull/39) docs: cover the C++
+  binding in the README (repository layout, a C++ check-set section, and a docs
+  link).
+- [#38](https://github.com/ecmwf/aviso-client/pull/38) ffi: completion-callback
+  async verbs and a `std::future` facade. Adds six `aviso_client_*_async`
+  functions that complete through an `on_complete` callback on a runtime
+  thread, and `*_async` facade methods returning `std::future`; safe to call
+  from a watch or async callback. Shares a `send` module and an
+  `AvisoOutcome::json_text` helper. Verified against the e2e stack.
 - [#37](https://github.com/ecmwf/aviso-client/pull/37) ffi: triggers for the
   C++ watch surface. Adds an `AvisoTrigger` builder (echo, log, command,
   webhook, Teams, post) and `aviso_watch_request_add_trigger` to the C ABI, an
