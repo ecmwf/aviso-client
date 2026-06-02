@@ -16,6 +16,7 @@
 #include "aviso.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -30,28 +31,30 @@ class CountingHandler : public aviso::NotificationHandler {
   explicit CountingHandler(int target) : target_(target) {}
 
   bool on_notification(const aviso::Notification& notification) override {
-    ++count_;
-    std::cout << "notification " << count_
+    const int seen = count_.fetch_add(1) + 1;
+    std::cout << "notification " << seen
               << ": event_type=" << notification.event_type()
               << " sequence=" << notification.sequence()
               << " identifier=" << notification.identifier_json()
               << " payload=" << notification.payload_json() << '\n';
-    return count_ < target_;
+    return seen < target_;
   }
 
   void on_end(const std::optional<aviso::ErrorInfo>& error) override {
     if (error) {
       std::cerr << "watch ended with error: " << error->message << '\n';
     } else {
-      std::cout << "watch ended after " << count_ << " notification(s)\n";
+      std::cout << "watch ended after " << count_.load() << " notification(s)\n";
     }
   }
 
-  [[nodiscard]] int count() const { return count_; }
+  [[nodiscard]] int count() const { return count_.load(); }
 
  private:
   int target_;
-  int count_ = 0;
+  // Written on the watch thread, read from main after wait(); make it atomic so
+  // the C++ memory model sees no data race.
+  std::atomic<int> count_{0};
 };
 
 int main(int argc, char** argv) {
