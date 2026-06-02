@@ -32,8 +32,8 @@ listeners:
     triggers:
       - type: command
         command: >
-          printf 'To: %s\nSubject: aviso %s #%s\n\n%s\n'
-          "$MAIL_TO" "$AVISO_EVENT_TYPE" "$AVISO_SEQUENCE" "$AVISO_NOTIFICATION_JSON"
+          printf 'From: %s\nTo: %s\nSubject: aviso %s #%s\n\n%s\n'
+          "$MAIL_FROM" "$MAIL_TO" "$AVISO_EVENT_TYPE" "$AVISO_SEQUENCE" "$AVISO_NOTIFICATION_JSON"
           | msmtp --from="$MAIL_FROM" "$MAIL_TO"
         env:
           MAIL_FROM: aviso@example.com
@@ -68,12 +68,18 @@ triggers:
     body_template: >
       {"to": "ops@example.com",
        "subject": "aviso {{ notification.event_type }} #{{ notification.sequence }}",
-       "text": {{ notification.payload }}}
+       "text": "aviso {{ notification.event_type }} #{{ notification.sequence }} fired"}
     required: false
 ```
 
-This is cross-platform and goes through the same template engine as the other
-HTTP triggers.
+This is cross-platform and goes through the same
+[template engine](./template-engine.md) as the other HTTP triggers. That engine
+substitutes values verbatim and does not JSON-escape them, so keep substitutions
+in quoted, scalar positions (`event_type`, `sequence`) as above. Do not drop
+`{{ notification.payload }}` in unquoted: a string payload would render without
+quotes and an object payload would change the field's type, either of which
+breaks the JSON. If the body needs the full payload, send it through the
+command trigger using `AVISO_PAYLOAD_JSON` / `AVISO_NOTIFICATION_JSON` instead.
 
 ## From code
 
