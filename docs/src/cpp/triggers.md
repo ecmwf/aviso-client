@@ -50,5 +50,6 @@ that fails is logged and the watch continues.
 ## A complete example
 
 [`examples/cpp/trigger.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/trigger.cpp)
-attaches a log trigger to a watch, publishes a few notifications, then prints
-the file the trigger wrote.
+attaches a log trigger to a watch and, once the watch has received a few
+notifications, prints the file the trigger wrote. Publish to the stream from
+another terminal to drive it.
