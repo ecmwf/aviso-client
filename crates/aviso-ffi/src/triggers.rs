@@ -35,18 +35,6 @@ pub enum AvisoHttpMethod {
     Delete = 4,
 }
 
-impl AvisoHttpMethod {
-    fn to_core(self) -> HttpMethod {
-        match self {
-            AvisoHttpMethod::Post => HttpMethod::Post,
-            AvisoHttpMethod::Get => HttpMethod::Get,
-            AvisoHttpMethod::Put => HttpMethod::Put,
-            AvisoHttpMethod::Patch => HttpMethod::Patch,
-            AvisoHttpMethod::Delete => HttpMethod::Delete,
-        }
-    }
-}
-
 /// Opaque trigger handle. Built by a factory, tuned by the setters, and
 /// consumed by `aviso_watch_request_add_trigger` (which nulls the caller's
 /// pointer) or freed with `aviso_trigger_free`.
@@ -104,21 +92,32 @@ pub unsafe extern "C" fn aviso_trigger_log(path: *const c_char) -> *mut AvisoTri
     })
 }
 
-/// Builds a command trigger that runs `/bin/sh -c <cmd>` per notification
-/// (Unix-only). A null or non-UTF-8 `cmd` is remembered and surfaced when the
-/// watch starts.
+/// Builds a command trigger that runs `/bin/sh -c <cmd>` per notification. The
+/// command trigger is Unix-only: on a non-Unix target this returns a handle
+/// carrying an `InvalidUsage` error (surfaced when the watch starts), so the
+/// symbol exists on every platform and the ABI stays uniform. A null or
+/// non-UTF-8 `cmd` is remembered and surfaced when the watch starts.
 ///
 /// # Safety
 ///
 /// `cmd`, when non-null, must be a NUL-terminated C string.
-#[cfg(unix)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_command(cmd: *const c_char) -> *mut AvisoTrigger {
-    guard(ptr::null_mut(), || match unsafe { cstr_opt(cmd) } {
-        Some(cmd) => into_handle(Trigger::command(cmd)),
-        None => error_handle(error::invalid_input(
-            "command must be non-null and valid UTF-8",
-        )),
+    guard(ptr::null_mut(), || {
+        #[cfg(unix)]
+        {
+            match unsafe { cstr_opt(cmd) } {
+                Some(cmd) => into_handle(Trigger::command(cmd)),
+                None => error_handle(error::invalid_input(
+                    "command must be non-null and valid UTF-8",
+                )),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = cmd;
+            error_handle(error::invalid_usage("the command trigger is Unix-only"))
+        }
     })
 }
 
@@ -187,6 +186,9 @@ pub unsafe extern "C" fn aviso_trigger_set_label(trigger: *mut AvisoTrigger, lab
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
+        if trigger.error.is_some() {
+            return;
+        }
         match unsafe { cstr_opt(label) } {
             Some(label) => trigger.apply(|t| t.label(label)),
             None => {
@@ -261,20 +263,38 @@ pub unsafe extern "C" fn aviso_trigger_set_fail_fast(trigger: *mut AvisoTrigger,
     });
 }
 
-/// Sets the HTTP method for a webhook trigger. Ignored on other trigger kinds.
+/// Sets the HTTP method for a webhook trigger from an `AvisoHttpMethod`
+/// discriminant. Taken as an integer (not the enum) so an out-of-range value
+/// from C is a remembered `InvalidInput` error rather than undefined behaviour;
+/// an unknown discriminant is recorded and surfaced when the watch starts.
+/// Ignored on other trigger kinds.
 ///
 /// # Safety
 ///
 /// `trigger` must be a live handle from a trigger factory.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn aviso_trigger_set_method(
-    trigger: *mut AvisoTrigger,
-    method: AvisoHttpMethod,
-) {
+pub unsafe extern "C" fn aviso_trigger_set_method(trigger: *mut AvisoTrigger, method: u32) {
     guard((), || {
-        if let Some(trigger) = unsafe { trigger.as_mut() } {
-            trigger.apply(|t| t.method(method.to_core()));
+        let Some(trigger) = (unsafe { trigger.as_mut() }) else {
+            return;
+        };
+        if trigger.error.is_some() {
+            return;
         }
+        let method = match method {
+            x if x == AvisoHttpMethod::Post as u32 => HttpMethod::Post,
+            x if x == AvisoHttpMethod::Get as u32 => HttpMethod::Get,
+            x if x == AvisoHttpMethod::Put as u32 => HttpMethod::Put,
+            x if x == AvisoHttpMethod::Patch as u32 => HttpMethod::Patch,
+            x if x == AvisoHttpMethod::Delete as u32 => HttpMethod::Delete,
+            other => {
+                trigger.error = Some(error::invalid_input(&format!(
+                    "unknown HTTP method discriminant: {other}"
+                )));
+                return;
+            }
+        };
+        trigger.apply(|t| t.method(method));
     });
 }
 
@@ -296,6 +316,9 @@ pub unsafe extern "C" fn aviso_trigger_set_header(
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
+        if trigger.error.is_some() {
+            return;
+        }
         let (Some(name), Some(value)) = (unsafe { cstr_opt(name) }, unsafe { cstr_opt(value) })
         else {
             trigger.error = Some(error::invalid_input(
@@ -324,6 +347,9 @@ pub unsafe extern "C" fn aviso_trigger_set_body_template(
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
+        if trigger.error.is_some() {
+            return;
+        }
         match unsafe { cstr_opt(body) } {
             Some(body) => trigger.apply(|t| t.body_template(body)),
             None => {
@@ -335,15 +361,15 @@ pub unsafe extern "C" fn aviso_trigger_set_body_template(
     });
 }
 
-/// Adds an environment variable to a command trigger's child process
-/// (Unix-only). A null or non-UTF-8 `key` or `value` is remembered and surfaced
-/// when the watch starts. Ignored on other trigger kinds.
+/// Adds an environment variable to a command trigger's child process. The
+/// command trigger is Unix-only; on a non-Unix target this records an
+/// `InvalidUsage` error. A null or non-UTF-8 `key` or `value` is remembered and
+/// surfaced when the watch starts. Ignored on other trigger kinds.
 ///
 /// # Safety
 ///
 /// `trigger` must be a live handle from a trigger factory. `key` and `value`,
 /// when non-null, must be NUL-terminated C strings.
-#[cfg(unix)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_env(
     trigger: *mut AvisoTrigger,
@@ -354,26 +380,37 @@ pub unsafe extern "C" fn aviso_trigger_set_env(
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
-        let (Some(key), Some(value)) = (unsafe { cstr_opt(key) }, unsafe { cstr_opt(value) })
-        else {
-            trigger.error = Some(error::invalid_input(
-                "env key and value must be non-null and valid UTF-8",
-            ));
+        if trigger.error.is_some() {
             return;
-        };
-        trigger.apply(|t| t.env(key, value));
+        }
+        #[cfg(unix)]
+        {
+            let (Some(key), Some(value)) = (unsafe { cstr_opt(key) }, unsafe { cstr_opt(value) })
+            else {
+                trigger.error = Some(error::invalid_input(
+                    "env key and value must be non-null and valid UTF-8",
+                ));
+                return;
+            };
+            trigger.apply(|t| t.env(key, value));
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (key, value);
+            trigger.error = Some(error::invalid_usage("the command trigger is Unix-only"));
+        }
     });
 }
 
-/// Sets the working directory for a command trigger's child process
-/// (Unix-only). A null or non-UTF-8 `dir` is remembered and surfaced when the
-/// watch starts. Ignored on other trigger kinds.
+/// Sets the working directory for a command trigger's child process. The
+/// command trigger is Unix-only; on a non-Unix target this records an
+/// `InvalidUsage` error. A null or non-UTF-8 `dir` is remembered and surfaced
+/// when the watch starts. Ignored on other trigger kinds.
 ///
 /// # Safety
 ///
 /// `trigger` must be a live handle from a trigger factory. `dir`, when
 /// non-null, must be a NUL-terminated C string.
-#[cfg(unix)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_working_dir(
     trigger: *mut AvisoTrigger,
@@ -383,13 +420,24 @@ pub unsafe extern "C" fn aviso_trigger_set_working_dir(
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
-        match unsafe { cstr_opt(dir) } {
-            Some(dir) => trigger.apply(|t| t.working_dir(dir)),
-            None => {
-                trigger.error = Some(error::invalid_input(
-                    "working dir must be non-null and valid UTF-8",
-                ));
+        if trigger.error.is_some() {
+            return;
+        }
+        #[cfg(unix)]
+        {
+            match unsafe { cstr_opt(dir) } {
+                Some(dir) => trigger.apply(|t| t.working_dir(dir)),
+                None => {
+                    trigger.error = Some(error::invalid_input(
+                        "working dir must be non-null and valid UTF-8",
+                    ));
+                }
             }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            trigger.error = Some(error::invalid_usage("the command trigger is Unix-only"));
         }
     });
 }
@@ -440,10 +488,29 @@ mod tests {
         let url = CString::new("https://example.invalid/hook").expect("cstring");
         let trigger = unsafe { aviso_trigger_webhook(url.as_ptr()) };
         unsafe { aviso_trigger_set_retries(trigger, 3) };
-        unsafe { aviso_trigger_set_method(trigger, AvisoHttpMethod::Put) };
+        unsafe { aviso_trigger_set_method(trigger, AvisoHttpMethod::Put as u32) };
         unsafe { aviso_trigger_set_timeout_secs(trigger, 5) };
         assert!(unsafe { (*trigger).error.is_none() });
         assert!(unsafe { (*trigger).trigger.is_some() });
+        unsafe { aviso_trigger_free(trigger) };
+    }
+
+    #[test]
+    fn set_method_with_unknown_discriminant_remembers_invalid_input() {
+        let url = CString::new("https://example.invalid/hook").expect("cstring");
+        let trigger = unsafe { aviso_trigger_webhook(url.as_ptr()) };
+        unsafe { aviso_trigger_set_method(trigger, 99) };
+        assert!(unsafe { (*trigger).error.is_some() });
+        unsafe { aviso_trigger_free(trigger) };
+    }
+
+    #[test]
+    fn first_remembered_error_wins() {
+        // A second bad argument must not overwrite the first remembered error.
+        let trigger = unsafe { aviso_trigger_log(ptr::null()) };
+        unsafe { aviso_trigger_set_body_template(trigger, ptr::null()) };
+        unsafe { aviso_trigger_set_method(trigger, 99) };
+        assert!(unsafe { (*trigger).error.is_some() });
         unsafe { aviso_trigger_free(trigger) };
     }
 }

@@ -14,6 +14,7 @@
 
 #include "aviso.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>

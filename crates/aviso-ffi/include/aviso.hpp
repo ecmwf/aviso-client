@@ -455,7 +455,7 @@ class Trigger {
   }
   Trigger& method(HttpMethod method) {
     aviso_trigger_set_method(handle_.get(),
-                             static_cast<AvisoHttpMethod>(method));
+                             static_cast<std::uint32_t>(method));
     return *this;
   }
   Trigger& header(const std::string& name, const std::string& value) {
