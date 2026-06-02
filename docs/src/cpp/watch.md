@@ -27,8 +27,9 @@ class Handler : public aviso::NotificationHandler {
 ```
 
 The callbacks run on a runtime thread, so they must be thread-safe and must not
-make blocking aviso calls (those throw `AvisoErrorKind_InvalidUsage`; see
-[Overview](./overview.md#how-calls-behave)). The notification passed to
+make blocking aviso calls (those throw an `aviso::Error` whose `error().kind` is
+`AvisoErrorKind_InvalidUsage`; see [Overview](./overview.md#how-calls-behave)).
+The notification passed to
 `on_notification` is a borrowed view valid only for that call; its accessors
 return owned `std::string`s, so copy out anything you keep. There is no
 per-notification request id; the `sequence` is the stream cursor.

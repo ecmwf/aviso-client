@@ -445,12 +445,16 @@ class Watch {
     if (handle_) {
       aviso_watch_stop(handle_.get());
       detail::OutcomePtr drained(aviso_watch_wait(handle_.get()));
-      // If wait was refused (destroyed on a runtime/callback thread), the task
-      // may still call on_end with `ctx`, so leak the state rather than free it
-      // out from under a live task. This only happens on misuse; the normal
-      // path frees it.
-      if (drained && !aviso_outcome_is_ok(drained.get())) {
-        static_cast<void>(state_.release());
+      // Only an InvalidUsage outcome means wait was refused (destroyed on a
+      // runtime/callback thread) and the task may still call on_end with `ctx`;
+      // leak the state then rather than free it out from under a live task. Any
+      // other outcome (ok, or a task panic) means the task has ended, so the
+      // normal path frees the state.
+      if (drained != nullptr && !aviso_outcome_is_ok(drained.get())) {
+        const AvisoError* error = aviso_outcome_error(drained.get());
+        if (error != nullptr && error->kind == AvisoErrorKind_InvalidUsage) {
+          static_cast<void>(state_.release());
+        }
       }
     }
   }
