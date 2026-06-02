@@ -9,7 +9,9 @@
 #include "aviso.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <exception>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -51,6 +53,68 @@ inline std::optional<std::string> optional_string(const char* value) {
     return std::nullopt;
   }
   return std::string(value);
+}
+
+// Appends `value` to `out` as a JSON string literal, escaping the characters
+// JSON requires. Bytes >= 0x20 (including UTF-8 continuation bytes) pass
+// through unchanged; the C ABI only needs valid UTF-8, which the std::string
+// already is on a conforming caller.
+inline void append_json_string(std::string& out, const std::string& value) {
+  out.push_back('"');
+  for (const char ch : value) {
+    switch (ch) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(ch) < 0x20) {
+          char buffer[7];
+          std::snprintf(buffer, sizeof(buffer), "\\u%04x",
+                        static_cast<unsigned int>(static_cast<unsigned char>(ch)));
+          out += buffer;
+        } else {
+          out.push_back(ch);
+        }
+    }
+  }
+  out.push_back('"');
+}
+
+// Serialises a string-to-string map as a compact JSON object, the wire form
+// the C ABI's `identifier_json` argument expects.
+inline std::string to_identifier_json(
+    const std::map<std::string, std::string>& identifier) {
+  std::string out = "{";
+  bool first = true;
+  for (const auto& entry : identifier) {
+    if (!first) {
+      out.push_back(',');
+    }
+    first = false;
+    append_json_string(out, entry.first);
+    out.push_back(':');
+    append_json_string(out, entry.second);
+  }
+  out.push_back('}');
+  return out;
 }
 
 [[noreturn]] inline void throw_internal(std::string message) {
@@ -130,18 +194,71 @@ class Client {
   // Fetches the schema catalog as a compact-JSON string, or throws
   // `aviso::Error`.
   [[nodiscard]] std::string schema() {
-    detail::OutcomePtr outcome =
-        detail::check(detail::OutcomePtr(aviso_client_schema(handle_.get())));
-    detail::StringPtr text(aviso_outcome_take_string(outcome.get()));
-    if (!text) {
-      detail::throw_internal("aviso: schema succeeded but returned no value");
+    return take_string(aviso_client_schema(handle_.get()), "schema");
+  }
+
+  // Fetches the schema for one event type as a compact-JSON string, or throws
+  // `aviso::Error`.
+  [[nodiscard]] std::string schema_for(const std::string& event_type) {
+    return take_string(aviso_client_schema_for(handle_.get(), event_type.c_str()),
+                       "schema_for");
+  }
+
+  // Publishes a notification and returns the server's response as a
+  // compact-JSON string, or throws `aviso::Error`. `identifier` is the
+  // string-to-string identifier map; `payload`, when set, is a JSON string.
+  [[nodiscard]] std::string notify(
+      const std::string& event_type,
+      const std::map<std::string, std::string>& identifier = {},
+      const std::optional<std::string>& payload = std::nullopt) {
+    std::string identifier_json;
+    const char* identifier_ptr = nullptr;
+    if (!identifier.empty()) {
+      identifier_json = detail::to_identifier_json(identifier);
+      identifier_ptr = identifier_json.c_str();
     }
-    return std::string(text.get());
+    const char* payload_ptr = payload ? payload->c_str() : nullptr;
+    return take_string(aviso_client_notify(handle_.get(), event_type.c_str(),
+                                           identifier_ptr, payload_ptr),
+                       "notify");
+  }
+
+  // Wipes every notification for one stream (operator-only), or throws
+  // `aviso::Error`.
+  void wipe_stream(const std::string& stream_name) {
+    detail::check(
+        detail::OutcomePtr(aviso_client_wipe_stream(handle_.get(), stream_name.c_str())));
+  }
+
+  // Wipes every stream (operator-only), or throws `aviso::Error`.
+  void wipe_all() {
+    detail::check(detail::OutcomePtr(aviso_client_wipe_all(handle_.get())));
+  }
+
+  // Deletes a single notification by its `<event_type>@<sequence>` id
+  // (operator-only), or throws `aviso::Error`.
+  void delete_notification(const std::string& notification_id) {
+    detail::check(detail::OutcomePtr(
+        aviso_client_delete_notification(handle_.get(), notification_id.c_str())));
   }
 
  private:
   friend class ClientBuilder;
   explicit Client(AvisoClient* handle) : handle_(handle) {}
+
+  // Checks the outcome, takes its string success value, and returns it, or
+  // throws `aviso::Error`. `what` names the verb for the diagnostic raised when
+  // a success outcome unexpectedly carries no string.
+  static std::string take_string(AvisoOutcome* raw, const char* what) {
+    detail::OutcomePtr outcome = detail::check(detail::OutcomePtr(raw));
+    detail::StringPtr text(aviso_outcome_take_string(outcome.get()));
+    if (!text) {
+      detail::throw_internal(std::string("aviso: ") + what +
+                             " succeeded but returned no value");
+    }
+    return std::string(text.get());
+  }
+
   detail::ClientPtr handle_;
 };
 

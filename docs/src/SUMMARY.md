@@ -47,6 +47,7 @@
 # C++
 
 - [Overview](./cpp/overview.md)
+- [Blocking verbs](./cpp/verbs.md)
 
 ---
 

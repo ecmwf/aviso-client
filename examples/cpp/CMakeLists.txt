@@ -20,14 +20,17 @@ if(NOT AVISO_FFI_LIBRARY)
       "Build it first: cargo build -p aviso-ffi")
 endif()
 
-add_executable(schema_smoke schema_smoke.cpp)
-target_compile_features(schema_smoke PRIVATE cxx_std_17)
-target_include_directories(schema_smoke PRIVATE "${AVISO_FFI_INCLUDE_DIR}")
-target_link_libraries(schema_smoke PRIVATE "${AVISO_FFI_LIBRARY}")
-set_target_properties(schema_smoke PROPERTIES
-    BUILD_RPATH "${AVISO_FFI_LIB_DIR}")
+function(add_aviso_example name)
+  add_executable(${name} ${name}.cpp)
+  target_compile_features(${name} PRIVATE cxx_std_17)
+  target_include_directories(${name} PRIVATE "${AVISO_FFI_INCLUDE_DIR}")
+  target_link_libraries(${name} PRIVATE "${AVISO_FFI_LIBRARY}")
+  set_target_properties(${name} PROPERTIES BUILD_RPATH "${AVISO_FFI_LIB_DIR}")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${name} PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wnon-virtual-dtor -Werror)
+  endif()
+endfunction()
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(schema_smoke PRIVATE
-      -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wnon-virtual-dtor -Werror)
-endif()
+add_aviso_example(schema_smoke)
+add_aviso_example(publish)
