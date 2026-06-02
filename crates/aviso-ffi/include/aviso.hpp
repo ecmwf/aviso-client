@@ -186,7 +186,52 @@ inline OutcomePtr check(OutcomePtr outcome) {
   return std::string(aviso_version());
 }
 
+// A non-owning view of one notification, valid only for the duration of the
+// `NotificationHandler::on_notification` call it is passed to. The accessors
+// copy out of the borrowed C strings, so the returned values outlive the view.
+class Notification {
+ public:
+  explicit Notification(const AvisoNotification* handle) : handle_(handle) {}
+
+  [[nodiscard]] std::string event_type() const {
+    return copy(aviso_notification_event_type(handle_));
+  }
+  [[nodiscard]] std::uint64_t sequence() const {
+    return aviso_notification_sequence(handle_);
+  }
+  [[nodiscard]] std::string identifier_json() const {
+    return copy(aviso_notification_identifier_json(handle_));
+  }
+  [[nodiscard]] std::string payload_json() const {
+    return copy(aviso_notification_payload_json(handle_));
+  }
+
+ private:
+  static std::string copy(const char* value) {
+    return value != nullptr ? std::string(value) : std::string();
+  }
+  const AvisoNotification* handle_;
+};
+
+// A receiver for watch notifications, subclassed by the caller. Both callbacks
+// run on a watch (runtime) thread, so they must be thread-safe and must not
+// make blocking aviso calls; an exception thrown out of either is caught at the
+// boundary (and `on_notification` then requests a graceful stop).
+class NotificationHandler {
+ public:
+  virtual ~NotificationHandler() = default;
+
+  // Called once per notification. Return `false` to request a graceful stop.
+  virtual bool on_notification(const Notification& notification) = 0;
+
+  // Called once when the watch ends; `error` is set when it failed. The default
+  // does nothing.
+  virtual void on_end(const std::optional<ErrorInfo>& error) { (void)error; }
+};
+
 class ClientBuilder;
+class WatchRequest;
+class Watch;
 
 // An RAII client. Move-only; the underlying handle is freed on destruction.
 class Client {
@@ -242,6 +287,11 @@ class Client {
         aviso_client_delete_notification(handle_.get(), notification_id.c_str())));
   }
 
+  // Starts a watch, consuming `request`. Notifications are delivered to
+  // `handler` on a runtime thread; the returned RAII `Watch` stops and waits in
+  // its destructor. `handler` must outlive the returned `Watch`.
+  [[nodiscard]] Watch watch(WatchRequest& request, NotificationHandler& handler);
+
  private:
   friend class ClientBuilder;
   explicit Client(AvisoClient* handle) : handle_(handle) {}
@@ -295,5 +345,147 @@ class ClientBuilder {
  private:
   detail::BuilderPtr handle_;
 };
+
+namespace detail {
+
+struct WatchRequestDeleter {
+  void operator()(AvisoWatchRequest* request) const noexcept {
+    aviso_watch_request_free(request);
+  }
+};
+using WatchRequestPtr = std::unique_ptr<AvisoWatchRequest, WatchRequestDeleter>;
+
+struct WatchDeleter {
+  void operator()(AvisoWatch* watch) const noexcept { aviso_watch_free(watch); }
+};
+using WatchPtr = std::unique_ptr<AvisoWatch, WatchDeleter>;
+
+// Shared between a Watch and the C callbacks via the watch's `ctx`. It outlives
+// the watch task (the Watch keeps it alive until after stop+wait), so the
+// callbacks can dereference it safely.
+struct WatchState {
+  NotificationHandler* handler = nullptr;
+};
+
+// C-ABI trampolines. They translate the C callbacks into virtual calls and
+// stop any C++ exception from unwinding across the boundary into Rust.
+extern "C" inline bool watch_on_notification(void* ctx,
+                                             const AvisoNotification* notification) {
+  auto* state = static_cast<WatchState*>(ctx);
+  try {
+    return state->handler->on_notification(Notification(notification));
+  } catch (...) {
+    return false;
+  }
+}
+
+extern "C" inline void watch_on_end(void* ctx, AvisoOutcome* outcome) {
+  auto* state = static_cast<WatchState*>(ctx);
+  OutcomePtr owned(outcome);
+  std::optional<ErrorInfo> error;
+  if (owned && !aviso_outcome_is_ok(owned.get())) {
+    error = to_error_info(aviso_outcome_error(owned.get()));
+  }
+  try {
+    state->handler->on_end(error);
+  } catch (...) {
+  }
+}
+
+}  // namespace detail
+
+// Fluent builder for a watch request. Defaults to a live watch of `event_type`;
+// the `*_from_*` setters add a resume position or switch to replay-only.
+class WatchRequest {
+ public:
+  explicit WatchRequest(const std::string& event_type)
+      : handle_(aviso_watch_request_new(event_type.c_str())) {
+    if (!handle_) {
+      detail::throw_internal("aviso: failed to allocate a watch request");
+    }
+  }
+
+  WatchRequest& filter_json(const std::string& json) {
+    aviso_watch_request_set_filter_json(handle_.get(), json.c_str());
+    return *this;
+  }
+  WatchRequest& watch_from_sequence(std::uint64_t sequence) {
+    aviso_watch_request_watch_from_sequence(handle_.get(), sequence);
+    return *this;
+  }
+  WatchRequest& watch_from_date(const std::string& date) {
+    aviso_watch_request_watch_from_date(handle_.get(), date.c_str());
+    return *this;
+  }
+  WatchRequest& replay_from_sequence(std::uint64_t sequence) {
+    aviso_watch_request_replay_from_sequence(handle_.get(), sequence);
+    return *this;
+  }
+  WatchRequest& replay_from_date(const std::string& date) {
+    aviso_watch_request_replay_from_date(handle_.get(), date.c_str());
+    return *this;
+  }
+
+ private:
+  friend class Client;
+  AvisoWatchRequest* release() { return handle_.release(); }
+  detail::WatchRequestPtr handle_;
+};
+
+// An RAII watch. Move-only. The destructor stops the watch and waits for it to
+// finish (so the handler's `on_end` has returned) before releasing the handle.
+class Watch {
+ public:
+  Watch(Watch&&) = default;
+  Watch& operator=(Watch&&) = default;
+  Watch(const Watch&) = delete;
+  Watch& operator=(const Watch&) = delete;
+
+  ~Watch() {
+    if (handle_) {
+      aviso_watch_stop(handle_.get());
+      detail::OutcomePtr drained(aviso_watch_wait(handle_.get()));
+      // Only an InvalidUsage outcome means wait was refused (destroyed on a
+      // runtime/callback thread) and the task may still call on_end with `ctx`;
+      // leak the state then rather than free it out from under a live task. Any
+      // other outcome (ok, or a task panic) means the task has ended, so the
+      // normal path frees the state.
+      if (drained != nullptr && !aviso_outcome_is_ok(drained.get())) {
+        const AvisoError* error = aviso_outcome_error(drained.get());
+        if (error != nullptr && error->kind == AvisoErrorKind_InvalidUsage) {
+          static_cast<void>(state_.release());
+        }
+      }
+    }
+  }
+
+  // Requests a graceful stop. Nonblocking and idempotent.
+  void stop() { aviso_watch_stop(handle_.get()); }
+
+  // Blocks until the watch has ended and the handler's `on_end` has returned.
+  // Throws `aviso::Error` if called from inside a callback.
+  void wait() { detail::check(detail::OutcomePtr(aviso_watch_wait(handle_.get()))); }
+
+ private:
+  friend class Client;
+  Watch(AvisoWatch* handle, std::unique_ptr<detail::WatchState> state)
+      : handle_(handle), state_(std::move(state)) {}
+
+  detail::WatchPtr handle_;
+  std::unique_ptr<detail::WatchState> state_;
+};
+
+inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) {
+  auto state = std::make_unique<detail::WatchState>();
+  state->handler = &handler;
+  AvisoWatchRequest* raw_request = request.release();
+  AvisoWatch* watch = aviso_client_watch(handle_.get(), &raw_request,
+                                         detail::watch_on_notification,
+                                         detail::watch_on_end, state.get());
+  if (watch == nullptr) {
+    detail::throw_internal("aviso: failed to start the watch");
+  }
+  return Watch(watch, std::move(state));
+}
 
 }  // namespace aviso
