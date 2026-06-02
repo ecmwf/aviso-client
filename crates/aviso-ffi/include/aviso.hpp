@@ -194,7 +194,16 @@ extern "C" inline void async_complete_string(void* ctx, AvisoOutcome* outcome) {
       promise->set_exception(std::make_exception_ptr(Error(to_error_info(error))));
     } else {
       StringPtr text(aviso_outcome_take_string(owned.get()));
-      promise->set_value(text ? std::string(text.get()) : std::string());
+      if (!text) {
+        // A success that carries no string is an internal protocol bug, not an
+        // empty value; surface it like the blocking facade does.
+        ErrorInfo info;
+        info.kind = AvisoErrorKind_Internal;
+        info.message = "aviso: async call succeeded but returned no value";
+        promise->set_exception(std::make_exception_ptr(Error(std::move(info))));
+      } else {
+        promise->set_value(std::string(text.get()));
+      }
     }
   } catch (...) {
     // Building the value/exception threw (e.g. bad_alloc): still fulfil the

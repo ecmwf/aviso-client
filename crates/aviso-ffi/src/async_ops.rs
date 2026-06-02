@@ -48,9 +48,11 @@ fn guard_async(on_complete: OnComplete, ctx: *mut c_void, body: impl FnOnce()) {
     }
 }
 
-/// Reports a pre-spawn argument error through `on_complete`, on a runtime
-/// thread, so the delivery path is uniform with the success case. The error
-/// outcome is built now and moved into the task as a `Send` pointer.
+/// Reports a pre-spawn argument error through `on_complete`, normally on a
+/// runtime thread (uniform with the success case), falling back to the calling
+/// thread if the runtime cannot be obtained so completion never unwinds across
+/// the boundary. The error outcome is built now and moved into the task as a
+/// `Send` pointer.
 fn deliver_error(on_complete: OnComplete, ctx: *mut c_void, error: OutcomeError) {
     let send_ctx = SendPtr(ctx);
     let raw = AvisoOutcome::error(error).into_raw();
