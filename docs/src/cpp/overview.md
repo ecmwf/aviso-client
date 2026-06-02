@@ -13,6 +13,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 
 - Build a client from a base URL, optionally with HTTP Basic credentials.
 - Publish notifications with `notify`; see [Publishing](./publish.md).
+- Watch a stream with a callback handler, with filtering and replay; see
+  [Watching](./watch.md).
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
   calls `wipe_stream`, `wipe_all`, and `delete_notification`; see
   [Operations](./operations.md).
@@ -20,8 +22,7 @@ under C++17 and needs no Rust toolchain in the consumer's build.
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
 
-More of the surface (watching, triggers, and an async form) lands as the
-binding grows.
+More of the surface (triggers and an async form) lands as the binding grows.
 
 ## A first call
 

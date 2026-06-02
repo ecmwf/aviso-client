@@ -93,10 +93,32 @@ typedef struct AvisoClient AvisoClient;
 typedef struct AvisoClientBuilder AvisoClientBuilder;
 
 /**
+ * A read-only view of one notification, valid only for the `on_notification`
+ * call it is passed to. The `identifier` and `payload` are pre-serialized to
+ * compact JSON; the accessors return borrowed pointers into this view.
+ */
+typedef struct AvisoNotification AvisoNotification;
+
+/**
  * Result of a fallible C ABI call. Opaque to C; always freed with
  * `aviso_outcome_free`.
  */
 typedef struct AvisoOutcome AvisoOutcome;
+
+/**
+ * Opaque handle to a running watch. Stop it with `aviso_watch_stop`, block for
+ * its completion with `aviso_watch_wait`, and release it with
+ * `aviso_watch_free`.
+ */
+typedef struct AvisoWatch AvisoWatch;
+
+/**
+ * Opaque builder for a watch request. Setters mutate it in place; the first
+ * bad argument is remembered and surfaced through `on_end` when the watch
+ * starts. Consumed by `aviso_client_watch` (which nulls the caller's pointer)
+ * or freed with `aviso_watch_request_free`.
+ */
+typedef struct AvisoWatchRequest AvisoWatchRequest;
 
 /**
  * C-visible error detail. The `const char*` fields borrow from the owning
@@ -371,6 +393,192 @@ void aviso_outcome_free(AvisoOutcome *outcome);
  * and not already freed.
  */
 void aviso_string_free(char *text);
+
+/**
+ * Creates a live-watch request for `event_type`. Returns a handle (null only
+ * if an internal panic is trapped); a null or non-UTF-8 `event_type` is
+ * remembered and surfaced when the watch starts. Free an abandoned request
+ * with `aviso_watch_request_free`.
+ *
+ * # Safety
+ *
+ * `event_type`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoWatchRequest *aviso_watch_request_new(const char *event_type);
+
+/**
+ * Sets the identifier filter from a JSON object string (a null argument clears
+ * it). A non-UTF-8 or non-object argument is remembered and surfaced when the
+ * watch starts.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`.
+ * `filter_json`, when non-null, must be a NUL-terminated C string.
+ */
+void aviso_watch_request_set_filter_json(AvisoWatchRequest *request, const char *filter_json);
+
+/**
+ * Resumes a live watch after the given sequence (the watch replays everything
+ * after `sequence`, then goes live).
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`.
+ */
+void aviso_watch_request_watch_from_sequence(AvisoWatchRequest *request, uint64_t sequence);
+
+/**
+ * Resumes a live watch from the given date string (server-defined format),
+ * replaying from that point and then going live.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`. `date`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_watch_request_watch_from_date(AvisoWatchRequest *request, const char *date);
+
+/**
+ * Switches the request to replay-only from the given sequence: it replays
+ * everything after `sequence` and then ends, without going live.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`.
+ */
+void aviso_watch_request_replay_from_sequence(AvisoWatchRequest *request, uint64_t sequence);
+
+/**
+ * Switches the request to replay-only from the given date string: it replays
+ * from that point and then ends, without going live.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`. `date`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_watch_request_replay_from_date(AvisoWatchRequest *request, const char *date);
+
+/**
+ * Frees an abandoned watch request. Requests consumed by `aviso_client_watch`
+ * are already freed; calling this on the nulled-out pointer is a safe no-op.
+ *
+ * # Safety
+ *
+ * `request`, when non-null, must be a live handle from
+ * `aviso_watch_request_new` that was not consumed by a watch start.
+ */
+void aviso_watch_request_free(AvisoWatchRequest *request);
+
+/**
+ * Returns the notification's event type. The pointer is valid only for the
+ * duration of the `on_notification` call.
+ *
+ * # Safety
+ *
+ * `notification` must be the pointer passed to the current `on_notification`
+ * call.
+ */
+const char *aviso_notification_event_type(const AvisoNotification *notification);
+
+/**
+ * Returns the notification's per-stream sequence number.
+ *
+ * # Safety
+ *
+ * `notification` must be the pointer passed to the current `on_notification`
+ * call. A null pointer returns `0`.
+ */
+uint64_t aviso_notification_sequence(const AvisoNotification *notification);
+
+/**
+ * Returns the notification's identifier as a compact-JSON object string. The
+ * pointer is valid only for the duration of the `on_notification` call.
+ *
+ * # Safety
+ *
+ * `notification` must be the pointer passed to the current `on_notification`
+ * call.
+ */
+const char *aviso_notification_identifier_json(const AvisoNotification *notification);
+
+/**
+ * Returns the notification's payload as a compact-JSON string (`null` when the
+ * payload was absent). The pointer is valid only for the duration of the
+ * `on_notification` call.
+ *
+ * # Safety
+ *
+ * `notification` must be the pointer passed to the current `on_notification`
+ * call.
+ */
+const char *aviso_notification_payload_json(const AvisoNotification *notification);
+
+/**
+ * Starts a watch, consuming the request. The watch runs on the global runtime
+ * and returns at once; `on_notification` fires per notification (returning
+ * `false` requests a graceful stop) and `on_end` fires exactly once when the
+ * stream ends or fails, taking ownership of the outcome. Every watch error,
+ * at start or mid-stream, arrives through `on_end`.
+ *
+ * Returns null when `client`, the request, `on_notification`, or `on_end` is
+ * null (no watch starts), or if an internal panic is trapped. On entry the
+ * request is taken and the caller's pointer is nulled, so a later free is a
+ * safe no-op.
+ *
+ * The callbacks run on a watch (runtime) thread, so they must be thread-safe,
+ * must not unwind across the boundary, and must not make blocking aviso calls.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `request` must point
+ * to a request-handle pointer; `*request`, when non-null, must be a live
+ * handle from `aviso_watch_request_new`. `ctx` is passed verbatim to the
+ * callbacks and must stay valid until `on_end` has returned.
+ */
+AvisoWatch *aviso_client_watch(const AvisoClient *client,
+                               AvisoWatchRequest **request,
+                               bool (*on_notification)(void *ctx,
+                                                       const AvisoNotification *notification),
+                               void (*on_end)(void *ctx, AvisoOutcome *outcome),
+                               void *ctx);
+
+/**
+ * Requests a graceful stop. Nonblocking, idempotent, and safe to call from a
+ * callback. A callback already running finishes; no new callback starts after
+ * the stop is observed. `on_end` still fires once. A null pointer is a no-op.
+ *
+ * # Safety
+ *
+ * `watch`, when non-null, must be a live handle from `aviso_client_watch`.
+ */
+void aviso_watch_stop(const AvisoWatch *watch);
+
+/**
+ * Blocks until the watch has fully ended and its `on_end` has returned.
+ * Returns an empty success outcome, or an `AvisoErrorKind_InvalidUsage` error
+ * when called from inside a callback (a runtime thread). Idempotent: a second
+ * call after completion returns success at once.
+ *
+ * # Safety
+ *
+ * `watch` must be a live handle from `aviso_client_watch`.
+ */
+AvisoOutcome *aviso_watch_wait(const AvisoWatch *watch);
+
+/**
+ * Frees a watch handle. Signals a stop first so a still-running task winds
+ * down rather than running forever, then detaches it. Call `aviso_watch_wait`
+ * before freeing if `on_end` may touch state you are about to release; freeing
+ * alone does not wait for `on_end`. A null pointer is a no-op.
+ *
+ * # Safety
+ *
+ * `watch`, when non-null, must be a live handle from `aviso_client_watch` that
+ * was not already freed.
+ */
+void aviso_watch_free(AvisoWatch *watch);
 
 #ifdef __cplusplus
 }  // extern "C"

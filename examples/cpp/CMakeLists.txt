@@ -20,11 +20,13 @@ if(NOT AVISO_FFI_LIBRARY)
       "Build it first: cargo build -p aviso-ffi")
 endif()
 
+find_package(Threads REQUIRED)
+
 function(add_aviso_example name)
   add_executable(${name} ${name}.cpp)
   target_compile_features(${name} PRIVATE cxx_std_17)
   target_include_directories(${name} PRIVATE "${AVISO_FFI_INCLUDE_DIR}")
-  target_link_libraries(${name} PRIVATE "${AVISO_FFI_LIBRARY}")
+  target_link_libraries(${name} PRIVATE "${AVISO_FFI_LIBRARY}" Threads::Threads)
   set_target_properties(${name} PROPERTIES BUILD_RPATH "${AVISO_FFI_LIB_DIR}")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${name} PRIVATE
@@ -34,3 +36,4 @@ endfunction()
 
 add_aviso_example(schema_smoke)
 add_aviso_example(publish)
+add_aviso_example(watch)
