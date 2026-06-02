@@ -65,6 +65,8 @@
 - [Teams](./triggers/teams.md)
 - [Post](./triggers/post.md)
 - [Template engine](./triggers/template-engine.md)
+- [Trigger examples](./triggers/examples.md)
+  - [Sending email](./triggers/email.md)
 
 ---
 
