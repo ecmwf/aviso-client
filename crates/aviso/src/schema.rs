@@ -9,14 +9,14 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::AvisoClient;
 use crate::client::parse_json_response;
 
 /// Response body from `GET /api/v1/schema`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct SchemaCatalog {
     /// Server-supplied status string (typically `"success"`).
@@ -30,7 +30,7 @@ pub struct SchemaCatalog {
 }
 
 /// Response body from `GET /api/v1/schema/{event_type}`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct SchemaResponse {
     /// Server-supplied status string.
@@ -46,7 +46,7 @@ pub struct SchemaResponse {
 /// Permissive by design per D7. Identifier rules and payload configuration are stored as
 /// [`serde_json::Value`] so the client passes new server-side fields through without a code
 /// change here. Use the keys you know about and ignore the rest.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[non_exhaustive]
 pub struct StreamSchema {
     /// Optional payload configuration; shape is server-defined.
