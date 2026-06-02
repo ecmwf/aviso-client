@@ -1,6 +1,6 @@
 # Operations
 
-The schema-discovery and admin calls. Each returns on success or throws
+The schema lookups and the admin calls. Each one either succeeds or throws
 `aviso::Error` (see [Overview](./overview.md#how-calls-behave)).
 
 ## Schemas
