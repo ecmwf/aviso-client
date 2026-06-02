@@ -13,6 +13,11 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#40](https://github.com/ecmwf/aviso-client/pull/40) test: run the C++
+  examples against the live e2e stack in CI. Adds
+  `tests/e2e/cpp/run_examples.sh` (schema, publish, async, and the watch-only
+  watch and trigger examples) and wires it into the `e2e` job after the Python
+  and Rust suites, so the C++ binding is verified end to end on the real stack.
 - [#39](https://github.com/ecmwf/aviso-client/pull/39) docs: cover the C++
   binding in the README (repository layout, a C++ check-set section, and a docs
   link).
