@@ -3,9 +3,11 @@
 //! Each `aviso_client_*_async` function returns immediately after spawning a
 //! task on the process-global runtime; when the verb finishes, `on_complete`
 //! is called exactly once on a runtime thread with an owning `AvisoOutcome`
-//! (the receiver frees it). Unlike the blocking verbs these never `block_on`,
-//! so they are safe to call from a watch or async callback. The facade builds a
-//! `std::future` on top of this surface.
+//! (the receiver frees it). The callback must not unwind across the boundary;
+//! if it does, that outcome may be leaked rather than risk a double free.
+//! Unlike the blocking verbs these never `block_on`, so they are safe to call
+//! from a watch or async callback. The facade builds a `std::future` on top of
+//! this surface.
 
 use std::collections::BTreeMap;
 use std::ffi::{c_char, c_void};
@@ -17,18 +19,32 @@ use serde_json::Value;
 use crate::client::{AvisoClient, cstr_nullable, cstr_opt, parse_identifier};
 use crate::error::{self, OutcomeError};
 use crate::outcome::AvisoOutcome;
+use crate::runtime;
 use crate::send::{SendOutcome, SendPtr};
-use crate::{guard, runtime};
 
 /// C callback invoked once when an async verb completes. It takes ownership of
 /// `outcome` and must free it with `aviso_outcome_free`.
 type OnComplete = extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome);
 
 /// Hands `outcome` to `on_complete`, trapping any Rust unwind so it never
-/// crosses back into the runtime. Called from the spawned task.
+/// crosses back into the runtime. Called from the spawned task. Callbacks must
+/// not unwind; if one does, the outcome it was handed is leaked rather than
+/// freed here, since whether the callback already freed it is unknown and a
+/// double free would be worse.
 fn complete(on_complete: OnComplete, ctx: SendPtr, outcome: AvisoOutcome) {
     let raw = outcome.into_raw();
     let _ = catch_unwind(AssertUnwindSafe(|| on_complete(ctx.0, raw)));
+}
+
+/// Runs the synchronous prelude of an async verb, trapping a panic and
+/// reporting it through `on_complete` as a Panic outcome. A panic can only
+/// happen before the single `spawn` (the prelude does nothing afterwards), so
+/// `on_complete` still fires exactly once: either from the spawned task or,
+/// on a trapped panic, from here.
+fn guard_async(on_complete: OnComplete, ctx: *mut c_void, body: impl FnOnce()) {
+    if catch_unwind(AssertUnwindSafe(body)).is_err() {
+        deliver_error(on_complete, ctx, error::panic_error());
+    }
 }
 
 /// Reports a pre-spawn argument error through `on_complete`, on a runtime
@@ -65,10 +81,10 @@ pub unsafe extern "C" fn aviso_client_notify_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -158,10 +174,10 @@ pub unsafe extern "C" fn aviso_client_schema_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -198,10 +214,10 @@ pub unsafe extern "C" fn aviso_client_schema_for_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -248,10 +264,10 @@ pub unsafe extern "C" fn aviso_client_wipe_stream_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -296,10 +312,10 @@ pub unsafe extern "C" fn aviso_client_wipe_all_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -337,10 +353,10 @@ pub unsafe extern "C" fn aviso_client_delete_notification_async(
     on_complete: Option<extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome)>,
     ctx: *mut c_void,
 ) {
-    guard((), || {
-        let Some(on_complete) = on_complete else {
-            return;
-        };
+    let Some(on_complete) = on_complete else {
+        return;
+    };
+    guard_async(on_complete, ctx, || {
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,

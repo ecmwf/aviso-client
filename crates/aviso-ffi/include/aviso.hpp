@@ -197,6 +197,13 @@ extern "C" inline void async_complete_string(void* ctx, AvisoOutcome* outcome) {
       promise->set_value(text ? std::string(text.get()) : std::string());
     }
   } catch (...) {
+    // Building the value/exception threw (e.g. bad_alloc): still fulfil the
+    // promise so .get() raises something deterministic instead of
+    // broken_promise. The inner guard covers an already-satisfied promise.
+    try {
+      promise->set_exception(std::current_exception());
+    } catch (...) {
+    }
   }
 }
 
@@ -212,6 +219,12 @@ extern "C" inline void async_complete_void(void* ctx, AvisoOutcome* outcome) {
       promise->set_value();
     }
   } catch (...) {
+    // Fulfil the promise even if the above threw, so .get() raises something
+    // deterministic instead of broken_promise.
+    try {
+      promise->set_exception(std::current_exception());
+    } catch (...) {
+    }
   }
 }
 
