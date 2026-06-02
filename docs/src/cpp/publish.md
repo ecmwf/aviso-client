@@ -18,8 +18,8 @@ std::string with_payload =
 To see which identifier fields a stream expects, read its schema first with
 `schema_for`; see [Operations](./operations.md#schemas).
 
-## A worked publisher
+## A complete example
 
-The [`examples/cpp/publish.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
-example publishes a notification and then reads the stream's schema against a
-running server. It is the tested reference.
+[`examples/cpp/publish.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
+publishes a notification and then reads back the stream's schema. CI compiles it
+on every change, so the example never drifts from the binding.
