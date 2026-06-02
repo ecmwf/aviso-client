@@ -1,10 +1,9 @@
 # Sending email
 
-aviso has no built-in email trigger. Email is one more notification side effect,
-so it goes through the generic triggers, the same way Slack, Discord, and
-PagerDuty do (see the [overview](./overview.md)). aviso ships no managed-service
-client: you point a trigger at your own SMTP relay or mail endpoint and supply
-the credentials, and aviso runs the generic client.
+aviso has no built-in email trigger. Email is one more per-notification side
+effect, sent through the generic triggers: you point a trigger at your own SMTP
+relay or mail endpoint and supply the credentials, and aviso runs the generic
+client (it ships no managed-service email client).
 
 Two paths, depending on what you have:
 
