@@ -591,14 +591,23 @@ pub unsafe extern "C" fn aviso_watch_wait(watch: *const AvisoWatch) -> *mut Avis
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
-        let handle = watch.join.lock().ok().and_then(|mut guard| guard.take());
-        match handle {
+        let taken = match watch.join.lock() {
+            Ok(mut guard) => guard.take(),
+            // A poisoned lock means a prior panic held it; surface that rather
+            // than masking it as a completed watch.
+            Err(_) => {
+                return error::internal("the watch handle lock was poisoned by a prior panic")
+                    .into_outcome();
+            }
+        };
+        match taken {
             // A JoinError means the watch task panicked (a panic outside the
             // per-callback catch_unwind); surface it rather than reporting ok.
             Some(handle) => match runtime().block_on(handle) {
                 Ok(()) => AvisoOutcome::empty().into_raw(),
                 Err(_) => error::panic_error().into_outcome(),
             },
+            // Already taken by a prior wait: the watch completed; idempotent ok.
             None => AvisoOutcome::empty().into_raw(),
         }
     })

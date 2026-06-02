@@ -77,7 +77,7 @@ aviso::WatchRequest("test_event").filter_json(R"({"date":"20260101"})");
 
 ## A complete example
 
-[`examples/cpp/watch.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
+[`examples/cpp/watch.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/watch.cpp)
 starts a watch and, from another thread on the same client, publishes a few
 notifications so the live watch receives them. It is the one-shared-client
 pattern: one client, a watch on a runtime thread, and publishes from your own
