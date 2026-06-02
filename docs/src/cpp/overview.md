@@ -12,9 +12,9 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 ## What you can do today
 
 - Build a client from a base URL, optionally with HTTP Basic credentials.
-- Publish notifications and run every blocking verb: `notify`, `schema`,
-  `schema_for`, `wipe_stream`, `wipe_all`, and `delete_notification`. See
-  [Blocking verbs](./verbs.md).
+- Publish notifications with `notify`; see [Publishing](./publish.md).
+- Read schemas and run the admin calls (`schema`, `schema_for`, `wipe_stream`,
+  `wipe_all`, `delete_notification`); see [Operations](./operations.md).
 - Read structured errors: every failure throws an `aviso::Error` whose `what()`
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
@@ -40,6 +40,18 @@ int main() {
   }
 }
 ```
+
+## How calls behave
+
+Every call blocks until the server responds and throws `aviso::Error` on any
+failure, so wrap them in `try` / `catch`. JSON-shaped data crosses as strings:
+`notify` takes its payload as a JSON string and the calls return their responses
+as JSON strings, which you parse with whatever JSON library your application
+already uses.
+
+These calls must not run inside a watch or async callback (a runtime thread);
+doing so throws an `aviso::Error` with kind `AvisoErrorKind_InvalidUsage` rather
+than deadlocking. The watch surface lands in a later release.
 
 ## Building against the library
 
