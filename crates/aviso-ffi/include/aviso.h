@@ -446,9 +446,11 @@ AvisoTrigger *aviso_trigger_echo(void);
 AvisoTrigger *aviso_trigger_log(const char *path);
 
 /**
- * Builds a command trigger that runs `/bin/sh -c <cmd>` per notification
- * (Unix-only). A null or non-UTF-8 `cmd` is remembered and surfaced when the
- * watch starts.
+ * Builds a command trigger that runs `/bin/sh -c <cmd>` per notification. The
+ * command trigger is Unix-only: on a non-Unix target this returns a handle
+ * carrying an `InvalidUsage` error (surfaced when the watch starts), so the
+ * symbol exists on every platform and the ABI stays uniform. A null or
+ * non-UTF-8 `cmd` is remembered and surfaced when the watch starts.
  *
  * # Safety
  *
@@ -542,13 +544,17 @@ void aviso_trigger_set_timeout_secs(AvisoTrigger *trigger, uint64_t timeout_secs
 void aviso_trigger_set_fail_fast(AvisoTrigger *trigger, bool fail_fast);
 
 /**
- * Sets the HTTP method for a webhook trigger. Ignored on other trigger kinds.
+ * Sets the HTTP method for a webhook trigger from an `AvisoHttpMethod`
+ * discriminant. Taken as an integer (not the enum) so an out-of-range value
+ * from C is a remembered `InvalidInput` error rather than undefined behaviour;
+ * an unknown discriminant is recorded and surfaced when the watch starts.
+ * Ignored on other trigger kinds.
  *
  * # Safety
  *
  * `trigger` must be a live handle from a trigger factory.
  */
-void aviso_trigger_set_method(AvisoTrigger *trigger, AvisoHttpMethod method);
+void aviso_trigger_set_method(AvisoTrigger *trigger, uint32_t method);
 
 /**
  * Adds a request header to a webhook trigger. A null or non-UTF-8 `name` or
@@ -575,9 +581,10 @@ void aviso_trigger_set_header(AvisoTrigger *trigger, const char *name, const cha
 void aviso_trigger_set_body_template(AvisoTrigger *trigger, const char *body);
 
 /**
- * Adds an environment variable to a command trigger's child process
- * (Unix-only). A null or non-UTF-8 `key` or `value` is remembered and surfaced
- * when the watch starts. Ignored on other trigger kinds.
+ * Adds an environment variable to a command trigger's child process. The
+ * command trigger is Unix-only; on a non-Unix target this records an
+ * `InvalidUsage` error. A null or non-UTF-8 `key` or `value` is remembered and
+ * surfaced when the watch starts. Ignored on other trigger kinds.
  *
  * # Safety
  *
@@ -587,9 +594,10 @@ void aviso_trigger_set_body_template(AvisoTrigger *trigger, const char *body);
 void aviso_trigger_set_env(AvisoTrigger *trigger, const char *key, const char *value);
 
 /**
- * Sets the working directory for a command trigger's child process
- * (Unix-only). A null or non-UTF-8 `dir` is remembered and surfaced when the
- * watch starts. Ignored on other trigger kinds.
+ * Sets the working directory for a command trigger's child process. The
+ * command trigger is Unix-only; on a non-Unix target this records an
+ * `InvalidUsage` error. A null or non-UTF-8 `dir` is remembered and surfaced
+ * when the watch starts. Ignored on other trigger kinds.
  *
  * # Safety
  *
