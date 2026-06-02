@@ -26,10 +26,12 @@
 mod client;
 mod error;
 mod outcome;
+mod watch;
 
 pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{AvisoError, AvisoErrorKind};
 pub use outcome::AvisoOutcome;
+pub use watch::{AvisoNotification, AvisoWatch, AvisoWatchRequest};
 
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};

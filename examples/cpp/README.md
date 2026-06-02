@@ -48,3 +48,12 @@ no Rust toolchain.
   ```bash
   ./build/cpp/publish http://localhost:8000 producer-user producer-pass
   ```
+
+- `watch.cpp`: starts a callback `watch()` and, from another thread on the same
+  client, publishes a few notifications so the live watch receives them. It
+  prints each one and stops after a target count. Against the `tests/e2e` stack,
+  watch and publish to `test_event` as the producer account, stopping after 3:
+
+  ```bash
+  ./build/cpp/watch http://localhost:8000 producer-user producer-pass test_event 3
+  ```

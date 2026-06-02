@@ -41,7 +41,7 @@ impl AvisoClientBuilder {
 ///
 /// `ptr`, when non-null, must point to a NUL-terminated C string valid for the
 /// duration of the call.
-unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
+pub(crate) unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         return None;
     }
@@ -56,7 +56,7 @@ unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
 ///
 /// `ptr`, when non-null, must point to a NUL-terminated C string valid for the
 /// duration of the call.
-unsafe fn cstr_nullable<'a>(ptr: *const c_char) -> Result<Option<&'a str>, ()> {
+pub(crate) unsafe fn cstr_nullable<'a>(ptr: *const c_char) -> Result<Option<&'a str>, ()> {
     if ptr.is_null() {
         return Ok(None);
     }
