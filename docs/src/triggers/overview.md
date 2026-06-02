@@ -106,21 +106,6 @@ for a notification succeed**. This means:
 - Triggers run BEFORE the notification is checkpointed to the state file. The
   trigger's side-effects are durable-before-cursor-advance.
 
-## What about Slack, Discord, PagerDuty?
-
-Use the [`webhook`](./webhook.md) trigger with a hand-written `body_template`
-matching your receiver's expected shape. Sample bodies for popular receivers:
-
-- **Slack incoming webhook**:
-  `body_template: '{"text": "aviso {{ notification.event_type }} #{{ notification.sequence }}"}'`
-- **Discord webhook**:
-  `body_template: '{"content": "aviso {{ notification.event_type }} #{{ notification.sequence }}"}'`
-- **PagerDuty Events API v2**: hand-crafted JSON with `routing_key`,
-  `event_action`, `payload` per their docs.
-
-The `teams` trigger is special-cased only because the Adaptive Card body shape
-is verbose; Slack and Discord have shorter shapes that fit inline.
-
 ## Picking the right trigger
 
 | If you want to | Use |
@@ -130,5 +115,6 @@ is verbose; Slack and Discord have shorter shapes that fit inline.
 | Run an arbitrary shell command per notification | `command` |
 | POST to any HTTP endpoint with full control | `webhook` |
 | Send to a Microsoft Teams channel | `teams` |
+| Send an email per notification | `command` or `webhook`, see [Sending email](./email.md) |
 | Forward the unmodified CloudEvent that aviso-server emitted | `post` |
 | Forward to multiple of the above | Combine - listeners accept multiple triggers |

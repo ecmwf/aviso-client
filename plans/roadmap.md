@@ -34,11 +34,6 @@ yet.
   spatial consumer, a multi-listener daemon, a respawn-survival demo), a wider
   troubleshooting section, and CI gates for `clap`-derived reference freshness
   and broken-link / banned-phrase checks.
-- **Email trigger.** A fifth trigger kind over `lettre` (SMTP, rustls,
-  cross-platform). Operator-configured destinations (Gmail, Outlook / Office365,
-  ProtonMail Bridge, a self-hosted Postfix, any RFC-5321 relay); credentials via
-  `{{ env.<NAME> }}`. The retry classifier treats SMTP auth failures, malformed
-  addresses, and permanent 5xx as terminal. Text-only to start.
 - **Prebuilt C++ artifacts.** The C++ binding itself is in `main` (the C ABI,
   the header-only facade, the blocking and async verbs, watch, triggers,
   examples, and docs; D21 steps 1-5). What remains is the packaging deliverable
