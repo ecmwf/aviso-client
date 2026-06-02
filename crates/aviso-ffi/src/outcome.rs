@@ -29,6 +29,13 @@ enum Success {
 }
 
 impl AvisoOutcome {
+    pub(crate) fn empty() -> Self {
+        Self {
+            success: Success::Empty,
+            error: None,
+        }
+    }
+
     pub(crate) fn text(value: CString) -> Self {
         Self {
             success: Success::Text(value),
