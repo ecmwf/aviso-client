@@ -355,6 +355,13 @@ struct WatchRequestDeleter {
 };
 using WatchRequestPtr = std::unique_ptr<AvisoWatchRequest, WatchRequestDeleter>;
 
+struct TriggerDeleter {
+  void operator()(AvisoTrigger* trigger) const noexcept {
+    aviso_trigger_free(trigger);
+  }
+};
+using TriggerPtr = std::unique_ptr<AvisoTrigger, TriggerDeleter>;
+
 struct WatchDeleter {
   void operator()(AvisoWatch* watch) const noexcept { aviso_watch_free(watch); }
 };
@@ -394,6 +401,91 @@ extern "C" inline void watch_on_end(void* ctx, AvisoOutcome* outcome) {
 
 }  // namespace detail
 
+// HTTP method for the webhook trigger.
+enum class HttpMethod {
+  Post = AvisoHttpMethod_Post,
+  Get = AvisoHttpMethod_Get,
+  Put = AvisoHttpMethod_Put,
+  Patch = AvisoHttpMethod_Patch,
+  Delete = AvisoHttpMethod_Delete,
+};
+
+// A per-notification side effect, built by a static factory and tuned with the
+// chainable setters, then attached to a WatchRequest with `add_trigger`. A
+// setter that does not apply to the trigger's kind is ignored. A bad argument
+// is reported through the watch's on_end when it starts.
+class Trigger {
+ public:
+  static Trigger echo() { return Trigger(aviso_trigger_echo()); }
+  static Trigger log(const std::string& path) {
+    return Trigger(aviso_trigger_log(path.c_str()));
+  }
+  static Trigger command(const std::string& cmd) {
+    return Trigger(aviso_trigger_command(cmd.c_str()));
+  }
+  static Trigger webhook(const std::string& url) {
+    return Trigger(aviso_trigger_webhook(url.c_str()));
+  }
+  static Trigger teams(const std::string& url) {
+    return Trigger(aviso_trigger_teams(url.c_str()));
+  }
+  static Trigger post(const std::string& url) {
+    return Trigger(aviso_trigger_post(url.c_str()));
+  }
+
+  Trigger& label(const std::string& name) {
+    aviso_trigger_set_label(handle_.get(), name.c_str());
+    return *this;
+  }
+  Trigger& retries(std::uint32_t retries) {
+    aviso_trigger_set_retries(handle_.get(), retries);
+    return *this;
+  }
+  Trigger& required(bool required) {
+    aviso_trigger_set_required(handle_.get(), required);
+    return *this;
+  }
+  Trigger& timeout_secs(std::uint64_t seconds) {
+    aviso_trigger_set_timeout_secs(handle_.get(), seconds);
+    return *this;
+  }
+  Trigger& fail_fast(bool on) {
+    aviso_trigger_set_fail_fast(handle_.get(), on);
+    return *this;
+  }
+  Trigger& method(HttpMethod method) {
+    aviso_trigger_set_method(handle_.get(),
+                             static_cast<AvisoHttpMethod>(method));
+    return *this;
+  }
+  Trigger& header(const std::string& name, const std::string& value) {
+    aviso_trigger_set_header(handle_.get(), name.c_str(), value.c_str());
+    return *this;
+  }
+  Trigger& body_template(const std::string& body) {
+    aviso_trigger_set_body_template(handle_.get(), body.c_str());
+    return *this;
+  }
+  Trigger& env(const std::string& key, const std::string& value) {
+    aviso_trigger_set_env(handle_.get(), key.c_str(), value.c_str());
+    return *this;
+  }
+  Trigger& working_dir(const std::string& dir) {
+    aviso_trigger_set_working_dir(handle_.get(), dir.c_str());
+    return *this;
+  }
+
+ private:
+  friend class WatchRequest;
+  explicit Trigger(AvisoTrigger* handle) : handle_(handle) {
+    if (!handle_) {
+      detail::throw_internal("aviso: failed to allocate a trigger");
+    }
+  }
+  AvisoTrigger* release() { return handle_.release(); }
+  detail::TriggerPtr handle_;
+};
+
 // Fluent builder for a watch request. Defaults to a live watch of `event_type`;
 // the `*_from_*` setters add a resume position or switch to replay-only.
 class WatchRequest {
@@ -423,6 +515,13 @@ class WatchRequest {
   }
   WatchRequest& replay_from_date(const std::string& date) {
     aviso_watch_request_replay_from_date(handle_.get(), date.c_str());
+    return *this;
+  }
+
+  // Attaches a trigger, consuming it.
+  WatchRequest& add_trigger(Trigger trigger) {
+    AvisoTrigger* raw = trigger.release();
+    aviso_watch_request_add_trigger(handle_.get(), &raw);
     return *this;
   }
 

@@ -15,7 +15,7 @@ use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aviso::watch::{ResumeStart, WatchRequest};
+use aviso::watch::{ResumeStart, Trigger, WatchRequest};
 use aviso::{ClientError, Notification};
 use serde_json::Value;
 use tokio::sync::Notify;
@@ -23,6 +23,7 @@ use tokio::sync::Notify;
 use crate::client::{AvisoClient, cstr_nullable, cstr_opt};
 use crate::error::{self, OutcomeError};
 use crate::outcome::AvisoOutcome;
+use crate::triggers::AvisoTrigger;
 use crate::{guard, guard_outcome, reject_blocking_on_runtime, runtime};
 
 /// C callback invoked once per notification. Returning `false` requests a
@@ -65,6 +66,7 @@ struct RequestSpec {
     event_type: String,
     filter: Option<BTreeMap<String, Value>>,
     mode: Mode,
+    triggers: Vec<Trigger>,
 }
 
 enum Mode {
@@ -82,6 +84,9 @@ impl RequestSpec {
         };
         if let Some(filter) = self.filter {
             request = request.with_filter(filter);
+        }
+        if !self.triggers.is_empty() {
+            request = request.with_triggers(self.triggers);
         }
         request
     }
@@ -133,6 +138,7 @@ pub unsafe extern "C" fn aviso_watch_request_new(
                     event_type: event_type.to_string(),
                     filter: None,
                     mode: Mode::Watch,
+                    triggers: Vec::new(),
                 });
             }
             None => {
@@ -277,6 +283,48 @@ pub unsafe extern "C" fn aviso_watch_request_replay_from_date(
                     "date must be non-null and valid UTF-8",
                 ));
             }
+        }
+    });
+}
+
+/// Attaches a trigger to the request, consuming the trigger handle: on entry
+/// the trigger is taken and the caller's pointer is nulled (so a later free is
+/// a safe no-op). A trigger built from a bad argument is remembered on the
+/// request and surfaced through the watch's `on_end` when it starts.
+///
+/// # Safety
+///
+/// `request` must be a live handle from `aviso_watch_request_new`. `trigger`
+/// must point to a trigger-handle pointer; `*trigger`, when non-null, must be a
+/// live handle from a trigger factory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_watch_request_add_trigger(
+    request: *mut AvisoWatchRequest,
+    trigger: *mut *mut AvisoTrigger,
+) {
+    guard((), || {
+        if trigger.is_null() {
+            return;
+        }
+        let slot = unsafe { &mut *trigger };
+        if slot.is_null() {
+            return;
+        }
+        // Take ownership and null the caller's pointer before any other work.
+        let owned = unsafe { Box::from_raw(*slot) };
+        *slot = ptr::null_mut();
+
+        let Some(request) = (unsafe { request.as_mut() }) else {
+            return;
+        };
+        if let Some(err) = owned.error {
+            if request.error.is_none() {
+                request.error = Some(err);
+            }
+            return;
+        }
+        if let Some(trigger) = owned.trigger {
+            request.with_spec(|spec| spec.triggers.push(trigger));
         }
     });
 }
@@ -643,6 +691,7 @@ pub unsafe extern "C" fn aviso_watch_free(watch: *mut AvisoWatch) {
 )]
 mod tests {
     use super::*;
+    use crate::AvisoErrorKind;
     use crate::client::{aviso_client_builder_build, aviso_client_builder_new, aviso_client_free};
     use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
     use std::ffi::CString;
@@ -772,6 +821,51 @@ mod tests {
             "a graceful stop must carry no error"
         );
 
+        unsafe { aviso_watch_free(watch) };
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn add_trigger_consumes_and_nulls_the_handle() {
+        let event = cstr("test_event");
+        let request = unsafe { aviso_watch_request_new(event.as_ptr()) };
+        let mut trigger = crate::triggers::aviso_trigger_echo();
+        unsafe { aviso_watch_request_add_trigger(request, &raw mut trigger) };
+        assert!(trigger.is_null(), "the trigger pointer must be nulled");
+        unsafe { aviso_watch_request_free(request) };
+    }
+
+    #[test]
+    fn watch_with_a_bad_trigger_reports_invalid_input_via_on_end() {
+        // A trigger built from a bad argument (a null log path) is remembered on
+        // the request and surfaced through on_end when the watch starts, before
+        // any stream work.
+        let client = build_client();
+        let event = cstr("test_event");
+        let request = unsafe { aviso_watch_request_new(event.as_ptr()) };
+        let mut trigger = unsafe { crate::triggers::aviso_trigger_log(ptr::null()) };
+        unsafe { aviso_watch_request_add_trigger(request, &raw mut trigger) };
+
+        let sink = Box::new(Sink::new());
+        let ctx = (&raw const *sink) as *mut c_void;
+        let mut request = request;
+        let watch = unsafe {
+            aviso_client_watch(
+                client,
+                &raw mut request,
+                Some(on_notification),
+                Some(on_end),
+                ctx,
+            )
+        };
+        assert!(!watch.is_null());
+        let outcome = unsafe { aviso_watch_wait(watch) };
+        unsafe { aviso_outcome_free(outcome) };
+        assert!(sink.ended.load(Ordering::SeqCst));
+        assert_eq!(
+            sink.end_kind.load(Ordering::SeqCst),
+            AvisoErrorKind::InvalidInput as i32
+        );
         unsafe { aviso_watch_free(watch) };
         unsafe { aviso_client_free(client) };
     }
