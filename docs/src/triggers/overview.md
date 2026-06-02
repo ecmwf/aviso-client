@@ -121,6 +121,12 @@ matching your receiver's expected shape. Sample bodies for popular receivers:
 The `teams` trigger is special-cased only because the Adaptive Card body shape
 is verbose; Slack and Discord have shorter shapes that fit inline.
 
+## What about email?
+
+There is no built-in email trigger; send email through the `command` trigger (a
+local SMTP client) or the `webhook` trigger (an HTTP mail endpoint). See
+[Sending email](./email.md).
+
 ## Picking the right trigger
 
 | If you want to | Use |
@@ -130,5 +136,6 @@ is verbose; Slack and Discord have shorter shapes that fit inline.
 | Run an arbitrary shell command per notification | `command` |
 | POST to any HTTP endpoint with full control | `webhook` |
 | Send to a Microsoft Teams channel | `teams` |
+| Send an email per notification | `command` or `webhook`, see [Sending email](./email.md) |
 | Forward the unmodified CloudEvent that aviso-server emitted | `post` |
 | Forward to multiple of the above | Combine - listeners accept multiple triggers |
