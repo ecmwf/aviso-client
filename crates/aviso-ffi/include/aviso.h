@@ -80,6 +80,33 @@ typedef enum {
 } AvisoErrorKind;
 
 /**
+ * HTTP method for the webhook trigger. Discriminants are fixed for ABI
+ * stability and mirror the core `HttpMethod`.
+ */
+typedef enum {
+  /**
+   * `POST` (the webhook default).
+   */
+  AvisoHttpMethod_Post = 0,
+  /**
+   * `GET`.
+   */
+  AvisoHttpMethod_Get = 1,
+  /**
+   * `PUT`.
+   */
+  AvisoHttpMethod_Put = 2,
+  /**
+   * `PATCH`.
+   */
+  AvisoHttpMethod_Patch = 3,
+  /**
+   * `DELETE`.
+   */
+  AvisoHttpMethod_Delete = 4,
+} AvisoHttpMethod;
+
+/**
  * Opaque client handle. Wraps the core client (cheap to clone, shares the
  * connection pool and auth state).
  */
@@ -104,6 +131,13 @@ typedef struct AvisoNotification AvisoNotification;
  * `aviso_outcome_free`.
  */
 typedef struct AvisoOutcome AvisoOutcome;
+
+/**
+ * Opaque trigger handle. Built by a factory, tuned by the setters, and
+ * consumed by `aviso_watch_request_add_trigger` (which nulls the caller's
+ * pointer) or freed with `aviso_trigger_free`.
+ */
+typedef struct AvisoTrigger AvisoTrigger;
 
 /**
  * Opaque handle to a running watch. Stop it with `aviso_watch_stop`, block for
@@ -395,6 +429,188 @@ void aviso_outcome_free(AvisoOutcome *outcome);
 void aviso_string_free(char *text);
 
 /**
+ * Builds an echo trigger (writes each notification as compact JSON to standard
+ * output). Free an abandoned trigger with `aviso_trigger_free`.
+ */
+AvisoTrigger *aviso_trigger_echo(void);
+
+/**
+ * Builds a log trigger that appends each notification as compact JSON to the
+ * file at `path`. A null or non-UTF-8 `path` is remembered and surfaced when
+ * the watch starts.
+ *
+ * # Safety
+ *
+ * `path`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoTrigger *aviso_trigger_log(const char *path);
+
+/**
+ * Builds a command trigger that runs `/bin/sh -c <cmd>` per notification
+ * (Unix-only). A null or non-UTF-8 `cmd` is remembered and surfaced when the
+ * watch starts.
+ *
+ * # Safety
+ *
+ * `cmd`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoTrigger *aviso_trigger_command(const char *cmd);
+
+/**
+ * Builds a webhook trigger that sends an HTTP request per notification to
+ * `url`. A null or non-UTF-8 `url` is remembered and surfaced when the watch
+ * starts.
+ *
+ * # Safety
+ *
+ * `url`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoTrigger *aviso_trigger_webhook(const char *url);
+
+/**
+ * Builds a Teams trigger that posts an Adaptive Card per notification to the
+ * Teams Workflows webhook `url`. A null or non-UTF-8 `url` is remembered and
+ * surfaced when the watch starts.
+ *
+ * # Safety
+ *
+ * `url`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoTrigger *aviso_trigger_teams(const char *url);
+
+/**
+ * Builds a post trigger that forwards the raw `CloudEvent` envelope as an HTTP
+ * POST per notification to `url`. A null or non-UTF-8 `url` is remembered and
+ * surfaced when the watch starts.
+ *
+ * # Safety
+ *
+ * `url`, when non-null, must be a NUL-terminated C string.
+ */
+AvisoTrigger *aviso_trigger_post(const char *url);
+
+/**
+ * Sets the echo trigger's listener-attribution label. A null or non-UTF-8
+ * `label` is remembered and surfaced when the watch starts. Ignored on other
+ * trigger kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory. `label`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_trigger_set_label(AvisoTrigger *trigger, const char *label);
+
+/**
+ * Sets the retry count (additional attempts after the first failure).
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory.
+ */
+void aviso_trigger_set_retries(AvisoTrigger *trigger, uint32_t retries);
+
+/**
+ * Sets whether the trigger is required (a required trigger's terminal failure
+ * ends the watch; an optional trigger's failure is logged and the watch
+ * continues).
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory.
+ */
+void aviso_trigger_set_required(AvisoTrigger *trigger, bool required);
+
+/**
+ * Sets a per-trigger timeout in seconds. Meaningful for the command and
+ * HTTP-based triggers; ignored on echo and log.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory.
+ */
+void aviso_trigger_set_timeout_secs(AvisoTrigger *trigger, uint64_t timeout_secs);
+
+/**
+ * Sets the fail-fast policy on terminal failures. Meaningful for the command
+ * and HTTP-based triggers.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory.
+ */
+void aviso_trigger_set_fail_fast(AvisoTrigger *trigger, bool fail_fast);
+
+/**
+ * Sets the HTTP method for a webhook trigger. Ignored on other trigger kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory.
+ */
+void aviso_trigger_set_method(AvisoTrigger *trigger, AvisoHttpMethod method);
+
+/**
+ * Adds a request header to a webhook trigger. A null or non-UTF-8 `name` or
+ * `value` is remembered and surfaced when the watch starts. Ignored on other
+ * trigger kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory. `name` and `value`,
+ * when non-null, must be NUL-terminated C strings.
+ */
+void aviso_trigger_set_header(AvisoTrigger *trigger, const char *name, const char *value);
+
+/**
+ * Sets the body template for a webhook trigger. A null or non-UTF-8 `body` is
+ * remembered and surfaced when the watch starts. Ignored on other trigger
+ * kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory. `body`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_trigger_set_body_template(AvisoTrigger *trigger, const char *body);
+
+/**
+ * Adds an environment variable to a command trigger's child process
+ * (Unix-only). A null or non-UTF-8 `key` or `value` is remembered and surfaced
+ * when the watch starts. Ignored on other trigger kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory. `key` and `value`,
+ * when non-null, must be NUL-terminated C strings.
+ */
+void aviso_trigger_set_env(AvisoTrigger *trigger, const char *key, const char *value);
+
+/**
+ * Sets the working directory for a command trigger's child process
+ * (Unix-only). A null or non-UTF-8 `dir` is remembered and surfaced when the
+ * watch starts. Ignored on other trigger kinds.
+ *
+ * # Safety
+ *
+ * `trigger` must be a live handle from a trigger factory. `dir`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_trigger_set_working_dir(AvisoTrigger *trigger, const char *dir);
+
+/**
+ * Frees an abandoned trigger. Triggers consumed by
+ * `aviso_watch_request_add_trigger` are already freed; calling this on the
+ * nulled-out pointer is a safe no-op.
+ *
+ * # Safety
+ *
+ * `trigger`, when non-null, must be a live handle from a trigger factory that
+ * was not consumed by an add.
+ */
+void aviso_trigger_free(AvisoTrigger *trigger);
+
+/**
  * Creates a live-watch request for `event_type`. Returns a handle (null only
  * if an internal panic is trapped); a null or non-UTF-8 `event_type` is
  * remembered and surfaced when the watch starts. Free an abandoned request
@@ -459,6 +675,20 @@ void aviso_watch_request_replay_from_sequence(AvisoWatchRequest *request, uint64
  * non-null, must be a NUL-terminated C string.
  */
 void aviso_watch_request_replay_from_date(AvisoWatchRequest *request, const char *date);
+
+/**
+ * Attaches a trigger to the request, consuming the trigger handle: on entry
+ * the trigger is taken and the caller's pointer is nulled (so a later free is
+ * a safe no-op). A trigger built from a bad argument is remembered on the
+ * request and surfaced through the watch's `on_end` when it starts.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`. `trigger`
+ * must point to a trigger-handle pointer; `*trigger`, when non-null, must be a
+ * live handle from a trigger factory.
+ */
+void aviso_watch_request_add_trigger(AvisoWatchRequest *request, AvisoTrigger **trigger);
 
 /**
  * Frees an abandoned watch request. Requests consumed by `aviso_client_watch`
