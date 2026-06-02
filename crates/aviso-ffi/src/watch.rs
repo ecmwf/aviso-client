@@ -592,10 +592,15 @@ pub unsafe extern "C" fn aviso_watch_wait(watch: *const AvisoWatch) -> *mut Avis
             return err.into_outcome();
         }
         let handle = watch.join.lock().ok().and_then(|mut guard| guard.take());
-        if let Some(handle) = handle {
-            let _ = runtime().block_on(handle);
+        match handle {
+            // A JoinError means the watch task panicked (a panic outside the
+            // per-callback catch_unwind); surface it rather than reporting ok.
+            Some(handle) => match runtime().block_on(handle) {
+                Ok(()) => AvisoOutcome::empty().into_raw(),
+                Err(_) => error::panic_error().into_outcome(),
+            },
+            None => AvisoOutcome::empty().into_raw(),
         }
-        AvisoOutcome::empty().into_raw()
     })
 }
 
