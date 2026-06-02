@@ -13,6 +13,15 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#36](https://github.com/ecmwf/aviso-client/pull/36) ffi: the C++ watch
+  surface. Adds streaming notifications to the C ABI and the C++ facade: a
+  watch-request builder (filter, resume, replay), per-notification views, an
+  `aviso_client_watch` driver with `on_notification` / `on_end` callbacks, and a
+  stop/wait/free lifecycle, plus a `NotificationHandler` interface and an RAII
+  `Watch` in the facade. Ships a watch example and a Watching docs page.
+  Verified against the e2e stack.
+- [#35](https://github.com/ecmwf/aviso-client/pull/35) docs: the C++ overview no
+  longer groups the read-only schema calls under the operator-only admin calls.
 - [#34](https://github.com/ecmwf/aviso-client/pull/34) ffi: the rest of the
   blocking C++ surface. Adds `notify`, `schema_for`, `wipe_stream`, `wipe_all`,
   and `delete_notification` to the C ABI and the C++ facade, derives `Serialize`
