@@ -12,13 +12,15 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 ## What you can do today
 
 - Build a client from a base URL, optionally with HTTP Basic credentials.
-- Fetch the schema catalogue (`GET /api/v1/schema`) as a JSON string.
+- Publish notifications and run every blocking verb: `notify`, `schema`,
+  `schema_for`, `wipe_stream`, `wipe_all`, and `delete_notification`. See
+  [Blocking verbs](./verbs.md).
 - Read structured errors: every failure throws an `aviso::Error` whose `what()`
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
 
-More of the surface (the other verbs, watching, triggers, and an async form)
-lands as the binding grows.
+More of the surface (watching, triggers, and an async form) lands as the
+binding grows.
 
 ## A first call
 
