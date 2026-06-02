@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     return 0;
   } catch (const aviso::Error& error) {
     const aviso::ErrorInfo& info = error.error();
-    std::cout << "aviso error: kind=" << static_cast<int>(info.kind)
+    std::cerr << "aviso error: kind=" << static_cast<int>(info.kind)
               << " message=" << error.what() << '\n';
     return 1;
   }
