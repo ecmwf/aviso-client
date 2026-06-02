@@ -52,20 +52,31 @@ fn guard_async(on_complete: OnComplete, ctx: *mut c_void, body: impl FnOnce()) {
 /// outcome is built now and moved into the task as a `Send` pointer.
 fn deliver_error(on_complete: OnComplete, ctx: *mut c_void, error: OutcomeError) {
     let send_ctx = SendPtr(ctx);
-    let send_outcome = SendOutcome(AvisoOutcome::error(error).into_raw());
-    runtime().spawn(async move {
-        // Rebind the whole newtypes so the future captures the Send wrappers,
-        // not their inner raw-pointer fields (disjoint closure capture).
-        let send_ctx = send_ctx;
-        let send_outcome = send_outcome;
-        let raw = send_outcome.0;
-        let _ = catch_unwind(AssertUnwindSafe(|| on_complete(send_ctx.0, raw)));
-    });
+    let raw = AvisoOutcome::error(error).into_raw();
+    let send_outcome = SendOutcome(raw);
+    let spawned = catch_unwind(AssertUnwindSafe(move || {
+        runtime().spawn(async move {
+            // Rebind the whole newtypes so the future captures the Send
+            // wrappers, not their inner raw-pointer fields (disjoint capture).
+            let send_ctx = send_ctx;
+            let send_outcome = send_outcome;
+            let raw = send_outcome.0;
+            let _ = catch_unwind(AssertUnwindSafe(|| on_complete(send_ctx.0, raw)));
+        });
+    }));
+    if spawned.is_err() {
+        // The runtime could not be obtained (a fatal init failure trapped here
+        // rather than unwound across the boundary). Complete synchronously so
+        // on_complete still fires exactly once; `raw` is a copy of the
+        // still-live outcome pointer, and the spawn path never ran the callback.
+        let _ = catch_unwind(AssertUnwindSafe(|| on_complete(ctx, raw)));
+    }
 }
 
-/// Publishes a notification asynchronously; the response JSON (or a structured
-/// error) is delivered to `on_complete`. See the module docs for the callback
-/// contract. No-op if `on_complete` is null.
+/// Publishes a notification asynchronously. When it finishes, `on_complete` is
+/// called exactly once on a runtime thread with an owning outcome (the response
+/// JSON, or a structured error): free it with `aviso_outcome_free`. The
+/// callback must not unwind across the boundary. No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -160,9 +171,11 @@ pub unsafe extern "C" fn aviso_client_notify_async(
     });
 }
 
-/// Fetches the full schema catalog asynchronously; the catalog JSON (or a
-/// structured error) is delivered to `on_complete`. No-op if `on_complete` is
-/// null.
+/// Fetches the full schema catalog asynchronously. When it finishes,
+/// `on_complete` is called exactly once on a runtime thread with an owning
+/// outcome (the catalog JSON, or a structured error): free it with
+/// `aviso_outcome_free`. The callback must not unwind across the boundary.
+/// No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -199,8 +212,10 @@ pub unsafe extern "C" fn aviso_client_schema_async(
     });
 }
 
-/// Fetches one stream's schema asynchronously; the schema JSON (or a structured
-/// error) is delivered to `on_complete`. No-op if `on_complete` is null.
+/// Fetches one stream's schema asynchronously. When it finishes, `on_complete`
+/// is called exactly once on a runtime thread with an owning outcome (the
+/// schema JSON, or a structured error): free it with `aviso_outcome_free`. The
+/// callback must not unwind across the boundary. No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -248,9 +263,11 @@ pub unsafe extern "C" fn aviso_client_schema_for_async(
     });
 }
 
-/// Wipes one stream asynchronously (operator-only); an empty success outcome or
-/// a structured error is delivered to `on_complete`. No-op if `on_complete` is
-/// null.
+/// Wipes one stream asynchronously (operator-only). When it finishes,
+/// `on_complete` is called exactly once on a runtime thread with an owning
+/// outcome (an empty success, or a structured error): free it with
+/// `aviso_outcome_free`. The callback must not unwind across the boundary.
+/// No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -298,9 +315,11 @@ pub unsafe extern "C" fn aviso_client_wipe_stream_async(
     });
 }
 
-/// Wipes every stream asynchronously (operator-only); an empty success outcome
-/// or a structured error is delivered to `on_complete`. No-op if `on_complete`
-/// is null.
+/// Wipes every stream asynchronously (operator-only). When it finishes,
+/// `on_complete` is called exactly once on a runtime thread with an owning
+/// outcome (an empty success, or a structured error): free it with
+/// `aviso_outcome_free`. The callback must not unwind across the boundary.
+/// No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -338,8 +357,10 @@ pub unsafe extern "C" fn aviso_client_wipe_all_async(
 }
 
 /// Deletes one notification by its `<event_type>@<sequence>` id asynchronously
-/// (operator-only); an empty success outcome or a structured error is delivered
-/// to `on_complete`. No-op if `on_complete` is null.
+/// (operator-only). When it finishes, `on_complete` is called exactly once on a
+/// runtime thread with an owning outcome (an empty success, or a structured
+/// error): free it with `aviso_outcome_free`. The callback must not unwind
+/// across the boundary. No-op if `on_complete` is null.
 ///
 /// # Safety
 ///
@@ -434,8 +455,10 @@ mod tests {
         // thread, without any network work.
         let client = build_client();
         let (tx, rx) = mpsc::channel();
-        let sink = Box::new(Sink { kind: tx });
-        let ctx = (&raw const *sink) as *mut c_void;
+        // Leak the sink so a panic here (e.g. a timeout) cannot drop it while
+        // the spawned task may still call on_complete with this ctx.
+        let sink: &'static Sink = Box::leak(Box::new(Sink { kind: tx }));
+        let ctx = std::ptr::from_ref(sink) as *mut c_void;
 
         let event = CString::new("test_event").expect("cstring");
         let bad = CString::new("{not json").expect("cstring");
