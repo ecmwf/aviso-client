@@ -47,6 +47,8 @@
 # C++
 
 - [Overview](./cpp/overview.md)
+- [Publishing](./cpp/publish.md)
+- [Operations](./cpp/operations.md)
 
 ---
 

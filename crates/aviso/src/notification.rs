@@ -42,7 +42,11 @@ pub struct NotificationRequest {
 ///
 /// Marked `#[non_exhaustive]` because the server may grow the response shape (for example a
 /// sequence echo for in-stream visibility); downstream pattern matching stays compatible.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+///
+/// `Serialize` is derived so non-Rust consumers (the C ABI in `aviso-ffi`) can render the
+/// response as JSON without bespoke marshalling. The serialised shape is the public field
+/// layout: `status`, `request_id`, `processed_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct NotifyResponse {
     /// Server-supplied status string (typically `"success"`).
@@ -306,6 +310,29 @@ mod tests {
             assert!(
                 json.get("payload").is_none(),
                 "payload field must be omitted when None: {json}"
+            );
+        }
+    }
+
+    mod notify_response_serialize {
+        use crate::NotifyResponse;
+
+        #[test]
+        fn serializes_to_expected_wire_shape() {
+            let response: NotifyResponse = serde_json::from_value(serde_json::json!({
+                "status": "success",
+                "request_id": "req-abc",
+                "processed_at": "2026-05-17T12:34:56Z",
+            }))
+            .unwrap();
+            let json = serde_json::to_value(&response).unwrap();
+            assert_eq!(
+                json,
+                serde_json::json!({
+                    "status": "success",
+                    "request_id": "req-abc",
+                    "processed_at": "2026-05-17T12:34:56Z",
+                })
             );
         }
     }

@@ -217,6 +217,95 @@ void aviso_client_free(AvisoClient *client);
 AvisoOutcome *aviso_client_schema(const AvisoClient *client);
 
 /**
+ * Publishes a notification (`POST /api/v1/notification`) and returns the
+ * server's response as a compact-JSON string success value (retrieve it with
+ * `aviso_outcome_take_string`), or a structured error.
+ *
+ * `event_type` is required. `identifier_json`, when non-null, is a JSON object
+ * of string-to-string identifier pairs; `payload_json`, when non-null, is any
+ * JSON value. A null `identifier_json` or `payload_json` means the field is
+ * omitted; a non-UTF-8 or otherwise malformed argument is an
+ * `AvisoErrorKind_InvalidInput` error.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `event_type`,
+ * `identifier_json`, and `payload_json`, when non-null, must be NUL-terminated
+ * C strings.
+ */
+AvisoOutcome *aviso_client_notify(const AvisoClient *client,
+                                  const char *event_type,
+                                  const char *identifier_json,
+                                  const char *payload_json);
+
+/**
+ * Fetches the schema for one event type (`GET /api/v1/schema/{event_type}`)
+ * and returns it as a compact-JSON string success value (retrieve it with
+ * `aviso_outcome_take_string`), or a structured error.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `event_type`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+AvisoOutcome *aviso_client_schema_for(const AvisoClient *client, const char *event_type);
+
+/**
+ * Wipes every notification for one stream (`DELETE
+ * /api/v1/admin/wipe/stream`). Operator-only. Returns an empty success outcome
+ * or a structured error.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `stream_name`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+AvisoOutcome *aviso_client_wipe_stream(const AvisoClient *client, const char *stream_name);
+
+/**
+ * Wipes every stream (`DELETE /api/v1/admin/wipe/all`). Operator-only. Returns
+ * an empty success outcome or a structured error.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build.
+ */
+AvisoOutcome *aviso_client_wipe_all(const AvisoClient *client);
+
+/**
+ * Deletes a single notification by its `<event_type>@<sequence>` id (`DELETE
+ * /api/v1/admin/notification/{id}`). Operator-only. Returns an empty success
+ * outcome or a structured error.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `notification_id`,
+ * when non-null, must be a NUL-terminated C string.
+ */
+AvisoOutcome *aviso_client_delete_notification(const AvisoClient *client,
+                                               const char *notification_id);
+
+/**
  * Returns `true` when the outcome carries no error.
  *
  * # Safety

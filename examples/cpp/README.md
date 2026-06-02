@@ -39,3 +39,12 @@ no Rust toolchain.
   ```bash
   ./build/cpp/schema_smoke http://localhost:8000
   ```
+
+- `publish.cpp`: publishes a notification with `notify()` and then reads the
+  stream's schema with `schema_for()`. It needs a running server and, for an
+  auth-required stream, credentials. Against the [`tests/e2e`](../../tests/e2e)
+  stack, publish to `test_event` as the producer account:
+
+  ```bash
+  ./build/cpp/publish http://localhost:8000 producer-user producer-pass
+  ```
