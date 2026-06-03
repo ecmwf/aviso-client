@@ -31,7 +31,7 @@ jobs:
     # RUN steps are arbitrary code. Fork PRs skip this; a maintainer
     # validates image changes from a branch in the canonical repo.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl]
     steps:
       - uses: actions/checkout@v5
 
