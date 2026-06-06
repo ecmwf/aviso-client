@@ -13,6 +13,17 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#43](https://github.com/ecmwf/aviso-client/pull/43) ci: pin the self-hosted
+  jobs back to the Ubuntu 22.04 runners, restoring the
+  `platform-builder-Ubuntu-22.04` label dropped in #42 (and its actionlint
+  allow-list entry). Net-zero against #42.
+- [#42](https://github.com/ecmwf/aviso-client/pull/42) ci: drop the OS-pinned
+  `platform-builder-Ubuntu-22.04` runner label so jobs could schedule on any
+  docker-xl host. Reverted by #43.
+- [#41](https://github.com/ecmwf/aviso-client/pull/41) docs: group sending email
+  under a Trigger examples page. Documents email through the command and webhook
+  triggers (no built-in email trigger) and drops the email-trigger item from the
+  roadmap.
 - [#40](https://github.com/ecmwf/aviso-client/pull/40) test: run the C++
   examples against the live e2e stack in CI. Adds
   `tests/e2e/cpp/run_examples.sh` (schema, publish, async, and the watch-only
