@@ -53,6 +53,7 @@ def test_public_surface_matches_documented_set() -> None:
         "Notification",
         "NotificationIterator",
         "NotifyResponse",
+        "NotifyResult",
         "SchemaCatalog",
         "SchemaResponse",
         "StateStore",

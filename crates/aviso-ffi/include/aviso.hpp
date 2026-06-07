@@ -326,6 +326,19 @@ class Client {
                        "notify");
   }
 
+  // Publishes many notifications concurrently and returns a compact-JSON array
+  // of per-item results, or throws `aviso::Error`. `notifications_json` is a
+  // JSON array of {event_type, identifier?, payload?} objects; `max_concurrency`
+  // caps in-flight requests (0 selects a default). A per-item failure is
+  // reported in the returned array, not thrown; only a malformed array throws.
+  [[nodiscard]] std::string notify_many(const std::string& notifications_json,
+                                         std::size_t max_concurrency = 0) {
+    return take_string(
+        aviso_client_notify_many(handle_.get(), notifications_json.c_str(),
+                                 max_concurrency),
+        "notify_many");
+  }
+
   // Wipes every notification for one stream (operator-only), or throws
   // `aviso::Error`.
   void wipe_stream(const std::string& stream_name) {

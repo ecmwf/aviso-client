@@ -23,6 +23,7 @@ pub mod watch;
 pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{ClientError, Result};
 pub use notification::{Notification, NotificationRequest, NotifyResponse, parse_cloudevent_id};
+pub use notify::DEFAULT_NOTIFY_CONCURRENCY;
 pub use schema::{SchemaCatalog, SchemaResponse, StreamSchema};
 
 /// Version string of the `aviso` crate, sourced from Cargo metadata.
