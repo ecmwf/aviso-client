@@ -47,6 +47,12 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     /// correct for static-credential providers like [`Basic`] and [`Bearer`] where a `401` means
     /// the credentials are simply wrong and refreshing them changes nothing.
     ///
+    /// When several authenticated requests fail with `401` at once (for example a concurrent
+    /// batch from [`crate::AvisoClient::notify_many`]), the client coalesces them into a single
+    /// `refresh` call rather than invoking this method once per request. Implementations must
+    /// therefore not assume one `refresh` per failed request, and must not issue an authenticated
+    /// request through the same client from inside `refresh` (it would deadlock the coalescer).
+    ///
     /// Implementations that hold cached tokens (OAuth, OIDC, signed-URL providers) override this
     /// to rotate the cached token. Because the trait is taken by shared reference (so the same
     /// provider can be cloned through `Arc<dyn AuthProvider>` across tasks), refresh
