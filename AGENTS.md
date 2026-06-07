@@ -130,8 +130,7 @@ NEVER decide "there are no comments" by filtering REST comments on a guessed log
    - **Reject** if the finding is a false positive, a misreading of the code, a misinterpretation of a deliberate decision, or otherwise does not warrant a change. Do NOT silently apply suggestions that would degrade the code, contradict documented design, or revert deliberate work. A rejected finding gets a reply that names the reason in one sentence (examples below).
 4. **Reply to each comment AND resolve its thread.** Reply with `gh api repos/<owner>/<repo>/pulls/<pr>/comments -f body=... -F in_reply_to=<comment_database_id>`, then resolve the thread via the GraphQL `resolveReviewThread` mutation against the thread node id. Replying is not resolving: a reply with no resolve leaves the thread open and the loop incomplete. Every thread you touch this round must end `isResolved: true`; verify with the query in the termination gate before moving on.
 5. **Push the fix commits** before requesting the next round so Copilot reviews the new state, not the stale one.
-6. **Request another review** and repeat from step 2.
-7. **Pushing fixes is the middle of the loop, not the end.** After you reply, resolve, and push a round's fixes, you are NOT done: go back to step 1 and request another review so the bot re-reads the new state. The only way out is the termination gate below.
+6. **Request another review and repeat from step 2.** Replying, resolving, and pushing a round's fixes is the middle of the loop, not the end: you are done only via the termination gate below, never just because you pushed fixes.
 
 ### Terminating the loop
 
@@ -142,11 +141,11 @@ Declare the loop complete only when ALL of the following hold, checked against a
 3. **Zero unresolved threads remain.** Verify with GraphQL, not by eyeballing the PR:
 
    ```bash
-   gh api graphql -f query='query { repository(owner:"<owner>",name:"<repo>"){ pullRequest(number:<pr>){ reviewThreads(first:100){ nodes{ isResolved } } } } }' \
-     --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length'
+   gh api graphql -f query='query { repository(owner:"<owner>",name:"<repo>"){ pullRequest(number:<pr>){ reviewThreads(first:100){ nodes{ isResolved } pageInfo{ hasNextPage } } } } }' \
+     --jq '{unresolved: ([.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length), more: .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage}'
    ```
 
-   This MUST print `0`. A non-zero count means you replied without resolving, or a new thread arrived: re-enter the loop.
+   `unresolved` MUST be `0` and `more` MUST be `false`. A non-zero `unresolved` means you replied without resolving, or a new thread arrived: re-enter the loop. If `more` is `true` the PR has more than 100 threads; page through with `after: <endCursor>` and sum before trusting the count.
 
 The loop terminates on these signals, not on a fixed count and not on "I already fixed the comments". A single post-fix round that meets all three conditions is enough; no extra confirmation pass beyond it.
 
