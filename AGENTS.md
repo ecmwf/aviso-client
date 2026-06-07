@@ -141,11 +141,11 @@ Declare the loop complete only when ALL of the following hold, checked against a
 3. **Zero unresolved threads remain.** Verify with GraphQL, not by eyeballing the PR:
 
    ```bash
-   gh api graphql -f query='query { repository(owner:"<owner>",name:"<repo>"){ pullRequest(number:<pr>){ reviewThreads(first:100){ nodes{ isResolved } pageInfo{ hasNextPage } } } } }' \
-     --jq '{unresolved: ([.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length), more: .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage}'
+   gh api graphql -f query='query { repository(owner:"<owner>",name:"<repo>"){ pullRequest(number:<pr>){ reviewThreads(first:100){ nodes{ isResolved } pageInfo{ hasNextPage endCursor } } } } }' \
+     --jq '{unresolved: ([.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length), more: .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage, cursor: .data.repository.pullRequest.reviewThreads.pageInfo.endCursor}'
    ```
 
-   `unresolved` MUST be `0` and `more` MUST be `false`. A non-zero `unresolved` means you replied without resolving, or a new thread arrived: re-enter the loop. If `more` is `true` the PR has more than 100 threads; page through with `after: <endCursor>` and sum before trusting the count.
+   `unresolved` MUST be `0` and `more` MUST be `false`. A non-zero `unresolved` means you replied without resolving, or a new thread arrived: re-enter the loop. If `more` is `true` the PR has more than 100 threads; page through with `after: <cursor>` (the `endCursor` from the output) and sum before trusting the count.
 
 The loop terminates on these signals, not on a fixed count and not on "I already fixed the comments". A single post-fix round that meets all three conditions is enough; no extra confirmation pass beyond it.
 
