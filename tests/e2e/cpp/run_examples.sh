@@ -25,6 +25,7 @@ cd "$work"
 
 echo "== schema_smoke ==" && "$BUILD_DIR/schema_smoke"
 echo "== publish ==" && "$BUILD_DIR/publish"
+echo "== publish_many ==" && "$BUILD_DIR/publish_many"
 echo "== async ==" && "$BUILD_DIR/async"
 
 # Drives a watch-only example: start it, then publish repeatedly until it has

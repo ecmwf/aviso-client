@@ -78,33 +78,56 @@ call has to specify; for `test_polygon` the only required-for-filter field is
 `polygon`, but a publish still needs all three. When in doubt, publish a test
 value and read the error message from the resulting `pyaviso.HttpError`.
 
-## Publishing many notifications in a loop
+## Publishing many notifications at once
 
-There is no batch API. Publish in a loop:
+When you have a batch ready, `notify_many` sends them concurrently instead of
+one at a time. Over a single HTTP/2 connection a batch that would take many
+sequential round-trips finishes in roughly one, which matters when publish
+latency is on a critical path.
 
 ```python
-"""Publish a series of test_polygon notifications at one-minute increments."""
+"""Publish a batch of test_polygon notifications with notify_many."""
 
 import os
 import pyaviso
 
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
-for minute in range(5):
-    response = client.notify(
-        event_type="test_polygon",
-        identifier={
-            "polygon": "0,0,1,0,1,1,0,0",
-            "date": "20260601",
-            "time": f"12{minute:02d}",
-        },
-        payload={"location": f"s3://example/data/{minute}.grib"},
-    )
-    print(f"published time=12{minute:02d} request_id={response.request_id}")
+notifications = [
+    {
+        "event_type": "test_polygon",
+        "identifier": {"polygon": "0,0,1,0,1,1,0,0", "date": "20260601", "time": f"12{m:02d}"},
+        "payload": {"location": f"s3://example/data/{m}.grib"},
+    }
+    for m in range(5)
+]
+
+results = client.notify_many(notifications)
+for result in results:
+    if result.response is not None:
+        print(f"[{result.index}] ok request_id={result.response.request_id}")
+    else:
+        print(f"[{result.index}] failed: {result.error}")
 ```
 
-The HTTP client pool is shared across calls, so the second through fifth
-publishes reuse the first one's TCP and TLS connection.
+Each entry is a dict with `event_type` plus the optional `identifier` and
+`payload`, the same fields `notify` takes. You get back one `NotifyResult` per
+input, in the same order. `result.ok` tells you whether it succeeded:
+`result.response` holds the `NotifyResponse` on success, and `result.error`
+holds the exception `notify` would have raised on failure.
+
+The batch is not atomic. One bad notification does not stop the rest: it comes
+back as a failed result while the others succeed, so you can resend only the
+items that failed. A malformed input list (a missing `event_type`, or an item
+that is not a dict) is rejected before anything is sent.
+
+`concurrency` caps how many requests are in flight at once; the default (passing
+`0`, or omitting it) is a sensible middle ground. Lower it to be gentle on a
+busy server, or raise it for a large batch you know the server can absorb.
+
+```python
+results = client.notify_many(notifications, concurrency=4)
+```
 
 ## Error paths
 

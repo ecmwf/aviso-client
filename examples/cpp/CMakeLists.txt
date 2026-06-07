@@ -36,6 +36,7 @@ endfunction()
 
 add_aviso_example(schema_smoke)
 add_aviso_example(publish)
+add_aviso_example(publish_many)
 add_aviso_example(watch)
 add_aviso_example(trigger)
 add_aviso_example(async)
