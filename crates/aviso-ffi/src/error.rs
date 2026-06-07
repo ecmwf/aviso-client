@@ -125,6 +125,24 @@ impl OutcomeError {
         &raw const self.view
     }
 
+    pub(crate) fn kind(&self) -> AvisoErrorKind {
+        self.view.kind
+    }
+
+    pub(crate) fn http_status(&self) -> u16 {
+        self.view.http_status
+    }
+
+    pub(crate) fn message_string(&self) -> String {
+        self.message.to_string_lossy().into_owned()
+    }
+
+    pub(crate) fn request_id_string(&self) -> Option<String> {
+        self.request_id
+            .as_ref()
+            .map(|value| value.to_string_lossy().into_owned())
+    }
+
     /// Wraps this error in an owned outcome and hands it to C as a raw pointer.
     pub(crate) fn into_outcome(self) -> *mut AvisoOutcome {
         AvisoOutcome::error(self).into_raw()
@@ -236,6 +254,28 @@ fn trigger_kind_label(label: &TriggerKindLabel) -> &'static str {
         TriggerKindLabel::Teams => "teams",
         TriggerKindLabel::Post => "post",
         _ => "unknown",
+    }
+}
+
+/// Stable lowercase label for an error kind, used in the per-item JSON the
+/// batch verb returns. The strings are part of that JSON's documented contract.
+pub(crate) fn kind_label(kind: AvisoErrorKind) -> &'static str {
+    match kind {
+        AvisoErrorKind::Transport => "transport",
+        AvisoErrorKind::Http => "http",
+        AvisoErrorKind::Auth => "auth",
+        AvisoErrorKind::Decode => "decode",
+        AvisoErrorKind::MalformedEvent => "malformed_event",
+        AvisoErrorKind::HistoryGap => "history_gap",
+        AvisoErrorKind::StreamProtocol => "stream_protocol",
+        AvisoErrorKind::Config => "config",
+        AvisoErrorKind::StateStore => "state_store",
+        AvisoErrorKind::Trigger => "trigger",
+        AvisoErrorKind::InvalidInput => "invalid_input",
+        AvisoErrorKind::InvalidUsage => "invalid_usage",
+        AvisoErrorKind::Internal => "internal",
+        AvisoErrorKind::Panic => "panic",
+        AvisoErrorKind::Unknown => "unknown",
     }
 }
 

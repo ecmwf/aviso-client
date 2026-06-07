@@ -101,6 +101,7 @@ dependencies = [
  "fd-lock",
  "finesse",
  "futures-core",
+ "futures-util",
  "hex",
  "httpdate",
  "humantime-serde",
@@ -166,6 +167,7 @@ version = "0.1.0"
 dependencies = [
  "aviso",
  "cbindgen",
+ "serde",
  "serde_json",
  "tokio",
 ]

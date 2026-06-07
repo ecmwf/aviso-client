@@ -404,6 +404,35 @@ AvisoOutcome *aviso_client_notify(const AvisoClient *client,
                                   const char *payload_json);
 
 /**
+ * Publishes many notifications concurrently and returns one result per
+ * request, in input order, as a compact-JSON array string success value
+ * (retrieve it with `aviso_outcome_take_string`).
+ *
+ * `notifications_json` is a JSON array; each element is an object with a
+ * required string `event_type`, an optional `identifier` object of
+ * string-to-string pairs, and an optional `payload` of any shape. A malformed
+ * array or element is an `AvisoErrorKind_InvalidInput` error and nothing is
+ * published. `max_concurrency` caps in-flight requests; `0` selects a default.
+ *
+ * On a valid array the call always succeeds at the ABI level: per-item
+ * failures are reported in the array, not as a call error. Each element is
+ * `{"index":N,"status":"ok","response":{...}}` or `{"index":N,"status":"error",
+ * "error":{"kind":"...","http_status":N,"message":"...","request_id":"..."}}`.
+ *
+ * This call blocks. It must not be called from a thread already inside the
+ * runtime (for example a watch or async callback); doing so returns an
+ * `AvisoErrorKind_InvalidUsage` error.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `notifications_json`,
+ * when non-null, must be a NUL-terminated C string.
+ */
+AvisoOutcome *aviso_client_notify_many(const AvisoClient *client,
+                                       const char *notifications_json,
+                                       uintptr_t max_concurrency);
+
+/**
  * Fetches the schema for one event type (`GET /api/v1/schema/{event_type}`)
  * and returns it as a compact-JSON string success value (retrieve it with
  * `aviso_outcome_take_string`), or a structured error.
