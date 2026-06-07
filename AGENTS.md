@@ -105,21 +105,49 @@ gh api --method POST \
 
 `copilot-pull-request-reviewer` (without the `[bot]` suffix) returns `422 Reviews may only be requested from collaborators`. `Copilot` returns 200 but silently drops the request. `requestReviews` GraphQL mutation returns `NOT_FOUND` for the bot's node id. None of those work. The literal `[bot]` suffix on the reviewer name is the only path; the successful response shows `requested_reviewers: [{login: "Copilot", type: "Bot"}]` and the bot posts a review within a few minutes.
 
+### The bot's login differs across APIs (do not guess it)
+
+The Copilot reviewer presents a **different login on each surface**, so any ad-hoc "is there a comment from the bot?" filter is a trap:
+
+| Surface | Login string |
+|---|---|
+| request form (`requested_reviewers` POST) | `copilot-pull-request-reviewer[bot]` |
+| REST review/comment author (`/reviews`, `/comments` → `.user.login`) | `Copilot` |
+| GraphQL thread author (`reviewThreads → comments → author.login`) | `copilot-pull-request-reviewer` |
+
+NEVER decide "there are no comments" by filtering REST comments on a guessed login: the wrong string silently returns an empty list and ends the loop early. Determine loop state only from the authoritative signals in the termination gate below (the review body and the unresolved-thread count), never from a hand-written login filter.
+
 ### The loop
 
 1. **Request a review** using the command above.
 2. **Watch for the review.** Poll BOTH endpoints in tandem: `gh api repos/<owner>/<repo>/pulls/<pr>/reviews` for the review count, and `gh api repos/<owner>/<repo>/pulls/<pr>/requested_reviewers` for the bot's state. After the request, `requested_reviewers` shows `[{login: "Copilot", type: "Bot"}]` (the bot has the request queued); it clears back to `[]` when the bot finishes processing. Two outcomes from there:
    - **A new review IS posted** (`reviews` count rises): continue to step 3.
-   - **`requested_reviewers` cleared and no new review was posted**: the bot processed the request and had nothing to add. Stop the loop now. **Do not run a confirmation pass**; the cleared `requested_reviewers` is itself the terminating signal.
+   - **`requested_reviewers` cleared and no new review was posted**: the bot processed the request and had nothing to add. This satisfies the "no new findings" half of termination, but you still owe the unresolved-thread check before stopping; go to the termination gate. Do not run an extra confirmation request beyond it.
 
    Five minutes is a reasonable cap for the bot to process a request. If `requested_reviewers` has not cleared after that, request again.
 3. **Read every comment in the new review.** For each thread, either fix or reject:
    - **Fix** if the finding is correct. Use the AGENTS.md commit-size rule: one focused commit per concern; restructures, renames, and reorganisations split per the same rule.
    - **Reject** if the finding is a false positive, a misreading of the code, a misinterpretation of a deliberate decision, or otherwise does not warrant a change. Do NOT silently apply suggestions that would degrade the code, contradict documented design, or revert deliberate work. A rejected finding gets a reply that names the reason in one sentence (examples below).
-4. **Reply to each comment** with `gh api repos/<owner>/<repo>/pulls/<pr>/comments -f body=... -F in_reply_to=<comment_database_id>` and **resolve each thread** via the GraphQL `resolveReviewThread` mutation against the thread node id.
+4. **Reply to each comment AND resolve its thread.** Reply with `gh api repos/<owner>/<repo>/pulls/<pr>/comments -f body=... -F in_reply_to=<comment_database_id>`, then resolve the thread via the GraphQL `resolveReviewThread` mutation against the thread node id. Replying is not resolving: a reply with no resolve leaves the thread open and the loop incomplete. Every thread you touch this round must end `isResolved: true`; verify with the query in the termination gate before moving on.
 5. **Push the fix commits** before requesting the next round so Copilot reviews the new state, not the stale one.
-6. **Request another review** and repeat from step 2.
-7. **Stop the loop** when one of these holds: Copilot processed a request without posting a new review (`requested_reviewers` cycled `[Copilot] → []` and the reviews count did not rise); or the latest posted review surfaces no new actionable findings (review body says "no issues", or every comment is a duplicate of one already resolved, or every comment is a false positive already rejected with reasoning). The loop terminates on Copilot's behaviour, not on a fixed count, and a single round meeting either condition is enough; no confirmation pass.
+6. **Request another review and repeat from step 2.** Replying, resolving, and pushing a round's fixes is the middle of the loop, not the end: you are done only via the termination gate below, never just because you pushed fixes.
+
+### Terminating the loop
+
+Declare the loop complete only when ALL of the following hold, checked against authoritative signals (never a login-filtered comment list):
+
+1. **A review was requested *after* your latest fix commit was pushed** and the bot has finished it: `requested_reviewers` cycled `[Copilot] → []`. If you fixed comments but never re-requested, the loop is still open.
+2. **That post-fix review added nothing actionable.** Either the `reviews` count did not rise (the bot had nothing to add), or the newest review body says it "generated no new comments" / "no issues", or every comment in it is a duplicate already resolved or a false positive already rejected with reasoning.
+3. **Zero unresolved threads remain.** Verify with GraphQL, not by eyeballing the PR:
+
+   ```bash
+   gh api graphql -f query='query { repository(owner:"<owner>",name:"<repo>"){ pullRequest(number:<pr>){ reviewThreads(first:100){ nodes{ isResolved } pageInfo{ hasNextPage endCursor } } } } }' \
+     --jq '{unresolved: ([.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length), more: .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage, cursor: .data.repository.pullRequest.reviewThreads.pageInfo.endCursor}'
+   ```
+
+   `unresolved` MUST be `0` and `more` MUST be `false`. A non-zero `unresolved` means you replied without resolving, or a new thread arrived: re-enter the loop. If `more` is `true` the PR has more than 100 threads; page through with `after: <cursor>` (the `endCursor` from the output) and sum before trusting the count.
+
+The loop terminates on these signals, not on a fixed count and not on "I already fixed the comments". A single post-fix round that meets all three conditions is enough; no extra confirmation pass beyond it.
 
 ### Rejection discipline
 
