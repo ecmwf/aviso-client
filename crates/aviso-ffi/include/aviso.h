@@ -416,8 +416,8 @@ AvisoOutcome *aviso_client_notify(const AvisoClient *client,
  *
  * On a valid array the call always succeeds at the ABI level: per-item
  * failures are reported in the array, not as a call error. Each element is
- * `{"index":N,"status":"ok","response":{...}}` or
- * `{"index":N,"status":"error","error":{"kind","http_status","message","request_id"}}`.
+ * `{"index":N,"status":"ok","response":{...}}` or `{"index":N,"status":"error",
+ * "error":{"kind":"...","http_status":N,"message":"...","request_id":"..."}}`.
  *
  * This call blocks. It must not be called from a thread already inside the
  * runtime (for example a watch or async callback); doing so returns an
