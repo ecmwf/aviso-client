@@ -101,6 +101,7 @@ dependencies = [
  "fd-lock",
  "finesse",
  "futures-core",
+ "futures-util",
  "hex",
  "httpdate",
  "humantime-serde",
