@@ -574,7 +574,10 @@ mod refresh_single_flight {
             coordinator.refresh_once(&slow_auth, 0),
         )
         .await;
-        assert!(dropped.is_err(), "the slow refresh should still be running");
+        assert!(
+            dropped.is_err(),
+            "the slow refresh must not finish before the deadline, so the timeout drops it mid-refresh"
+        );
         assert_eq!(
             coordinator.generation(),
             0,
