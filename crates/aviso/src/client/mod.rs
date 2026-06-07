@@ -92,17 +92,18 @@ pub(crate) struct RefreshCoordinator {
 }
 
 impl RefreshCoordinator {
-    /// The current refresh epoch. A caller reads this before attaching a
-    /// credential and passes it back to [`Self::refresh_once`] after a `401`.
+    /// The current refresh epoch. A caller reads this for an in-flight attempt
+    /// and passes it back to [`Self::refresh_once`] after a `401`.
     pub(crate) fn generation(&self) -> u64 {
         self.generation.load(Ordering::Relaxed)
     }
 
     /// Refreshes the credential at most once per epoch.
     ///
-    /// `observed` is the epoch read before the failing request attached its
-    /// credential (a request epoch, not an exact credential version). Callers
-    /// that share an `observed` collapse into one refresh: the first to acquire
+    /// `observed` is the epoch captured for the failing attempt, just after its
+    /// credential was attached (a request epoch, not an exact credential
+    /// version). Callers that share an `observed` collapse into one refresh:
+    /// the first to acquire
     /// the lock refreshes and advances the epoch on success, and the rest then
     /// see the advanced epoch and skip. A *failed* refresh does not advance the
     /// epoch and is therefore not coalesced, so each waiter re-attempts it and
@@ -263,8 +264,11 @@ impl AvisoClient {
     where
         F: FnMut(&HttpClient) -> reqwest::RequestBuilder,
     {
-        let observed = self.refresh_coordinator.generation();
         let first = self.attach_auth(build(self.http())).await?;
+        // Capture the refresh epoch right after the credential is attached, so a
+        // 401 only skips its own refresh when another refresh completed after
+        // this attempt read its credential (not merely during the read).
+        let observed = self.refresh_coordinator.generation();
         let response = first.send().await.map_err(ClientError::from)?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             if let Some(auth) = self.auth() {
