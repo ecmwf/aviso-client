@@ -57,6 +57,12 @@ def test_rejects_missing_event_type_without_sending() -> None:
         client.notify_many([{"identifier": {"class": "od"}}])
 
 
+def test_rejects_negative_concurrency() -> None:
+    client = pyaviso.AvisoClient(base_url="http://127.0.0.1:1")
+    with pytest.raises(ValueError):
+        client.notify_many([{"event_type": "mars"}], concurrency=-1)
+
+
 def test_preserves_input_order(httpserver: Any) -> None:
     httpserver.expect_request("/api/v1/notification", method="POST").respond_with_handler(
         _notification_handler

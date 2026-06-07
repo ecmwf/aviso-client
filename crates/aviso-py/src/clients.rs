@@ -72,6 +72,14 @@ fn requests_from_pylist(
         .collect()
 }
 
+fn resolve_concurrency(concurrency: i64) -> PyResult<usize> {
+    usize::try_from(concurrency).map_err(|_| {
+        PyValueError::new_err(format!(
+            "concurrency must be non-negative; got {concurrency}"
+        ))
+    })
+}
+
 fn build_results(
     py: Python<'_>,
     results: Vec<aviso::Result<aviso::NotifyResponse>>,
@@ -179,8 +187,9 @@ impl PyAvisoClient {
         &self,
         py: Python<'_>,
         notifications: Vec<Bound<'_, PyAny>>,
-        concurrency: usize,
+        concurrency: i64,
     ) -> PyResult<Vec<Py<PyNotifyResult>>> {
+        let concurrency = resolve_concurrency(concurrency)?;
         let requests = requests_from_pylist(notifications)?;
         let client = self.inner.clone();
         let results = py.detach(|| {
@@ -371,8 +380,9 @@ impl PyAsyncAvisoClient {
         &self,
         py: Python<'py>,
         notifications: Vec<Bound<'py, PyAny>>,
-        concurrency: usize,
+        concurrency: i64,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let concurrency = resolve_concurrency(concurrency)?;
         let requests = requests_from_pylist(notifications)?;
         let client = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
