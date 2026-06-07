@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use aviso::{AvisoClient, NotificationRequest};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -20,8 +21,73 @@ use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};
 use crate::triggers::PyTrigger;
-use crate::values::{PyNotifyResponse, PySchemaCatalog, PySchemaResponse};
+use crate::values::{PyNotifyResponse, PyNotifyResult, PySchemaCatalog, PySchemaResponse};
 use crate::watch::{PyWatchRequest, parse_resume_start};
+
+fn request_from_mapping(index: usize, obj: &Bound<'_, PyAny>) -> PyResult<NotificationRequest> {
+    let dict = obj.cast::<PyDict>().map_err(|_| {
+        PyTypeError::new_err(format!(
+            "notifications[{index}] must be a dict with keys event_type, identifier, payload"
+        ))
+    })?;
+    let event_type: String = match dict.get_item("event_type")? {
+        Some(value) => value.extract().map_err(|_| {
+            PyTypeError::new_err(format!(
+                "notifications[{index}].event_type must be a string"
+            ))
+        })?,
+        None => {
+            return Err(PyValueError::new_err(format!(
+                "notifications[{index}] is missing required key 'event_type'"
+            )));
+        }
+    };
+    let mut request = NotificationRequest::new(event_type);
+    if let Some(identifier) = dict.get_item("identifier")? {
+        if !identifier.is_none() {
+            let map: BTreeMap<String, String> = identifier.extract().map_err(|_| {
+                PyTypeError::new_err(format!(
+                    "notifications[{index}].identifier must be a dict of str to str"
+                ))
+            })?;
+            request = request.with_identifier(map);
+        }
+    }
+    if let Some(payload) = dict.get_item("payload")? {
+        if !payload.is_none() {
+            let value: serde_json::Value = pythonize::depythonize(&payload)?;
+            request = request.with_payload(value);
+        }
+    }
+    Ok(request)
+}
+
+fn requests_from_pylist(
+    notifications: Vec<Bound<'_, PyAny>>,
+) -> PyResult<Vec<NotificationRequest>> {
+    notifications
+        .into_iter()
+        .enumerate()
+        .map(|(index, obj)| request_from_mapping(index, &obj))
+        .collect()
+}
+
+fn build_results(
+    py: Python<'_>,
+    results: Vec<aviso::Result<aviso::NotifyResponse>>,
+) -> PyResult<Vec<Py<PyNotifyResult>>> {
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(index, result)| {
+            let item = match result {
+                Ok(response) => PyNotifyResult::success(py, index, response)?,
+                Err(err) => PyNotifyResult::failure(py, index, map_client_error(py, err)),
+            };
+            Py::new(py, item)
+        })
+        .collect()
+}
 
 /// Synchronous `PyO3` client. Methods block the current Python thread
 /// while the underlying async future runs on the shared tokio runtime.
@@ -106,6 +172,21 @@ impl PyAvisoClient {
             Ok(response) => Ok(PyNotifyResponse::from_core(response)),
             Err(e) => Err(map_client_error(py, e)),
         }
+    }
+
+    #[pyo3(signature = (notifications, *, concurrency = 0))]
+    fn notify_many(
+        &self,
+        py: Python<'_>,
+        notifications: Vec<Bound<'_, PyAny>>,
+        concurrency: usize,
+    ) -> PyResult<Vec<Py<PyNotifyResult>>> {
+        let requests = requests_from_pylist(notifications)?;
+        let client = self.inner.clone();
+        let results = py.detach(|| {
+            runtime().block_on(async move { client.notify_many(&requests, concurrency).await })
+        });
+        build_results(py, results)
     }
 
     fn schema(&self, py: Python<'_>) -> PyResult<PySchemaCatalog> {
@@ -282,6 +363,21 @@ impl PyAsyncAvisoClient {
                 .await
                 .map(PyNotifyResponse::from_core)
                 .map_err(|e| Python::attach(|py| map_client_error(py, e)))
+        })
+    }
+
+    #[pyo3(signature = (notifications, *, concurrency = 0))]
+    fn notify_many<'py>(
+        &self,
+        py: Python<'py>,
+        notifications: Vec<Bound<'py, PyAny>>,
+        concurrency: usize,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let requests = requests_from_pylist(notifications)?;
+        let client = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let results = client.notify_many(&requests, concurrency).await;
+            Python::attach(|py| build_results(py, results))
         })
     }
 

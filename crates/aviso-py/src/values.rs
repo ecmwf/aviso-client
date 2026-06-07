@@ -208,6 +208,81 @@ impl PyNotifyResponse {
     }
 }
 
+/// One entry in the list returned by `notify_many`, holding either a
+/// successful response or the exception that would have been raised.
+///
+/// `ok` is `True` when the request succeeded; then `response` is set and
+/// `error` is `None`. On failure `error` holds the same exception instance
+/// `notify` would have raised (with its structured attributes), and
+/// `response` is `None`. `index` is the position in the input list.
+#[pyclass(
+    name = "NotifyResult",
+    module = "pyaviso._native",
+    frozen,
+    skip_from_py_object
+)]
+pub(crate) struct PyNotifyResult {
+    index: usize,
+    response: Option<Py<PyNotifyResponse>>,
+    error: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl PyNotifyResult {
+    #[getter]
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    #[getter]
+    fn ok(&self) -> bool {
+        self.error.is_none()
+    }
+
+    #[getter]
+    fn response(&self, py: Python<'_>) -> Option<Py<PyNotifyResponse>> {
+        self.response.as_ref().map(|r| r.clone_ref(py))
+    }
+
+    #[getter]
+    fn error(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.error.as_ref().map(|e| e.clone_ref(py))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "NotifyResult(index={}, ok={})",
+            self.index,
+            self.error.is_none()
+        )
+    }
+
+    #[classattr]
+    const __hash__: Option<Py<PyAny>> = None;
+}
+
+impl PyNotifyResult {
+    pub(crate) fn success(
+        py: Python<'_>,
+        index: usize,
+        response: NotifyResponse,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            index,
+            response: Some(Py::new(py, PyNotifyResponse::from_core(response))?),
+            error: None,
+        })
+    }
+
+    pub(crate) fn failure(py: Python<'_>, index: usize, error: PyErr) -> Self {
+        Self {
+            index,
+            response: None,
+            error: Some(error.into_value(py).into_any()),
+        }
+    }
+}
+
 /// `PyO3` wrapper for the full schema catalog.
 #[pyclass(
     name = "SchemaCatalog",
@@ -381,6 +456,7 @@ fn owned_schema_to_dict<'py>(
 pub(crate) fn register_value_types(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNotification>()?;
     m.add_class::<PyNotifyResponse>()?;
+    m.add_class::<PyNotifyResult>()?;
     m.add_class::<PySchemaCatalog>()?;
     m.add_class::<PySchemaResponse>()?;
     Ok(())
