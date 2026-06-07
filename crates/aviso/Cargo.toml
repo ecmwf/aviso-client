@@ -21,6 +21,7 @@ base64 = { workspace = true }
 fd-lock = { workspace = true }
 finesse = { workspace = true }
 futures-core = { workspace = true }
+futures-util = { workspace = true, features = ["alloc"] }
 hex = { workspace = true }
 httpdate = { workspace = true }
 humantime-serde = { workspace = true }
