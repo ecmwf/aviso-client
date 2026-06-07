@@ -10,6 +10,7 @@
 //! `aviso-server` under `/aviso`).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -77,6 +78,53 @@ impl Drop for DropGuard {
     }
 }
 
+/// Coalesces concurrent credential refreshes so a burst of `401`s triggers a
+/// single [`AuthProvider::refresh`] instead of one per request.
+///
+/// Shared across all clones of an [`AvisoClient`] via `Arc`. `generation` is an
+/// epoch token, not a publication channel for the refreshed credential: the
+/// provider's own interior mutability publishes the new credential, so `Relaxed`
+/// ordering suffices here and `lock` provides the mutual exclusion.
+#[derive(Debug, Default)]
+pub(crate) struct RefreshCoordinator {
+    lock: tokio::sync::Mutex<()>,
+    generation: AtomicU64,
+}
+
+impl RefreshCoordinator {
+    /// The current refresh epoch. A caller reads this before attaching a
+    /// credential and passes it back to [`Self::refresh_once`] after a `401`.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
+    /// Refreshes the credential at most once per epoch.
+    ///
+    /// `observed` is the epoch read before the failing request attached its
+    /// credential (a request epoch, not an exact credential version). Callers
+    /// that share an `observed` collapse into one refresh: the first to acquire
+    /// the lock refreshes and advances the epoch on success, and the rest then
+    /// see the advanced epoch and skip. A *failed* refresh does not advance the
+    /// epoch and is therefore not coalesced, so each waiter re-attempts it and
+    /// the original per-request error semantics are preserved.
+    ///
+    /// [`AuthProvider::refresh`] must not issue an authenticated request through
+    /// the same client: that would re-enter this method and deadlock on `lock`.
+    pub(crate) async fn refresh_once(
+        &self,
+        auth: &Arc<dyn AuthProvider>,
+        observed: u64,
+    ) -> crate::Result<()> {
+        let _guard = self.lock.lock().await;
+        if self.generation.load(Ordering::Relaxed) != observed {
+            return Ok(());
+        }
+        auth.refresh().await?;
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
 /// Top-level handle to an `aviso-server`.
 ///
 /// Cheap to clone; cloned handles share the same underlying HTTP connection pool and auth
@@ -88,6 +136,9 @@ pub struct AvisoClient {
     pub(super) http: HttpClient,
     pub(super) base_url: Url,
     pub(super) auth: Option<Arc<dyn AuthProvider>>,
+    /// Single-flight coordinator shared by all clones; collapses a burst of
+    /// concurrent `401`-driven refreshes into one. See [`RefreshCoordinator`].
+    pub(super) refresh_coordinator: Arc<RefreshCoordinator>,
     /// Cascading cancellation token shared by all clones. When the last
     /// clone drops, all child supervisors observe the value flip and exit.
     /// See [`DropGuard`] for the mechanism.
@@ -212,12 +263,15 @@ impl AvisoClient {
     where
         F: FnMut(&HttpClient) -> reqwest::RequestBuilder,
     {
+        let observed = self.refresh_coordinator.generation();
         let first = self.attach_auth(build(self.http())).await?;
         let response = first.send().await.map_err(ClientError::from)?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             if let Some(auth) = self.auth() {
                 drop(response);
-                auth.refresh().await?;
+                self.refresh_coordinator
+                    .refresh_once(auth, observed)
+                    .await?;
                 let retry = self.attach_auth(build(self.http())).await?;
                 return retry.send().await.map_err(ClientError::from);
             }
@@ -365,5 +419,234 @@ mod tests {
             );
             assert!(*rx.borrow_and_update());
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: unwrap and expect on constructor success and assertion-shaped awaits are the expected diagnostics"
+)]
+mod refresh_single_flight {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use reqwest::header::HeaderValue;
+    use serde_json::json;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{AvisoClient, RefreshCoordinator};
+    use crate::ClientError;
+    use crate::auth::AuthProvider;
+
+    /// Counts refreshes; optionally slow (to widen the contended window) or
+    /// failing (to exercise the failure path). Header value is irrelevant here.
+    #[derive(Debug, Default)]
+    struct CountingRefresher {
+        refreshes: AtomicUsize,
+        delay: Duration,
+        fail: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl AuthProvider for CountingRefresher {
+        async fn authorization_header(&self) -> crate::Result<HeaderValue> {
+            Ok(HeaderValue::from_static("Bearer test"))
+        }
+
+        async fn refresh(&self) -> crate::Result<()> {
+            self.refreshes.fetch_add(1, Ordering::SeqCst);
+            if !self.delay.is_zero() {
+                tokio::time::sleep(self.delay).await;
+            }
+            if self.fail {
+                return Err(ClientError::Auth("refresh failed".into()));
+            }
+            Ok(())
+        }
+    }
+
+    /// Sends `stale` until refreshed, then `fresh`; counts refreshes. The slow
+    /// refresh keeps the leader holding the coordinator lock while the rest of a
+    /// concurrent burst queues behind it.
+    #[derive(Debug, Default)]
+    struct RotatingCredential {
+        refreshes: AtomicUsize,
+        refreshed: AtomicBool,
+    }
+
+    #[async_trait::async_trait]
+    impl AuthProvider for RotatingCredential {
+        async fn authorization_header(&self) -> crate::Result<HeaderValue> {
+            let token = if self.refreshed.load(Ordering::SeqCst) {
+                "fresh"
+            } else {
+                "stale"
+            };
+            Ok(HeaderValue::from_static(token))
+        }
+
+        async fn refresh(&self) -> crate::Result<()> {
+            self.refreshes.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            self.refreshed.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_callers_of_one_epoch_refresh_once() {
+        let coordinator = Arc::new(RefreshCoordinator::default());
+        let provider = Arc::new(CountingRefresher {
+            delay: Duration::from_millis(50),
+            ..CountingRefresher::default()
+        });
+        let auth: Arc<dyn AuthProvider> = provider.clone();
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let coordinator = coordinator.clone();
+            let auth = auth.clone();
+            handles.push(tokio::spawn(async move {
+                coordinator.refresh_once(&auth, 0).await
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap().unwrap();
+        }
+
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 1);
+        assert_eq!(coordinator.generation(), 1);
+    }
+
+    #[tokio::test]
+    async fn each_new_epoch_refreshes_again() {
+        let coordinator = RefreshCoordinator::default();
+        let provider = Arc::new(CountingRefresher::default());
+        let auth: Arc<dyn AuthProvider> = provider.clone();
+
+        coordinator.refresh_once(&auth, 0).await.unwrap();
+        coordinator.refresh_once(&auth, 1).await.unwrap();
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 2);
+        assert_eq!(coordinator.generation(), 2);
+
+        // A caller still on a stale epoch skips: the credential is already new.
+        coordinator.refresh_once(&auth, 0).await.unwrap();
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn failed_refresh_is_not_coalesced_and_keeps_the_epoch() {
+        let coordinator = RefreshCoordinator::default();
+        let provider = Arc::new(CountingRefresher {
+            fail: true,
+            ..CountingRefresher::default()
+        });
+        let auth: Arc<dyn AuthProvider> = provider.clone();
+
+        let err = coordinator.refresh_once(&auth, 0).await.unwrap_err();
+        assert!(matches!(err, ClientError::Auth(_)), "got {err:?}");
+        assert_eq!(coordinator.generation(), 0);
+
+        let err = coordinator.refresh_once(&auth, 0).await.unwrap_err();
+        assert!(matches!(err, ClientError::Auth(_)), "got {err:?}");
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn dropped_refresh_does_not_wedge_the_lock() {
+        let coordinator = RefreshCoordinator::default();
+        let slow = Arc::new(CountingRefresher {
+            delay: Duration::from_secs(10),
+            ..CountingRefresher::default()
+        });
+        let slow_auth: Arc<dyn AuthProvider> = slow.clone();
+
+        let dropped = tokio::time::timeout(
+            Duration::from_millis(20),
+            coordinator.refresh_once(&slow_auth, 0),
+        )
+        .await;
+        assert!(dropped.is_err(), "the slow refresh should still be running");
+        assert_eq!(
+            coordinator.generation(),
+            0,
+            "a dropped refresh must not advance the epoch"
+        );
+
+        let fast = Arc::new(CountingRefresher::default());
+        let fast_auth: Arc<dyn AuthProvider> = fast.clone();
+        tokio::time::timeout(
+            Duration::from_millis(500),
+            coordinator.refresh_once(&fast_auth, 0),
+        )
+        .await
+        .expect("lock must be free after the dropped refresh")
+        .unwrap();
+        assert_eq!(coordinator.generation(), 1);
+        assert_eq!(fast.refreshes.load(Ordering::SeqCst), 1);
+    }
+
+    async fn mount_rotating_credential_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/notification"))
+            .and(header("authorization", "stale"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/notification"))
+            .and(header("authorization", "fresh"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "success",
+                "request_id": "r",
+                "processed_at": "2026-05-17T12:34:56Z",
+            })))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    #[tokio::test]
+    async fn notify_many_burst_of_401s_refreshes_once() {
+        let server = mount_rotating_credential_server().await;
+        let provider = Arc::new(RotatingCredential::default());
+        let client = AvisoClient::builder()
+            .base_url(server.uri())
+            .auth(provider.clone() as Arc<dyn AuthProvider>)
+            .build()
+            .unwrap();
+
+        let requests: Vec<crate::NotificationRequest> = (0..8)
+            .map(|i| crate::NotificationRequest::new(format!("e{i}")))
+            .collect();
+        let results = client.notify_many(&requests, 8).await;
+
+        assert!(results.iter().all(Result::is_ok), "{results:?}");
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cloned_clients_share_the_coordinator() {
+        let server = mount_rotating_credential_server().await;
+        let provider = Arc::new(RotatingCredential::default());
+        let client = AvisoClient::builder()
+            .base_url(server.uri())
+            .auth(provider.clone() as Arc<dyn AuthProvider>)
+            .build()
+            .unwrap();
+        let clone = client.clone();
+
+        let first = crate::NotificationRequest::new("a");
+        let second = crate::NotificationRequest::new("b");
+        let (a, b) = tokio::join!(client.notify(&first), clone.notify(&second));
+        a.unwrap();
+        b.unwrap();
+
+        assert_eq!(provider.refreshes.load(Ordering::SeqCst), 1);
     }
 }
