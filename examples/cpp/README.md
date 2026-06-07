@@ -68,6 +68,14 @@ export AVISO_PASSWORD=producer-pass
   ./build/cpp/publish
   ```
 
+- `publish_many.cpp`: publishes several notifications in one concurrent call
+  with `notify_many()` and prints the per-item results as a JSON array. A
+  per-item failure shows up as an `"error"` entry rather than throwing.
+
+  ```bash
+  ./build/cpp/publish_many
+  ```
+
 - `watch.cpp`: watches a stream (declared at the top of the file) and prints
   each notification, stopping after a fixed count. It only watches; publish to
   the stream from another terminal to see notifications:
