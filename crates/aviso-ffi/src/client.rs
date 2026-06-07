@@ -89,6 +89,103 @@ pub(crate) fn parse_identifier(text: &str) -> Result<BTreeMap<String, String>, O
     Ok(identifier)
 }
 
+/// Parses one element of the `notifications_json` array into a request.
+///
+/// An element is a JSON object with a required string `event_type`, an optional
+/// `identifier` object of string-to-string pairs, and an optional `payload` of
+/// any shape. A `null` `identifier` or `payload`, like an absent one, is
+/// omitted. Any shape violation is an `InvalidInput` error naming the index.
+fn parse_notification_request(
+    index: usize,
+    value: Value,
+) -> Result<NotificationRequest, OutcomeError> {
+    let Value::Object(mut object) = value else {
+        return Err(error::invalid_input(&format!(
+            "notifications[{index}] must be a JSON object"
+        )));
+    };
+    let event_type = match object.remove("event_type") {
+        Some(Value::String(event_type)) => event_type,
+        Some(_) => {
+            return Err(error::invalid_input(&format!(
+                "notifications[{index}].event_type must be a string"
+            )));
+        }
+        None => {
+            return Err(error::invalid_input(&format!(
+                "notifications[{index}] is missing required key \"event_type\""
+            )));
+        }
+    };
+    let mut request = NotificationRequest::new(event_type);
+    match object.remove("identifier") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(map)) => {
+            let mut identifier = BTreeMap::new();
+            for (key, value) in map {
+                let Value::String(value) = value else {
+                    return Err(error::invalid_input(&format!(
+                        "notifications[{index}].identifier value for {key:?} must be a string"
+                    )));
+                };
+                identifier.insert(key, value);
+            }
+            request = request.with_identifier(identifier);
+        }
+        Some(_) => {
+            return Err(error::invalid_input(&format!(
+                "notifications[{index}].identifier must be a JSON object of string to string"
+            )));
+        }
+    }
+    match object.remove("payload") {
+        None | Some(Value::Null) => {}
+        Some(payload) => request = request.with_payload(payload),
+    }
+    Ok(request)
+}
+
+/// Parses the whole `notifications_json` array up front. Any malformed element
+/// aborts the batch with an error and publishes nothing.
+fn parse_notifications(text: &str) -> Result<Vec<NotificationRequest>, OutcomeError> {
+    let value: Value = serde_json::from_str(text).map_err(|err| {
+        error::invalid_input(&format!("notifications_json is not valid JSON: {err}"))
+    })?;
+    let Value::Array(items) = value else {
+        return Err(error::invalid_input(
+            "notifications_json must be a JSON array",
+        ));
+    };
+    items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| parse_notification_request(index, item))
+        .collect()
+}
+
+/// One element of the JSON array `aviso_client_notify_many` returns. `status` is
+/// `"ok"` with `response` set, or `"error"` with `error` set.
+#[derive(serde::Serialize)]
+struct NotifyManyItem<'a> {
+    index: usize,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response: Option<&'a aviso::NotifyResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<NotifyManyItemError>,
+}
+
+/// The structured error carried by a failed `NotifyManyItem`, mirroring the
+/// fields of the C `AvisoError` struct.
+#[derive(serde::Serialize)]
+struct NotifyManyItemError {
+    kind: &'static str,
+    http_status: u16,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+}
+
 /// Wraps a serialized response as a string success outcome (see
 /// [`AvisoOutcome::json_text`]) and hands it to C as a raw pointer.
 fn json_text_outcome(json: serde_json::Result<String>) -> *mut AvisoOutcome {
@@ -327,6 +424,82 @@ pub unsafe extern "C" fn aviso_client_notify(
     })
 }
 
+/// Publishes many notifications concurrently and returns one result per
+/// request, in input order, as a compact-JSON array string success value
+/// (retrieve it with `aviso_outcome_take_string`).
+///
+/// `notifications_json` is a JSON array; each element is an object with a
+/// required string `event_type`, an optional `identifier` object of
+/// string-to-string pairs, and an optional `payload` of any shape. A malformed
+/// array or element is an `AvisoErrorKind_InvalidInput` error and nothing is
+/// published. `max_concurrency` caps in-flight requests; `0` selects a default.
+///
+/// On a valid array the call always succeeds at the ABI level: per-item
+/// failures are reported in the array, not as a call error. Each element is
+/// `{"index":N,"status":"ok","response":{...}}` or
+/// `{"index":N,"status":"error","error":{"kind","http_status","message","request_id"}}`.
+///
+/// This call blocks. It must not be called from a thread already inside the
+/// runtime (for example a watch or async callback); doing so returns an
+/// `AvisoErrorKind_InvalidUsage` error.
+///
+/// # Safety
+///
+/// `client` must be a live handle from a successful build. `notifications_json`,
+/// when non-null, must be a NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_client_notify_many(
+    client: *const AvisoClient,
+    notifications_json: *const c_char,
+    max_concurrency: usize,
+) -> *mut AvisoOutcome {
+    guard_outcome(|| {
+        let Some(client) = (unsafe { client.as_ref() }) else {
+            return error::invalid_input("client must not be null").into_outcome();
+        };
+        if let Some(err) = reject_blocking_on_runtime() {
+            return err.into_outcome();
+        }
+        let Some(notifications_json) = (unsafe { cstr_opt(notifications_json) }) else {
+            return error::invalid_input("notifications_json must be non-null and valid UTF-8")
+                .into_outcome();
+        };
+        let requests = match parse_notifications(notifications_json) {
+            Ok(requests) => requests,
+            Err(err) => return err.into_outcome(),
+        };
+
+        let results = runtime().block_on(client.inner.notify_many(&requests, max_concurrency));
+        let items: Vec<NotifyManyItem> = results
+            .iter()
+            .enumerate()
+            .map(|(index, result)| match result {
+                Ok(response) => NotifyManyItem {
+                    index,
+                    status: "ok",
+                    response: Some(response),
+                    error: None,
+                },
+                Err(err) => {
+                    let mapped = error::map_error(err);
+                    NotifyManyItem {
+                        index,
+                        status: "error",
+                        response: None,
+                        error: Some(NotifyManyItemError {
+                            kind: error::kind_label(mapped.kind()),
+                            http_status: mapped.http_status(),
+                            message: mapped.message_string(),
+                            request_id: mapped.request_id_string(),
+                        }),
+                    }
+                }
+            })
+            .collect();
+        json_text_outcome(serde_json::to_string(&items))
+    })
+}
+
 /// Fetches the schema for one event type (`GET /api/v1/schema/{event_type}`)
 /// and returns it as a compact-JSON string success value (retrieve it with
 /// `aviso_outcome_take_string`), or a structured error.
@@ -466,7 +639,10 @@ pub unsafe extern "C" fn aviso_client_delete_notification(
 mod tests {
     use super::*;
     use crate::AvisoErrorKind;
-    use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
+    use crate::outcome::{
+        aviso_outcome_error, aviso_outcome_free, aviso_outcome_is_ok, aviso_outcome_take_client,
+        aviso_outcome_take_string, aviso_string_free,
+    };
     use std::ffi::CString;
 
     fn build_client() -> *mut AvisoClient {
@@ -579,5 +755,68 @@ mod tests {
         let outcome = unsafe { aviso_client_delete_notification(client, ptr::null()) };
         assert_kind(outcome, AvisoErrorKind::InvalidInput);
         unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn notify_many_rejects_null_client() {
+        let json = cstr("[]");
+        let outcome = unsafe { aviso_client_notify_many(ptr::null(), json.as_ptr(), 0) };
+        assert_kind(outcome, AvisoErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn notify_many_rejects_null_json() {
+        let client = build_client();
+        let outcome = unsafe { aviso_client_notify_many(client, ptr::null(), 0) };
+        assert_kind(outcome, AvisoErrorKind::InvalidInput);
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn notify_many_rejects_non_array_json() {
+        let client = build_client();
+        let json = cstr(r#"{"event_type":"mars"}"#);
+        let outcome = unsafe { aviso_client_notify_many(client, json.as_ptr(), 0) };
+        assert_kind(outcome, AvisoErrorKind::InvalidInput);
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn notify_many_rejects_element_missing_event_type() {
+        let client = build_client();
+        let json = cstr(r#"[{"identifier":{"class":"od"}}]"#);
+        let outcome = unsafe { aviso_client_notify_many(client, json.as_ptr(), 0) };
+        assert_kind(outcome, AvisoErrorKind::InvalidInput);
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn notify_many_reports_per_item_errors_against_unreachable() {
+        let client = build_client();
+        let json = cstr(r#"[{"event_type":"mars"},{"event_type":"mars"}]"#);
+        let outcome = unsafe { aviso_client_notify_many(client, json.as_ptr(), 0) };
+        assert!(!outcome.is_null());
+        assert!(
+            unsafe { aviso_outcome_is_ok(outcome) },
+            "a valid array yields a success outcome even when every item fails"
+        );
+        let text = unsafe { aviso_outcome_take_string(outcome) };
+        assert!(!text.is_null());
+        let json_str = unsafe { CStr::from_ptr(text) }
+            .to_str()
+            .expect("utf8")
+            .to_owned();
+        unsafe { aviso_string_free(text) };
+        unsafe { aviso_outcome_free(outcome) };
+        unsafe { aviso_client_free(client) };
+
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("json array");
+        let array = parsed.as_array().expect("array");
+        assert_eq!(array.len(), 2);
+        for (index, item) in array.iter().enumerate() {
+            assert_eq!(item["index"].as_u64(), Some(index as u64));
+            assert_eq!(item["status"], "error");
+            assert_eq!(item["error"]["kind"], "transport");
+        }
     }
 }
