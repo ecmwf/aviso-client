@@ -5,7 +5,7 @@ use std::time::Duration;
 use reqwest::Client as HttpClient;
 use url::Url;
 
-use super::{AvisoClient, DropGuard};
+use super::{AvisoClient, DropGuard, RefreshCoordinator};
 use crate::ClientError;
 use crate::auth::AuthProvider;
 use crate::state::StateStore;
@@ -224,6 +224,7 @@ impl AvisoClientBuilder {
             http,
             base_url,
             auth: self.auth,
+            refresh_coordinator: Arc::new(RefreshCoordinator::default()),
             parent_drop,
             heartbeat_interval,
             state_store: self.state_store,
