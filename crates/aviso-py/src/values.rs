@@ -250,11 +250,12 @@ impl PyNotifyResult {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "NotifyResult(index={}, ok={})",
-            self.index,
-            self.error.is_none()
-        )
+        let ok = if self.error.is_none() {
+            "True"
+        } else {
+            "False"
+        };
+        format!("NotifyResult(index={}, ok={ok})", self.index)
     }
 
     #[classattr]
