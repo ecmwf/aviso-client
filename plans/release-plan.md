@@ -80,7 +80,7 @@ hand-rolled bump must not forget them):
 | `pyaviso` wheels + sdist | PyPI | ✅ | maturin; manylinux x86_64+aarch64, macOS universal2, abi3, sdist. |
 | `libaviso_ffi.{a,so,dylib}` + `aviso.h` + `aviso.hpp` | GitHub Release assets | ✅ | Prebuilt C/C++ libraries (crates.io ships source only). |
 | `aviso` CLI binaries | GitHub Release assets | ❓ | Q4 — optional. |
-| mdBook docs | ECMWF Sites | ✅ (already) | `docs-sites.yml` already publishes on tags and softlinks `stable`; no change needed. |
+| mdBook docs | ECMWF Sites | ✅ (already) | `docs-sites.yml` already publishes on tags; needs `stable` restricted to semver tags (§6.F). |
 
 **crates.io publish order** (dependency topological):
 `finesse` → `aviso` → { `aviso-cli`, `aviso-ffi` } (last two are independent of
@@ -161,9 +161,11 @@ Trigger: `workflow_dispatch(version)`. Publishes nothing, tags nothing. Green =
 safe to cut the release. Steps (from tensogram's `release-preflight.yml`):
 
 - **Version consistency.** A `check_version` loop comparing the input version
-  against every manifest (`Cargo.toml [workspace.package]`, `pyproject.toml`,
-  and any non-inheriting manifest). Collect all mismatches, fail once with a
-  count. This is the literal enforcement of "same version for everything".
+  against `Cargo.toml [workspace.package]` and any non-inheriting manifest.
+  Collect all mismatches, fail once with a count. `pyproject.toml` is **not**
+  parsed (its version is `dynamic`); the Python version is validated from the
+  built wheel/sdist metadata instead (§6.C). This is the literal enforcement of
+  "same version for everything".
 - **Quality gate:** `cargo fmt --check`, `cargo clippy -D warnings`,
   `cargo test --workspace`.
 - **Tarball assembly:** `cargo package -p <crate> --list` for `finesse`,
