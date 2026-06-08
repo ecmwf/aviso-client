@@ -42,14 +42,27 @@ release-preflight version:
     done
 
     echo "==> cargo publish --dry-run (ordered)"
+    dry_failures=()
     for c in {{crates}}; do
-        # First-publish caveat: dependents cannot fully resolve until their
-        # upstreams exist on crates.io, so a dry-run may fail before that.
-        # See plans/release-plan.md section 13 (B2) and the 2.0.0-rc.1 rehearsal.
         echo "--- $c"
-        cargo publish --locked --dry-run -p "$c" || \
-            echo "  (dry-run did not fully pass; expected for a first publish — see plan section 13)"
+        if ! cargo publish --locked --dry-run -p "$c"; then
+            dry_failures+=("$c")
+        fi
     done
+
+    # finesse has no workspace-internal dependencies, so a dry-run failure there
+    # is a real packaging/metadata error, not the first-publish resolution case.
+    if printf '%s\n' "${dry_failures[@]:-}" | grep -qx finesse; then
+        echo "ERROR: 'finesse' failed cargo publish --dry-run — it has no internal deps," >&2
+        echo "  so this is a real packaging/metadata error, not first-publish index lag." >&2
+        exit 1
+    fi
+    if [ "${#dry_failures[@]}" -gt 0 ]; then
+        echo "WARNING: cargo publish --dry-run failed for: ${dry_failures[*]}"
+        echo "  Expected on a FIRST publish for crates whose upstreams are not yet on"
+        echo "  crates.io; investigate any UNEXPECTED failure (real metadata error)."
+        echo "  See plans/release-plan.md section 13 (B2) and the 2.0.0-rc.1 rehearsal."
+    fi
 
     if command -v uv >/dev/null 2>&1; then
         echo "==> Python wheel + sdist + twine check"
@@ -61,7 +74,11 @@ release-preflight version:
         echo "==> SKIP Python checks (uv not installed)"
     fi
 
-    echo "==> preflight OK for {{version}}"
+    if [ "${#dry_failures[@]}" -gt 0 ]; then
+        echo "==> preflight finished for {{version}} (WITH dry-run warnings above)"
+    else
+        echo "==> preflight OK for {{version}}"
+    fi
 
 # Bump the whole workspace and internal pins to <version> (no tag, no push).
 release-version version:
