@@ -97,14 +97,22 @@ These are prerequisites, not part of the release run itself:
    Python extension; it is never a crates.io crate. `tests/e2e/rust` already has
    this; `aviso-py` does not. Without it, a careless `cargo publish --workspace`
    could try to push it.
-2. **Decide `finesse` requirement style** (Q1) and set it in
-   `[workspace.dependencies]`.
+2. **`finesse` requirement style: DECIDED `^2` (float).** `cargo-release`
+   `dependent-version = "upgrade"` will rewrite `[workspace.dependencies]
+   finesse = { version = "0.1", ... }` to `"2.0"` (semantically the caret range
+   we want). Do **not** write checks that require the literal text `^2`.
 3. **Add the `cargo-release` config** (`release.toml` or
    `[workspace.metadata.release]`): `shared-version = true`,
-   `tag-name = "v{{version}}"` (or bare, per Q2), `publish = false`,
-   `push = false`, ordered member list.
+   `tag-name = "{{version}}"` (bare, per Q2), `publish = false`,
+   `push = false`, `dependent-version = "upgrade"`, ordered member list.
 4. **Add the `justfile`** (recipes in §5).
-5. **README/docs copyright note** currently says "Copyright 2026"; confirm the
+5. **Fix crate README links before first publish** (immutable on crates.io): the
+   `aviso` and `aviso-ffi` READMEs link `aviso-py` as if it were a crates.io
+   crate, but it is not published. Correct those references.
+6. **Audit the e2e-crate internal pin:** `tests/e2e/rust/Cargo.toml` also pins
+   `aviso = { version = "=0.1.0" }`. It is `publish = false`, but it is a
+   workspace member, so the bump and the version-consistency check must cover it.
+7. **README/docs copyright note** currently says "Copyright 2026"; confirm the
    year is intended before a public release.
 
 ---
@@ -122,12 +130,14 @@ Proposed recipes (names tentative):
   --dry-run` in order, `maturin build` wheel + sdist, `twine check`. Fast
   feedback before touching CI.
 - `just release-version 2.0.0`
-  `cargo release version 2.0.0` — bumps the workspace version, rewrites the
-  literal `=x.y.z` internal pins, updates `Cargo.lock`. **No tag, no push.**
-  Operator reviews the diff.
+  `cargo release version --workspace --execute 2.0.0` — bumps the workspace
+  version, rewrites the literal `=x.y.z` internal pins, updates `Cargo.lock`.
+  **`--execute` is required: cargo-release dry-runs by default** and would
+  otherwise change nothing. **No tag, no push.** Operator reviews the diff.
 - `just release-tag`
-  Creates the annotated tag (`v2.0.0` or `2.0.0`, per Q2) and prints the
-  `git push --follow-tags` command rather than pushing automatically.
+  Creates the bare annotated tag `2.0.0` (per Q2) and prints the exact
+  `git push origin 2.0.0` command (not `--follow-tags`, which can push unrelated
+  annotated tags) rather than pushing automatically.
 - `just publish-dry`
   Convenience wrapper to launch the CI dry-run paths (`workflow_dispatch` with
   dry-run inputs) via `gh workflow run`.
@@ -178,16 +188,26 @@ Triggers: tag push **and** `workflow_dispatch(dry_run: bool, default true)`.
 
 Mechanism (tensogram's helper, preferred over aviso-server's grep-on-error):
 
+- **Release-start guard (fail loud):** before publishing anything, assert the
+  target `2.0.0` does **not** already exist on the index for any of the four
+  crates. A pre-existing `2.0.0` at release start is an error, not a no-op —
+  `skip-if-indexed` must NOT be the default path (see oracle blocking issue B6
+  in §13).
 - A `publish_crate` helper that:
   1. Reads the crate version from `cargo metadata`.
-  2. Computes the **sparse-index URL** for the crate and **skips if that exact
-     version is already published** (idempotent re-runs).
-  3. Publishes, then **polls the sparse index** (up to ~60s) until the new
-     version appears before the next crate — deterministic fix for
-     index-propagation lag between dependent publishes.
+  2. Computes the **sparse-index URL** and publishes.
+  3. Then **polls the sparse index** (up to ~60s) until the new version appears
+     before the next crate — deterministic fix for index-propagation lag between
+     dependent publishes.
+- **`skip-if-indexed` only in an explicit retry mode**, and only after verifying
+  the indexed crate is the artifact produced from *this* tag (checksum), so a
+  re-run after a partial failure is safe without masking a divergent upload.
 - One step per crate in dependency order: `finesse` → `aviso` →
   `aviso-cli` → `aviso-ffi`.
-- Dry-run path: `cargo publish --dry-run` for each, no token needed.
+- Dry-run path: `cargo publish --dry-run` for each, no token needed. **Caveat:**
+  for a *first* publish, the dependent dry-runs (`aviso`, `aviso-cli`,
+  `aviso-ffi`) cannot fully succeed until their upstreams exist on crates.io —
+  see §13 blocking issue B2 and the RC-rehearsal recommendation.
 
 ### 6.C `publish-pypi.yml` — wheels + sdist with a TestPyPI lever
 
@@ -199,9 +219,23 @@ Triggers: tag push **and** `workflow_dispatch(use_test_pypi: bool)`.
   (the crate already sets `abi3-py310`), plus an **sdist**. No Windows, no
   musllinux (roadmap follow-up).
 - Upload each as a build artifact; a `publish` job downloads, runs
-  `twine check dist/*`, then uploads with `pypa/gh-action-pypi-publish`
-  (`skip-existing: true`).
-- **Auth:** OIDC trusted publishing vs API token — Q8.
+  `twine check dist/*`, then uploads with `pypa/gh-action-pypi-publish`.
+- **`skip-existing` is unsafe for the final upload.** PyPI files are immutable;
+  if one bad wheel landed and a re-run uses `skip-existing`, the job skips the
+  bad file and fills in the rest, leaving a mixed immutable release. Use
+  `skip-existing` only on the **TestPyPI** path. For production, either do not
+  skip, or skip only after comparing existing filenames + hashes to the
+  artifacts built from this tag (oracle B5).
+- **Add a clean-env sdist install test** (not just `twine check`, which only
+  validates metadata): in a fresh venv, `pip install dist/pyaviso-2.0.0.tar.gz`,
+  then `python -c "import pyaviso"` and `aviso --version`. Document that the
+  sdist source-build needs a Rust toolchain (oracle R4).
+- **Do not version-check `pyproject.toml`** — it is `dynamic = ["version"]`, so
+  there is no static field. Validate the built wheel/sdist **filename + metadata**
+  contain `2.0.0`, and confirm maturin resolves it from `aviso-py` via the
+  workspace version (oracle R3).
+- **Auth: DECIDED OIDC trusted publishing** (no stored secret), API token only as
+  a project-scoped fallback in the `pypi` environment (oracle R8; was Q8).
 
 ### 6.D `release-cpp-artifacts.yml` — prebuilt C/C++ libraries
 
@@ -218,20 +252,30 @@ tag). Pattern from tensogram's `publish-ffi.yml`:
 - **Tooling choice (Q7):** adopt `cargo-c` (clean `.pc`/header/lib layout +
   smoke-test pattern) vs keep the current hand-rolled `cbindgen` + `crate-type`
   and write a pack script.
-- **Caveat:** the roadmap wanted a real-stack C++ e2e gate to land *before*
-  shipping prebuilt libs (Q3).
+- **Real-stack C++ gate required first (oracle B7).** Today the real-stack e2e
+  job is informational and not in `ci-pass`, and the C++ example only runs
+  `schema_smoke` (no server). Shipping prebuilt libs in 2.0.0 means the preflight
+  must run the **packaged** artifact against the real stack — not just the
+  no-server smoke. Land that gate before attaching prebuilt C++ assets (Q3).
 
 ### 6.E `release.yml` — the GitHub Release
 
 Trigger: tag push. Verifies tag == version, then `softprops/action-gh-release`
-with `generate_release_notes: true`, title `aviso-client v2.0.0`, attaching the
-C++ tarballs (and optionally CLI binaries, Q4). Depends on the C++ artifact job
-for its assets.
+with `generate_release_notes: true`, title `aviso-client 2.0.0`.
 
-### 6.F Docs — no change
+- **Cross-workflow `needs:` does NOT exist (oracle B8).** GitHub Actions `needs`
+  only links jobs *within one workflow*. So the GitHub Release creation and the
+  C++ asset attachment **must live in the same workflow** (merge §6.D's `release`
+  job and §6.E into one file), or be sequenced with `workflow_run`. Otherwise
+  release creation and asset upload race. **Resolution: fold §6.E into
+  `release-cpp-artifacts.yml`** as its final job (create release → attach assets
+  in one run).
 
-`docs-sites.yml` already publishes on tags and softlinks `stable`. The new tag
-just works.
+### 6.F Docs — restrict `stable` to release tags (oracle R5)
+
+`docs-sites.yml` currently builds on `tags: ["*"]` and softlinks any tag push as
+`stable`. Constrain the canonical/`stable` publish to **semver release tags**
+(e.g. `2.0.0`) so an arbitrary tag cannot overwrite the stable docs.
 
 ---
 
@@ -248,40 +292,51 @@ just works.
            │ green ⇒ safe to release
            ▼
   just release-version 2.0.0 → review → PR → merge → just release-tag → push tag
-           │  (tag triggers, in parallel:)
-           ├─ publish-crates.yml   (skip-if-indexed, index-poll, ordered)
-           ├─ publish-pypi.yml     (twine check, skip-existing)
-           └─ release-cpp-artifacts.yml (build→smoke→pack→attach)
-                      └────────────► release.yml (Release + notes + assets)
-                                     docs-sites.yml (stable softlink)
+           │  (tag triggers, in parallel — each gated by the release invariant §13:)
+           ├─ publish-crates.yml   (fail-loud-if-indexed, publish, index-poll, ordered)
+           ├─ publish-pypi.yml     (twine check + sdist install test; NO skip-existing on prod)
+           └─ release-cpp-artifacts.yml (build→smoke→pack→attach→create Release+notes)
+                                     docs-sites.yml (stable softlink, semver tags only)
 ```
 
 **Two independent dry-run layers, both available before any immutable artifact:**
 
-1. **Preflight (pre-tag):** everything except the irreversible upload.
+1. **Preflight (pre-tag):** everything except the irreversible upload — but see
+   §13 B2: dependent-crate dry-runs cannot fully simulate a *first* publish
+   before upstreams exist on crates.io. The honest pre-tag rehearsal is a public
+   `2.0.0-rc.1` (§13).
 2. **Per-publisher dry-run (`workflow_dispatch`):** `cargo publish --dry-run`,
    `use_test_pypi=true`, build-only C++ — each publisher exercisable alone.
 
-**Idempotency everywhere** so a partial/re-triggered release is safe: crates
-skip-if-indexed, PyPI `skip-existing`, FFI re-attach via the `version` dispatch
-input.
+**Safe re-runs, not blind idempotency (oracle B5/B6):** a re-run after a partial
+failure must verify that anything already published matches *this* tag's
+artifacts (checksums) before skipping it. `skip-existing`/`skip-if-indexed` are
+TestPyPI / explicit-retry-mode only, never the default production path.
 
 ---
 
 ## 8. Release runbook (once the above is built)
 
 1. `just release-preflight 2.0.0` — local dry-run green.
-2. Run **`release-preflight.yml`** in CI for `2.0.0` — green. (Optionally
-   TestPyPI rehearsal, Q6.)
-3. `just release-version 2.0.0` — review the diff (version, the `=x.y.z` pins,
-   `Cargo.lock`).
-4. Open PR "Release 2.0.0"; land through normal CI.
-5. `just release-tag && git push --follow-tags`.
-6. Tag triggers 6.B–6.E; watch them. Idempotent retries make a re-run safe.
-7. Verify: crate pages live; `pip install pyaviso==2.0.0` resolves on each
-   target platform; GitHub Release has C++ tarballs + notes; docs `stable`
-   points at 2.0.0.
-8. Update `progress.md` and `roadmap.md` (move "Release" next → shipped).
+2. Run **`release-preflight.yml`** in CI for `2.0.0` — green.
+3. `just release-version 2.0.0` — review the diff (version, the `=x.y.z` pins in
+   `aviso-cli`/`aviso-ffi`/`aviso-py`/`tests/e2e/rust`, `Cargo.lock`).
+4. Open PR "Release 2.0.0"; land through normal CI (must merge to `main`).
+5. **RC rehearsal (first release): publish `2.0.0-rc.1`** end-to-end (real
+   crates.io + real PyPI under the reclaimed name + GitHub assets) to prove
+   names, owners, auth, ordering, index propagation, and trusted publishing.
+   This burns an RC version publicly but never the final `2.0.0` (§13 R1).
+6. `just release-tag` → `git push origin 2.0.0`.
+7. Tag triggers the publishers; **each first verifies the release invariant**
+   (tag == workspace version, tag commit reachable from `origin/main`, `ci-pass`
+   green for that exact SHA — §13 B3). Watch them.
+8. Verify: crate pages live; a clean-env `pip install pyaviso==2.0.0` imports and
+   `aviso --version` works on each target platform; GitHub Release has C++
+   tarballs + notes; docs `stable` points at 2.0.0.
+9. On partial failure, **do not move the `2.0.0` tag** — follow the recovery
+   strategy (§13 R7): stop, yank if needed, bump the whole workspace to `2.0.1`,
+   release from a new tag.
+10. Update `progress.md` and `roadmap.md` (move "Release" next → shipped).
 
 ---
 
@@ -289,15 +344,15 @@ input.
 
 | # | Question | Default / lean |
 |---|----------|----------------|
-| Q1 | `finesse` requirement style: `=2.0.0` lockstep vs `^2` float? | Lean float `^2` (it is a generic parser). |
-| Q2 | Tag style: bare `2.0.0` (tensogram) vs `v2.0.0`? Workflows can accept both, but pick a canonical for the justfile. | Lean bare `2.0.0`. |
+| Q1 | `finesse` requirement style: `=2.0.0` lockstep vs `^2` float? | **DECIDED: `^2` float** (it is a generic parser; minor/patch finesse releases flow without lockstep churn). |
+| Q2 | Tag style: bare `2.0.0` vs `v2.0.0`? | **DECIDED: bare `2.0.0`** (matches the tensogram precedent and the legacy `ecmwf/aviso` tags). cargo-release `tag-name = "{{version}}"`; workflows trigger/verify on the bare form. |
 | Q3 | Ship prebuilt C++ libs in 2.0.0 *without* the real-stack C++ e2e gate the roadmap wanted first? | Needs maintainer call. |
 | Q4 | Also attach prebuilt `aviso` CLI binaries (Linux/macOS) to the Release? | Optional. |
 | Q5 | Changelog: GitHub auto-notes vs a maintained `CHANGELOG.md`? | Lean auto-notes for first cut. |
 | Q6 | Full `2.0.0-rc.1` + TestPyPI rehearsal before real 2.0.0? | Recommended for the first ever release. |
 | Q7 | FFI packaging: adopt `cargo-c` vs keep hand-rolled `cbindgen` + pack script? | Investigate `cargo-c` fit. |
-| Q8 | PyPI auth: OIDC trusted publishing vs API token? | Lean OIDC (no stored secret). |
-| Q9 | crates.io index race: sparse-index poll (tensogram) vs retry-on-error (aviso-server)? | Lean sparse-index poll. |
+| Q8 | PyPI auth: OIDC trusted publishing vs API token? | **DECIDED: OIDC trusted publishing**; API token only as a project-scoped fallback in the `pypi` environment. |
+| Q9 | crates.io index race: sparse-index poll (tensogram) vs retry-on-error (aviso-server)? | **DECIDED: sparse-index poll.** |
 | Q10 | Preflight trigger: manual-only vs also auto on version/manifest PRs? | Lean manual-only first. |
 
 ---
@@ -336,15 +391,95 @@ These block a real publish and must be done in the respective accounts:
 ## 12. Implementation order (once the plan is final — not started yet)
 
 Nothing below is implemented yet; recorded so we can resume after a context
-reset.
+reset. Reordered per oracle (resolve workflow-shaping questions and external
+prereqs *before* the workflows that depend on them, not at the end).
 
-1. Pre-release cleanups PR (§4): `publish = false` on `aviso-py`, `finesse`
-   req style, `cargo-release` config, `justfile`.
-2. `release-preflight.yml` (§6.A) — the dry-run gate; validate it on the current
-   0.1.0 tree before any bump.
-3. `publish-crates.yml` (§6.B) with dry-run path; validate via
-   `cargo publish --dry-run`.
-4. `publish-pypi.yml` (§6.C) with TestPyPI path; validate via TestPyPI.
-5. `release-cpp-artifacts.yml` (§6.D) + `release.yml` (§6.E).
-6. Resolve Q1–Q10, do the external prereqs (§10), then the bump → tag → release
-   dry-run rehearsal (Q6), then the real 2.0.0.
+0. **Resolve the remaining workflow-shaping questions first:** Q3 (C++ gate
+   timing), Q4 (CLI binaries), Q7 (cargo-c vs cbindgen), Q10 (preflight trigger).
+   Q1/Q2/Q8/Q9 are decided. These shape the workflows below, so they cannot wait
+   until step 6.
+1. **External prereqs in flight early (§10):** crates.io name ownership +
+   `CARGO_REGISTRY_TOKEN`; PyPI owner rights + OIDC trusted-publishing config +
+   `pypi`/`test-pypi` environments; branch protection. First-publish names are
+   irreversible — start these before writing publishers.
+2. **Foundation PR (§4):** `publish = false` on `aviso-py`; `cargo-release`
+   config (`shared-version`, bare `tag-name`, `dependent-version = upgrade`,
+   ordered members); `justfile`; fix crate README links; audit the
+   `tests/e2e/rust` pin. Changes no versions, publishes nothing.
+3. **Release-invariant composite action / reusable check** (§13 B3): tag ==
+   workspace version, tag reachable from `origin/main`, `ci-pass` green for the
+   SHA. Every publisher calls it first.
+4. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
+   tree before any bump. Includes the clean-env sdist install test and (if
+   shipping C++) the real-stack packaged-artifact run.
+5. `publish-crates.yml` (§6.B) with fail-loud-if-indexed + dry-run path.
+6. `publish-pypi.yml` (§6.C) with TestPyPI path (OIDC); validate via TestPyPI.
+7. `release-cpp-artifacts.yml` (§6.D) **with the GitHub Release creation folded
+   in** (§6.E); restrict `docs-sites.yml` `stable` to semver tags (§6.F).
+8. **RC rehearsal `2.0.0-rc.1`** end-to-end (§13 R1), then the real `2.0.0`.
+
+---
+
+## 13. Oracle review (incorporated)
+
+Reviewed by the oracle before implementation (standing rule: plans go through the
+oracle first). Blocking issues are folded into the sections above; recorded here
+as the authoritative checklist so nothing is lost.
+
+### Blocking issues (must be true before/within the workflows)
+
+- **B1 — `cargo release version` needs `--execute`.** It dry-runs by default and
+  changes nothing otherwise. Fixed in §5.
+- **B2 — first-publish dry-run is not fully provable.** `cargo publish --dry-run`
+  for `aviso`/`aviso-cli`/`aviso-ffi` cannot succeed until their upstreams exist
+  on crates.io (published manifests drop `path` and resolve from the registry).
+  So "all four ordered dry-run green before any immutable artifact" is not
+  achievable for a first release. Honest mitigations: a public `2.0.0-rc.1`
+  rehearsal (R1), and `--no-verify` packaging checks where appropriate.
+- **B3 — tag-triggered publish bypasses branch protection.** Branch protection on
+  `main` does not stop a bare `2.0.0` tag pushed at an unreviewed commit. **Every
+  publisher must first assert the release invariant:** (1) tag name == workspace
+  version, (2) the tag commit is reachable from `origin/main`, (3) `ci-pass`
+  succeeded for that exact SHA. Implement once as a reusable check (§12 step 3).
+- **B4 — the e2e crate has an internal pin too.** `tests/e2e/rust/Cargo.toml`
+  pins `aviso = "=0.1.0"`; include it in the bump + version-consistency check
+  even though it is `publish = false`. Fixed in §4.6.
+- **B5 — PyPI `skip-existing` can launder a partial bad upload** into a false
+  green. Prod path: no `skip-existing` (or hash-compare first). Fixed in §6.C.
+- **B6 — crates.io `skip-if-indexed` is unsafe as the default.** A pre-existing
+  target `2.0.0` at release start is an error, not success. Skip only in an
+  explicit retry mode after checksum-verifying the indexed artifact. Fixed in §6.B.
+- **B7 — prebuilt C++ without a real-stack gate is a real risk.** The current C++
+  example is no-server `schema_smoke`; the real-stack e2e is informational. If
+  C++ libs ship in 2.0.0, the preflight must run the packaged artifact against
+  the real stack. Fixed in §6.D (and Q3).
+- **B8 — cross-workflow `needs:` does not exist.** Fold the GitHub Release
+  creation into `release-cpp-artifacts.yml` (or use `workflow_run`). Fixed in §6.E.
+
+### Strong recommendations (adopted)
+
+- **R1 — public `2.0.0-rc.1` rehearsal** is the only honest way to exercise every
+  irreversible step (names, owners, auth, ordered publish, index propagation,
+  PyPI trusted publishing, GitHub assets) before final `2.0.0`. crates.io has no
+  TestPyPI equivalent. Added to §8/§12.
+- **R3 — do not parse `pyproject.toml` for the Python version** (it is
+  `dynamic`); validate the built wheel/sdist filename + metadata instead. §6.C.
+- **R4 — clean-env sdist install test** (`pip install` the sdist, `import
+  pyaviso`, `aviso --version`), not just `twine check`. §6.C.
+- **R5 — restrict `docs-sites.yml` `stable` to semver tags.** §6.F.
+- **R6 — fix `aviso`/`aviso-ffi` README links** that reference `aviso-py` as a
+  crates.io crate before first publish (immutable first impression). §4.5.
+- **R7 — partial-publish recovery:** never move the `2.0.0` tag to republish
+  mixed sources. Stop, yank if appropriate, bump the whole workspace to `2.0.1`,
+  release from a new tag. §8 step 9.
+- **R8 — OIDC trusted publishing** for PyPI; token only as project-scoped
+  fallback. Decided (was Q8).
+
+### Nits (adopted)
+
+- Removed stale `tag-name = "v{{version}}"` wording (bare per Q2).
+- `git push origin 2.0.0`, not `--follow-tags`.
+- `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-D warnings` in preflight
+  if docs.rs quality matters for the first crates.io release.
+- crates.io 404 on the names is **not** a reservation; re-check availability
+  immediately before release start.
