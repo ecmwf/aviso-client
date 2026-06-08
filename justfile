@@ -2,7 +2,7 @@
 #
 # The justfile PREPARES and TAGS a release locally; CI does every actual publish
 # on the pushed tag. See plans/release-plan.md for the full process, decisions,
-# and the oracle-reviewed safety model.
+# and safety model.
 #
 # Requires `just` and `cargo-release`:  cargo install just cargo-release
 # The Python preflight steps additionally require `uv` (https://docs.astral.sh/uv/).
@@ -95,7 +95,7 @@ release-tag version:
         exit 1
     fi
     git tag -a "{{version}}" -m "Release {{version}}"
-    echo "Tag {{version}} created. Review, then push to trigger the release:"
+    echo "Tag {{version}} created. Check the diff, then push to trigger the release:"
     echo "    git push origin {{version}}"
 
 # Launch the CI dry-run paths (crates.io --dry-run, TestPyPI) via gh.
