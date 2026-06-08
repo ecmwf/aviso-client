@@ -1,10 +1,9 @@
 # Release plan — unified 2.0.0
 
-Working plan for the first published release of aviso-client. This is a living
-document: it is **not complete** — the maintainer has additional steps to add
-(see [§10](#10-additional-steps-to-be-filled-in)). Update it as decisions land;
-move shipped items into [`progress.md`](./progress.md) and the forward-looking
-summary in [`roadmap.md`](./roadmap.md) once a release goes out.
+Working plan for the first published release of aviso-client. Living document:
+update it as decisions land; move shipped items into
+[`progress.md`](./progress.md) and the forward-looking summary in
+[`roadmap.md`](./roadmap.md) once a release goes out.
 
 Cross-references: the release intent is sketched in
 [`roadmap.md`](./roadmap.md) ("What's next → Release", "Prebuilt C++ artifacts").
@@ -191,8 +190,7 @@ Mechanism (tensogram's helper, preferred over aviso-server's grep-on-error):
 - **Release-start guard (fail loud):** before publishing anything, assert the
   target `2.0.0` does **not** already exist on the index for any of the four
   crates. A pre-existing `2.0.0` at release start is an error, not a no-op —
-  `skip-if-indexed` must NOT be the default path (see oracle blocking issue B6
-  in §13).
+  `skip-if-indexed` must NOT be the default path (see §13 B6).
 - A `publish_crate` helper that:
   1. Reads the crate version from `cargo metadata`.
   2. Computes the **sparse-index URL** and publishes.
@@ -225,17 +223,17 @@ Triggers: tag push **and** `workflow_dispatch(use_test_pypi: bool)`.
   bad file and fills in the rest, leaving a mixed immutable release. Use
   `skip-existing` only on the **TestPyPI** path. For production, either do not
   skip, or skip only after comparing existing filenames + hashes to the
-  artifacts built from this tag (oracle B5).
+  artifacts built from this tag (§13 B5).
 - **Add a clean-env sdist install test** (not just `twine check`, which only
   validates metadata): in a fresh venv, `pip install dist/pyaviso-2.0.0.tar.gz`,
   then `python -c "import pyaviso"` and `aviso --version`. Document that the
-  sdist source-build needs a Rust toolchain (oracle R4).
+  sdist source-build needs a Rust toolchain (§13 R4).
 - **Do not version-check `pyproject.toml`** — it is `dynamic = ["version"]`, so
   there is no static field. Validate the built wheel/sdist **filename + metadata**
   contain `2.0.0`, and confirm maturin resolves it from `aviso-py` via the
-  workspace version (oracle R3).
+  workspace version (§13 R3).
 - **Auth: DECIDED OIDC trusted publishing** (no stored secret), API token only as
-  a project-scoped fallback in the `pypi` environment (oracle R8; was Q8).
+  a project-scoped fallback in the `pypi` environment (§13 R8; was Q8).
 
 ### 6.D `release-cpp-artifacts.yml` — prebuilt C/C++ libraries
 
@@ -253,7 +251,7 @@ tag). Pattern from tensogram's `publish-ffi.yml`:
   for a standard `.so/.a/.pc/.h` install layout plus the build→smoke→pack
   pattern, replacing the current hand-rolled `cbindgen` + `crate-type` packaging.
   (The `cbindgen` header-drift guard in `ci.yml` stays as a generation check.)
-- **Real-stack C++ gate first: DECIDED (Q3, oracle B7).** Today the real-stack
+- **Real-stack C++ gate first: DECIDED (Q3, §13 B7).** Today the real-stack
   e2e job is informational and the C++ example only runs `schema_smoke` (no
   server). Before 2.0.0, make the C++ examples run against the real e2e stack and
   gate the release on it; the preflight runs the **packaged** artifact (not just
@@ -265,7 +263,7 @@ tag). Pattern from tensogram's `publish-ffi.yml`:
 Trigger: tag push. Verifies tag == version, then `softprops/action-gh-release`
 with `generate_release_notes: true`, title `aviso-client 2.0.0`.
 
-- **Cross-workflow `needs:` does NOT exist (oracle B8).** GitHub Actions `needs`
+- **Cross-workflow `needs:` does NOT exist (§13 B8).** GitHub Actions `needs`
   only links jobs *within one workflow*. So the GitHub Release creation and the
   C++ asset attachment **must live in the same workflow** (merge §6.D's `release`
   job and §6.E into one file), or be sequenced with `workflow_run`. Otherwise
@@ -273,7 +271,7 @@ with `generate_release_notes: true`, title `aviso-client 2.0.0`.
   `release-cpp-artifacts.yml`** as its final job (create release → attach assets
   in one run).
 
-### 6.F Docs — restrict `stable` to release tags (oracle R5)
+### 6.F Docs — restrict `stable` to release tags (§13 R5)
 
 `docs-sites.yml` currently builds on `tags: ["*"]` and softlinks any tag push as
 `stable`. Constrain the canonical/`stable` publish to **semver release tags**
@@ -310,7 +308,7 @@ with `generate_release_notes: true`, title `aviso-client 2.0.0`.
 2. **Per-publisher dry-run (`workflow_dispatch`):** `cargo publish --dry-run`,
    `use_test_pypi=true`, build-only C++ — each publisher exercisable alone.
 
-**Safe re-runs, not blind idempotency (oracle B5/B6):** a re-run after a partial
+**Safe re-runs, not blind idempotency (§13 B5/B6):** a re-run after a partial
 failure must verify that anything already published matches *this* tag's
 artifacts (checksums) before skipping it. `skip-existing`/`skip-if-indexed` are
 TestPyPI / explicit-retry-mode only, never the default production path.
@@ -351,7 +349,7 @@ TestPyPI / explicit-retry-mode only, never the default production path.
 | Q3 | Ship prebuilt C++ libs in 2.0.0 *without* the real-stack C++ e2e gate? | **DECIDED: land the real-stack C++ gate first.** Make the C++ examples run against the real e2e stack (not just no-server `schema_smoke`) and gate the release on it before attaching prebuilt libs. |
 | Q4 | Also attach prebuilt `aviso` CLI binaries (Linux/macOS) to the Release? | **DECIDED: no.** CLI ships via `cargo install aviso-cli` and the PyPI wheel (which bundles the CLI). No standalone-binary build matrix. |
 | Q5 | Changelog: GitHub auto-notes vs a maintained `CHANGELOG.md`? | Lean auto-notes for first cut. |
-| Q6 | Full `2.0.0-rc.1` rehearsal before real 2.0.0? | **DECIDED: yes** (oracle R1) for the first release. |
+| Q6 | Full `2.0.0-rc.1` rehearsal before real 2.0.0? | **DECIDED: yes** (§13 R1) for the first release. |
 | Q7 | FFI packaging: adopt `cargo-c` vs keep hand-rolled `cbindgen` + pack script? | **DECIDED: adopt `cargo-c`** (standard `.so/.a/.pc/.h` layout + smoke-test pattern). Migrate `aviso-ffi` from the current cbindgen + `crate-type` setup. |
 | Q8 | PyPI auth: OIDC trusted publishing vs API token? | **DECIDED: OIDC trusted publishing**; API token only as a project-scoped fallback in the `pypi` environment. |
 | Q9 | crates.io index race: sparse-index poll (tensogram) vs retry-on-error (aviso-server)? | **DECIDED: sparse-index poll.** |
@@ -396,18 +394,19 @@ PyPI name at 2.0.0 and continues that version line. Completed:
   the retired `develop` branch to `main`; then delete the stopgap `develop`
   branch. No code dependency on this for the aviso-client release.
 
-No further unknown steps remain; the plan is clear to implement.
+With the legacy deprecation shipped, this cross-repo prerequisite is satisfied
+and the aviso-client release is unblocked.
 
 ---
 
 ## 12. Implementation order (once the plan is final — not started yet)
 
 Nothing below is implemented yet; recorded so we can resume after a context
-reset. Reordered per oracle (resolve workflow-shaping questions and external
-prereqs *before* the workflows that depend on them, not at the end).
+reset. Ordered so workflow-shaping questions and external prereqs are resolved
+*before* the workflows that depend on them, not at the end.
 
-All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) and
-the §11 additional steps remain.
+All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) is
+still open.
 
 1. **External prereqs in flight early (§10):** crates.io name ownership +
    `CARGO_REGISTRY_TOKEN`; PyPI owner rights + OIDC trusted-publishing config +
@@ -435,11 +434,10 @@ the §11 additional steps remain.
 
 ---
 
-## 13. Oracle review (incorporated)
+## 13. Release safety requirements (incorporated)
 
-Reviewed by the oracle before implementation (standing rule: plans go through the
-oracle first). Blocking issues are folded into the sections above; recorded here
-as the authoritative checklist so nothing is lost.
+Folded into the sections above; recorded here as the authoritative checklist so
+nothing is lost.
 
 ### Blocking issues (must be true before/within the workflows)
 
