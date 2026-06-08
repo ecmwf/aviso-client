@@ -1,0 +1,28 @@
+# cargo-release configuration (https://github.com/crate-ci/cargo-release).
+# Driven by the justfile; see plans/release-plan.md for the full release process.
+#
+# Division of labour: this config + the justfile prepare and tag a release
+# locally; CI does every actual publish on the pushed tag. So cargo-release must
+# never publish or push here.
+
+# One version across the whole workspace. Every crate inherits via
+# `version.workspace = true`, so a single bump moves them together.
+shared-version = true
+
+# Bare tags (e.g. `2.0.0`), matching the publish workflows and the legacy
+# ecmwf/aviso tags. No `v` prefix.
+tag-name = "{{version}}"
+tag-message = "Release {{version}}"
+
+# CI publishes on the tag; the operator pushes the tag deliberately. Never here.
+publish = false
+push = false
+
+# Rewrite workspace-internal dependency requirements when the version bumps:
+# the literal `=0.1.0` pins in aviso-cli / aviso-ffi / aviso-py / tests-e2e and
+# the `finesse` requirement all follow the new version.
+dependent-version = "upgrade"
+
+# One squashed commit for the whole-workspace bump.
+consolidate-commits = true
+pre-release-commit-message = "chore: release {{version}}"

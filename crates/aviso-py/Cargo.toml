@@ -10,6 +10,9 @@ homepage.workspace = true
 documentation.workspace = true
 description = "PyO3 bindings crate for aviso, the aviso-server client library."
 readme = "README.md"
+# Builds the `pyaviso` wheel (published to PyPI via maturin), never a crates.io
+# crate. `publish = false` stops an accidental `cargo publish` from pushing it.
+publish = false
 
 [lib]
 # `cdylib` for the Python extension; `rlib` so the workspace `cargo build`

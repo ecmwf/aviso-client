@@ -5,8 +5,9 @@ client library for [`aviso-server`](https://github.com/ecmwf/aviso-server), plus
 a hand-written header-only C++ facade over it.
 
 This crate is a peer consumer of the core `aviso` crate, like
-[`aviso-cli`](https://crates.io/crates/aviso-cli) and
-[`aviso-py`](https://crates.io/crates/aviso-py): it depends on `aviso` and never
+[`aviso-cli`](https://crates.io/crates/aviso-cli) and the
+[`aviso-py`](https://github.com/ecmwf/aviso-client/tree/main/crates/aviso-py)
+binding crate: it depends on `aviso` and never
 the reverse, and the core carries no FFI machinery. It builds as a `staticlib`
 and a `cdylib`, so a C or C++ application links the prebuilt
 `libaviso_ffi.{a,so,dylib}` with its own toolchain and needs no Rust toolchain
