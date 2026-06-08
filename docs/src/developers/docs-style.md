@@ -65,7 +65,7 @@ columns.
 
 ## Things to avoid in user-facing pages
 
-These belong in `developers/` or in `plans/`, not in pages people land on while
+These belong in `developers/`, not in pages people land on while
 learning aviso.
 
 - References to planning-only rationale. Keep user-facing pages focused on what

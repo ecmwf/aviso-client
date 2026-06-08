@@ -93,10 +93,7 @@ short version:
 When you propose a structural change, update the relevant planning material
 instead of burying long rationale in user-facing docs.
 
-The roadmap is at
-[`plans/roadmap.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/roadmap.md);
-shipped work is logged in
-[`plans/progress.md`](https://github.com/ecmwf/aviso-client/blob/main/plans/progress.md).
+Durable planning lives in GitHub Issues and milestones.
 
 ## Filing a bug
 
