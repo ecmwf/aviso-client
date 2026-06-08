@@ -9,6 +9,9 @@ belongs in the linked PRs, in the code, and in the ADRs.
   `D1`..`Dn` references) and the server facts that drive them.
 - [`constraints.md`](./constraints.md): standing product and process rules that
   bound every decision.
+- [`release-plan.md`](./release-plan.md): working plan for the unified 2.0.0
+  release (versioning, justfile, dry-run preflight, publish workflows). Living;
+  implementation in progress.
 
 ## Conventions
 
