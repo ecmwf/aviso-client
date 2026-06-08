@@ -249,14 +249,16 @@ tag). Pattern from tensogram's `publish-ffi.yml`:
 - Bundle `libaviso_ffi.{a,so,dylib}` with the generated `aviso.h` and the
   hand-written `aviso.hpp`, in the layout a CMake consumer points
   `AVISO_FFI_INCLUDE_DIR` / `AVISO_FFI_LIB_DIR` at.
-- **Tooling choice (Q7):** adopt `cargo-c` (clean `.pc`/header/lib layout +
-  smoke-test pattern) vs keep the current hand-rolled `cbindgen` + `crate-type`
-  and write a pack script.
-- **Real-stack C++ gate required first (oracle B7).** Today the real-stack e2e
-  job is informational and not in `ci-pass`, and the C++ example only runs
-  `schema_smoke` (no server). Shipping prebuilt libs in 2.0.0 means the preflight
-  must run the **packaged** artifact against the real stack — not just the
-  no-server smoke. Land that gate before attaching prebuilt C++ assets (Q3).
+- **Tooling: DECIDED `cargo-c`** (Q7). Migrate `aviso-ffi` to `cargo cinstall`
+  for a standard `.so/.a/.pc/.h` install layout plus the build→smoke→pack
+  pattern, replacing the current hand-rolled `cbindgen` + `crate-type` packaging.
+  (The `cbindgen` header-drift guard in `ci.yml` stays as a generation check.)
+- **Real-stack C++ gate first: DECIDED (Q3, oracle B7).** Today the real-stack
+  e2e job is informational and the C++ example only runs `schema_smoke` (no
+  server). Before 2.0.0, make the C++ examples run against the real e2e stack and
+  gate the release on it; the preflight runs the **packaged** artifact (not just
+  the no-server smoke). This lands as its own piece of work **before** the
+  prebuilt-C++ artifact workflow.
 
 ### 6.E `release.yml` — the GitHub Release
 
@@ -346,14 +348,14 @@ TestPyPI / explicit-retry-mode only, never the default production path.
 |---|----------|----------------|
 | Q1 | `finesse` requirement style: `=2.0.0` lockstep vs `^2` float? | **DECIDED: `^2` float** (it is a generic parser; minor/patch finesse releases flow without lockstep churn). |
 | Q2 | Tag style: bare `2.0.0` vs `v2.0.0`? | **DECIDED: bare `2.0.0`** (matches the tensogram precedent and the legacy `ecmwf/aviso` tags). cargo-release `tag-name = "{{version}}"`; workflows trigger/verify on the bare form. |
-| Q3 | Ship prebuilt C++ libs in 2.0.0 *without* the real-stack C++ e2e gate the roadmap wanted first? | Needs maintainer call. |
-| Q4 | Also attach prebuilt `aviso` CLI binaries (Linux/macOS) to the Release? | Optional. |
+| Q3 | Ship prebuilt C++ libs in 2.0.0 *without* the real-stack C++ e2e gate? | **DECIDED: land the real-stack C++ gate first.** Make the C++ examples run against the real e2e stack (not just no-server `schema_smoke`) and gate the release on it before attaching prebuilt libs. |
+| Q4 | Also attach prebuilt `aviso` CLI binaries (Linux/macOS) to the Release? | **DECIDED: no.** CLI ships via `cargo install aviso-cli` and the PyPI wheel (which bundles the CLI). No standalone-binary build matrix. |
 | Q5 | Changelog: GitHub auto-notes vs a maintained `CHANGELOG.md`? | Lean auto-notes for first cut. |
-| Q6 | Full `2.0.0-rc.1` + TestPyPI rehearsal before real 2.0.0? | Recommended for the first ever release. |
-| Q7 | FFI packaging: adopt `cargo-c` vs keep hand-rolled `cbindgen` + pack script? | Investigate `cargo-c` fit. |
+| Q6 | Full `2.0.0-rc.1` rehearsal before real 2.0.0? | **DECIDED: yes** (oracle R1) for the first release. |
+| Q7 | FFI packaging: adopt `cargo-c` vs keep hand-rolled `cbindgen` + pack script? | **DECIDED: adopt `cargo-c`** (standard `.so/.a/.pc/.h` layout + smoke-test pattern). Migrate `aviso-ffi` from the current cbindgen + `crate-type` setup. |
 | Q8 | PyPI auth: OIDC trusted publishing vs API token? | **DECIDED: OIDC trusted publishing**; API token only as a project-scoped fallback in the `pypi` environment. |
 | Q9 | crates.io index race: sparse-index poll (tensogram) vs retry-on-error (aviso-server)? | **DECIDED: sparse-index poll.** |
-| Q10 | Preflight trigger: manual-only vs also auto on version/manifest PRs? | Lean manual-only first. |
+| Q10 | Preflight trigger: manual-only vs also auto on version/manifest PRs? | **DECIDED: manual-only** (`workflow_dispatch`). |
 
 ---
 
@@ -394,10 +396,9 @@ Nothing below is implemented yet; recorded so we can resume after a context
 reset. Reordered per oracle (resolve workflow-shaping questions and external
 prereqs *before* the workflows that depend on them, not at the end).
 
-0. **Resolve the remaining workflow-shaping questions first:** Q3 (C++ gate
-   timing), Q4 (CLI binaries), Q7 (cargo-c vs cbindgen), Q10 (preflight trigger).
-   Q1/Q2/Q8/Q9 are decided. These shape the workflows below, so they cannot wait
-   until step 6.
+All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) and
+the §11 additional steps remain.
+
 1. **External prereqs in flight early (§10):** crates.io name ownership +
    `CARGO_REGISTRY_TOKEN`; PyPI owner rights + OIDC trusted-publishing config +
    `pypi`/`test-pypi` environments; branch protection. First-publish names are
@@ -409,14 +410,18 @@ prereqs *before* the workflows that depend on them, not at the end).
 3. **Release-invariant composite action / reusable check** (§13 B3): tag ==
    workspace version, tag reachable from `origin/main`, `ci-pass` green for the
    SHA. Every publisher calls it first.
-4. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
-   tree before any bump. Includes the clean-env sdist install test and (if
-   shipping C++) the real-stack packaged-artifact run.
-5. `publish-crates.yml` (§6.B) with fail-loud-if-indexed + dry-run path.
-6. `publish-pypi.yml` (§6.C) with TestPyPI path (OIDC); validate via TestPyPI.
-7. `release-cpp-artifacts.yml` (§6.D) **with the GitHub Release creation folded
-   in** (§6.E); restrict `docs-sites.yml` `stable` to semver tags (§6.F).
-8. **RC rehearsal `2.0.0-rc.1`** end-to-end (§13 R1), then the real `2.0.0`.
+4. **Real-stack C++ e2e gate (Q3):** make the C++ examples run against the real
+   e2e stack and add it to `ci-pass`. Prerequisite for the prebuilt-C++ workflow.
+5. **`aviso-ffi` → `cargo-c` migration (Q7):** switch packaging to `cargo
+   cinstall`; keep the `cbindgen` header-drift guard.
+6. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
+   tree before any bump. Includes the clean-env sdist install test and the
+   real-stack packaged C++ artifact run.
+7. `publish-crates.yml` (§6.B) with fail-loud-if-indexed + dry-run path.
+8. `publish-pypi.yml` (§6.C) with TestPyPI path (OIDC); validate via TestPyPI.
+9. `release-cpp-artifacts.yml` (§6.D, cargo-c) **with the GitHub Release creation
+   folded in** (§6.E); restrict `docs-sites.yml` `stable` to semver tags (§6.F).
+10. **RC rehearsal `2.0.0-rc.1`** end-to-end (§13 R1), then the real `2.0.0`.
 
 ---
 
