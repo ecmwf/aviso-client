@@ -1,8 +1,7 @@
 # Release automation for aviso-client.
 #
 # The justfile PREPARES and TAGS a release locally; CI does every actual publish
-# on the pushed tag. See plans/release-plan.md for the full process, decisions,
-# and safety model.
+# on the pushed tag.
 #
 # Requires `just` and `cargo-release`:  cargo install just cargo-release
 # The Python preflight steps additionally require `uv` (https://docs.astral.sh/uv/).
@@ -61,7 +60,6 @@ release-preflight version:
         echo "WARNING: cargo publish --dry-run failed for: ${dry_failures[*]}"
         echo "  Expected on a FIRST publish for crates whose upstreams are not yet on"
         echo "  crates.io; investigate any UNEXPECTED failure (real metadata error)."
-        echo "  See plans/release-plan.md section 13 (B2) and the 2.0.0-rc.1 rehearsal."
     fi
 
     if command -v uv >/dev/null 2>&1; then
@@ -109,7 +107,7 @@ publish-dry:
     for wf in publish-crates.yml publish-pypi.yml; do
         if [ ! -f ".github/workflows/$wf" ]; then
             echo "ERROR: .github/workflows/$wf does not exist yet." >&2
-            echo "The publish workflows land in a follow-up PR (plans/release-plan.md section 12)." >&2
+            echo "The publish workflows are added in a follow-up PR." >&2
             exit 1
         fi
     done
