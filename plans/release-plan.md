@@ -401,11 +401,11 @@ and the aviso-client release is unblocked.
 
 ---
 
-## 12. Implementation order (once the plan is final — not started yet)
+## 12. Implementation order
 
-Nothing below is implemented yet; recorded so we can resume after a context
-reset. Ordered so workflow-shaping questions and external prereqs are resolved
-*before* the workflows that depend on them, not at the end.
+Recorded so we can resume after a context reset. The foundation (step 2) has
+started; the rest is pending. Ordered so workflow-shaping questions and external
+prereqs are resolved *before* the workflows that depend on them, not at the end.
 
 All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) is
 still open.

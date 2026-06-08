@@ -11,7 +11,7 @@ belongs in the linked PRs, in the code, and in the ADRs.
   bound every decision.
 - [`release-plan.md`](./release-plan.md): working plan for the unified 2.0.0
   release (versioning, justfile, dry-run preflight, publish workflows). Living;
-  not yet implemented.
+  implementation in progress.
 
 ## Conventions
 
