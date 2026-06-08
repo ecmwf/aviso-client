@@ -102,6 +102,10 @@ release-tag version:
 publish-dry:
     #!/usr/bin/env bash
     set -euo pipefail
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "ERROR: the GitHub CLI 'gh' is required (https://cli.github.com) and must be authenticated." >&2
+        exit 1
+    fi
     for wf in publish-crates.yml publish-pypi.yml; do
         if [ ! -f ".github/workflows/$wf" ]; then
             echo "ERROR: .github/workflows/$wf does not exist yet." >&2
