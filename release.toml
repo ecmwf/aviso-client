@@ -1,5 +1,4 @@
 # cargo-release configuration (https://github.com/crate-ci/cargo-release).
-# Driven by the justfile; see plans/release-plan.md for the full release process.
 #
 # Division of labour: this config + the justfile prepare and tag a release
 # locally; CI does every actual publish on the pushed tag. So cargo-release must
