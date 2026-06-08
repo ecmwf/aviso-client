@@ -212,7 +212,7 @@ Mechanism (tensogram's helper, preferred over aviso-server's grep-on-error):
 ### 6.C `publish-pypi.yml` — wheels + sdist with a TestPyPI lever
 
 Triggers: tag push **and** `workflow_dispatch(use_test_pypi: bool)`.
-`environment: ${{ use_test_pypi && 'test-pypi' || 'pypi' }}`.
+`environment: ${{ inputs.use_test_pypi && 'test-pypi' || 'pypi' }}`.
 
 - **Build matrix** (per roadmap): manylinux **x86_64** + **aarch64** (maturin in
   `quay.io/pypa/manylinux_2_28_*` containers), **macOS universal2**, **abi3**
