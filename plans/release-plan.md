@@ -380,13 +380,23 @@ These block a real publish and must be done in the respective accounts:
 
 ---
 
-## 11. Additional steps to be filled in
+## 11. Cross-repo prerequisite: legacy `pyaviso` deprecation (DONE)
 
-> The maintainer has further steps not yet captured here. Add them in this
-> section (or inline above) before implementation begins. Known TBD seams:
->
-> - (placeholder) …
-> - (placeholder) …
+The "additional steps" tracked here were the legacy `ecmwf/aviso` deprecation —
+a prerequisite for this release because the new client reclaims the `pyaviso`
+PyPI name at 2.0.0 and continues that version line. Completed:
+
+- Deprecation notice in the legacy README + docs, pointing to `aviso-client` /
+  `aviso-server` and their docs sites (ecmwf/aviso#31, merged).
+- Read the Docs build repaired (added `.readthedocs.yaml`; version read without
+  importing the package).
+- `pyaviso 1.0.2` published to PyPI so the deprecation notice is the live PyPI
+  project description **before** the 2.0.0 client takes the name.
+- **Pending (admin-side, non-blocking):** Read the Docs `latest` repointed from
+  the retired `develop` branch to `main`; then delete the stopgap `develop`
+  branch. No code dependency on this for the aviso-client release.
+
+No further unknown steps remain; the plan is clear to implement.
 
 ---
 
