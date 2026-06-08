@@ -5,6 +5,10 @@ update it as decisions land; move shipped items into
 [`progress.md`](./progress.md) and the forward-looking summary in
 [`roadmap.md`](./roadmap.md) once a release goes out.
 
+**Resuming on a fresh machine?** Jump to
+[§12 (Implementation order)](#12-implementation-order): it carries the current
+status, the one-time tool setup, and the exact next task.
+
 Cross-references: the release intent is sketched in
 [`roadmap.md`](./roadmap.md) ("What's next → Release", "Prebuilt C++ artifacts").
 Reference implementations studied while drafting this plan:
@@ -403,24 +407,32 @@ and the aviso-client release is unblocked.
 
 ## 12. Implementation order
 
-Recorded so we can resume after a context reset. The foundation (step 2) has
-started; the rest is pending. Ordered so workflow-shaping questions and external
-prereqs are resolved *before* the workflows that depend on them, not at the end.
+Recorded so we can resume after a context reset. Ordered so workflow-shaping
+questions and external prereqs are resolved *before* the workflows that depend
+on them, not at the end.
 
 All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) is
 still open.
+
+**Where we are:** the foundation (step 2) is merged to `main` (#48) and this plan
+is on `main` (#49). **The next task is step 3** (the release-invariant reusable
+check). Step 1 (external prereqs) is console work that can start in parallel;
+steps 4-10 are not started.
+
+**One-time tool setup (per machine):** `cargo install just cargo-release`, and
+install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
+(`cargo-c` is only needed from step 5). Then `just --list` and continue below.
 
 1. **External prereqs in flight early (§10):** crates.io name ownership +
    `CARGO_REGISTRY_TOKEN`; PyPI owner rights + OIDC trusted-publishing config +
    `pypi`/`test-pypi` environments; branch protection. First-publish names are
    irreversible — start these before writing publishers.
-2. **Foundation PR (§4):** `publish = false` on `aviso-py`; `cargo-release`
-   config (`shared-version`, bare `tag-name`, `dependent-version = upgrade`,
-   ordered members); `justfile`; fix crate README links; audit the
-   `tests/e2e/rust` pin. Changes no versions, publishes nothing.
-3. **Release-invariant composite action / reusable check** (§13 B3): tag ==
-   workspace version, tag reachable from `origin/main`, `ci-pass` green for the
-   SHA. Every publisher calls it first.
+2. **Foundation (§4) — DONE (#48).** `publish = false` on `aviso-py`;
+   `cargo-release` config (`release.toml`); `justfile`; crate README links fixed;
+   `tests/e2e/rust` pin audited. No version change, no publish.
+3. **NEXT — release-invariant composite action / reusable check** (§13 B3): tag
+   == workspace version, tag reachable from `origin/main`, `ci-pass` green for
+   the SHA. Every publisher calls it first.
 4. **Real-stack C++ e2e gate (Q3):** make the C++ examples run against the real
    e2e stack and add it to `ci-pass`. Prerequisite for the prebuilt-C++ workflow.
 5. **`aviso-ffi` → `cargo-c` migration (Q7):** switch packaging to `cargo

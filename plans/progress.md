@@ -13,6 +13,12 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#49](https://github.com/ecmwf/aviso-client/pull/49) docs(plans): add the
+  unified 2.0.0 release plan in `plans/release-plan.md`.
+- [#48](https://github.com/ecmwf/aviso-client/pull/48) chore: release foundation.
+  The `justfile` and `cargo-release` config (`release.toml`), `publish = false`
+  on the `aviso-py` crate, and crate README link fixes. No version change, no
+  publish.
 - [#43](https://github.com/ecmwf/aviso-client/pull/43) ci: pin the self-hosted
   jobs back to the Ubuntu 22.04 runners, restoring the
   `platform-builder-Ubuntu-22.04` label dropped in #42 (and its actionlint
