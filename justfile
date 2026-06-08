@@ -86,6 +86,12 @@ release-version version:
 release-tag version:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "ERROR: the working tree has uncommitted changes." >&2
+        echo "The version lives in the working tree, so tagging now could point the tag" >&2
+        echo "at a commit without the bump. Commit and merge the bump first, then tag." >&2
+        exit 1
+    fi
     actual=$(just _ws-version)
     if [ "$actual" != "{{version}}" ]; then
         echo "ERROR: workspace version is '$actual', not '{{version}}'." >&2
