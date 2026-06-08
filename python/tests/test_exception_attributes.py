@@ -1,3 +1,11 @@
+# (C) Copyright 2024- ECMWF and individual contributors.
+#
+# This software is licensed under the terms of the Apache Licence Version 2.0
+# which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
+# In applying this licence, ECMWF does not waive the privileges and immunities
+# granted to it by virtue of its status as an intergovernmental organisation nor
+# does it submit to any jurisdiction.
+
 """Round-trip tests for every ClientError variant the binding maps.
 
 For each documented variant the binding's ``_provoke_error`` test helper
