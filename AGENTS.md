@@ -49,15 +49,13 @@
 - The same rule applies to TODO-style status banners such as `> Status: Phase 0 placeholder.` and to scaffold/preview markers in module docs and config comments.
 
 ## Process-meta references
-- Internal tool names, review-cycle counters, and PR-internal identifiers MUST NOT appear in shipped code, docstrings, configuration files, commit messages, PR descriptions, PR review replies, or user-facing docs. They belong only in the project's own process-description files: `plans/`, this `AGENTS.md`, `CONTRIBUTING.md`, and dotfile tooling configs like `.prompts/`. They are also fine in ephemeral conversation transcripts.
-- Specifically banned tokens (case-insensitive) outside `plans/`:
-  - Agent / reviewer names: `oracle`, `librarian`, `explore`, `metis`, `momus`, `copilot`, `sisyphus`, `artistry`, `ultrabrain`.
-  - Review counters: `round N`, `pass N`, `round-N`, `pass-N`, `further pass`, `nth round`, `Nth pass`. Same for spelled-out forms (`first round`, `second pass`, etc.) when used as process-meta.
-  - PR-internal ids: `PR-A1`, `PR-G2`, `PR-E2b`, and similar. Reference real PRs by `#NUMBER` (`#21`) or by user-meaningful description, not by internal plan id.
-- **ADR ids are NOT process-meta.** Stable architectural-decision references defined in `plans/decisions.md` (currently `D1` through `D20`) are part of the project's vocabulary and may appear anywhere they help. They are stable cross-references, not review-cycle counters. The rule above is specifically about TOOL names, ROUND/PASS counters, and PR-internal series ids.
-- Why: the public record (commits, code, docs, PR descriptions) should describe **what changed and why**, not **which internal tools or rounds produced the change**. A reader six months later cares about the design and behaviour, not how many review cycles preceded the merge.
-- When you would naturally write "the oracle flagged X" or "after round 4 we settled Y": rewrite as the substance ("the cancel-safety contract requires X", "the auth flow uses Y because Z"). Drop the meta. If the meta is the story, write it in `plans/`.
-- Same correctness-fixing actions as Time-bound references: describe the current state, or move the meta into `plans/`.
+- The public record MUST describe **what changed and why**, never the machinery that produced it. This covers shipped code, docstrings, configuration files, commit messages, PR titles and descriptions, PR review replies, and user-facing docs. Keep it to the work.
+- In plain terms, do not name the development process in any of those places: the assistant tools or AI agents used while building; automated, AI, or external code reviewers; review cycles, rounds, or passes; or development phases and "lands later" staging. A reader months from now cares about the design and the behaviour, not which tool touched a file or how many review cycles preceded the merge.
+- Such references are only acceptable in the project's own process-description files (`plans/`, this `AGENTS.md`, `CONTRIBUTING.md`, and dotfile tooling configs) and in ephemeral conversation transcripts. `plans/` is where the process story is told.
+- When you would naturally write something like "the reviewer flagged X" or "after the second pass we settled Y", rewrite it as the substance instead: "X is required because <reason>", or "the auth flow uses Y because Z". Drop the meta.
+- Reference real pull requests by `#NUMBER` or a user-meaningful description, never by an internal plan id.
+- **ADR ids are not process-meta.** Stable architectural-decision references defined in `plans/decisions.md` (the `D1`..`Dn` series) are part of the project's vocabulary and may appear anywhere they help. They are stable cross-references, not review-cycle counters.
+- The fix when you find a violation: describe the current state in terms of what exists today, or move the meta into `plans/`.
 
 ## Writing style
 - **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
