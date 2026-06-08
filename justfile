@@ -14,13 +14,18 @@ crates := "finesse aviso aviso-cli aviso-ffi"
 default:
     @just --list
 
+# Print the version from the [workspace.package] section (section-scoped so it
+# does not match a `version` key in another table or depend on file ordering).
+_ws-version:
+    @awk '/^\[/{s=$0} s=="[workspace.package]" && /^version[[:space:]]*=/{if(match($0,/"[^"]+"/)){print substr($0,RSTART+1,RLENGTH-2);exit}}' Cargo.toml
+
 # Dry-run gate before a release (publishes nothing); pass the target version.
 release-preflight version:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "==> release-preflight {{version}}"
 
-    actual=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+    actual=$(just _ws-version)
     if [ "$actual" != "{{version}}" ]; then
         echo "ERROR: workspace version is '$actual', expected '{{version}}'." >&2
         echo "Run 'just release-version {{version}}' first (or fix the target)." >&2
@@ -66,7 +71,7 @@ release-version version:
 release-tag version:
     #!/usr/bin/env bash
     set -euo pipefail
-    actual=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+    actual=$(just _ws-version)
     if [ "$actual" != "{{version}}" ]; then
         echo "ERROR: workspace version is '$actual', not '{{version}}'." >&2
         echo "Run 'just release-version {{version}}' and merge it first." >&2
