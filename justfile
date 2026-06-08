@@ -100,5 +100,14 @@ release-tag version:
 
 # Launch the CI dry-run paths (crates.io --dry-run, TestPyPI) via gh.
 publish-dry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for wf in publish-crates.yml publish-pypi.yml; do
+        if [ ! -f ".github/workflows/$wf" ]; then
+            echo "ERROR: .github/workflows/$wf does not exist yet." >&2
+            echo "The publish workflows land in a follow-up PR (plans/release-plan.md section 12)." >&2
+            exit 1
+        fi
+    done
     gh workflow run publish-crates.yml -f dry_run=true
     gh workflow run publish-pypi.yml -f use_test_pypi=true
