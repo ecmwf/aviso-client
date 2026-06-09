@@ -61,6 +61,11 @@ ws_version="$("$here/ws-version.sh" "$MANIFEST")"
 [ "$version" = "$ws_version" ] ||
   die "version '$version' does not match the workspace version '$ws_version'"
 
+# Anchor every cargo invocation (and the target/package/ paths they produce)
+# to the workspace that was just version-checked, wherever the script was
+# invoked from.
+cd "$(dirname "$MANIFEST")"
+
 # Sparse-index path for a crate name, per the registry layout:
 # 1-3 character names live under length buckets, longer names under the
 # first-two/next-two character prefix. e.g. aviso -> av/is/aviso.
