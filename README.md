@@ -88,6 +88,7 @@ shellcheck scripts/*.sh scripts/tests/*.test.sh
 bash scripts/tests/release-invariant.test.sh
 bash scripts/tests/version-consistency.test.sh
 bash scripts/tests/publish-dry-run.test.sh
+bash scripts/tests/publish-crates.test.sh
 ```
 
 ## Documentation

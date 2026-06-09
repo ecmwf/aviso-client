@@ -1,0 +1,92 @@
+name: Publish Crates
+
+# Publishes the four crates to crates.io in dependency order on a release
+# tag, gated by the release invariant (tag == workspace version, commit
+# reachable from main, ci-pass green for that exact commit), with a
+# fail-loud release-start guard and per-crate sparse-index polling.
+#
+# Two manual paths via workflow_dispatch:
+#   - dry_run (the default): ordered `cargo publish --dry-run`, no token,
+#     publishes nothing; exercisable from any ref.
+#   - retry (dispatch ON THE TAG with dry_run unchecked and retry checked):
+#     resumes a partial publish; crates already indexed at the version are
+#     skipped only after their checksum matches what this checkout packages.
+#     This is the recovery path; GitHub's re-run button hits the
+#     release-start guard by design.
+#
+# Hosted runner on purpose: it has gh, jq, and curl for the invariant and
+# the index probes, runs no fork code (tag pushes and dispatches only), and
+# `rustup show` materializes the repo-pinned toolchain.
+
+on:
+  push:
+    # Bare semver release tags. Tag filters are globs, so this over-matches;
+    # the release invariant is the strict validator.
+    tags: ["[0-9]*.[0-9]*.[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Ordered cargo publish --dry-run only; publishes nothing"
+        type: boolean
+        default: true
+      retry:
+        description: "Resume a partial publish: skip crates already indexed with a matching checksum"
+        type: boolean
+        default: false
+
+# Never run two publishes at once, and never cancel one mid-flight.
+concurrency:
+  group: publish-crates
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dry-run:
+    name: publish dry-run
+    if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use the repo-pinned Rust toolchain
+        run: rustup show
+
+      - name: Ordered publish dry-run
+        run: scripts/publish-dry-run.sh
+
+  publish:
+    name: publish to crates.io
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The invariant peels the release tag locally, so the tag refs must
+          # be present even on a manual dispatch.
+          fetch-depth: 0
+
+      - name: Assert the release invariant
+        uses: ./.github/actions/release-invariant
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Check version consistency across every manifest
+        run: scripts/version-consistency.sh "$GITHUB_REF_NAME"
+
+      - name: Use the repo-pinned Rust toolchain
+        run: rustup show
+
+      - name: Publish in dependency order with index polling
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          RETRY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.retry }}
+        run: scripts/publish-crates.sh "$GITHUB_REF_NAME"
