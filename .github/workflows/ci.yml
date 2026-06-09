@@ -205,25 +205,38 @@ jobs:
       - name: Release-invariant unit tests
         run: bash scripts/tests/release-invariant.test.sh
 
-  # ── FFI cargo-c install contract (GitHub-hosted bootstrap) ──────
+  # ── FFI cargo-c install contract ────────────────────────────────
   # Proves the standard `.a/.so/.pc/.h` drop installs and that a clean consumer
-  # compiles, links, and runs against it through pkg-config alone. Runs on the
-  # hosted runner (which has pkg-config + cmake + g++) with cargo-c installed
-  # here; it moves onto the pinned CI image once that image carries cargo-c.
+  # compiles, links, and runs against it through pkg-config alone. Runs in the
+  # pinned CI image, which bakes cargo-cinstall and pkg-config alongside the
+  # toolchain, with sccache shared with the other compiling jobs.
   ffi-cargo-c:
     name: ffi cargo-c install
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
     steps:
       - uses: actions/checkout@v5
-      - name: Use the repo-pinned Rust toolchain
-        # `rustup show` resolves the rust-toolchain.toml override, installing the
-        # pinned toolchain if the runner does not already have it, so the build
-        # does not silently use whatever Rust the runner ships by default.
-        run: rustup show
-      - name: Install cargo-c
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-c
+      - run: mkdir -p "$TMPDIR"
+
       - name: Install the C library to a staging prefix
         run: cargo cinstall --locked -p aviso-ffi --release --prefix="$PWD/build/ffi-prefix" --libdir="$PWD/build/ffi-prefix/lib"
       - name: Check the installed layout and pkg-config metadata
@@ -245,11 +258,21 @@ jobs:
           PKG_CONFIG_PATH: ${{ github.workspace }}/build/ffi-prefix/lib/pkgconfig
         run: |
           set -euo pipefail
-          cmake -S tests/ffi-install -B build/ffi-consumer
+          cmake -S tests/ffi-install -B build/ffi-consumer \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build build/ffi-consumer
           # The shared lib lives in the staging prefix, not a default search
           # path, so point the runtime linker at it for the smoke run.
           LD_LIBRARY_PATH="$PWD/build/ffi-prefix/lib" ./build/ffi-consumer/smoke
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target build
 
   # ── e2e suite: real aviso-server + auth-o-tron + NATS stack ─────
   # The host only orchestrates Docker; the suites build and run inside
