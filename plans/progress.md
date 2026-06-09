@@ -13,6 +13,13 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#56](https://github.com/ecmwf/aviso-client/pull/56) ci: the tag-triggered
+  crates.io publisher. A unit-tested script publishes the four crates in
+  dependency order with sparse-index polling, a fail-loud guard against
+  pre-existing versions, and a checksum-verified retry that vets every
+  indexed crate before publishing anything; the workflow gates it behind the
+  release invariant and full version consistency, with dry-run and retry
+  dispatch paths (release-plan step 7).
 - [#55](https://github.com/ecmwf/aviso-client/pull/55) ci: the
   release-preflight dry-run gate. Unit-tested version-consistency and
   ordered publish-dry-run scripts shared by the justfile and a new manual
