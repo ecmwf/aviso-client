@@ -182,6 +182,11 @@ seed_server_error() { # fixture: the finesse probe answers HTTP 500
   printf 500 >"$1/fi/ne/finesse.code"
 }
 
+seed_garbage_body() { # fixture: 200 with a non-JSON body (a proxy error page)
+  mkdir -p "$1/fi/ne"
+  printf '<html>bad gateway</html>\n' >"$1/fi/ne/finesse"
+}
+
 seed_old_version() { # fixture: finesse indexed at a DIFFERENT version only
   mkdir -p "$1/fi/ne"
   printf '{"name":"finesse","vers":"1.0.0","cksum":"%s","yanked":false}\n' \
@@ -222,6 +227,7 @@ run_case "retry fails on a yanked target version" 1 true false seed_finesse_yank
 # Failure modes.
 run_case "fails when the index never shows the publish" 1 false true no_setup
 run_case "fails closed on a non-404 index error" 1 false false seed_server_error
+run_case "fails closed on a 200 with a non-JSON body" 1 false false seed_garbage_body
 
 # Version cross-check: the argument must match the workspace version.
 rc=0

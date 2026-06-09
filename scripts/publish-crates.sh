@@ -89,7 +89,8 @@ probe_entry() {
     # One line per version is the index contract (yanks rewrite the line in
     # place), but read the LAST match defensively so a hypothetical update
     # appended later can never be shadowed by a stale entry.
-    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$body" | tail -n 1)"
+    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$body" 2>/dev/null | tail -n 1)" ||
+      die "the index answered 200 for '$crate' with a body that is not the JSON-lines format; failing closed"
     if [ -n "$entry" ]; then
       probe_state=indexed
       probe_cksum="$(jq -r '.cksum' <<<"$entry")"
