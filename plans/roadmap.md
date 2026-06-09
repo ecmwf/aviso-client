@@ -27,9 +27,6 @@ yet.
   and an sdist on every release. No Windows wheels, no musllinux for now (see
   follow-ups). The sdist is the source-build fallback for any platform without
   a matching wheel. macOS regressions surface here rather than in everyday CI.
-- **Promote e2e to a merge gate.** The real-stack `e2e` job runs today but stays
-  informational. After a flake-free soak, add it to `ci-pass` and require
-  `ci-pass` in branch protection.
 - **Docs polish.** Realistic end-to-end examples (a MARS consumer, a polygon
   spatial consumer, a multi-listener daemon, a respawn-survival demo), a wider
   troubleshooting section, and CI gates for `clap`-derived reference freshness
@@ -47,9 +44,10 @@ yet.
   Release assets (the drop a CMake consumer points `AVISO_FFI_INCLUDE_DIR` and
   `AVISO_FFI_LIB_DIR` at). The same artifacts are packageable for spack-stack
   and conda-forge with `rust` as a build-only dependency of that recipe.
-  Followed by `docs/src/cpp` install/packaging pages. A real-stack C++ e2e CI
-  job (the examples run against the e2e stack) lands first, ahead of the release
-  matrix. Future work; design context in D21. No Windows.
+  Followed by `docs/src/cpp` install/packaging pages. The two prerequisites are
+  already in `main`: the real-stack C++ e2e job is now a required gate (#51), and
+  `cargo cinstall` produces the standard `.a/.so/.pc/.h` layout the release
+  workflow will package (#52). Design context in D21. No Windows.
 
 ## Follow-ups
 

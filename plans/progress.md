@@ -13,6 +13,24 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#52](https://github.com/ecmwf/aviso-client/pull/52) ffi: cargo-c packaging
+  foundation. Adds the `capi` feature + `[package.metadata.capi]` so `cargo
+  cinstall -p aviso-ffi` produces the standard `.a/.so/.dylib` + `.pc` + headers
+  layout (header generation off, so the committed drift-guarded `aviso.h` stays
+  the source of truth), a `just ffi-cinstall` recipe, and a GitHub-hosted
+  `ffi-cargo-c` ci-pass job that proves a pkg-config consumer compiles, links,
+  and runs against the install. `crate-type` is kept, so the existing build path
+  is unchanged: additive, not a replacement (release-plan step 5, PR-B0).
+- [#51](https://github.com/ecmwf/aviso-client/pull/51) ci: promote the
+  real-stack `e2e` suite to a required `ci-pass` gate, and harden the bring-up
+  (dependency-order polling, fail-fast on an exited container, `timeout-minutes`
+  to free the single-flight lock, 120s CI readiness deadline) with offline unit
+  tests for the readiness logic (release-plan step 4).
+- [#50](https://github.com/ecmwf/aviso-client/pull/50) ci: release-invariant
+  guard for tag-triggered publishers. A composite action + shell check (with
+  offline tests) asserting tag == workspace version, commit reachable from main,
+  and `ci-pass` green for that commit, so a tag pushed at an unreviewed commit
+  cannot publish (release-plan step 3).
 - [#49](https://github.com/ecmwf/aviso-client/pull/49) docs(plans): add the
   unified 2.0.0 release plan in `plans/release-plan.md`.
 - [#48](https://github.com/ecmwf/aviso-client/pull/48) chore: release foundation.
