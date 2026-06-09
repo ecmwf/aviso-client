@@ -208,6 +208,8 @@ jobs:
         run: bash scripts/tests/version-consistency.test.sh
       - name: Publish-dry-run unit tests
         run: bash scripts/tests/publish-dry-run.test.sh
+      - name: Publish-crates unit tests
+        run: bash scripts/tests/publish-crates.test.sh
 
   # ── FFI cargo-c install contract ────────────────────────────────
   # Proves the standard `.a/.so/.pc/.h` drop installs and that a clean consumer

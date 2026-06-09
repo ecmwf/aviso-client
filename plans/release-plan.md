@@ -422,11 +422,12 @@ foundation (#52, "PR-B0" below), and the pinned CI image now carrying
 running in that image (#54, "PR-B1" below), and the release-preflight dry-run
 gate (#55, step 6: the version-consistency and ordered-dry-run scripts, the
 justfile wiring, and the manual workflow with its real-stack packaged C++
-job). **The next task is step 7** (`publish-crates.yml`); step 5 PR-C lands
-with step 9. Step 1 (external prereqs) is console work that can run in
-parallel; steps 7-10 are not started. After #55 merges, dispatch
-`release-preflight.yml` with `version=0.1.0` once to prove the gate green on
-the current tree.
+job; the `version=0.1.0` dispatch on `main` ran green end to end), and the
+crates.io publisher (#56, step 7). **The next task is step 8**
+(`publish-pypi.yml`); step 5 PR-C lands with step 9. Step 1 (external
+prereqs) is console work that can run in parallel and now gates real use of
+the publisher: the `crates-io` environment + `CARGO_REGISTRY_TOKEN` secret
+and crates.io ownership of the four names must exist before the first tag.
 
 **Step 5 is staged across several PRs** (an Oracle-reviewed sequence, to keep
 every existing consumer green while cargo-c becomes an additional packaging
@@ -479,7 +480,9 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
    clean-env sdist install test and the real-stack packaged C++ artifact run;
    validate on the current 0.1.0 tree (one dispatch with `version=0.1.0`)
    before any bump.
-7. `publish-crates.yml` (§6.B) with fail-loud-if-indexed + dry-run path.
+7. `publish-crates.yml` (§6.B) — DONE (#56). Fail-loud-if-indexed guard,
+   sparse-index polling, checksum-verified retry dispatch, and the dry-run
+   dispatch path; gated by the release invariant + version consistency.
 8. `publish-pypi.yml` (§6.C) with TestPyPI path (OIDC); validate via TestPyPI.
 9. `release-cpp-artifacts.yml` (§6.D, cargo-c) **with the GitHub Release creation
    folded in** (§6.E); restrict `docs-sites.yml` `stable` to semver tags (§6.F).
