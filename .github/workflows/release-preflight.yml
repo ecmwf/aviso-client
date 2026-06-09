@@ -1,0 +1,328 @@
+name: Release Preflight
+
+# The dry-run gate before a release: proves every publishable artifact builds,
+# packages, and runs for the target version WITHOUT creating anything
+# immutable. Publishes nothing, tags nothing. Manual-only: the operator
+# dispatches it (usually on main) with the version a release is about to use,
+# and a green run means it is safe to cut the tag.
+#
+# One honest limitation: before the FIRST publish, the dependent crates'
+# `cargo publish --dry-run` cannot fully succeed (their upstreams are not on
+# crates.io yet), so that step downgrades exactly that failure signature to a
+# warning and fails on anything else.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Target release version (bare semver, e.g. 2.0.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # workflow_dispatch only runs from a ref of this repository, started by a
+  # collaborator, so the self-hosted jobs below need no fork guard.
+  PREFLIGHT_VERSION: ${{ inputs.version }}
+
+jobs:
+  # ── every manifest agrees on the target version ─────────────────
+  # Cheap and hosted; the expensive jobs below gate on it so a bad input or a
+  # stale pin fails in seconds, not after a full build matrix.
+  version-consistency:
+    name: version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the target version across every manifest
+        run: scripts/version-consistency.sh "$PREFLIGHT_VERSION"
+
+  # ── Rust: quality gate + packaging + ordered publish dry-run ────
+  rust-gate:
+    name: rust packaging gate
+    needs: version-consistency
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    defaults:
+      run:
+        # In a container job the runner's fallback shell is sh, which rejects
+        # the `set -o pipefail` the scripts rely on.
+        shell: bash
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
+    steps:
+      - uses: actions/checkout@v5
+      - run: mkdir -p "$TMPDIR"
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --workspace --all-targets
+
+      - name: Doctests
+        run: cargo test --locked --workspace --doc
+
+      - name: Docs build warning-clean (what docs.rs will render)
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
+
+      - name: Crate tarballs assemble
+        run: |
+          # `cargo package` inspects the VCS state, and the runner user does
+          # not own the container checkout.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          for c in finesse aviso aviso-cli aviso-ffi; do
+            echo "--- cargo package --list -p $c"
+            cargo package --locked -p "$c" --list >/dev/null
+          done
+
+      - name: Ordered publish dry-run
+        run: scripts/publish-dry-run.sh
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target
+
+  # ── Python: wheel + sdist, metadata, and a clean-env install ────
+  python:
+    name: python packaging gate
+    needs: version-consistency
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    container:
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
+      credentials:
+        username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+        password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: "-D warnings"
+      SCCACHE_BUCKET: aviso-client-ci-cache
+      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_REGION: us-east-1
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: aviso-client/
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      TMPDIR: ${{ github.workspace }}/.tmp
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+    steps:
+      - uses: actions/checkout@v5
+      - run: mkdir -p "$TMPDIR"
+
+      - name: Build the wheel and sdist
+        run: |
+          rm -rf dist && mkdir -p dist
+          uv run --with maturin maturin build --release --locked --out dist
+          uv run --with maturin maturin sdist --out dist
+
+      - name: Built artifacts carry the target version
+        # pyproject.toml declares `dynamic = ["version"]`, so there is no
+        # static field to compare; the proof that maturin resolved the
+        # workspace version is the built filenames. PEP 440 normalizes
+        # pre-releases (2.0.0-rc.1 -> 2.0.0rc1), hence the normalization here.
+        run: |
+          set -euo pipefail
+          norm="$(uv run --no-project --with packaging python -c \
+            "import os; from packaging.version import Version; print(Version(os.environ['PREFLIGHT_VERSION']))")"
+          echo "normalized version: $norm"
+          ls -l dist/
+          ls dist/pyaviso-"$norm"-*.whl >/dev/null
+          ls dist/pyaviso-"$norm".tar.gz >/dev/null
+
+      - name: twine check
+        run: uv run --with twine twine check dist/*
+
+      - name: Clean-environment sdist install test
+        # The sdist is the fallback for platforms without a matching wheel, so
+        # prove it builds and runs from scratch: a fresh venv, a real pip
+        # install of the tarball (compiling the extension with the image's
+        # Rust toolchain), then the import and the bundled CLI.
+        run: |
+          set -euo pipefail
+          uv venv --seed "$TMPDIR/sdist-venv"
+          "$TMPDIR/sdist-venv/bin/pip" install dist/pyaviso-*.tar.gz
+          "$TMPDIR/sdist-venv/bin/python" -c "import pyaviso"
+          out="$("$TMPDIR/sdist-venv/bin/aviso" --version)"
+          echo "$out"
+          case "$out" in
+          *"$PREFLIGHT_VERSION"*) ;;
+          *)
+            echo "::error::aviso --version printed '$out', expected it to contain '$PREFLIGHT_VERSION'"
+            exit 1
+            ;;
+          esac
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-adv-stats
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$TMPDIR" target dist .venv
+
+  # ── C++: the PACKAGED artifact against the real stack ───────────
+  # Same host-orchestration as ci.yml's e2e job (and the same single-flight
+  # concurrency group: the stack binds fixed 127.0.0.1 ports on the shared
+  # host). The difference from the everyday cpp/e2e jobs is what gets linked:
+  # the examples build against a `cargo cinstall` staging prefix, the exact
+  # layout a release tarball ships, not the cargo target directory.
+  cpp-packaged:
+    name: c++ packaged artifact gate
+    needs: version-consistency
+    runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    timeout-minutes: 30
+    concurrency:
+      group: aviso-client-e2e
+      cancel-in-progress: false
+    env:
+      COMPOSE_PROJECT_NAME: aviso-client-e2e
+      COMPOSE: docker compose -f tests/e2e/docker-compose.yml
+      CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.4.0
+      AVISO_E2E_TIMEOUT_SECS: "120"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Preflight (host must orchestrate Docker)
+        run: |
+          # Keep registry creds in a fresh per-run dir, 0700 so the
+          # config.json token is not world-readable on the shared host.
+          DOCKER_CONFIG="$RUNNER_TEMP/docker-$GITHUB_RUN_ID"
+          rm -rf "$DOCKER_CONFIG"
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          command -v docker >/dev/null || { echo "::error::docker missing on runner host"; exit 1; }
+          docker compose version >/dev/null 2>&1 || { echo "::error::docker compose plugin missing"; exit 1; }
+          command -v curl >/dev/null || { echo "::error::curl missing on runner host"; exit 1; }
+
+      - name: Log in to ECCR
+        # Secrets via env, not inline: a Harbor robot username like
+        # "robot$aviso" would otherwise be shell-expanded ($aviso -> "")
+        # and the login would fail unauthorized.
+        env:
+          ECCR_USER: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
+          ECCR_TOKEN: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+        run: printf '%s' "$ECCR_TOKEN" | docker login eccr.ecmwf.int -u "$ECCR_USER" --password-stdin
+
+      - name: Clear any stale stack or runner from a cancelled run
+        run: |
+          docker ps -aq --filter label=ci.e2e=aviso-client-e2e | xargs -r docker rm -f
+          $COMPOSE down -v --remove-orphans || true
+
+      - name: Bring the stack up (host orchestrates; polls readiness)
+        run: bash tests/e2e/shared/stack.sh up
+
+      - name: Package with cargo cinstall and run the examples against the stack
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          docker run --rm \
+            --label ci.e2e=aviso-client-e2e \
+            --network "${COMPOSE_PROJECT_NAME}_default" \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/workspace -w /workspace \
+            -e HOME=/tmp -e TMPDIR=/tmp -e XDG_CACHE_HOME=/tmp/cache \
+            -e CARGO_HOME=/tmp/cargo -e CARGO_TARGET_DIR=/tmp/target \
+            -e SCCACHE_DIR=/tmp/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e RUSTC_WRAPPER=sccache \
+            -e SCCACHE_BUCKET=aviso-client-ci-cache \
+            -e SCCACHE_ENDPOINT=https://object-store.os-api.cci1.ecmwf.int \
+            -e SCCACHE_REGION=us-east-1 \
+            -e SCCACHE_S3_USE_SSL=true \
+            -e SCCACHE_S3_KEY_PREFIX=aviso-client/ \
+            -e SCCACHE_BASEDIRS=/workspace \
+            -e SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            "$CI_IMAGE" \
+            bash -ceux '
+              cargo cinstall --locked -p aviso-ffi --release \
+                --prefix=/tmp/ffi-prefix --libdir=/tmp/ffi-prefix/lib
+              cmake -S examples/cpp -B /tmp/build/cpp \
+                -DAVISO_FFI_INCLUDE_DIR=/tmp/ffi-prefix/include/aviso_ffi \
+                -DAVISO_FFI_LIB_DIR=/tmp/ffi-prefix/lib
+              cmake --build /tmp/build/cpp
+              BUILD_DIR=/tmp/build/cpp AVISO_BASE_URL=http://aviso-server:8000 \
+                bash tests/e2e/cpp/run_examples.sh
+            '
+
+      - name: Dump stack logs
+        if: always()
+        run: $COMPOSE logs --no-color > preflight-cpp-stack.log 2>&1 || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: preflight-cpp-logs
+          path: |
+            preflight-cpp-stack.log
+            tests/e2e/last-failure.log
+          if-no-files-found: ignore
+
+      - name: Tear down the stack
+        if: always()
+        run: $COMPOSE down -v --remove-orphans || true
+
+      - name: Remove temporary docker credentials
+        if: always()
+        run: if [ -n "${DOCKER_CONFIG:-}" ]; then rm -rf "$DOCKER_CONFIG"; fi
+
+  # ── Aggregate gate: one status to read ──────────────────────────
+  preflight-pass:
+    name: preflight-pass
+    if: always()
+    needs: [version-consistency, rust-gate, python, cpp-packaged]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every preflight job succeeded
+        run: |
+          results='${{ join(needs.*.result, ',') }}'
+          echo "needs results: $results"
+          case ",$results," in
+            *,failure,*|*,cancelled,*|*,skipped,*)
+              echo "::error::a preflight job did not succeed"
+              exit 1
+              ;;
+          esac
+          echo "preflight green for $PREFLIGHT_VERSION"
