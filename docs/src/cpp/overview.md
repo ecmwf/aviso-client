@@ -80,6 +80,29 @@ appear on the command line. The two CMake cache variables
 locations; point them at a prebuilt drop to build against shipped artifacts with
 no Rust toolchain.
 
+## Installing with cargo-c
+
+For a standard system install rather than an in-tree build,
+[cargo-c](https://github.com/lu-zero/cargo-c) drops the library, a pkg-config
+`.pc`, and the headers in the usual layout:
+
+```bash
+cargo install cargo-c   # once
+cargo cinstall -p aviso-ffi --release --prefix=/usr/local --libdir=/usr/local/lib
+```
+
+A consumer then discovers it through pkg-config, with no in-tree paths and no
+Rust toolchain:
+
+```cmake
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(AVISO_FFI REQUIRED IMPORTED_TARGET aviso_ffi)
+target_link_libraries(my_app PRIVATE PkgConfig::AVISO_FFI)
+```
+
+The install places the headers under `include/aviso_ffi/`, and the `.pc` puts
+that directory on the include path, so `#include "aviso.hpp"` works unchanged.
+
 ## The C header and the facade
 
 `aviso.h` is generated from the Rust surface by `cbindgen` and is the source of

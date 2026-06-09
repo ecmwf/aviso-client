@@ -28,6 +28,30 @@ workspace = true
 # `cargo build` of the library never compiles `cbindgen`.
 default = []
 gen-header = ["dep:cbindgen"]
+# Marker feature cargo-c requires to treat this crate as a C-API package. It
+# adds no code; `cargo cbuild`/`cinstall` enable it to package the C ABI.
+capi = []
+
+# cargo-c packaging (https://github.com/lu-zero/cargo-c). Produces the standard
+# `.a/.so/.dylib` + `.pc` + headers install layout via `cargo cinstall`. The
+# committed, drift-guarded `include/aviso.h` stays the header source of truth:
+# generation is off, so cargo-c installs it (and the hand-written `aviso.hpp`)
+# verbatim rather than regenerating.
+[package.metadata.capi.header]
+generation = false
+subdirectory = "aviso_ffi"
+
+[package.metadata.capi.library]
+name = "aviso_ffi"
+
+[package.metadata.capi.pkg_config]
+name = "aviso_ffi"
+
+[package.metadata.capi.install.include]
+asset = [
+    { from = "include/aviso.h" },
+    { from = "include/aviso.hpp" },
+]
 
 [dependencies]
 aviso = { path = "../aviso", version = "=0.1.0" }
