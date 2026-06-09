@@ -49,20 +49,60 @@ Env vars for up/restart/status:
 EOF
 }
 
+dump_diagnostics() {
+  echo "---- docker compose ps ----" >&2
+  docker compose ps -a >&2 || true
+  echo "---- docker compose logs ----" >&2
+  docker compose logs >&2 || true
+}
+
+# Current container status of a compose service (running/exited/...), or
+# "absent" before it has a container. `-a` is required so an exited container
+# is still reported (plain `ps` lists running containers only).
+container_status() {
+  local service="$1" cid
+  cid="$(docker compose ps -a -q "$service" 2>/dev/null || true)"
+  if [ -z "$cid" ]; then
+    echo "absent"
+    return
+  fi
+  docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo "unknown"
+}
+
 poll_endpoint() {
   local name="$1"
   local url="$2"
-  local deadline
-  deadline=$(( $(date +%s) + TIMEOUT ))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
+  local start now deadline next_state next_note status
+  start=$(date +%s)
+  deadline=$(( start + TIMEOUT ))
+  next_state=$start
+  next_note=$(( start + 15 ))
+  while :; do
+    now=$(date +%s)
+    [ "$now" -lt "$deadline" ] || break
     if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
       echo "$name ready at $url"
       return 0
     fi
+    # These services declare no restart policy, so a container that has exited
+    # will never answer; stop waiting instead of burning the whole timeout.
+    if [ "$now" -ge "$next_state" ]; then
+      next_state=$(( now + 2 ))
+      status="$(container_status "$name")"
+      if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+        echo "ERROR: $name container is '$status'; it will not become ready" >&2
+        dump_diagnostics
+        return 1
+      fi
+    fi
+    if [ "$now" -ge "$next_note" ]; then
+      next_note=$(( now + 15 ))
+      echo "  still waiting for $name ($(( now - start ))s/${TIMEOUT}s)..."
+    fi
     sleep 0.25
   done
   echo "ERROR: $name did not become ready at $url within ${TIMEOUT}s" >&2
-  docker compose logs >&2 || true
+  dump_diagnostics
   return 1
 }
 
@@ -79,9 +119,11 @@ probe_endpoint() {
 cmd_up() {
   cd "$E2E_DIR"
   docker compose up -d
-  poll_endpoint "aviso-server" "http://127.0.0.1:${AVISO_PORT}/health"
-  poll_endpoint "auth-o-tron"  "http://127.0.0.1:${AUTH_PORT}/health"
+  # Dependency order (aviso-server depends on nats + auth-o-tron): poll the
+  # upstreams first so a downstream's budget is not spent waiting on them.
   poll_endpoint "nats"         "http://127.0.0.1:${NATS_PORT}/healthz"
+  poll_endpoint "auth-o-tron"  "http://127.0.0.1:${AUTH_PORT}/health"
+  poll_endpoint "aviso-server" "http://127.0.0.1:${AVISO_PORT}/health"
   echo "all services ready"
 }
 
@@ -110,24 +152,32 @@ cmd_status() {
   probe_endpoint "nats"         "http://127.0.0.1:${NATS_PORT}/healthz"
 }
 
-if [ $# -lt 1 ]; then
-  usage
-  exit 2
-fi
-
-cmd="$1"
-shift
-
-case "$cmd" in
-  up)             cmd_up ;;
-  down)           cmd_down ;;
-  restart)        cmd_restart ;;
-  logs)           cmd_logs "$@" ;;
-  status)         cmd_status ;;
-  -h|--help|help) usage; exit 0 ;;
-  *)
-    echo "unknown subcommand: $cmd" >&2
+main() {
+  if [ $# -lt 1 ]; then
     usage
     exit 2
-    ;;
-esac
+  fi
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    up)             cmd_up ;;
+    down)           cmd_down ;;
+    restart)        cmd_restart ;;
+    logs)           cmd_logs "$@" ;;
+    status)         cmd_status ;;
+    -h|--help|help) usage; exit 0 ;;
+    *)
+      echo "unknown subcommand: $cmd" >&2
+      usage
+      exit 2
+      ;;
+  esac
+}
+
+# Run the dispatcher only when executed directly, so tests can source the
+# helpers without triggering it.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi
