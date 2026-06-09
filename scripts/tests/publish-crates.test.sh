@@ -111,14 +111,13 @@ failed=0
 run_case() { # name expected_rc retry_mode silent fixture_setup_fn [crates...]
   local name="$1" expected="$2" retry="$3" silent="$4" setup="$5"
   shift 5
-  local fixture="$tmp/fix-$RANDOM" rc=0
-  mkdir -p "$fixture"
+  local fixture rc=0
+  fixture="$(mktemp -d "$tmp/fix-XXXXXX")"
   INDEX_FIXTURE="$fixture" "$setup" "$fixture"
-  local workdir="$tmp/work-$RANDOM"
-  mkdir -p "$workdir"
-  CURL_LOG="$tmp/curl-$RANDOM.log" CALL_LOG="$tmp/call-$RANDOM.log"
-  : >"$CURL_LOG"
-  : >"$CALL_LOG"
+  local workdir
+  workdir="$(mktemp -d "$tmp/work-XXXXXX")"
+  CURL_LOG="$(mktemp "$tmp/curl-XXXXXX.log")"
+  CALL_LOG="$(mktemp "$tmp/call-XXXXXX.log")"
   (
     cd "$workdir"
     PATH="$tmp/bin:$PATH" INDEX_FIXTURE="$fixture" \
@@ -194,6 +193,11 @@ seed_garbage_body() { # fixture: 200 with a non-JSON body (a proxy error page)
   printf '<html>bad gateway</html>\n' >"$1/fi/ne/finesse"
 }
 
+seed_empty_body() { # fixture: 200 with an empty body
+  mkdir -p "$1/fi/ne"
+  : >"$1/fi/ne/finesse"
+}
+
 seed_old_version() { # fixture: finesse indexed at a DIFFERENT version only
   mkdir -p "$1/fi/ne"
   printf '{"name":"finesse","vers":"1.0.0","cksum":"%s","yanked":false}\n' \
@@ -247,6 +251,7 @@ fi
 run_case "fails when the index never shows the publish" 1 false true no_setup
 run_case "fails closed on a non-404 index error" 1 false false seed_server_error
 run_case "fails closed on a 200 with a non-JSON body" 1 false false seed_garbage_body
+run_case "fails closed on a 200 with an empty body" 1 false false seed_empty_body
 
 # Version cross-check: the argument must match the workspace version.
 rc=0
