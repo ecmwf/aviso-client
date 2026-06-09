@@ -418,8 +418,9 @@ still open.
 staged migration. Done: foundation (#48), release-invariant check (#50), the
 real-stack C++ e2e gate now in `ci-pass` (#51), the cargo-c packaging
 foundation (#52, "PR-B0" below), and the pinned CI image now carrying
-`pkg-config` + `cargo-c` (#53, "PR-A" below). **The next task is step 5 PR-B1**
-(move the `ffi-cargo-c` smoke onto the pinned image). Step 1 (external
+`pkg-config` + `cargo-c` (#53, "PR-A" below), and the `ffi-cargo-c` smoke now
+running in that image (#54, "PR-B1" below). **The next task is step 6**
+(`release-preflight.yml`); step 5 PR-C lands with step 9. Step 1 (external
 prereqs) is console work that can run in parallel; steps 6-10 are not started.
 
 **Step 5 is staged across several PRs** (an Oracle-reviewed sequence, to keep
@@ -440,8 +441,9 @@ path, not yet a replacement):
   validated with a full `cargo cinstall` + pkg-config consumer smoke, and
   pushed tag-only by a maintainer; the post-merge `ci-image.yml` run on `main`
   republishes the full tag set.
-- **PR-B1 — NEXT.** Move the `ffi-cargo-c` smoke onto the pinned image; drop
-  the GitHub-hosted bootstrap job.
+- **PR-B1 — DONE (#54).** The `ffi-cargo-c` smoke runs in the pinned image
+  with the same fork guard and sccache setup as the other compiling jobs; the
+  GitHub-hosted bootstrap is gone.
 - **PR-C (≈ step 9).** `release-cpp-artifacts.yml` uses `cargo cinstall` to
   package the per-platform tarball; optionally migrate the in-tree `examples/cpp`
   fully to pkg-config and retire the hand-rolled `find_library` path.
@@ -463,11 +465,11 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
    `ci-pass` green for the SHA. Every publisher calls it first.
 4. **Real-stack C++ e2e gate (Q3) — DONE (#40 ran the C++ examples on the real
    stack; #51 promoted the `e2e` job to `ci-pass` with bring-up hardening).**
-5. **`aviso-ffi` → `cargo-c` migration (Q7) — IN PROGRESS.** PR-B0 (#52) and
-   PR-A (#53) done; PR-B1 (pinned-image smoke) is the next task. See the staged
-   breakdown under "Where we are" above. Keep the `cbindgen` header-drift guard
-   (it stays the header source of truth; cargo-c installs the committed header,
-   generation off).
+5. **`aviso-ffi` → `cargo-c` migration (Q7) — IN PROGRESS.** PR-B0 (#52),
+   PR-A (#53), and PR-B1 (#54) done; only PR-C remains, and it lands with
+   step 9. See the staged breakdown under "Where we are" above. Keep the
+   `cbindgen` header-drift guard (it stays the header source of truth; cargo-c
+   installs the committed header, generation off).
 6. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
    tree before any bump. Includes the clean-env sdist install test and the
    real-stack packaged C++ artifact run.
