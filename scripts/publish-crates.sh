@@ -89,12 +89,17 @@ probe_entry() {
   200)
     [ -s "$probe_body" ] ||
       die "the index answered 200 for '$crate' with an empty body; failing closed"
+    # Every line must be an index entry (an object carrying at least string
+    # vers and cksum); a JSON error page like {"error":"bad gateway"} must
+    # not read as "version absent".
+    jq -se 'all(.[]; type == "object" and (.vers | type == "string") and (.cksum | type == "string"))' \
+      "$probe_body" >/dev/null 2>&1 ||
+      die "the index answered 200 for '$crate' with a body that is not the sparse-index JSON-lines format; failing closed"
     local entry
     # One line per version is the index contract (yanks rewrite the line in
     # place), but read the LAST match defensively so a hypothetical update
     # appended later can never be shadowed by a stale entry.
-    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$probe_body" 2>/dev/null | tail -n 1)" ||
-      die "the index answered 200 for '$crate' with a body that is not the JSON-lines format; failing closed"
+    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$probe_body" | tail -n 1)"
     if [ -n "$entry" ]; then
       probe_state=indexed
       probe_cksum="$(jq -r '.cksum' <<<"$entry")"
