@@ -216,9 +216,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Use the repo-pinned Rust toolchain
-        # rust-toolchain.toml governs the version; materialize it explicitly so
-        # the build does not silently use whatever the runner ships by default.
-        run: rustup show active-toolchain || rustup toolchain install
+        # `rustup show` resolves the rust-toolchain.toml override, installing the
+        # pinned toolchain if the runner does not already have it, so the build
+        # does not silently use whatever Rust the runner ships by default.
+        run: rustup show
       - name: Install cargo-c
         uses: taiki-e/install-action@v2
         with:
