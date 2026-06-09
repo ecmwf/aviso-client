@@ -187,6 +187,20 @@ jobs:
       - name: Validate docker-compose
         run: docker compose -f tests/e2e/docker-compose.yml config --quiet
 
+  # ── Release tooling: lint and unit-test the release scripts ─────
+  # GitHub-hosted; the scripts are plain bash with a mocked `gh`, so no image,
+  # no compile, and no secrets. Keeps the release-invariant check (which gates
+  # every future publisher) green and trustworthy before anything consumes it.
+  release-tooling:
+    name: release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shellcheck the release scripts
+        run: shellcheck scripts/ws-version.sh scripts/release-invariant.sh scripts/tests/release-invariant.test.sh
+      - name: Release-invariant unit tests
+        run: bash scripts/tests/release-invariant.test.sh
+
   # ── e2e suite: real aviso-server + auth-o-tron + NATS stack ─────
   # The host only orchestrates Docker; the suites build and run inside
   # the CI image joined to the compose network (reaching services by
@@ -363,7 +377,7 @@ jobs:
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config, cpp]
+    needs: [rust, deny, docs, python, e2e-config, cpp, release-tooling]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded

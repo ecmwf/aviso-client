@@ -1,0 +1,29 @@
+name: release-invariant
+description: >-
+  Assert the release invariant before any irreversible publish step: the
+  checkout is the tagged commit, the tag names it and equals the workspace
+  version, the commit is reachable from main, and the ci-pass gate is green for
+  it. Add it as a publisher job's first step. The job must check the repository
+  out at the tag with its tag ref available (a tag-triggered actions/checkout
+  does this by default). The runner must have the GitHub CLI (gh) installed,
+  and the token needs contents:read and actions:read.
+
+inputs:
+  github-token:
+    description: >-
+      Token consumed by gh. Needs contents:read (compare API) and actions:read
+      (CI workflow-run lookup) on this repository.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Assert the release invariant
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REF_NAME: ${{ github.ref_name }}
+        SHA: ${{ github.sha }}
+        REPO: ${{ github.repository }}
+      run: bash "$GITHUB_WORKSPACE/scripts/release-invariant.sh"

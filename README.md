@@ -79,6 +79,13 @@ cmake --build build/cpp
 ./build/cpp/schema_smoke                                # runs without a server
 ```
 
+Release tooling (the release-invariant check that gates every publisher; plain shell, no toolchain):
+
+```bash
+shellcheck scripts/ws-version.sh scripts/release-invariant.sh scripts/tests/release-invariant.test.sh
+bash scripts/tests/release-invariant.test.sh
+```
+
 ## Documentation
 
 The full documentation is hosted at <https://sites.ecmwf.int/docs/aviso-client/main/>. Good starting points:
