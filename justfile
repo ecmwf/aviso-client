@@ -13,10 +13,10 @@ crates := "finesse aviso aviso-cli aviso-ffi"
 default:
     @just --list
 
-# Print the version from the [workspace.package] section (section-scoped so it
-# does not match a `version` key in another table or depend on file ordering).
+# Print the [workspace.package] version. Delegates to scripts/ws-version.sh so
+# the manifest reader has one home, shared with the release-invariant check.
 _ws-version:
-    @awk '/^\[/{s=$0} s=="[workspace.package]" && /^version[[:space:]]*=/{if(match($0,/"[^"]+"/)){print substr($0,RSTART+1,RLENGTH-2);exit}}' Cargo.toml
+    @scripts/ws-version.sh
 
 # Dry-run gate before a release (publishes nothing); pass the target version.
 release-preflight version:
