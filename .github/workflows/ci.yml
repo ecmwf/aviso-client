@@ -219,6 +219,11 @@ jobs:
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
+    defaults:
+      run:
+        # In a container job the runner's fallback shell is sh, which
+        # rejects the `set -o pipefail` these steps rely on.
+        shell: bash
     env:
       RUSTC_WRAPPER: sccache
       CARGO_INCREMENTAL: "0"
