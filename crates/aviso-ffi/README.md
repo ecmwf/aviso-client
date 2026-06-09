@@ -24,12 +24,13 @@ in its build.
 A worked CMake consumer lives in
 [`examples/cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp).
 
-## Installing the prebuilt library
+## Installing the library
 
-[cargo-c](https://github.com/lu-zero/cargo-c) installs the library in the
-standard C layout — a `.a`, a versioned `.so`/`.dylib`, a pkg-config `.pc`, and
-the headers — so a C or C++ consumer discovers it with `pkg-config` (or CMake's
-`pkg_check_modules`) and needs no Rust toolchain:
+[cargo-c](https://github.com/lu-zero/cargo-c) compiles the crate and installs it
+in the standard C layout — a `.a`, a versioned `.so`/`.dylib`, a pkg-config
+`.pc`, and the headers — so a C or C++ consumer then discovers it with
+`pkg-config` (or CMake's `pkg_check_modules`) and links it with no Rust
+toolchain of its own:
 
 ```bash
 cargo install cargo-c   # once
