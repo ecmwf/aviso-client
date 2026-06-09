@@ -205,6 +205,52 @@ jobs:
       - name: Release-invariant unit tests
         run: bash scripts/tests/release-invariant.test.sh
 
+  # ── FFI cargo-c install contract (GitHub-hosted bootstrap) ──────
+  # Proves the standard `.a/.so/.pc/.h` drop installs and that a clean consumer
+  # compiles, links, and runs against it through pkg-config alone. Runs on the
+  # hosted runner (which has pkg-config + cmake + g++) with cargo-c installed
+  # here; it moves onto the pinned CI image once that image carries cargo-c.
+  ffi-cargo-c:
+    name: ffi cargo-c install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Use the repo-pinned Rust toolchain
+        # `rustup show` resolves the rust-toolchain.toml override, installing the
+        # pinned toolchain if the runner does not already have it, so the build
+        # does not silently use whatever Rust the runner ships by default.
+        run: rustup show
+      - name: Install cargo-c
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-c
+      - name: Install the C library to a staging prefix
+        run: cargo cinstall --locked -p aviso-ffi --release --prefix="$PWD/build/ffi-prefix" --libdir="$PWD/build/ffi-prefix/lib"
+      - name: Check the installed layout and pkg-config metadata
+        env:
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/ffi-prefix/lib/pkgconfig
+        run: |
+          set -euo pipefail
+          prefix="$PWD/build/ffi-prefix"
+          for f in include/aviso_ffi/aviso.h include/aviso_ffi/aviso.hpp \
+                   lib/libaviso_ffi.a lib/libaviso_ffi.so lib/pkgconfig/aviso_ffi.pc; do
+            test -e "$prefix/$f" || { echo "::error::missing installed file: $f"; exit 1; }
+          done
+          pkg-config --exists aviso_ffi
+          echo "modversion: $(pkg-config --modversion aviso_ffi)"
+          echo "cflags:     $(pkg-config --cflags aviso_ffi)"
+          echo "libs:       $(pkg-config --libs aviso_ffi)"
+      - name: Build and run a consumer via pkg-config
+        env:
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/ffi-prefix/lib/pkgconfig
+        run: |
+          set -euo pipefail
+          cmake -S tests/ffi-install -B build/ffi-consumer
+          cmake --build build/ffi-consumer
+          # The shared lib lives in the staging prefix, not a default search
+          # path, so point the runtime linker at it for the smoke run.
+          LD_LIBRARY_PATH="$PWD/build/ffi-prefix/lib" ./build/ffi-consumer/smoke
+
   # ── e2e suite: real aviso-server + auth-o-tron + NATS stack ─────
   # The host only orchestrates Docker; the suites build and run inside
   # the CI image joined to the compose network (reaching services by
@@ -388,7 +434,7 @@ jobs:
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config, e2e, cpp, release-tooling]
+    needs: [rust, deny, docs, python, e2e-config, e2e, cpp, release-tooling, ffi-cargo-c]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded
