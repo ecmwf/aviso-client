@@ -24,6 +24,24 @@ in its build.
 A worked CMake consumer lives in
 [`examples/cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp).
 
+## Installing the prebuilt library
+
+[cargo-c](https://github.com/lu-zero/cargo-c) installs the library in the
+standard C layout — a `.a`, a versioned `.so`/`.dylib`, a pkg-config `.pc`, and
+the headers — so a C or C++ consumer discovers it with `pkg-config` (or CMake's
+`pkg_check_modules`) and needs no Rust toolchain:
+
+```bash
+cargo install cargo-c   # once
+cargo cinstall -p aviso-ffi --release --prefix=/usr/local --libdir=/usr/local/lib
+```
+
+This drops `lib/libaviso_ffi.{a,so,dylib}`, `lib/pkgconfig/aviso_ffi.pc`, and
+`include/aviso_ffi/{aviso.h,aviso.hpp}`. The committed `include/aviso.h` stays
+the header source of truth: cargo-c installs it verbatim (header generation is
+off), so the cbindgen drift guard below still governs the surface. `just
+ffi-cinstall <prefix>` wraps the command.
+
 ## Regenerating the C header
 
 `include/aviso.h` is committed and must match the `extern "C"` surface. After

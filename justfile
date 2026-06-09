@@ -119,3 +119,10 @@ publish-dry:
     done
     gh workflow run publish-crates.yml -f dry_run=true
     gh workflow run publish-pypi.yml -f use_test_pypi=true
+
+# Install the aviso C library (cargo-c) into <prefix> with the standard
+# `.a/.so/.dylib` + `.pc` + headers layout. Needs cargo-c (cargo install cargo-c).
+# `--libdir` is pinned so the layout is fixed (some distros default to multiarch).
+ffi-cinstall prefix:
+    cargo cinstall --locked -p aviso-ffi --release \
+        --prefix="{{prefix}}" --libdir="{{prefix}}/lib"
