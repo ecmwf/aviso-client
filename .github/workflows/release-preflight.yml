@@ -147,10 +147,13 @@ jobs:
       - run: mkdir -p "$TMPDIR"
 
       - name: Build the wheel and sdist
+        # --no-project: maturin packages the crate sources itself; installing
+        # the pyaviso project into the runner env first would just build the
+        # extension a second time.
         run: |
           rm -rf dist && mkdir -p dist
-          uv run --with maturin maturin build --release --locked --out dist
-          uv run --with maturin maturin sdist --out dist
+          uv run --no-project --with maturin maturin build --release --locked --out dist
+          uv run --no-project --with maturin maturin sdist --out dist
 
       - name: Built artifacts carry the target version
         # pyproject.toml declares `dynamic = ["version"]`, so there is no
@@ -167,7 +170,7 @@ jobs:
           ls dist/pyaviso-"$norm".tar.gz >/dev/null
 
       - name: twine check
-        run: uv run --with twine twine check dist/*
+        run: uv run --no-project --with twine twine check dist/*
 
       - name: Clean-environment sdist install test
         # The sdist is the fallback for platforms without a matching wheel, so
