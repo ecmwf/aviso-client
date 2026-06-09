@@ -5,7 +5,8 @@ description: >-
   version, the commit is reachable from main, and the ci-pass gate is green for
   it. Add it as a publisher job's first step. The job must check the repository
   out at the tag with its tag ref available (a tag-triggered actions/checkout
-  does this by default). Needs a token with contents:read and actions:read.
+  does this by default). The runner must have the GitHub CLI (gh) installed,
+  and the token needs contents:read and actions:read.
 
 inputs:
   github-token:
