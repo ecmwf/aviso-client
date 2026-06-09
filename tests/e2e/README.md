@@ -103,7 +103,7 @@ AVISO_SERVER_HOST_PORT=8102 AUTH_O_TRON_HOST_PORT=8182 NATS_HOST_PORT=4323 NATS_
 
 ## CI
 
-CI validates this file with `docker compose config --quiet` so misconfigurations are caught early. The full e2e suite also runs in CI on self-hosted runners (with sccache and a persistent docker image cache); it is informational for now. Promoting it to a required check is tracked in [`plans/roadmap.md`](../../plans/roadmap.md).
+CI validates this file with `docker compose config --quiet` so misconfigurations are caught early. The full e2e suite also runs in CI on self-hosted runners (with sccache and a persistent docker image cache) and is part of the required `ci-pass` gate. It shares one stack on the host, so only one `e2e` run proceeds at a time repo-wide; a hung stack is bounded by the job's `timeout-minutes` so it frees the lock rather than blocking other PRs.
 
 ## Registry access
 
