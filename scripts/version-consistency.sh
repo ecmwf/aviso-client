@@ -10,8 +10,11 @@
 #   2. every workspace member (it inherits via `version.workspace = true` or
 #      carries the same literal),
 #   3. every workspace-internal dependency that pairs `path` with a `version`
-#      requirement: an exact `=x.y.z` pin must equal the target exactly, and a
-#      floating requirement (e.g. `finesse = "2.0"`) must be satisfied by it.
+#      requirement: in a member manifest it must be an exact `=x.y.z` pin
+#      equal to the target (the release model publishes the crates in
+#      lockstep); only the root manifest's [workspace.dependencies] may float
+#      (e.g. `finesse = "2.0"`), and that float must be satisfied by the
+#      target.
 #
 # pyproject.toml is deliberately not read: its version is `dynamic`, resolved
 # by maturin from the workspace, and the built wheel/sdist metadata is checked
@@ -141,8 +144,11 @@ check_manifest() {
           mismatches+=("$rel: dependency '$name' is pinned '$value'")
         ;;
       *)
-        float_satisfied "$value" ||
+        if [ "$rel" != "Cargo.toml" ]; then
+          mismatches+=("$rel: dependency '$name' requires '$value'; member manifests must pin internal crates exactly ('=$version')")
+        elif ! float_satisfied "$value"; then
           mismatches+=("$rel: dependency '$name' requires '$value', which '$version' does not satisfy")
+        fi
         ;;
       esac
       ;;

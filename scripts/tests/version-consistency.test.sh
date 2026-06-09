@@ -156,6 +156,10 @@ bad_float="$tmp/bad-float"
 make_tree "$bad_float" 1.2.3 "=1.2.3" "1.3"
 check "fails when the floating requirement is not satisfied" 1 1.2.3 "$bad_float"
 
+unpinned_member="$tmp/unpinned-member"
+make_tree "$unpinned_member" 1.2.3 "1.2.3" "1.2"
+check "fails when a member uses a non-exact internal requirement" 1 1.2.3 "$unpinned_member"
+
 opted_out="$tmp/opted-out"
 make_tree "$opted_out" 1.2.3 "=1.2.3" "1.2"
 edit_in_place '/version.workspace = true/d' "$opted_out/crates/core/Cargo.toml"
