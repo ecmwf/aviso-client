@@ -13,6 +13,10 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#53](https://github.com/ecmwf/aviso-client/pull/53) ci: bake `pkg-config`
+  and a prebuilt `cargo-cinstall` into the pinned CI image (0.4.0) and pin the
+  workflow jobs to it, so the FFI install-contract job can move off its
+  GitHub-hosted bootstrap (release-plan step 5, PR-A).
 - [#52](https://github.com/ecmwf/aviso-client/pull/52) ffi: cargo-c packaging
   foundation. Adds the `capi` feature + `[package.metadata.capi]` so `cargo
   cinstall -p aviso-ffi` produces the standard `.a/.so/.dylib` + `.pc` + headers
