@@ -86,7 +86,10 @@ probe_entry() {
   case "$code" in
   200)
     local entry
-    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$body" | head -n 1)"
+    # One line per version is the index contract (yanks rewrite the line in
+    # place), but read the LAST match defensively so a hypothetical update
+    # appended later can never be shadowed by a stale entry.
+    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$body" | tail -n 1)"
     if [ -n "$entry" ]; then
       probe_state=indexed
       probe_cksum="$(jq -r '.cksum' <<<"$entry")"

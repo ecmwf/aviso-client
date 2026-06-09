@@ -54,9 +54,9 @@ EOF
 chmod +x "$tmp/bin/curl"
 
 # Fake cargo: `publish -p <crate>` logs the call and (unless PUBLISH_SILENT)
-# writes the crate's index entry, with the checksum of the deterministic
-# package payload, after PUBLISH_DELAY_POLLS unanswered probes have happened;
-# `package -p <crate>` writes that payload under target/package/.
+# writes the crate's index entry with the checksum of the deterministic
+# package payload; `package -p <crate>` writes that payload under
+# target/package/.
 cat >"$tmp/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -113,7 +113,7 @@ run_case() { # name expected_rc retry_mode silent fixture_setup_fn [crates...]
   shift 5
   local fixture="$tmp/fix-$RANDOM" rc=0
   mkdir -p "$fixture"
-  INDEX_FIXTURE="$fixture" "$setup" "$fixture" || true
+  INDEX_FIXTURE="$fixture" "$setup" "$fixture"
   local workdir="$tmp/work-$RANDOM"
   mkdir -p "$workdir"
   CURL_LOG="$tmp/curl-$RANDOM.log" CALL_LOG="$tmp/call-$RANDOM.log"
@@ -162,12 +162,19 @@ seed_finesse_mismatch() { # fixture: finesse indexed with a foreign checksum
     >"$1/fi/ne/finesse"
 }
 
-seed_finesse_yanked() { # fixture: finesse indexed but yanked
+seed_finesse_yanked() { # fixture: finesse yanked, recorded as a later update
+  # Written as an original non-yanked line followed by a yanked one for the
+  # same version, so a reader taking the FIRST match instead of the latest
+  # would wrongly see a live entry and regress this case.
   mkdir -p "$1/fi/ne"
   local cksum
   cksum="$(printf 'crate-payload %s %s' finesse "$TEST_VERSION" | sha256sum | cut -d' ' -f1)"
-  printf '{"name":"finesse","vers":"%s","cksum":"%s","yanked":true}\n' \
-    "$TEST_VERSION" "$cksum" >"$1/fi/ne/finesse"
+  {
+    printf '{"name":"finesse","vers":"%s","cksum":"%s","yanked":false}\n' \
+      "$TEST_VERSION" "$cksum"
+    printf '{"name":"finesse","vers":"%s","cksum":"%s","yanked":true}\n' \
+      "$TEST_VERSION" "$cksum"
+  } >"$1/fi/ne/finesse"
 }
 
 seed_server_error() { # fixture: the finesse probe answers HTTP 500
