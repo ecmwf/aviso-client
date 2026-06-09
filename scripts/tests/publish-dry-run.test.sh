@@ -40,6 +40,10 @@ unresolved)
   echo "error: no matching package named \`aviso\` found" >&2
   exit 101
   ;;
+unresolved-ffi)
+  echo "error: no matching package named \`aviso-ffi\` found" >&2
+  exit 101
+  ;;
 unresolved-req)
   echo "error: failed to select a version for the requirement \`finesse = \"^2\"\`" >&2
   exit 101
@@ -82,6 +86,7 @@ check "passes when every crate dry-runs clean" 0 ""
 check "tolerates the resolution gap on a dependent crate" 0 "aviso=unresolved"
 check "tolerates the requirement form of the gap" 0 "aviso-cli=unresolved-req"
 check "tolerates the gap on several dependents" 0 "aviso=unresolved aviso-cli=unresolved aviso-ffi=unresolved"
+check "tolerates the gap when it names aviso-ffi" 0 "aviso-ffi=unresolved-ffi"
 check "fails when finesse fails, whatever the reason" 1 "finesse=unresolved"
 check "fails a dependent crate on a non-gap error" 1 "aviso=metadata"
 check "fails when the unresolved package is external" 1 "aviso=unresolved-external"

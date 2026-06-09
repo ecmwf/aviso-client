@@ -109,6 +109,36 @@ make_tree "$stale_multi" 1.2.3 "=1.2.3" "1.2"
 sed -i 's/^version = "=1.2.3"/version = "=0.9.0"/' "$stale_multi/crates/multi/Cargo.toml"
 check "fails on a stale multiline-table pin" 1 1.2.3 "$stale_multi"
 
+stale_dev="$tmp/stale-dev"
+make_tree "$stale_dev" 1.2.3 "=1.2.3" "1.2"
+cat >>"$stale_dev/crates/inline/Cargo.toml" <<'EOF'
+
+[dev-dependencies.core]
+path = "../core"
+version = "=0.9.0"
+EOF
+check "fails on a stale dev-dependencies table pin" 1 1.2.3 "$stale_dev"
+
+stale_build="$tmp/stale-build"
+make_tree "$stale_build" 1.2.3 "=1.2.3" "1.2"
+cat >>"$stale_build/crates/inline/Cargo.toml" <<'EOF'
+
+[build-dependencies.core]
+path = "../core"
+version = "=0.9.0"
+EOF
+check "fails on a stale build-dependencies table pin" 1 1.2.3 "$stale_build"
+
+stale_target="$tmp/stale-target"
+make_tree "$stale_target" 1.2.3 "=1.2.3" "1.2"
+cat >>"$stale_target/crates/inline/Cargo.toml" <<'EOF'
+
+[target.'cfg(unix)'.dependencies.core]
+path = "../core"
+version = "=0.9.0"
+EOF
+check "fails on a stale target-specific table pin" 1 1.2.3 "$stale_target"
+
 bad_float="$tmp/bad-float"
 make_tree "$bad_float" 1.2.3 "=1.2.3" "1.3"
 check "fails when the floating requirement is not satisfied" 1 1.2.3 "$bad_float"
