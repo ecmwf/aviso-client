@@ -414,10 +414,35 @@ on them, not at the end.
 All shaping questions are now decided (Q1–Q4, Q6–Q10); only Q5 (changelog) is
 still open.
 
-**Where we are:** the foundation (step 2) is merged to `main` (#48) and this plan
-is on `main` (#49). **The next task is step 3** (the release-invariant reusable
-check). Step 1 (external prereqs) is console work that can start in parallel;
-steps 4-10 are not started.
+**Where we are:** steps 2-4 are merged to `main`; step 5 is partway through a
+staged migration. Done: foundation (#48), release-invariant check (#50), the
+real-stack C++ e2e gate now in `ci-pass` (#51), and the cargo-c packaging
+foundation (#52, "PR-B0" below). **The next task is step 5 PR-A** (bake
+`pkg-config` + `cargo-c` into the pinned CI image). Step 1 (external prereqs) is
+console work that can run in parallel; steps 6-10 are not started.
+
+**Step 5 is staged across several PRs** (an Oracle-reviewed sequence, to keep
+every existing consumer green while cargo-c becomes an additional packaging
+path, not yet a replacement):
+
+- **PR-B0 — DONE (#52).** Additive `[package.metadata.capi]` + `capi` feature on
+  `aviso-ffi` (header generation off, so the committed drift-guarded `aviso.h`
+  stays the source of truth), `just ffi-cinstall`, and a GitHub-hosted
+  `ffi-cargo-c` ci-pass job that `cargo cinstall`s to a staging prefix and
+  builds a pkg-config consumer against it. `crate-type` kept; the existing
+  `cpp`/`e2e` jobs are untouched. Verified the install layout:
+  `include/aviso_ffi/{aviso.h,aviso.hpp}`, `lib/libaviso_ffi.{a,so,dylib}`,
+  `lib/pkgconfig/aviso_ffi.pc`.
+- **PR-A — NEXT.** Add `pkg-config` + `cargo-c` to `.github/ci/Dockerfile`, bump
+  `.github/ci/VERSION` (0.3.0 → 0.4.0), republish via `ci-image.yml` to the ECMWF
+  registry (needs registry creds / maintainer console), then bump the `image:`
+  tag in `ci.yml`. This is the critical-path blocker for moving cargo-c onto the
+  pinned image.
+- **PR-B1.** Move the `ffi-cargo-c` smoke onto the pinned image; drop the
+  GitHub-hosted bootstrap job.
+- **PR-C (≈ step 9).** `release-cpp-artifacts.yml` uses `cargo cinstall` to
+  package the per-platform tarball; optionally migrate the in-tree `examples/cpp`
+  fully to pkg-config and retire the hand-rolled `find_library` path.
 
 **One-time tool setup (per machine):** `cargo install just cargo-release`, and
 install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
@@ -430,13 +455,16 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
 2. **Foundation (§4) — DONE (#48).** `publish = false` on `aviso-py`;
    `cargo-release` config (`release.toml`); `justfile`; crate README links fixed;
    `tests/e2e/rust` pin audited. No version change, no publish.
-3. **NEXT — release-invariant composite action / reusable check** (§13 B3): tag
-   == workspace version, tag reachable from `origin/main`, `ci-pass` green for
-   the SHA. Every publisher calls it first.
-4. **Real-stack C++ e2e gate (Q3):** make the C++ examples run against the real
-   e2e stack and add it to `ci-pass`. Prerequisite for the prebuilt-C++ workflow.
-5. **`aviso-ffi` → `cargo-c` migration (Q7):** switch packaging to `cargo
-   cinstall`; keep the `cbindgen` header-drift guard.
+3. **Release-invariant composite action / reusable check (§13 B3) — DONE (#50).**
+   `.github/actions/release-invariant` + `scripts/release-invariant.sh` assert
+   tag == workspace version, tag commit reachable from `origin/main`, and
+   `ci-pass` green for the SHA. Every publisher calls it first.
+4. **Real-stack C++ e2e gate (Q3) — DONE (#40 ran the C++ examples on the real
+   stack; #51 promoted the `e2e` job to `ci-pass` with bring-up hardening).**
+5. **`aviso-ffi` → `cargo-c` migration (Q7) — IN PROGRESS.** PR-B0 done (#52);
+   PR-A (CI image) is the next task. See the staged breakdown under "Where we
+   are" above. Keep the `cbindgen` header-drift guard (it stays the header source
+   of truth; cargo-c installs the committed header, generation off).
 6. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
    tree before any bump. Includes the clean-env sdist install test and the
    real-stack packaged C++ artifact run.
