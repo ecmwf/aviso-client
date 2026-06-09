@@ -61,6 +61,15 @@ version = "$pin"
 EOF
 }
 
+# Portable in-place edit: BSD/macOS sed demands a backup suffix after -i,
+# GNU sed does not, so write through a temp file instead.
+edit_in_place() { # sed-script file
+  local tmp_file
+  tmp_file="$(mktemp)"
+  sed "$1" "$2" >"$tmp_file"
+  mv "$tmp_file" "$2"
+}
+
 passed=0
 failed=0
 
@@ -105,12 +114,12 @@ check "fails when the target does not match the tree" 1 1.2.4 "$good"
 # Localized mismatches.
 stale_inline="$tmp/stale-inline"
 make_tree "$stale_inline" 1.2.3 "=1.2.3" "1.2"
-sed -i 's/version = "=1.2.3"/version = "=0.9.0"/' "$stale_inline/crates/inline/Cargo.toml"
+edit_in_place 's/version = "=1.2.3"/version = "=0.9.0"/' "$stale_inline/crates/inline/Cargo.toml"
 check "fails on a stale inline-table pin" 1 1.2.3 "$stale_inline"
 
 stale_multi="$tmp/stale-multi"
 make_tree "$stale_multi" 1.2.3 "=1.2.3" "1.2"
-sed -i 's/^version = "=1.2.3"/version = "=0.9.0"/' "$stale_multi/crates/multi/Cargo.toml"
+edit_in_place 's/^version = "=1.2.3"/version = "=0.9.0"/' "$stale_multi/crates/multi/Cargo.toml"
 check "fails on a stale multiline-table pin" 1 1.2.3 "$stale_multi"
 
 stale_dev="$tmp/stale-dev"
@@ -149,17 +158,17 @@ check "fails when the floating requirement is not satisfied" 1 1.2.3 "$bad_float
 
 opted_out="$tmp/opted-out"
 make_tree "$opted_out" 1.2.3 "=1.2.3" "1.2"
-sed -i '/version.workspace = true/d' "$opted_out/crates/core/Cargo.toml"
+edit_in_place '/version.workspace = true/d' "$opted_out/crates/core/Cargo.toml"
 check "fails when a member has no version at all" 1 1.2.3 "$opted_out"
 
 literal_off="$tmp/literal-off"
 make_tree "$literal_off" 1.2.3 "=1.2.3" "1.2"
-sed -i 's/version.workspace = true/version = "0.5.0"/' "$literal_off/crates/core/Cargo.toml"
+edit_in_place 's/version.workspace = true/version = "0.5.0"/' "$literal_off/crates/core/Cargo.toml"
 check "fails when a member carries a different literal version" 1 1.2.3 "$literal_off"
 
 literal_on="$tmp/literal-on"
 make_tree "$literal_on" 1.2.3 "=1.2.3" "1.2"
-sed -i 's/version.workspace = true/version = "1.2.3"/' "$literal_on/crates/core/Cargo.toml"
+edit_in_place 's/version.workspace = true/version = "1.2.3"/' "$literal_on/crates/core/Cargo.toml"
 check "passes when a member carries the matching literal version" 0 1.2.3 "$literal_on"
 
 missing_member="$tmp/missing-member"
