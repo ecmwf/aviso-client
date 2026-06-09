@@ -52,6 +52,8 @@ cargo deny check
 mdbook build docs
 mdbook test docs
 docker compose -f tests/e2e/docker-compose.yml config --quiet
+shellcheck tests/e2e/shared/stack.sh tests/e2e/shared/stack.test.sh
+bash tests/e2e/shared/stack.test.sh
 ```
 
 Python:
