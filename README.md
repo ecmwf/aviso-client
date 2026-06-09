@@ -81,11 +81,13 @@ cmake --build build/cpp
 ./build/cpp/schema_smoke                                # runs without a server
 ```
 
-Release tooling (the release-invariant check that gates every publisher; plain shell, no toolchain):
+Release tooling (the release-invariant check that gates every publisher, plus the preflight's version-consistency and ordered dry-run checks; plain shell, no toolchain):
 
 ```bash
-shellcheck scripts/ws-version.sh scripts/release-invariant.sh scripts/tests/release-invariant.test.sh
+shellcheck scripts/*.sh scripts/tests/*.test.sh
 bash scripts/tests/release-invariant.test.sh
+bash scripts/tests/version-consistency.test.sh
+bash scripts/tests/publish-dry-run.test.sh
 ```
 
 ## Documentation
