@@ -2,8 +2,8 @@
 # aviso-client CI image  ->  eccr.ecmwf.int/aviso/cli-ci
 #
 # Pre-bakes the Rust toolchain, sccache, uv, and the doc/lint/packaging
-# tools (mdbook, mdbook-mermaid, cargo-deny, cargo-c) as prebuilt
-# static binaries.
+# tools (mdbook, mdbook-mermaid, cargo-deny, cargo-cinstall) as
+# prebuilt static binaries.
 # A system python3 is baked so workspace cargo commands can build the
 # aviso-py PyO3 crate (pyo3 abi3 + auto-initialize need an interpreter
 # and libpython). Version-specific interpreters for the binding test
