@@ -125,22 +125,42 @@ if [ "${#indexed_hits[@]}" -gt 0 ] && [ "$RETRY_MODE" != "true" ]; then
   exit 1
 fi
 
+# --- retry preflight ----------------------------------------------------------
+# Every already-indexed crate is verified BEFORE anything is published. If the
+# verification ran lazily inside the publish loop, a mismatch or yank on a
+# later crate would only surface after earlier crates were published, leaving
+# extra immutable versions behind in a run that then declares itself unsafe.
+verify_indexed() {
+  local crate="$1" local_cksum
+  [ "$probe_yanked" = "false" ] ||
+    die "'$crate' $version is on the index but yanked; a yanked version cannot be re-published. Release a new version instead"
+  echo "--- $crate $version is already indexed; verifying it is this tag's artifact"
+  cargo package --locked -p "$crate" >/dev/null
+  local_cksum="$(sha256sum "target/package/$crate-$version.crate" | cut -d' ' -f1)"
+  [ "$local_cksum" = "$probe_cksum" ] ||
+    die "'$crate' $version on the index has checksum $probe_cksum, but this checkout packages to $local_cksum; the indexed artifact is not this tag's"
+  echo "    checksum matches; will skip"
+}
+
+declare -A verified_skip=()
+if [ "$RETRY_MODE" = "true" ]; then
+  for crate in "${crates[@]}"; do
+    probe_entry "$crate"
+    [ "$probe_state" = "indexed" ] || continue
+    verify_indexed "$crate"
+    verified_skip["$crate"]=1
+  done
+fi
+
 # --- ordered publish with index polling --------------------------------------
 for crate in "${crates[@]}"; do
-  probe_entry "$crate"
-  if [ "$probe_state" = "indexed" ]; then
-    [ "$RETRY_MODE" = "true" ] ||
-      die "'$crate' became indexed at $version mid-run; stopping"
-    [ "$probe_yanked" = "false" ] ||
-      die "'$crate' $version is on the index but yanked; a yanked version cannot be re-published. Release a new version instead"
-    echo "--- $crate $version is already indexed; verifying it is this tag's artifact"
-    cargo package --locked -p "$crate" >/dev/null
-    local_cksum="$(sha256sum "target/package/$crate-$version.crate" | cut -d' ' -f1)"
-    [ "$local_cksum" = "$probe_cksum" ] ||
-      die "'$crate' $version on the index has checksum $probe_cksum, but this checkout packages to $local_cksum; the indexed artifact is not this tag's"
-    echo "    checksum matches; skipping"
+  if [ -n "${verified_skip[$crate]:-}" ]; then
+    echo "--- $crate $version verified during the retry preflight; skipping"
     continue
   fi
+  probe_entry "$crate"
+  [ "$probe_state" = "absent" ] ||
+    die "'$crate' became indexed at $version mid-run; stopping"
 
   echo "--- cargo publish -p $crate ($version)"
   cargo publish --locked -p "$crate"

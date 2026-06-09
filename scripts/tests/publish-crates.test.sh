@@ -162,6 +162,13 @@ seed_finesse_mismatch() { # fixture: finesse indexed with a foreign checksum
     >"$1/fi/ne/finesse"
 }
 
+seed_late_mismatch() { # fixture: finesse absent, but aviso indexed divergent
+  mkdir -p "$1/av/is"
+  printf '{"name":"aviso","vers":"%s","cksum":"%s","yanked":false}\n' \
+    "$TEST_VERSION" "1111111111111111111111111111111111111111111111111111111111111111" \
+    >"$1/av/is/aviso"
+}
+
 seed_finesse_yanked() { # fixture: finesse yanked, recorded as a later update
   # Written as an original non-yanked line followed by a yanked one for the
   # same version, so a reader taking the FIRST match instead of the latest
@@ -223,6 +230,18 @@ else
 fi
 run_case "retry fails on a checksum mismatch" 1 true false seed_finesse_mismatch
 run_case "retry fails on a yanked target version" 1 true false seed_finesse_yanked
+
+# The mismatch must surface BEFORE anything is published: an absent earlier
+# crate must not be published when a later crate's indexed artifact diverges.
+run_case "retry verifies every indexed crate before publishing" 1 true false seed_late_mismatch
+last_call_log="$CALL_LOG"
+if ! grep -q '^publish ' "$last_call_log"; then
+  echo "ok   - a late mismatch publishes nothing"
+  passed=$((passed + 1))
+else
+  echo "FAIL - a late mismatch publishes nothing (calls: $(paste -sd' ' "$last_call_log"))"
+  failed=$((failed + 1))
+fi
 
 # Failure modes.
 run_case "fails when the index never shows the publish" 1 false true no_setup
