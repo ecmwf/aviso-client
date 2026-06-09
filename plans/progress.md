@@ -13,6 +13,13 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#55](https://github.com/ecmwf/aviso-client/pull/55) ci: the
+  release-preflight dry-run gate. Unit-tested version-consistency and
+  ordered publish-dry-run scripts shared by the justfile and a new manual
+  workflow that checks manifests, the Rust quality and packaging gates, the
+  wheel and sdist with a clean-environment install, and the cargo-cinstall
+  layout driving the C++ examples on the real e2e stack, publishing nothing
+  (release-plan step 6).
 - [#54](https://github.com/ecmwf/aviso-client/pull/54) ci: run the
   `ffi-cargo-c` install contract in the pinned image with the same fork guard
   and sccache setup as the other compiling jobs, dropping the GitHub-hosted
