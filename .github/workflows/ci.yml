@@ -178,14 +178,18 @@ jobs:
         if: always()
         run: rm -rf "$TMPDIR" target .venv
 
-  # ── e2e compose validation (GitHub-hosted; no compile, no secrets) ─
+  # ── e2e config + tooling (GitHub-hosted; no compile, no secrets) ─
   e2e-config:
-    name: e2e compose config
+    name: e2e config and tooling
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: Validate docker-compose
         run: docker compose -f tests/e2e/docker-compose.yml config --quiet
+      - name: Shellcheck the stack lifecycle script
+        run: shellcheck tests/e2e/shared/stack.sh tests/e2e/shared/stack.test.sh
+      - name: Stack readiness unit tests
+        run: bash tests/e2e/shared/stack.test.sh
 
   # ── Release tooling: lint and unit-test the release scripts ─────
   # GitHub-hosted; the scripts are plain bash with a mocked `gh`, so no image,
@@ -205,12 +209,16 @@ jobs:
   # The host only orchestrates Docker; the suites build and run inside
   # the CI image joined to the compose network (reaching services by
   # name), which sidesteps the host toolchain and the 24.04->22.04
-  # glibc gap. Informational for now: NOT in ci-pass until a flake-free
-  # soak (reconnect tests do real-wire ~15-20s cycles).
+  # glibc gap. A required gate (in ci-pass); reconnect tests do
+  # real-wire ~15-20s cycles, so timeout-minutes bounds a hung stack.
   e2e:
     name: e2e
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
+    # As a required gate on a shared host, bound the run so a hung stack
+    # fails in minutes and frees the single-flight lock below, rather
+    # than holding every other PR behind it until the default timeout.
+    timeout-minutes: 30
     # The stack binds fixed 127.0.0.1 ports and one compose project on
     # the shared host, so only one e2e job may run at a time repo-wide.
     concurrency:
@@ -220,6 +228,9 @@ jobs:
       COMPOSE_PROJECT_NAME: aviso-client-e2e
       COMPOSE: docker compose -f tests/e2e/docker-compose.yml
       CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      # Looser readiness deadline than the 60s local default: a loaded
+      # shared host can be slow to bring the stack up.
+      AVISO_E2E_TIMEOUT_SECS: "120"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -377,7 +388,7 @@ jobs:
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config, cpp, release-tooling]
+    needs: [rust, deny, docs, python, e2e-config, e2e, cpp, release-tooling]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded
