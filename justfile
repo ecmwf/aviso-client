@@ -43,9 +43,9 @@ release-preflight version:
     if command -v uv >/dev/null 2>&1; then
         echo "==> Python wheel + sdist + twine check"
         rm -rf dist && mkdir -p dist
-        uv run --with maturin maturin build --release --out dist
-        uv run --with maturin maturin sdist --out dist
-        uv run --with twine twine check dist/*
+        uv run --no-project --with maturin maturin build --release --locked --out dist
+        uv run --no-project --with maturin maturin sdist --out dist
+        uv run --no-project --with twine twine check dist/*
     else
         echo "==> SKIP Python checks (uv not installed)"
     fi
