@@ -215,6 +215,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Use the repo-pinned Rust toolchain
+        # rust-toolchain.toml governs the version; materialize it explicitly so
+        # the build does not silently use whatever the runner ships by default.
+        run: rustup show active-toolchain || rustup toolchain install
       - name: Install cargo-c
         uses: taiki-e/install-action@v2
         with:
