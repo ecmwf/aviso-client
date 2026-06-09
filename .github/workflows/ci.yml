@@ -201,9 +201,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Shellcheck the release scripts
-        run: shellcheck scripts/ws-version.sh scripts/release-invariant.sh scripts/tests/release-invariant.test.sh
+        run: shellcheck scripts/*.sh scripts/tests/*.test.sh
       - name: Release-invariant unit tests
         run: bash scripts/tests/release-invariant.test.sh
+      - name: Version-consistency unit tests
+        run: bash scripts/tests/version-consistency.test.sh
+      - name: Publish-dry-run unit tests
+        run: bash scripts/tests/publish-dry-run.test.sh
 
   # ── FFI cargo-c install contract ────────────────────────────────
   # Proves the standard `.a/.so/.pc/.h` drop installs and that a clean consumer
