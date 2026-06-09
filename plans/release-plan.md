@@ -416,10 +416,11 @@ still open.
 
 **Where we are:** steps 2-4 are merged to `main`; step 5 is partway through a
 staged migration. Done: foundation (#48), release-invariant check (#50), the
-real-stack C++ e2e gate now in `ci-pass` (#51), and the cargo-c packaging
-foundation (#52, "PR-B0" below). **The next task is step 5 PR-A** (bake
-`pkg-config` + `cargo-c` into the pinned CI image). Step 1 (external prereqs) is
-console work that can run in parallel; steps 6-10 are not started.
+real-stack C++ e2e gate now in `ci-pass` (#51), the cargo-c packaging
+foundation (#52, "PR-B0" below), and the pinned CI image now carrying
+`pkg-config` + `cargo-c` (#53, "PR-A" below). **The next task is step 5 PR-B1**
+(move the `ffi-cargo-c` smoke onto the pinned image). Step 1 (external
+prereqs) is console work that can run in parallel; steps 6-10 are not started.
 
 **Step 5 is staged across several PRs** (an Oracle-reviewed sequence, to keep
 every existing consumer green while cargo-c becomes an additional packaging
@@ -433,13 +434,14 @@ path, not yet a replacement):
   `cpp`/`e2e` jobs are untouched. Verified the install layout:
   `include/aviso_ffi/{aviso.h,aviso.hpp}`, `lib/libaviso_ffi.{a,so,dylib}`,
   `lib/pkgconfig/aviso_ffi.pc`.
-- **PR-A — NEXT.** Add `pkg-config` + `cargo-c` to `.github/ci/Dockerfile`, bump
-  `.github/ci/VERSION` (0.3.0 → 0.4.0), republish via `ci-image.yml` to the ECMWF
-  registry (needs registry creds / maintainer console), then bump the `image:`
-  tag in `ci.yml`. This is the critical-path blocker for moving cargo-c onto the
-  pinned image.
-- **PR-B1.** Move the `ffi-cargo-c` smoke onto the pinned image; drop the
-  GitHub-hosted bootstrap job.
+- **PR-A — DONE (#53).** `pkg-config` and a prebuilt `cargo-cinstall` baked
+  into `.github/ci/Dockerfile`, `.github/ci/VERSION` bumped 0.3.0 → 0.4.0, and
+  `ci.yml` pinned to the new tag. The image was built from the branch,
+  validated with a full `cargo cinstall` + pkg-config consumer smoke, and
+  pushed tag-only by a maintainer; the post-merge `ci-image.yml` run on `main`
+  republishes the full tag set.
+- **PR-B1 — NEXT.** Move the `ffi-cargo-c` smoke onto the pinned image; drop
+  the GitHub-hosted bootstrap job.
 - **PR-C (≈ step 9).** `release-cpp-artifacts.yml` uses `cargo cinstall` to
   package the per-platform tarball; optionally migrate the in-tree `examples/cpp`
   fully to pkg-config and retire the hand-rolled `find_library` path.
@@ -461,10 +463,11 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
    `ci-pass` green for the SHA. Every publisher calls it first.
 4. **Real-stack C++ e2e gate (Q3) — DONE (#40 ran the C++ examples on the real
    stack; #51 promoted the `e2e` job to `ci-pass` with bring-up hardening).**
-5. **`aviso-ffi` → `cargo-c` migration (Q7) — IN PROGRESS.** PR-B0 done (#52);
-   PR-A (CI image) is the next task. See the staged breakdown under "Where we
-   are" above. Keep the `cbindgen` header-drift guard (it stays the header source
-   of truth; cargo-c installs the committed header, generation off).
+5. **`aviso-ffi` → `cargo-c` migration (Q7) — IN PROGRESS.** PR-B0 (#52) and
+   PR-A (#53) done; PR-B1 (pinned-image smoke) is the next task. See the staged
+   breakdown under "Where we are" above. Keep the `cbindgen` header-drift guard
+   (it stays the header source of truth; cargo-c installs the committed header,
+   generation off).
 6. `release-preflight.yml` (§6.A) — dry-run gate; validate on the current 0.1.0
    tree before any bump. Includes the clean-env sdist install test and the
    real-stack packaged C++ artifact run.

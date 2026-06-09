@@ -27,7 +27,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
     container:
-      image: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
@@ -83,7 +83,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
     container:
-      image: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
@@ -98,7 +98,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
     container:
-      image: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
@@ -121,7 +121,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
     container:
-      image: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
@@ -273,7 +273,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: aviso-client-e2e
       COMPOSE: docker compose -f tests/e2e/docker-compose.yml
-      CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       # Looser readiness deadline than the 60s local default: a loaded
       # shared host can be slow to bring the stack up.
       AVISO_E2E_TIMEOUT_SECS: "120"
@@ -382,7 +382,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, platform-builder-docker-xl, platform-builder-Ubuntu-22.04]
     container:
-      image: eccr.ecmwf.int/aviso/cli-ci:0.3.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}

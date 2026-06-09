@@ -1,8 +1,9 @@
 # ────────────────────────────────────────────────────────────────
 # aviso-client CI image  ->  eccr.ecmwf.int/aviso/cli-ci
 #
-# Pre-bakes the Rust toolchain, sccache, uv, and the doc/lint tools
-# (mdbook, mdbook-mermaid, cargo-deny) as prebuilt static binaries.
+# Pre-bakes the Rust toolchain, sccache, uv, and the doc/lint/packaging
+# tools (mdbook, mdbook-mermaid, cargo-deny, cargo-cinstall) as
+# prebuilt static binaries.
 # A system python3 is baked so workspace cargo commands can build the
 # aviso-py PyO3 crate (pyo3 abi3 + auto-initialize need an interpreter
 # and libpython). Version-specific interpreters for the binding test
@@ -18,6 +19,7 @@ ARG SCCACHE_VERSION=0.15.0
 ARG MDBOOK_VERSION=0.5.3
 ARG MDBOOK_MERMAID_VERSION=0.17.0
 ARG CARGO_DENY_VERSION=0.19.8
+ARG CARGO_C_VERSION=0.10.23
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
@@ -37,12 +39,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # aviso-py under workspace cargo commands.
 # g++ + make + cmake: build the aviso-ffi C++ example and header-only
 # facade against the prebuilt C ABI (the C++ binding CI job).
-# No pkg-config, OpenSSL, node or wasm: nothing here needs them (reqwest
-# is rustls, ring drives gcc directly).
+# pkg-config: lets a consumer locate the aviso_ffi.pc that
+# `cargo cinstall` lays down (the FFI install-contract CI job).
+# No OpenSSL, node or wasm: nothing here needs them (reqwest is
+# rustls, ring drives gcc directly).
 RUN set -eux \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      gcc g++ make cmake libc6-dev git curl ca-certificates python3-dev \
+      gcc g++ make cmake libc6-dev git curl ca-certificates pkg-config \
+      python3-dev \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
            /usr/share/doc /usr/share/man /usr/share/info
@@ -64,6 +69,7 @@ ARG SCCACHE_VERSION
 ARG MDBOOK_VERSION
 ARG MDBOOK_MERMAID_VERSION
 ARG CARGO_DENY_VERSION
+ARG CARGO_C_VERSION
 RUN set -eux \
  && cd /usr/local/bin \
  && curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
@@ -73,7 +79,9 @@ RUN set -eux \
  && curl -fsSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz mdbook \
  && curl -fsSL "https://github.com/badboy/mdbook-mermaid/releases/download/v${MDBOOK_MERMAID_VERSION}/mdbook-mermaid-v${MDBOOK_MERMAID_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
-    | tar xz mdbook-mermaid
+    | tar xz mdbook-mermaid \
+ && curl -fsSL "https://github.com/lu-zero/cargo-c/releases/download/v${CARGO_C_VERSION}/cargo-c-x86_64-unknown-linux-musl.tar.gz" \
+    | tar xz cargo-cinstall
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 
@@ -81,6 +89,8 @@ RUN set -eux \
  && rustc --version && cargo --version \
  && cargo clippy --version && rustfmt --version \
  && mdbook --version && mdbook-mermaid --version && cargo-deny --version \
+ && cargo cinstall --version \
+ && pkg-config --version \
  && uv --version \
  && sccache --version \
  && python3 --version
