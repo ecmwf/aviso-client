@@ -13,8 +13,8 @@
 //! [`run`] entry point through the `aviso-py` extension. Keeping the whole
 //! CLI in the library (clap parsing, tracing setup, async dispatch, and
 //! exit-code mapping) means both surfaces share one code path. Aside from the
-//! second-Ctrl+C hard-exit escape hatch in [`cancel`], [`std::process::exit`]
-//! lives in the binary, not in this library.
+//! second-Ctrl+C hard-exit escape hatch in the private `cancel` module,
+//! [`std::process::exit`] lives in the binary, not in this library.
 
 #![allow(
     clippy::doc_markdown,
