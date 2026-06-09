@@ -76,20 +76,24 @@ index_path() {
 
 # Probe the index for crate@version. Sets probe_state to 'indexed' or
 # 'absent', and on 'indexed' also probe_cksum and probe_yanked. A 404 means
-# the name has never been published (absent); any other non-200 answer fails
-# closed so a network hiccup is never read as "safe to publish".
+# the name has never been published (absent); a 200 whose body is empty or
+# not the JSON-lines format, and any other answer, fail closed so an index
+# or proxy anomaly is never read as "safe to publish".
+probe_body="$(mktemp)"
+trap 'rm -f "$probe_body"' EXIT
 probe_entry() {
-  local crate="$1" body code
-  body="$(mktemp)"
-  code="$(curl -sS -o "$body" -w '%{http_code}' "$INDEX_URL/$(index_path "$crate")")" ||
+  local crate="$1" code
+  code="$(curl -sS -o "$probe_body" -w '%{http_code}' "$INDEX_URL/$(index_path "$crate")")" ||
     die "could not reach the index for '$crate'"
   case "$code" in
   200)
+    [ -s "$probe_body" ] ||
+      die "the index answered 200 for '$crate' with an empty body; failing closed"
     local entry
     # One line per version is the index contract (yanks rewrite the line in
     # place), but read the LAST match defensively so a hypothetical update
     # appended later can never be shadowed by a stale entry.
-    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$body" 2>/dev/null | tail -n 1)" ||
+    entry="$(jq -c --arg v "$version" 'select(.vers == $v)' "$probe_body" 2>/dev/null | tail -n 1)" ||
       die "the index answered 200 for '$crate' with a body that is not the JSON-lines format; failing closed"
     if [ -n "$entry" ]; then
       probe_state=indexed
@@ -106,7 +110,6 @@ probe_entry() {
     die "index probe for '$crate' returned HTTP $code; failing closed"
     ;;
   esac
-  rm -f "$body"
 }
 
 # --- release-start guard ------------------------------------------------------
