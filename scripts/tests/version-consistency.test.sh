@@ -87,6 +87,10 @@ rc_tree="$tmp/rc"
 make_tree "$rc_tree" 2.0.0-rc.1 "=2.0.0-rc.1" "2.0.0-rc.1"
 check "passes a pre-release with exact pins and requirement" 0 2.0.0-rc.1 "$rc_tree"
 
+rc_float="$tmp/rc-float"
+make_tree "$rc_float" 2.0.0-rc.1 "=2.0.0-rc.1" "2.0"
+check "fails a pre-release against a plain floating requirement" 1 2.0.0-rc.1 "$rc_float"
+
 floatmajor="$tmp/floatmajor"
 make_tree "$floatmajor" 1.2.3 "=1.2.3" "1"
 check "passes a one-component floating requirement" 0 1.2.3 "$floatmajor"

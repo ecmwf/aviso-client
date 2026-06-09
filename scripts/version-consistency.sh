@@ -109,13 +109,16 @@ scan_manifest() {
 
 # A floating requirement is satisfied when the target equals it or extends it
 # by another dot component: '2.0' accepts 2.0.0 and 2.0.1; '2.0.0-rc.1'
-# accepts exactly itself. This intentionally does not re-implement full cargo
-# semver-range semantics; the requirements cargo-release writes are plain
-# x[.y[.z]] floats or full versions.
+# accepts exactly itself. A pre-release target satisfies no plain float:
+# cargo excludes pre-releases from version ranges unless the requirement
+# itself names one, so '2.0' does NOT accept 2.0.0-rc.1. This intentionally
+# does not re-implement full cargo semver-range semantics; the requirements
+# cargo-release writes are plain x[.y[.z]] floats or full versions.
 float_satisfied() {
   local req="$1"
   [ "$version" = "$req" ] && return 0
   case "$version" in
+  *-*) return 1 ;;
   "$req".*) return 0 ;;
   esac
   return 1

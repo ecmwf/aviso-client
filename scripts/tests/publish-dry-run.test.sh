@@ -52,6 +52,10 @@ unresolved-external)
   echo "error: no matching package named \`serde\` found" >&2
   exit 101
   ;;
+unresolved-prefixed)
+  echo "error: no matching package named \`aviso-foo\` found" >&2
+  exit 101
+  ;;
 metadata)
   echo "error: missing field description" >&2
   exit 101
@@ -90,6 +94,7 @@ check "tolerates the gap when it names aviso-ffi" 0 "aviso-ffi=unresolved-ffi"
 check "fails when finesse fails, whatever the reason" 1 "finesse=unresolved"
 check "fails a dependent crate on a non-gap error" 1 "aviso=metadata"
 check "fails when the unresolved package is external" 1 "aviso=unresolved-external"
+check "fails when the external package merely starts with our name" 1 "aviso=unresolved-prefixed"
 
 # Order contract: the crates must be dry-run in publish order.
 log="$tmp/order.log"
