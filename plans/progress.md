@@ -13,6 +13,10 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#54](https://github.com/ecmwf/aviso-client/pull/54) ci: run the
+  `ffi-cargo-c` install contract in the pinned image with the same fork guard
+  and sccache setup as the other compiling jobs, dropping the GitHub-hosted
+  bootstrap (release-plan step 5, PR-B1).
 - [#53](https://github.com/ecmwf/aviso-client/pull/53) ci: bake `pkg-config`
   and a prebuilt `cargo-cinstall` into the pinned CI image (0.4.0) and pin the
   workflow jobs to it, so the FFI install-contract job can move off its
