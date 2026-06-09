@@ -76,7 +76,7 @@ scan_manifest() {
       flush_dep()
       section = $0
       sub(/^[[:space:]]*/, "", section)
-      if (section ~ /^\[([^]]*\.)?dependencies\.[A-Za-z0-9_-]+\]/) {
+      if (section ~ /^\[([^]]*\.)?(dev-|build-)?dependencies\.[A-Za-z0-9_-]+\]/) {
         dep = section
         sub(/\]$/, "", dep)
         sub(/^.*dependencies\./, "", dep)

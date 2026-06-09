@@ -32,7 +32,7 @@ crates=("$@")
 # external crate is a real dependency problem. The `.` placeholders stand for
 # cargo's backtick quoting, kept out of the pattern so the shell never reads
 # them as command substitution.
-unresolved_re='(no matching package named .(finesse|aviso|aviso-cli).|failed to select a version for the requirement .(finesse|aviso|aviso-cli) )'
+unresolved_re='(no matching package named .(finesse|aviso|aviso-cli|aviso-ffi).|failed to select a version for the requirement .(finesse|aviso|aviso-cli|aviso-ffi) )'
 
 warned=()
 for crate in "${crates[@]}"; do
