@@ -19,17 +19,14 @@ _ws-version:
     @scripts/ws-version.sh
 
 # Dry-run gate before a release (publishes nothing); pass the target version.
+# The version-consistency and ordered-dry-run checks live in scripts/ (one
+# home, shared with the release-preflight CI workflow and unit-tested there).
 release-preflight version:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "==> release-preflight {{version}}"
 
-    actual=$(just _ws-version)
-    if [ "$actual" != "{{version}}" ]; then
-        echo "ERROR: workspace version is '$actual', expected '{{version}}'." >&2
-        echo "Run 'just release-version {{version}}' first (or fix the target)." >&2
-        exit 1
-    fi
+    scripts/version-consistency.sh "{{version}}"
 
     cargo fmt --all -- --check
     cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -41,26 +38,7 @@ release-preflight version:
     done
 
     echo "==> cargo publish --dry-run (ordered)"
-    dry_failures=()
-    for c in {{crates}}; do
-        echo "--- $c"
-        if ! cargo publish --locked --dry-run -p "$c"; then
-            dry_failures+=("$c")
-        fi
-    done
-
-    # finesse has no workspace-internal dependencies, so a dry-run failure there
-    # is a real packaging/metadata error, not the first-publish resolution case.
-    if printf '%s\n' "${dry_failures[@]:-}" | grep -qx finesse; then
-        echo "ERROR: 'finesse' failed cargo publish --dry-run — it has no internal deps," >&2
-        echo "  so this is a real packaging/metadata error, not first-publish index lag." >&2
-        exit 1
-    fi
-    if [ "${#dry_failures[@]}" -gt 0 ]; then
-        echo "WARNING: cargo publish --dry-run failed for: ${dry_failures[*]}"
-        echo "  Expected on a FIRST publish for crates whose upstreams are not yet on"
-        echo "  crates.io; investigate any UNEXPECTED failure (real metadata error)."
-    fi
+    scripts/publish-dry-run.sh {{crates}}
 
     if command -v uv >/dev/null 2>&1; then
         echo "==> Python wheel + sdist + twine check"
@@ -72,11 +50,7 @@ release-preflight version:
         echo "==> SKIP Python checks (uv not installed)"
     fi
 
-    if [ "${#dry_failures[@]}" -gt 0 ]; then
-        echo "==> preflight finished for {{version}} (WITH dry-run warnings above)"
-    else
-        echo "==> preflight OK for {{version}}"
-    fi
+    echo "==> preflight finished for {{version}} (any first-publish dry-run warnings are listed above)"
 
 # Bump the whole workspace and internal pins to <version> (no tag, no push).
 release-version version:
