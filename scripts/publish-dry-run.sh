@@ -28,11 +28,12 @@ crates=("$@")
 # upstream on the registry. Matches e.g.
 #   error: no matching package named `aviso` found
 #   error: failed to select a version for the requirement `aviso = "=2.0.0"`
-# but only when the named package is one of ours; the same error naming an
-# external crate is a real dependency problem. The `.` placeholders stand for
-# cargo's backtick quoting, kept out of the pattern so the shell never reads
-# them as command substitution.
-unresolved_re='(no matching package named .(finesse|aviso|aviso-cli|aviso-ffi).|failed to select a version for the requirement .(finesse|aviso|aviso-cli|aviso-ffi) )'
+# but only when the named package is exactly one of ours: the name must be
+# followed by a non-name character, so e.g. an external `aviso-foo` does not
+# ride on the `aviso` alternative. The `.` placeholders stand for cargo's
+# backtick quoting, kept out of the pattern so the shell never reads them as
+# command substitution.
+unresolved_re='(no matching package named .(finesse|aviso-cli|aviso-ffi|aviso)[^0-9A-Za-z_-]|failed to select a version for the requirement .(finesse|aviso-cli|aviso-ffi|aviso)[^0-9A-Za-z_-])'
 
 warned=()
 for crate in "${crates[@]}"; do
