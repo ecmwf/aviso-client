@@ -86,8 +86,9 @@ echo "ok: tag '$REF_NAME' names the checked-out commit and matches the workspace
 #   behind    -> $SHA is an ancestor of main (merged earlier)
 #   ahead     -> $SHA carries commits main does not have (never merged)
 #   diverged  -> both have unique commits
-# Only the first two mean "reachable from main".
-compare_status="$(gh api "repos/$REPO/compare/main...$SHA" --jq '.status' 2>/dev/null || true)"
+# Only the first two mean "reachable from main". gh prints its own error (auth,
+# 404) to stderr; `|| true` keeps control flow so an empty status fails closed.
+compare_status="$(gh api "repos/$REPO/compare/main...$SHA" --jq '.status' || true)"
 case "$compare_status" in
 behind | identical)
   echo "ok: $SHA is reachable from main (compare: $compare_status)"
