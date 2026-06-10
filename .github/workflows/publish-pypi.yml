@@ -1,7 +1,9 @@
 name: Publish PyPI
 
 # Builds and publishes the pyaviso wheels and sdist on a release tag, gated
-# by the release invariant, with OIDC trusted publishing (no stored secret).
+# by the release invariant. Auth uses the organization PyPI API tokens when
+# they are configured and OIDC trusted publishing otherwise (see the upload
+# steps).
 #
 # Build matrix: manylinux_2_28 x86_64 and aarch64, macOS universal2 (all
 # abi3-py310, so one wheel per platform covers CPython 3.10+), plus the
@@ -234,7 +236,8 @@ jobs:
       name: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_test_pypi) && 'test-pypi' || 'pypi' }}
     permissions:
       contents: read
-      # OIDC trusted publishing; there is no stored PyPI secret.
+      # Required for the OIDC trusted-publishing path; harmless when the
+      # token path is active.
       id-token: write
     steps:
       - uses: actions/checkout@v5
@@ -290,13 +293,22 @@ jobs:
           python3 -m pip install --quiet --user twine
           python3 -m twine check dist/*
 
+      # Auth is dual-path by construction: when the organization API token
+      # secret is set it is used directly, and when it is absent the action
+      # falls back to OIDC trusted publishing (an empty password input is the
+      # action's documented trusted-publishing switch). Configuring trusted
+      # publishers on the indexes makes the tokens removable with no workflow
+      # change.
       - name: Upload to TestPyPI
         if: github.event_name == 'workflow_dispatch' && inputs.use_test_pypi
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
+          password: ${{ secrets.PYPI_TEST_API_TOKEN }}
 
       - name: Upload to PyPI
         if: github.event_name == 'push' || !inputs.use_test_pypi
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

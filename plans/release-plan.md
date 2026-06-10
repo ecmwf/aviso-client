@@ -429,10 +429,13 @@ docs (#58, step 9; PR-C's packaging deliverable landed there as
 `scripts/package-ffi.sh`, with the in-tree examples keeping their
 `find_library` path). **The next task is step 10**: the external prereqs
 (step 1 console work) followed by the `2.0.0-rc.1` rehearsal and the real
-`2.0.0`. Required console work before the rc: the `crates-io` environment +
-`CARGO_REGISTRY_TOKEN` and crates.io ownership of the four names; the
-`pypi`/`test-pypi` environments with trusted publishers configured for
-`pyaviso` on both indexes.
+`2.0.0`. Console state (checked #59): the org-wide `CARGO_REGISTRY_TOKEN`,
+`PYPI_API_TOKEN`, and `PYPI_TEST_API_TOKEN` secrets already exist and the
+PyPI workflow uses them directly (R8 amended: OIDC is the fallback, not the
+prerequisite). Remaining before the rc: confirm the crates.io token's
+account may claim the four names, confirm the PyPI token's account owns
+`pyaviso` (it published 1.0.2), and optionally create the `crates-io` /
+`pypi` / `test-pypi` environments with reviewer gates before first use.
 
 **Step 5 is staged across several PRs** (an Oracle-reviewed sequence, to keep
 every existing consumer green while cargo-c becomes an additional packaging
@@ -554,7 +557,12 @@ nothing is lost.
   mixed sources. Stop, yank if appropriate, bump the whole workspace to `2.0.1`,
   release from a new tag. §8 step 9.
 - **R8 — OIDC trusted publishing** for PyPI; token only as project-scoped
-  fallback. Decided (was Q8).
+  fallback. Decided (was Q8). *Amended (#59):* the organization publishes
+  with org-wide `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets and trusted
+  publishing is not yet configured on the indexes, so the workflow is
+  dual-path: it uses those tokens when present and falls back to OIDC when
+  they are absent. Once trusted publishers exist for `pyaviso`, removing the
+  secrets flips the workflow to OIDC with no change.
 
 ### Nits (adopted)
 
