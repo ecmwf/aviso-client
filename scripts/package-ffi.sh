@@ -98,7 +98,7 @@ else
   # /lib/ld-linux-aarch64.so.1); a library with no dynamic dependencies at
   # all makes ldd print "statically linked", the safest possible answer.
   bad="$(printf '%s\n' "$deps" |
-    grep -Ev '^(linux-vdso\.so|libgcc_s\.so|libm\.so|libc\.so|libpthread\.so|libdl\.so|librt\.so|statically)|^(/[A-Za-z0-9._/-]*/)?ld-linux[A-Za-z0-9._-]*\.so' || true)"
+    grep -Ev '^((linux-vdso|libgcc_s|libm|libc|libpthread|libdl|librt)\.so(\.[0-9]+)*|statically|(/[A-Za-z0-9._/-]*/)?ld-linux[A-Za-z0-9_-]*\.so(\.[0-9]+)*)$' || true)"
 fi
 [ -z "$bad" ] || die "unexpected shared-library dependencies: $bad"
 
