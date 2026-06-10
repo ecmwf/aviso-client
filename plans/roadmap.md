@@ -70,7 +70,9 @@ Smaller items, none gating. Pick up when the moment is right.
   comes first).
 - e2e: optional `pytest-xdist` port-sharding if the suite grows slow, and a
   `docker compose restart` mid-stream reconnect scenario alongside the routine
-  max-duration cut already covered.
+  max-duration cut already covered. The resume-across-restart test's 5s
+  notification deadline has flaked once on a loaded shared host; widen it if
+  it recurs.
 - `StateStoreError` sub-discrimination on the Python side (today it is one
   variant carrying the inner debug string).
 - Per-file ECMWF copyright headers if policy requires them (the LICENSE file
