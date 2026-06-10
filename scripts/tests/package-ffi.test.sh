@@ -93,15 +93,19 @@ else
   failed=$((failed + 1))
 fi
 
-# The packed .pc must be pcfiledir-relative with no staging path left.
-tar -xzf "$out/aviso-ffi-$ws_version-linux-test.tar.gz" -C "$tmp"
+# The packed .pc must be pcfiledir-relative with no staging path left. The
+# extraction is guarded so a missing tarball records a failure instead of
+# aborting the remaining cases under set -e.
 pc="$tmp/aviso-ffi-$ws_version-linux-test/lib/pkgconfig/aviso_ffi.pc"
-if grep -q '^prefix=[$]{pcfiledir}/../..$' "$pc" && ! grep -q "$tmp" "$pc"; then
+if [ -f "$out/aviso-ffi-$ws_version-linux-test.tar.gz" ]; then
+  tar -xzf "$out/aviso-ffi-$ws_version-linux-test.tar.gz" -C "$tmp"
+fi
+if [ -f "$pc" ] && grep -q '^prefix=[$]{pcfiledir}/../..$' "$pc" && ! grep -q "$tmp" "$pc"; then
   echo "ok   - the shipped .pc is relocatable"
   passed=$((passed + 1))
 else
   echo "FAIL - the shipped .pc is relocatable"
-  cat "$pc"
+  [ -f "$pc" ] && cat "$pc"
   failed=$((failed + 1))
 fi
 
