@@ -210,6 +210,8 @@ jobs:
         run: bash scripts/tests/publish-dry-run.test.sh
       - name: Publish-crates unit tests
         run: bash scripts/tests/publish-crates.test.sh
+      - name: Package-ffi unit tests
+        run: bash scripts/tests/package-ffi.test.sh
 
   # ── FFI cargo-c install contract ────────────────────────────────
   # Proves the standard `.a/.so/.pc/.h` drop installs and that a clean consumer

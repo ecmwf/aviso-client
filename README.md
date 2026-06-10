@@ -89,6 +89,7 @@ bash scripts/tests/release-invariant.test.sh
 bash scripts/tests/version-consistency.test.sh
 bash scripts/tests/publish-dry-run.test.sh
 bash scripts/tests/publish-crates.test.sh
+bash scripts/tests/package-ffi.test.sh
 ```
 
 ## Documentation
