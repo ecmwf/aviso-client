@@ -81,7 +81,7 @@ cmake --build build/cpp
 ./build/cpp/schema_smoke                                # runs without a server
 ```
 
-Release tooling (the release-invariant check that gates every publisher, plus the preflight's version-consistency and ordered dry-run checks; plain shell, no toolchain):
+Release tooling (the release-invariant check that gates every publisher, plus the preflight's version-consistency, ordered dry-run, and artifact-packaging checks; shell plus a C/C++ compiler and pkg-config for the packaging suite, no Rust toolchain):
 
 ```bash
 shellcheck scripts/*.sh scripts/tests/*.test.sh
@@ -89,6 +89,7 @@ bash scripts/tests/release-invariant.test.sh
 bash scripts/tests/version-consistency.test.sh
 bash scripts/tests/publish-dry-run.test.sh
 bash scripts/tests/publish-crates.test.sh
+bash scripts/tests/package-ffi.test.sh
 ```
 
 ## Documentation
