@@ -47,7 +47,7 @@ cd "$here/.."
 command -v pkg-config >/dev/null 2>&1 || die "pkg-config is required"
 
 name="aviso-ffi-$version-$platform"
-work="$(mktemp -d)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/package-ffi.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 staging="$work/pack/$name"
 mkdir -p "$staging" "$out_dir"
@@ -66,7 +66,7 @@ cargo cinstall --locked -p aviso-ffi --release \
 # directory the consumer unpacked into.
 pc="$staging/lib/pkgconfig/aviso_ffi.pc"
 [ -f "$pc" ] || die "cinstall produced no $pc"
-tmp_pc="$(mktemp)"
+tmp_pc="$work/aviso_ffi.pc.new"
 awk '
   /^prefix=/      { print "prefix=${pcfiledir}/../.."; next }
   /^exec_prefix=/ { print "exec_prefix=${prefix}"; next }
