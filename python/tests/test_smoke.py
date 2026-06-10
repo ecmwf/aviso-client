@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 
 import pyaviso
+from packaging.version import Version
 
 
 def test_package_imports() -> None:
@@ -33,7 +34,10 @@ def test_version_is_a_string() -> None:
 def test_native_version_matches_rust_crate() -> None:
     assert isinstance(pyaviso.VERSION, str)
     assert re.match(r"^\d+\.\d+\.\d+", pyaviso.VERSION)
-    assert pyaviso.__version__ == pyaviso.VERSION
+    # The distribution version is PEP 440-normalized (2.0.0-rc.1 becomes
+    # 2.0.0rc1) while the crate keeps the semver form, so the comparison
+    # must normalize both sides.
+    assert Version(pyaviso.__version__) == Version(pyaviso.VERSION)
 
 
 def test_public_surface_matches_documented_set() -> None:
