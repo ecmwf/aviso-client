@@ -13,6 +13,10 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#59](https://github.com/ecmwf/aviso-client/pull/59) ci: PyPI uploads use
+  the organization `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets when
+  present and fall back to OIDC trusted publishing when they are absent
+  (R8 amended); CONTRIBUTING describes the dual path.
 - [#58](https://github.com/ecmwf/aviso-client/pull/58) ci: prebuilt C/C++
   release assets and the GitHub Release. A unit-tested packaging script
   builds relocatable `aviso-ffi` tarballs (manylinux_2_28 x86_64/aarch64,
