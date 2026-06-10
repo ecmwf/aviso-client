@@ -39,7 +39,7 @@ EOF
 cat >"$tmp/fake.c" <<'EOF'
 int fake_dep(void) { return 1; }
 EOF
-cc -shared -fPIC -o "$tmp/libfake.so" "$tmp/fake.c"
+cc -shared -fPIC -o "$tmp/libcfake.so" "$tmp/fake.c"
 cat >"$tmp/stub_audit.c" <<EOF
 extern int fake_dep(void);
 const char *aviso_version(void) { return fake_dep() ? "$ws_version" : ""; }
@@ -100,7 +100,7 @@ pc="$tmp/aviso-ffi-$ws_version-linux-test/lib/pkgconfig/aviso_ffi.pc"
 if [ -f "$out/aviso-ffi-$ws_version-linux-test.tar.gz" ]; then
   tar -xzf "$out/aviso-ffi-$ws_version-linux-test.tar.gz" -C "$tmp"
 fi
-if [ -f "$pc" ] && grep -q '^prefix=[$]{pcfiledir}/../..$' "$pc" && ! grep -q "$tmp" "$pc"; then
+if [ -f "$pc" ] && grep -q '^prefix=[$]{pcfiledir}/../..$' "$pc" && ! grep -qF "$tmp" "$pc"; then
   echo "ok   - the shipped .pc is relocatable"
   passed=$((passed + 1))
 else
@@ -122,7 +122,7 @@ fi
 
 # A library linking beyond the system allowlist must fail the audit.
 rc=0
-STUB_SRC="$tmp/stub_audit.c" STUB_EXTRA_LIBS="-L$tmp -lfake" PATH="$tmp/bin:$PATH" \
+STUB_SRC="$tmp/stub_audit.c" STUB_EXTRA_LIBS="-L$tmp -lcfake" PATH="$tmp/bin:$PATH" \
   bash "$script" "$ws_version" linux-audit "$tmp/out3" >"$tmp/audit.log" 2>&1 || rc=$?
 if [ "$rc" -ne 0 ] && grep -q "unexpected shared-library dependencies" "$tmp/audit.log"; then
   echo "ok   - the dependency audit rejects an unexpected library"

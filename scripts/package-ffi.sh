@@ -92,12 +92,13 @@ if [ "$(uname)" = "Darwin" ]; then
   bad="$(printf '%s\n' "$deps" | grep -Ev '^(@rpath/libaviso_ffi\.dylib|/usr/lib/|/System/)' || true)"
 else
   deps="$(ldd "$staging/lib/libaviso_ffi.so" | awk '{print $1}')"
-  # The dynamic loader's own line is an absolute path that varies by distro
-  # (/lib64, /usr/lib64, ...); the named entries are the glibc family; a
-  # library with no dynamic dependencies at all makes ldd print
-  # "statically linked", which is the safest possible answer.
+  # Anchored to full sonames so e.g. libcrypto cannot ride on a libc
+  # prefix. The dynamic loader's own line is an absolute path that varies
+  # by distro (/lib64/ld-linux-x86-64.so.2, /usr/lib64/...,
+  # /lib/ld-linux-aarch64.so.1); a library with no dynamic dependencies at
+  # all makes ldd print "statically linked", the safest possible answer.
   bad="$(printf '%s\n' "$deps" |
-    grep -Ev '^(linux-vdso|libgcc_s|libm|libc|libpthread|libdl|librt|ld-linux|/lib|/usr/lib|statically)' || true)"
+    grep -Ev '^(linux-vdso\.so|libgcc_s\.so|libm\.so|libc\.so|libpthread\.so|libdl\.so|librt\.so|statically)|^(/[A-Za-z0-9._/-]*/)?ld-linux[A-Za-z0-9._-]*\.so' || true)"
 fi
 [ -z "$bad" ] || die "unexpected shared-library dependencies: $bad"
 
