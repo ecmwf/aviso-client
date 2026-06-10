@@ -93,9 +93,11 @@ if [ "$(uname)" = "Darwin" ]; then
 else
   deps="$(ldd "$staging/lib/libaviso_ffi.so" | awk '{print $1}')"
   # The dynamic loader's own line is an absolute path that varies by distro
-  # (/lib64, /usr/lib64, ...); the named entries are the glibc family.
+  # (/lib64, /usr/lib64, ...); the named entries are the glibc family; a
+  # library with no dynamic dependencies at all makes ldd print
+  # "statically linked", which is the safest possible answer.
   bad="$(printf '%s\n' "$deps" |
-    grep -Ev '^(linux-vdso|libgcc_s|libm|libc|libpthread|libdl|librt|ld-linux|/lib|/usr/lib)' || true)"
+    grep -Ev '^(linux-vdso|libgcc_s|libm|libc|libpthread|libdl|librt|ld-linux|/lib|/usr/lib|statically)' || true)"
 fi
 [ -z "$bad" ] || die "unexpected shared-library dependencies: $bad"
 
