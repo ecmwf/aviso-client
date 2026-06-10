@@ -1,13 +1,9 @@
 # Release plan — unified 2.0.0
 
-Working plan for the first published release of aviso-client. Living document:
-update it as decisions land; move shipped items into
-[`progress.md`](./progress.md) and the forward-looking summary in
-[`roadmap.md`](./roadmap.md) once a release goes out.
-
-**Resuming on a fresh machine?** Jump to
-[§12 (Implementation order)](#12-implementation-order): it carries the current
-status, the one-time tool setup, and the exact next task.
+**COMPLETE: 2.0.0 shipped.** This plan is retained as the record of how the
+release machinery was designed and built; the shipped state is summarized in
+[`progress.md`](./progress.md), the maintainer-facing runbook lives in
+CONTRIBUTING.md, and follow-ups are in [`roadmap.md`](./roadmap.md).
 
 Cross-references: the release intent is sketched in
 [`roadmap.md`](./roadmap.md) ("What's next → Release", "Prebuilt C++ artifacts").
@@ -501,7 +497,17 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
    (manylinux_2_28 x86_64/aarch64, macOS arm64 and x86_64) with SHA256SUMS;
    `docs-sites.yml` `stable` restricted to final semver tags (§6.F); the
    release process documented for maintainers in CONTRIBUTING.md.
-10. **RC rehearsal `2.0.0-rc.1`** end-to-end (§13 R1), then the real `2.0.0`.
+10. **RC rehearsal + final release — DONE.** The rehearsal took three rcs,
+    each catching something real: rc.1 (publishers all fired; PyPI stopped
+    pre-upload by the runner's outdated twine/pkginfo, fixed in #61), rc.2
+    (wheels landed on PyPI; the sdist was rejected by the registry's
+    license-file validation, fixed in #63 with a build-time gate; rc.2 is
+    wheels-only on PyPI permanently), rc.3 (complete: 4 PyPI files, 4
+    crates, 4 release tarballs, docs). **2.0.0 shipped** (#65 + tag
+    `2.0.0`): every publisher green, verified from clean environments, the
+    `stable` docs link moved, the GitHub Release is latest. This plan is
+    complete; remaining follow-ups (TestPyPI name ownership, legacy repo
+    archival) live in roadmap.md.
 
 ---
 
