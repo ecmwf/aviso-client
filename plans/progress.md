@@ -13,6 +13,13 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#58](https://github.com/ecmwf/aviso-client/pull/58) ci: prebuilt C/C++
+  release assets and the GitHub Release. A unit-tested packaging script
+  builds relocatable `aviso-ffi` tarballs (manylinux_2_28 x86_64/aarch64,
+  macOS arm64 and x86_64) with a soname-anchored dependency audit and an
+  extracted-copy smoke; the release workflow attaches them with SHA256SUMS
+  and generated notes. Docs `stable` now moves only on a final semver tag,
+  and CONTRIBUTING.md documents the release process (release-plan step 9).
 - [#57](https://github.com/ecmwf/aviso-client/pull/57) ci: the tag-triggered
   PyPI publisher. manylinux x86_64/aarch64 and macOS universal2 abi3 wheels
   plus the sdist, each smoke-tested where built (the sdist as a
