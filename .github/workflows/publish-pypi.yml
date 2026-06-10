@@ -57,10 +57,13 @@ jobs:
         # TestPyPI is a sandbox but still a public, per-version-immutable
         # upload surface; arbitrary branch state does not belong there.
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$GITHUB_REF_TYPE" != "tag" ]; then
+          case "$GITHUB_REF" in
+          refs/heads/main | refs/tags/*) ;;
+          *)
             echo "::error::TestPyPI uploads run from main or a tag, not $GITHUB_REF"
             exit 1
-          fi
+            ;;
+          esac
 
       - name: Assert the release invariant
         if: github.event_name == 'push' || !inputs.use_test_pypi
