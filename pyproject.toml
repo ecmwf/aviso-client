@@ -55,6 +55,10 @@ manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
 module-name = "pyaviso._native"
 features = ["extension-module"]
+# The wheel bundles the license automatically, but the workspace-layout sdist
+# does not; PyPI rejects an sdist whose metadata declares License-File without
+# carrying the file.
+include = [{ path = "LICENSE.txt", format = "sdist" }]
 
 [tool.uv]
 package = false
