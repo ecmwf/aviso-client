@@ -13,6 +13,14 @@ sccache, and documentation published to ECMWF Sites.
 
 ## Log
 
+- [#57](https://github.com/ecmwf/aviso-client/pull/57) ci: the tag-triggered
+  PyPI publisher. manylinux x86_64/aarch64 and macOS universal2 abi3 wheels
+  plus the sdist, each smoke-tested where built (the sdist as a
+  clean-environment source build); the publish job asserts the exact
+  artifact set and normalized filenames, refuses a production version at or
+  below the live `pyaviso` release, and uploads with OIDC trusted
+  publishing; skip-existing only on the TestPyPI lever (release-plan
+  step 8).
 - [#56](https://github.com/ecmwf/aviso-client/pull/56) ci: the tag-triggered
   crates.io publisher. A unit-tested script publishes the four crates in
   dependency order with sparse-index polling, a fail-loud guard against
