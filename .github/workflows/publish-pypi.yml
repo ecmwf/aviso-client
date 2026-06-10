@@ -1,0 +1,302 @@
+name: Publish PyPI
+
+# Builds and publishes the pyaviso wheels and sdist on a release tag, gated
+# by the release invariant, with OIDC trusted publishing (no stored secret).
+#
+# Build matrix: manylinux_2_28 x86_64 and aarch64, macOS universal2 (all
+# abi3-py310, so one wheel per platform covers CPython 3.10+), plus the
+# sdist as the source-build fallback. No Windows, no musllinux.
+#
+# The workflow_dispatch lever (use_test_pypi, the default) uploads to
+# TestPyPI instead: same build and checks, sandbox destination, allowed from
+# main or a tag so the pipeline is exercisable before a release exists.
+# skip-existing is enabled ONLY there; on PyPI a re-upload collision must
+# fail rather than silently fill in around a bad partial release, because
+# PyPI files are immutable. Recovery from a partial upload is a new version,
+# never a moved tag.
+
+on:
+  push:
+    # Bare semver release tags. Tag filters are globs, so this over-matches;
+    # the release invariant is the strict validator.
+    tags: ["[0-9]*.[0-9]*.[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      use_test_pypi:
+        description: "Upload to TestPyPI instead of PyPI"
+        type: boolean
+        default: true
+
+# Never run two publishes at once, and never cancel one mid-flight.
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── the gate every build hangs off ──────────────────────────────
+  gate:
+    name: release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The invariant peels the release tag locally, so the tag refs must
+          # be present even on a manual dispatch.
+          fetch-depth: 0
+
+      - name: Restrict the TestPyPI lever to main or a tag
+        if: github.event_name == 'workflow_dispatch' && inputs.use_test_pypi
+        # TestPyPI is a sandbox but still a public, per-version-immutable
+        # upload surface; arbitrary branch state does not belong there.
+        run: |
+          case "$GITHUB_REF" in
+          refs/heads/main | refs/tags/*) ;;
+          *)
+            echo "::error::TestPyPI uploads run from main or a tag, not $GITHUB_REF"
+            exit 1
+            ;;
+          esac
+
+      - name: Assert the release invariant
+        if: github.event_name == 'push' || !inputs.use_test_pypi
+        uses: ./.github/actions/release-invariant
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Check version consistency across every manifest
+        run: scripts/version-consistency.sh "$(scripts/ws-version.sh)"
+
+  # ── wheels and sdist ────────────────────────────────────────────
+  # The manylinux jobs build inside the pypa containers, so the pinned
+  # toolchain is passed to maturin-action explicitly (a host rustup cannot
+  # reach into the container).
+  wheel-linux-x86_64:
+    name: wheel manylinux x86_64
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Read the pinned Rust toolchain
+        id: toolchain
+        run: |
+          channel="$(grep -oP 'channel\s*=\s*"\K[^"]+' rust-toolchain.toml)"
+          if [ -z "$channel" ]; then
+            echo "::error::no pinned channel found in rust-toolchain.toml"
+            exit 1
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --locked --out dist
+          target: x86_64-unknown-linux-gnu
+          manylinux: "2_28"
+          rust-toolchain: ${{ steps.toolchain.outputs.channel }}
+      - name: Smoke-test the wheel in a fresh environment
+        run: |
+          python3 -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
+          /tmp/wheel-venv/bin/python -c "import pyaviso"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-x86_64
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  wheel-linux-aarch64:
+    name: wheel manylinux aarch64
+    needs: gate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Read the pinned Rust toolchain
+        id: toolchain
+        run: |
+          channel="$(grep -oP 'channel\s*=\s*"\K[^"]+' rust-toolchain.toml)"
+          if [ -z "$channel" ]; then
+            echo "::error::no pinned channel found in rust-toolchain.toml"
+            exit 1
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --locked --out dist
+          target: aarch64-unknown-linux-gnu
+          manylinux: "2_28"
+          rust-toolchain: ${{ steps.toolchain.outputs.channel }}
+      - name: Smoke-test the wheel in a fresh environment
+        run: |
+          python3 -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
+          /tmp/wheel-venv/bin/python -c "import pyaviso"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-aarch64
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  wheel-macos-universal2:
+    name: wheel macos universal2
+    needs: gate
+    # A numbered label, not macos-latest: the latest alias migrates under
+    # release workflows otherwise.
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Materialize the pinned toolchain with both darwin targets
+        run: |
+          rustup show
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --locked --out dist
+          target: universal2-apple-darwin
+      - name: Smoke-test the wheel and verify both architecture slices
+        run: |
+          python3 -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
+          /tmp/wheel-venv/bin/python -c "import pyaviso"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
+          native="$(/tmp/wheel-venv/bin/python -c 'import pyaviso._native as m; print(m.__file__)')"
+          lipo -info "$native"
+          lipo -info "$native" | grep -q x86_64
+          lipo -info "$native" | grep -q arm64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos-universal2
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  sdist:
+    name: sdist
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Clean-environment source-build install test
+        # The sdist is the fallback for platforms without a matching wheel;
+        # prove it compiles and runs from scratch with the pinned toolchain.
+        run: |
+          rustup show
+          python3 -m venv /tmp/sdist-venv
+          /tmp/sdist-venv/bin/pip install dist/pyaviso-*.tar.gz
+          /tmp/sdist-venv/bin/python -c "import pyaviso"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/sdist-venv/bin/aviso --version | grep -F "$ws"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── the one job allowed to touch a registry ─────────────────────
+  publish:
+    name: publish
+    needs: [gate, wheel-linux-x86_64, wheel-linux-aarch64, wheel-macos-universal2, sdist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_test_pypi) && 'test-pypi' || 'pypi' }}
+    permissions:
+      contents: read
+      # OIDC trusted publishing; there is no stored PyPI secret.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: The artifact set is exactly what a release ships
+        # A silently-missing matrix job must never ship a partial immutable
+        # release: three wheels plus one sdist, nothing else.
+        run: |
+          ls -l dist/
+          test "$(find dist -name 'pyaviso-*.whl' | wc -l)" -eq 3
+          test "$(find dist -name 'pyaviso-*.tar.gz' | wc -l)" -eq 1
+          test "$(find dist -type f | wc -l)" -eq 4
+
+      - name: Built artifacts carry the workspace version
+        # pyproject.toml's version is dynamic, so the proof that maturin
+        # resolved the workspace version is the built filenames, in their
+        # PEP 440 normalized form (2.0.0-rc.1 becomes 2.0.0rc1).
+        run: |
+          python3 -m pip install --quiet --user packaging
+          norm="$(WS="$(scripts/ws-version.sh)" python3 -c \
+            "import os; from packaging.version import Version; print(Version(os.environ['WS']))")"
+          echo "normalized version: $norm"
+          test -f dist/pyaviso-"$norm".tar.gz
+          test "$(find dist -name "pyaviso-$norm-*.whl" | wc -l)" -eq 3
+
+      - name: The production target continues the pyaviso version line
+        if: github.event_name == 'push' || !inputs.use_test_pypi
+        # pyaviso on PyPI is the legacy client's line (1.0.x with the
+        # deprecation notice); this client continues it from 2.0.0. An
+        # upload at or below the live latest is a mis-tagged tree, not a
+        # release.
+        run: |
+          python3 -m pip install --quiet --user packaging
+          ws="$(scripts/ws-version.sh)"
+          latest="$(curl -fsS https://pypi.org/pypi/pyaviso/json | jq -r '.info.version')"
+          WS="$ws" LATEST="$latest" python3 -c "
+          import os, sys
+          from packaging.version import Version
+          ws, latest = Version(os.environ['WS']), Version(os.environ['LATEST'])
+          if ws <= latest:
+              sys.exit(f'target {ws} is not above the live pyaviso {latest}; this release must continue that line')
+          print(f'{ws} continues the pyaviso line above {latest}')
+          "
+
+      - name: twine check
+        run: |
+          python3 -m pip install --quiet --user twine
+          python3 -m twine check dist/*
+
+      - name: Upload to TestPyPI
+        if: github.event_name == 'workflow_dispatch' && inputs.use_test_pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+      - name: Upload to PyPI
+        if: github.event_name == 'push' || !inputs.use_test_pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
