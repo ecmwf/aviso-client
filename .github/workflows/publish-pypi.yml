@@ -107,7 +107,9 @@ jobs:
           python3 -m venv /tmp/wheel-venv
           /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
           /tmp/wheel-venv/bin/python -c "import pyaviso"
-          /tmp/wheel-venv/bin/aviso --version | grep -F "$(scripts/ws-version.sh)"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
       - uses: actions/upload-artifact@v7
         with:
           name: dist-linux-x86_64
@@ -144,7 +146,9 @@ jobs:
           python3 -m venv /tmp/wheel-venv
           /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
           /tmp/wheel-venv/bin/python -c "import pyaviso"
-          /tmp/wheel-venv/bin/aviso --version | grep -F "$(scripts/ws-version.sh)"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
       - uses: actions/upload-artifact@v7
         with:
           name: dist-linux-aarch64
@@ -176,7 +180,9 @@ jobs:
           python3 -m venv /tmp/wheel-venv
           /tmp/wheel-venv/bin/pip install dist/pyaviso-*.whl
           /tmp/wheel-venv/bin/python -c "import pyaviso"
-          /tmp/wheel-venv/bin/aviso --version | grep -F "$(scripts/ws-version.sh)"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
           native="$(/tmp/wheel-venv/bin/python -c 'import pyaviso._native as m; print(m.__file__)')"
           lipo -info "$native"
           lipo -info "$native" | grep -q x86_64
@@ -208,7 +214,9 @@ jobs:
           python3 -m venv /tmp/sdist-venv
           /tmp/sdist-venv/bin/pip install dist/pyaviso-*.tar.gz
           /tmp/sdist-venv/bin/python -c "import pyaviso"
-          /tmp/sdist-venv/bin/aviso --version | grep -F "$(scripts/ws-version.sh)"
+          ws="$(scripts/ws-version.sh)"
+          test -n "$ws"
+          /tmp/sdist-venv/bin/aviso --version | grep -F "$ws"
       - uses: actions/upload-artifact@v7
         with:
           name: dist-sdist
