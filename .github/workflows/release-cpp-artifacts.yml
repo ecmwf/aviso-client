@@ -179,7 +179,9 @@ jobs:
       - name: The asset set is exactly what a release ships
         run: |
           ls -l dist/
-          test "$(find dist -name 'aviso-ffi-*.tar.gz' | wc -l)" -eq 4
+          for platform in linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64; do
+            test -f "dist/aviso-ffi-$GITHUB_REF_NAME-$platform.tar.gz"
+          done
           test "$(find dist -type f | wc -l)" -eq 4
 
       - name: Checksums
