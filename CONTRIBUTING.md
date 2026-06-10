@@ -138,16 +138,17 @@ The release flow:
    `git push origin <version>`.
 4. The tag triggers the publishers in parallel: `Publish Crates` (crates.io,
    in dependency order with index polling), `Publish PyPI` (manylinux and
-   macOS wheels plus the sdist, uploaded with OIDC trusted publishing),
-   `Release Assets` (the prebuilt `libaviso_ffi` tarballs attached to a
-   GitHub Release with generated notes), and the docs publish (a final
-   release tag moves the `stable` docs link; pre-release tags do not).
+   macOS wheels plus the sdist; auth follows the dual path described under
+   the prerequisites below), `Release Assets` (the prebuilt `libaviso_ffi`
+   tarballs attached to a GitHub Release with generated notes), and the
+   docs publish (a final release tag moves the `stable` docs link;
+   pre-release tags do not).
 
 Every publisher first asserts the release invariant: the tag names the checked-out commit, equals the workspace version, is reachable from `main`, and `ci-pass` was green for that exact commit. A tag pushed at an unreviewed commit publishes nothing.
 
 If a publisher fails partway, never move or re-point the tag: published registry versions are immutable. The crates.io workflow has a resumable retry (dispatch it on the tag with the retry input; already-published crates are skipped only after their checksum matches what the tag's tree packages). A partial PyPI upload means releasing the next patch version. When in doubt, bump the whole workspace and release a fresh tag.
 
-Account-side prerequisites live outside the repo. crates.io publishing uses the organization-wide `CARGO_REGISTRY_TOKEN` secret; its account must be able to publish (and so own) the four crate names. PyPI auth is dual-path: the organization `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets are used when present, and when they are absent the workflow falls back to OIDC trusted publishing, so configuring trusted publishers for `pyaviso` on pypi.org and test.pypi.org (workflow `publish-pypi.yml`, environments `pypi` / `test-pypi`) makes the tokens removable with no workflow change. The `crates-io`, `pypi`, and `test-pypi` GitHub environments can carry required-reviewer gates; they are created on first use otherwise.
+Account-side prerequisites live outside the repo. Publishing to crates.io uses the organization-wide `CARGO_REGISTRY_TOKEN` secret; its account must be able to publish (and so own) the four crate names. PyPI auth is dual-path: the organization `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets are used when present, and when they are absent the workflow falls back to OIDC trusted publishing, so configuring trusted publishers for `pyaviso` on pypi.org and test.pypi.org (workflow `publish-pypi.yml`, environments `pypi` / `test-pypi`) makes the tokens removable with no workflow change. The `crates-io`, `pypi`, and `test-pypi` GitHub environments can carry required-reviewer gates; they are created on first use otherwise.
 
 ## Code of conduct
 
