@@ -35,8 +35,9 @@ die() {
   exit 1
 }
 
-[ -n "$version" ] && [ -n "$platform" ] ||
+if [ -z "$version" ] || [ -z "$platform" ]; then
   die "usage: package-ffi.sh <version> <platform-label> [out-dir]"
+fi
 
 ws_version="$("$here/ws-version.sh" "$here/../Cargo.toml")"
 [ "$version" = "$ws_version" ] ||
