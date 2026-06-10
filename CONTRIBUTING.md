@@ -112,6 +112,43 @@ bash tests/e2e/shared/stack.sh down  # when done, or `restart` to wipe JetStream
 
 Every `#[test]` function in `tests/e2e/rust/` carries `#[ignore = "requires e2e compose stack"]`, so the default `cargo test --workspace` invocation compiles the crate but skips running the tests. The `--include-ignored` flag opts in; `--test-threads=1` keeps publishers and listeners from racing each other in the shared JetStream stream. The CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects the `aviso` binary to exist at `target/debug/aviso`, hence the `cargo build -p aviso-cli` step. See `bash tests/e2e/shared/stack.sh` (no args) for the full subcommand list (`up`, `down`, `restart`, `logs`, `status`).
 
+## Releasing
+
+The whole suite releases under one shared version, read from `[workspace.package]` in the root `Cargo.toml`. Every crate inherits it, maturin resolves the Python distribution's version from it, and the bare-semver git tag must equal it. The PyPI distribution `pyaviso` continues the legacy package's version line, which is why the first release is 2.0.0 rather than 0.x.
+
+Local tooling is `just` plus `cargo-release` (`cargo install just cargo-release`). The recipes prepare and tag; CI does every actual publish, so registry credentials never touch a laptop:
+
+```bash
+just release-preflight 2.0.0   # local dry-run gate: version consistency, fmt,
+                               # clippy, tests, crate packaging, ordered
+                               # publish dry-run, wheel + sdist + twine check
+just release-version 2.0.0     # bump the workspace and every internal pin
+just release-tag 2.0.0         # annotated bare tag + the push command to run
+just publish-dry               # launch the CI dry-run paths (crates.io
+                               # dry-run, TestPyPI) via gh
+```
+
+The release flow:
+
+1. Run `just release-preflight <version>` locally, then dispatch the
+   `Release Preflight` workflow for the same version. Both must be green.
+   They publish nothing.
+2. Land the version bump from `just release-version` through a normal PR.
+3. `just release-tag <version>` on the merged commit, then push the tag with
+   `git push origin <version>`.
+4. The tag triggers the publishers in parallel: `Publish Crates` (crates.io,
+   in dependency order with index polling), `Publish PyPI` (manylinux and
+   macOS wheels plus the sdist, uploaded with OIDC trusted publishing),
+   `Release Assets` (the prebuilt `libaviso_ffi` tarballs attached to a
+   GitHub Release with generated notes), and the docs publish (a final
+   release tag moves the `stable` docs link; pre-release tags do not).
+
+Every publisher first asserts the release invariant: the tag names the checked-out commit, equals the workspace version, is reachable from `main`, and `ci-pass` was green for that exact commit. A tag pushed at an unreviewed commit publishes nothing.
+
+If a publisher fails partway, never move or re-point the tag: published registry versions are immutable. The crates.io workflow has a resumable retry (dispatch it on the tag with the retry input; already-published crates are skipped only after their checksum matches what the tag's tree packages). A partial PyPI upload means releasing the next patch version. When in doubt, bump the whole workspace and release a fresh tag.
+
+Account-side prerequisites live outside the repo: the `crates-io` GitHub environment with a `CARGO_REGISTRY_TOKEN` secret and ownership of the four crate names, and the `pypi`/`test-pypi` environments with trusted publishers configured for `pyaviso` on both indexes.
+
 ## Code of conduct
 
 Be precise. Be kind. Cite. Push back when something is wrong.
