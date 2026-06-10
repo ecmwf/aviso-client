@@ -9,9 +9,23 @@ A Rust core library, an `aviso` CLI, and a Python package, all over one
 implementation: publish notifications, watch and replay streams with automatic
 reconnect and at-least-once resume, and run echo / log / command / webhook
 triggers from YAML. Backed by a real-stack end-to-end suite, self-hosted CI with
-sccache, and documentation published to ECMWF Sites.
+sccache, and documentation published to ECMWF Sites. **Released as 2.0.0**:
+`finesse`, `aviso`, `aviso-cli`, and `aviso-ffi` on crates.io, `pyaviso` on
+PyPI (continuing the legacy line above 1.0.2), prebuilt `libaviso_ffi`
+tarballs on the GitHub Release, and the `stable` docs link.
 
 ## Log
+
+- **2.0.0 released** (tag `2.0.0`, bump in
+  [#65](https://github.com/ecmwf/aviso-client/pull/65)): all four publishers
+  green; verified by a clean-environment `pip install pyaviso==2.0.0`,
+  `cargo` index checks, and the Release assets. The public rc rehearsal
+  (#60, #62, #64) caught two real packaging bugs before the final: the
+  publish job's metadata tools were shadowed by the runner's outdated
+  twine/pkginfo ([#61](https://github.com/ecmwf/aviso-client/pull/61)), and
+  the sdist declared a license file it did not carry, which PyPI rejects
+  ([#63](https://github.com/ecmwf/aviso-client/pull/63)); rc.2 on PyPI is
+  wheels-only as a result, rc.3 is complete.
 
 - [#59](https://github.com/ecmwf/aviso-client/pull/59) ci: PyPI uploads use
   the organization `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets when

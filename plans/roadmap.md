@@ -6,48 +6,22 @@ that bound every choice are in [`constraints.md`](./constraints.md).
 
 ## Where things stand
 
-aviso-client is unreleased. The Rust core library, the `aviso` CLI, the Python
-(PyO3) package, the C++ binding (a stable C ABI plus a header-only C++ facade,
-covering the blocking and async verbs, watch, and triggers; D21 steps 1-5), the
-end-to-end test suite, self-hosted CI with sccache, and documentation published
-to ECMWF Sites are all in `main`. Nothing is published to a package registry
-yet.
+aviso-client 2.0.0 is released: the four crates on crates.io, `pyaviso` on
+PyPI (wheels for manylinux x86_64/aarch64 and macOS universal2 plus the
+sdist, continuing the legacy line), prebuilt `libaviso_ffi` tarballs on the
+GitHub Release, and the `stable` docs link on ECMWF Sites. The release
+machinery (preflight gate, invariant-gated publishers, runbook) is in `main`
+and documented in CONTRIBUTING.md.
 
 ## What's next
 
-- **Release.** Publish the `aviso` crate to crates.io (Linux only;
-  `cargo publish` ships source) and Python wheels to PyPI. The Python package
-  will reuse ECMWF's existing `pyaviso` PyPI name, published starting at
-  2.0.0 to continue that package's version line. The `aviso` PyPI name itself
-  is taken by an unrelated altimetric-data library, which is why the existing
-  `pyaviso` name is reclaimed rather than a new one minted. The current
-  `pyaviso` project will be archived with a deprecation notice in its README
-  and docs pointing here. Wheels need a tag-triggered workflow building
-  manylinux (x86_64 and aarch64) plus macOS universal2, `abi3` if supportable,
-  and an sdist on every release. No Windows wheels, no musllinux for now (see
-  follow-ups). The sdist is the source-build fallback for any platform without
-  a matching wheel. macOS regressions surface here rather than in everyday CI.
 - **Docs polish.** Realistic end-to-end examples (a MARS consumer, a polygon
   spatial consumer, a multi-listener daemon, a respawn-survival demo), a wider
   troubleshooting section, and CI gates for `clap`-derived reference freshness
-  and broken-link / banned-phrase checks.
-- **Prebuilt C++ artifacts.** The C++ binding itself is in `main` (the C ABI,
-  the header-only facade, the blocking and async verbs, watch, triggers,
-  examples, and docs; D21 steps 1-5). What remains is the packaging deliverable
-  that motivated the C-ABI choice: shipping a prebuilt per-platform library so a
-  consumer links it with no Rust toolchain. crates.io distributes source only
-  (`cargo` compiles it in the consumer's build), so there is no way to fetch a
-  compiled `libaviso_ffi.{a,so,dylib}` from it; the libraries must be
-  distributed as release assets. Plan: a tag-triggered release workflow that
-  cross-builds `libaviso_ffi.{a,so,dylib}` for Linux `x86_64`, Linux `aarch64`,
-  and macOS, and attaches each together with `aviso.h` and `aviso.hpp` as GitHub
-  Release assets (the drop a CMake consumer points `AVISO_FFI_INCLUDE_DIR` and
-  `AVISO_FFI_LIB_DIR` at). The same artifacts are packageable for spack-stack
+  and broken-link / banned-phrase checks. Plus `docs/src/cpp`
+  install/packaging pages for the prebuilt tarballs now on the Release page.
+- **Packaging spread.** The release tarballs are packageable for spack-stack
   and conda-forge with `rust` as a build-only dependency of that recipe.
-  Followed by `docs/src/cpp` install/packaging pages. The two prerequisites are
-  already in `main`: the real-stack C++ e2e job is now a required gate (#51), and
-  `cargo cinstall` produces the standard `.a/.so/.pc/.h` layout the release
-  workflow will package (#52). Design context in D21. No Windows.
 
 ## Follow-ups
 
@@ -82,6 +56,12 @@ Smaller items, none gating. Pick up when the moment is right.
   falls back to building the sdist from source (needs a Rust and C toolchain),
   so the gap is real but only bites Alpine. Adding it later is a config-only
   change to the wheel matrix.
+- TestPyPI ownership: the `pyaviso` name on test.pypi.org is not owned by the
+  organization's account, so the publish workflow's TestPyPI lever fails with
+  403 until someone claims or transfers it there. Real-PyPI publishing is
+  unaffected.
+- Archive the legacy `ecmwf/aviso` repository now that 2.0.0 has taken over
+  the `pyaviso` line (the deprecation notice shipped with 1.0.2).
 
 ## Open questions
 
