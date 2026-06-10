@@ -257,13 +257,21 @@ jobs:
           test "$(find dist -name 'pyaviso-*.tar.gz' | wc -l)" -eq 1
           test "$(find dist -type f | wc -l)" -eq 4
 
+      - name: Set up the metadata-checking tools
+        # A fresh venv, not --user installs: the runner image carries its own
+        # (potentially outdated) twine and pkginfo on the system path, and an
+        # old pkginfo rejects current maturin metadata (Metadata-Version 2.4
+        # License-File) as malformed.
+        run: |
+          python3 -m venv /tmp/pypi-tools
+          /tmp/pypi-tools/bin/pip install --quiet twine packaging
+
       - name: Built artifacts carry the workspace version
         # pyproject.toml's version is dynamic, so the proof that maturin
         # resolved the workspace version is the built filenames, in their
         # PEP 440 normalized form (2.0.0-rc.1 becomes 2.0.0rc1).
         run: |
-          python3 -m pip install --quiet --user packaging
-          norm="$(WS="$(scripts/ws-version.sh)" python3 -c \
+          norm="$(WS="$(scripts/ws-version.sh)" /tmp/pypi-tools/bin/python -c \
             "import os; from packaging.version import Version; print(Version(os.environ['WS']))")"
           echo "normalized version: $norm"
           test -f dist/pyaviso-"$norm".tar.gz
@@ -276,10 +284,9 @@ jobs:
         # upload at or below the live latest is a mis-tagged tree, not a
         # release.
         run: |
-          python3 -m pip install --quiet --user packaging
           ws="$(scripts/ws-version.sh)"
           latest="$(curl -fsS https://pypi.org/pypi/pyaviso/json | jq -r '.info.version')"
-          WS="$ws" LATEST="$latest" python3 -c "
+          WS="$ws" LATEST="$latest" /tmp/pypi-tools/bin/python -c "
           import os, sys
           from packaging.version import Version
           ws, latest = Version(os.environ['WS']), Version(os.environ['LATEST'])
@@ -289,9 +296,7 @@ jobs:
           "
 
       - name: twine check
-        run: |
-          python3 -m pip install --quiet --user twine
-          python3 -m twine check dist/*
+        run: /tmp/pypi-tools/bin/twine check dist/*
 
       # Auth is dual-path by construction: when the organization API token
       # secret is set it is used directly, and when it is absent the action
