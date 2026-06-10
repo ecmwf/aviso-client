@@ -11,7 +11,10 @@ on:
     branches:
       - main
     tags:
-      - "*"
+      # Bare semver release tags only (a glob, so it over-matches slightly;
+      # the softlink decision below re-checks strictly). An arbitrary tag
+      # must not publish canonical docs.
+      - "[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
     inputs:
       publish:
@@ -54,7 +57,7 @@ jobs:
       contents: read
     container:
       # Pinned full tag, never :latest.
-      image: eccr.ecmwf.int/aviso/cli-ci:0.2.0
+      image: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       credentials:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
@@ -116,6 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish-id: ${{ steps.sanitize.outputs.publish_id }}
+      softlink: ${{ steps.softlink.outputs.softlink }}
     steps:
       - name: Compute raw publish id
         id: raw
@@ -153,6 +157,41 @@ jobs:
           fi
           echo "publish_id=$SANITIZED" >> "$GITHUB_OUTPUT"
 
+      - name: Refuse a non-semver tag outright
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        # The tags trigger is a glob and over-matches (e.g. 1foo.2bar.3baz);
+        # a canonical publish only makes sense for a real release tag, so
+        # anything else fails here before touching the site.
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$REF_NAME" |
+            grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::tag '$REF_NAME' is not a semver release tag; refusing to publish docs for it"
+            exit 1
+          fi
+
+      - name: Decide the softlink
+        id: softlink
+        # main moves `latest`; only a FINAL semver release tag moves `stable`.
+        # A pre-release tag (2.0.0-rc.1) publishes under its own id without
+        # touching either, so an rc can never overwrite the stable docs.
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          link=""
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "$REF_NAME" = "main" ]; then
+              link="latest"
+            elif printf '%s' "$REF_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              link="stable"
+            fi
+          fi
+          echo "softlink=$link" >> "$GITHUB_OUTPUT"
+
   # Publish canonical docs on push to main/tags, or on a manual publish=true run.
   publish-docs:
     if: >-
@@ -170,7 +209,6 @@ jobs:
       name: aviso-client
       path: ""
       id: ${{ needs.compute-publish-id.outputs.publish-id }}
-      # Push only: a tag is the stable release, main is latest.
-      softlink: ${{ github.event_name == 'push' && (github.ref_type == 'tag' && 'stable' || github.ref_name == 'main' && 'latest') || '' }}
+      softlink: ${{ needs.compute-publish-id.outputs.softlink }}
     secrets:
       sites-token: ${{ secrets.ECMWF_SITES_DOCS_AVISOCLIENT_TOKEN }}

@@ -423,11 +423,13 @@ running in that image (#54, "PR-B1" below), and the release-preflight dry-run
 gate (#55, step 6: the version-consistency and ordered-dry-run scripts, the
 justfile wiring, and the manual workflow with its real-stack packaged C++
 job; the `version=0.1.0` dispatch on `main` ran green end to end), and the
-crates.io publisher (#56, step 7), and the PyPI publisher (#57, step 8).
-**The next task is step 9** (`release-cpp-artifacts.yml` with the GitHub
-Release folded in, plus the docs `stable` restriction and step 5 PR-C).
-Step 1 (external prereqs) is console work that can run in parallel and now
-gates real use of both publishers: the `crates-io` environment +
+crates.io publisher (#56, step 7), the PyPI publisher (#57, step 8), and the
+release-assets workflow + docs `stable` restriction + maintainer release
+docs (#58, step 9; PR-C's packaging deliverable landed there as
+`scripts/package-ffi.sh`, with the in-tree examples keeping their
+`find_library` path). **The next task is step 10**: the external prereqs
+(step 1 console work) followed by the `2.0.0-rc.1` rehearsal and the real
+`2.0.0`. Required console work before the rc: the `crates-io` environment +
 `CARGO_REGISTRY_TOKEN` and crates.io ownership of the four names; the
 `pypi`/`test-pypi` environments with trusted publishers configured for
 `pyaviso` on both indexes.
@@ -491,8 +493,11 @@ install [`uv`](https://docs.astral.sh/uv/) for the Python preflight steps
    checks, the pyaviso version-line continuation guard, OIDC trusted
    publishing, and the TestPyPI lever (skip-existing there only); validate
    via a TestPyPI dispatch once the console-side publisher exists.
-9. `release-cpp-artifacts.yml` (§6.D, cargo-c) **with the GitHub Release creation
-   folded in** (§6.E); restrict `docs-sites.yml` `stable` to semver tags (§6.F).
+9. `release-cpp-artifacts.yml` (§6.D, cargo-c) **with the GitHub Release
+   creation folded in** (§6.E) — DONE (#58). Four relocatable tarballs
+   (manylinux_2_28 x86_64/aarch64, macOS arm64 and x86_64) with SHA256SUMS;
+   `docs-sites.yml` `stable` restricted to final semver tags (§6.F); the
+   release process documented for maintainers in CONTRIBUTING.md.
 10. **RC rehearsal `2.0.0-rc.1`** end-to-end (§13 R1), then the real `2.0.0`.
 
 ---
