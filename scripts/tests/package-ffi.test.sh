@@ -22,7 +22,7 @@ for tool in cc c++ pkg-config; do
   }
 done
 
-tmp="$(mktemp -d)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/package-ffi-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 ws_version="$("$root/scripts/ws-version.sh" "$root/Cargo.toml")"
