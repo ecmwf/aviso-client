@@ -7,6 +7,12 @@
 </div>
 
 <p align="center">
+  <a href="https://crates.io/crates/aviso">
+    <img src="https://img.shields.io/crates/v/aviso.svg" alt="crates.io">
+  </a>
+  <a href="https://pypi.org/project/pyaviso/">
+    <img src="https://img.shields.io/pypi/v/pyaviso.svg" alt="PyPI">
+  </a>
   <a href="https://sites.ecmwf.int/docs/aviso-client/main/">
     <img src="https://img.shields.io/badge/docs-online-blue" alt="Docs Badge">
   </a>
@@ -25,12 +31,30 @@
 
 Client suite for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows. The full documentation is hosted at <https://sites.ecmwf.int/docs/aviso-client/main/>.
 
+## Installation
+
+Python package and the `aviso` CLI (wheels for Linux x86_64/aarch64 and macOS, Python 3.10+):
+
+```bash
+pip install pyaviso
+aviso --version
+```
+
+Rust:
+
+```bash
+cargo add aviso               # the client library
+cargo install aviso-cli       # the aviso command-line tool
+```
+
+C and C++: download the prebuilt `libaviso_ffi` tarball for your platform (headers, static and shared library, pkg-config file) from the [GitHub Releases](https://github.com/ecmwf/aviso-client/releases), or build the `aviso-ffi` crate from source with [cargo-c](https://github.com/lu-zero/cargo-c). See the [C++ binding docs](https://sites.ecmwf.int/docs/aviso-client/main/cpp/overview.html).
+
 ## Repository layout
 
 - **`crates/aviso`**: Rust library crate (the core implementation; published as `aviso` on crates.io).
 - **`crates/aviso-cli`**: Rust binary crate producing the `aviso` command-line tool.
 - **`crates/aviso-py`**: PyO3 binding crate. Builds as a `cdylib` extension named `pyaviso._native` plus an `rlib` so the workspace's `cargo test` sees its types.
-- **`python/pyaviso/`**: pure-Python wrapper around `pyaviso._native`. The installable distribution and the importable module are both named `pyaviso`. The wheel also bundles the `aviso` CLI as a console command (a script that runs the Rust CLI through the extension), so `pip install pyaviso` provides both `import pyaviso` and the `aviso` command. Built locally with `uv run maturin develop`; PyPI wheels are not published yet, so install from a checkout.
+- **`python/pyaviso/`**: pure-Python wrapper around `pyaviso._native`. The installable distribution and the importable module are both named `pyaviso`. The wheel also bundles the `aviso` CLI as a console command (a script that runs the Rust CLI through the extension), so `pip install pyaviso` provides both `import pyaviso` and the `aviso` command. Published to PyPI as [`pyaviso`](https://pypi.org/project/pyaviso/); built locally with `uv run maturin develop`.
 - **`crates/aviso-ffi`**: C/C++ binding crate. Builds `libaviso_ffi` (a `staticlib` and a `cdylib`) exposing a stable C ABI through a `cbindgen`-generated header (`include/aviso.h`), plus a hand-written header-only C++ facade (`include/aviso.hpp`) with RAII handles and a throwing `aviso::Error`. A C or C++ application links the prebuilt library with its own toolchain and needs no Rust toolchain in its build.
 - **`examples/cpp/`**: worked C++ consumers of the binding, built with CMake against the library and facade. They double as the binding's tested reference.
 - **`docs/`**: mdBook user-facing documentation (CLI, Rust library, Python package, C++ binding).
