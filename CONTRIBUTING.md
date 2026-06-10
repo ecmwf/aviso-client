@@ -147,7 +147,7 @@ Every publisher first asserts the release invariant: the tag names the checked-o
 
 If a publisher fails partway, never move or re-point the tag: published registry versions are immutable. The crates.io workflow has a resumable retry (dispatch it on the tag with the retry input; already-published crates are skipped only after their checksum matches what the tag's tree packages). A partial PyPI upload means releasing the next patch version. When in doubt, bump the whole workspace and release a fresh tag.
 
-Account-side prerequisites live outside the repo: the `crates-io` GitHub environment with a `CARGO_REGISTRY_TOKEN` secret and ownership of the four crate names, and the `pypi`/`test-pypi` environments with trusted publishers configured for `pyaviso` on both indexes.
+Account-side prerequisites live outside the repo. crates.io publishing uses the organization-wide `CARGO_REGISTRY_TOKEN` secret; its account must be able to publish (and so own) the four crate names. PyPI auth is dual-path: the organization `PYPI_API_TOKEN` / `PYPI_TEST_API_TOKEN` secrets are used when present, and when they are absent the workflow falls back to OIDC trusted publishing, so configuring trusted publishers for `pyaviso` on pypi.org and test.pypi.org (workflow `publish-pypi.yml`, environments `pypi` / `test-pypi`) makes the tokens removable with no workflow change. The `crates-io`, `pypi`, and `test-pypi` GitHub environments can carry required-reviewer gates; they are created on first use otherwise.
 
 ## Code of conduct
 
