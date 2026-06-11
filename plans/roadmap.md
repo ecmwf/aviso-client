@@ -56,15 +56,13 @@ Smaller items, none gating. Pick up when the moment is right.
   falls back to building the sdist from source (needs a Rust and C toolchain),
   so the gap is real but only bites Alpine. Adding it later is a config-only
   change to the wheel matrix.
-- TestPyPI ownership: `pyaviso` on test.pypi.org (a 0.9.0 upload from the
-  original aviso days, author software.support@ecmwf.int) is owned by an
-  older ECMWF TestPyPI account, not the `ecmwf` user behind today's token,
-  so the publish workflow's TestPyPI lever fails with 403. Fix: whoever
-  holds that account adds `ecmwf` as project owner on test.pypi.org; if the
-  account is lost, file a PEP 541 transfer. Real-PyPI publishing is
-  unaffected.
 - Archive the legacy `ecmwf/aviso` repository now that 2.0.0 has taken over
-  the `pyaviso` line (the deprecation notice shipped with 1.0.2).
+  the `pyaviso` line (the deprecation notice shipped with 1.0.2). The
+  TestPyPI lever was removed from the publish workflow rather than fixing
+  the test.pypi.org name ownership; if a sandbox path is ever wanted again,
+  `pyaviso` there belongs to an older ECMWF account
+  (software.support@ecmwf.int) that would need to add the `ecmwf` user as
+  owner.
 
 ## Open questions
 
