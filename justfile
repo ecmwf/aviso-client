@@ -76,7 +76,8 @@ release-tag version:
     echo "Tag {{version}} created. Check the diff, then push to trigger the release:"
     echo "    git push origin {{version}}"
 
-# Launch the CI dry-run paths (crates.io --dry-run, TestPyPI) via gh.
+# Launch the CI crates.io publish dry-run via gh. The PyPI build path is
+# rehearsed by the Release Preflight workflow instead.
 publish-dry:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -84,15 +85,7 @@ publish-dry:
         echo "ERROR: the GitHub CLI 'gh' is required (https://cli.github.com) and must be authenticated." >&2
         exit 1
     fi
-    for wf in publish-crates.yml publish-pypi.yml; do
-        if [ ! -f ".github/workflows/$wf" ]; then
-            echo "ERROR: .github/workflows/$wf does not exist yet." >&2
-            echo "The publish workflows are added in a follow-up PR." >&2
-            exit 1
-        fi
-    done
     gh workflow run publish-crates.yml -f dry_run=true
-    gh workflow run publish-pypi.yml -f use_test_pypi=true
 
 # Install the aviso C library (cargo-c) into <prefix> with the standard
 # `.a/.so/.dylib` + `.pc` + headers layout. Needs cargo-c (cargo install cargo-c).
