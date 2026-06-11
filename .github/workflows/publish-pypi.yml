@@ -9,13 +9,10 @@ name: Publish PyPI
 # abi3-py310, so one wheel per platform covers CPython 3.10+), plus the
 # sdist as the source-build fallback. No Windows, no musllinux.
 #
-# The workflow_dispatch lever (use_test_pypi, the default) uploads to
-# TestPyPI instead: same build and checks, sandbox destination, allowed from
-# main or a tag so the pipeline is exercisable before a release exists.
-# skip-existing is enabled ONLY there; on PyPI a re-upload collision must
-# fail rather than silently fill in around a bad partial release, because
-# PyPI files are immutable. Recovery from a partial upload is a new version,
-# never a moved tag.
+# A re-upload collision must fail rather than silently fill in around a bad
+# partial release, because PyPI files are immutable. Recovery from a partial
+# upload is a new version, never a moved tag; workflow_dispatch exists for
+# re-running on the tag after a failure that uploaded nothing.
 
 on:
   push:
@@ -23,11 +20,6 @@ on:
     # the release invariant is the strict validator.
     tags: ["[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
-    inputs:
-      use_test_pypi:
-        description: "Upload to TestPyPI instead of PyPI"
-        type: boolean
-        default: true
 
 # Never run two publishes at once, and never cancel one mid-flight.
 concurrency:
@@ -54,21 +46,7 @@ jobs:
           # be present even on a manual dispatch.
           fetch-depth: 0
 
-      - name: Restrict the TestPyPI lever to main or a tag
-        if: github.event_name == 'workflow_dispatch' && inputs.use_test_pypi
-        # TestPyPI is a sandbox but still a public, per-version-immutable
-        # upload surface; arbitrary branch state does not belong there.
-        run: |
-          case "$GITHUB_REF" in
-          refs/heads/main | refs/tags/*) ;;
-          *)
-            echo "::error::TestPyPI uploads run from main or a tag, not $GITHUB_REF"
-            exit 1
-            ;;
-          esac
-
       - name: Assert the release invariant
-        if: github.event_name == 'push' || !inputs.use_test_pypi
         uses: ./.github/actions/release-invariant
         with:
           github-token: ${{ github.token }}
@@ -239,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
-      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.use_test_pypi) && 'test-pypi' || 'pypi' }}
+      name: pypi
     permissions:
       contents: read
       # Required for the OIDC trusted-publishing path; harmless when the
@@ -284,7 +262,6 @@ jobs:
           test "$(find dist -name "pyaviso-$norm-*.whl" | wc -l)" -eq 3
 
       - name: The production target continues the pyaviso version line
-        if: github.event_name == 'push' || !inputs.use_test_pypi
         # pyaviso on PyPI is the legacy client's line (1.0.x with the
         # deprecation notice); this client continues it from 2.0.0. An
         # upload at or below the live latest is a mis-tagged tree, not a
@@ -307,19 +284,9 @@ jobs:
       # Auth is dual-path by construction: when the organization API token
       # secret is set it is used directly, and when it is absent the action
       # falls back to OIDC trusted publishing (an empty password input is the
-      # action's documented trusted-publishing switch). Configuring trusted
-      # publishers on the indexes makes the tokens removable with no workflow
-      # change.
-      - name: Upload to TestPyPI
-        if: github.event_name == 'workflow_dispatch' && inputs.use_test_pypi
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
-          password: ${{ secrets.PYPI_TEST_API_TOKEN }}
-
+      # action's documented trusted-publishing switch). Configuring a trusted
+      # publisher on PyPI makes the token removable with no workflow change.
       - name: Upload to PyPI
-        if: github.event_name == 'push' || !inputs.use_test_pypi
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
