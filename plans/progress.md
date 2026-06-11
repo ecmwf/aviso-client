@@ -16,6 +16,11 @@ tarballs on the GitHub Release, and the `stable` docs link.
 
 ## Log
 
+- [#66](https://github.com/ecmwf/aviso-client/pull/66) ci: the PyPI publisher
+  always targets production behind the release invariant; the TestPyPI lever
+  (blocked on test.pypi.org name ownership) is removed, `just publish-dry`
+  launches the crates.io dry-run alone, and the CONTRIBUTING release section
+  sheds its account-prerequisites paragraph.
 - **2.0.0 released** (tag `2.0.0`, bump in
   [#65](https://github.com/ecmwf/aviso-client/pull/65)): all four publishers
   green; verified by a clean-environment `pip install pyaviso==2.0.0`,
