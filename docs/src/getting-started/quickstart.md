@@ -6,12 +6,13 @@ have, follow the three steps, and you are done.
 ## 1. Get the binary
 
 ```bash
-cargo install aviso-cli
+pip install pyaviso
 aviso --version
 ```
 
-If `cargo` is not installed, get it from <https://rustup.rs/>. The full install
-guide is at [Install](./install.md).
+The Python package bundles the `aviso` command-line tool, so pip is all you
+need. If you prefer a Rust-native install, `cargo install aviso-cli` gives you
+the same command. The full install guide is at [Install](./install.md).
 
 ## 2. Point at a server
 
