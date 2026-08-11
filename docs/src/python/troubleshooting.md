@@ -126,8 +126,3 @@ result = await asyncio.to_thread(
 
 See [the Async page](./async.md) for the situations where the async client
 actually helps.
-
-## Wheels on PyPI
-
-Not available today. Install from source with `uv run maturin develop`. If and
-when the wheel matrix lands, `pip install pyaviso` becomes the simpler path.

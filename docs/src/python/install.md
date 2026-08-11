@@ -1,9 +1,42 @@
 # Install
 
-The Python package is source-only today. PyPI wheels are not published yet; the
-install path is a checkout of the repository plus `maturin develop`.
+## From PyPI
+
+```bash
+pip install pyaviso
+```
+
+Wheels ship for Linux (manylinux, x86_64 and aarch64) and macOS (universal2).
+No Rust toolchain is needed; the compiled extension comes inside the wheel.
+
+## Verifying the install
+
+```bash
+python -c "import pyaviso; print(pyaviso.__version__)"
+```
+
+Expected output: a version string like `2.0.0` (matching the Rust workspace
+version).
+
+## The bundled `aviso` command
+
+Installing `pyaviso` also puts the `aviso` command-line tool on your PATH, so a
+single `pip install` gives you both the importable library and the CLI:
+
+```bash
+aviso --version
+```
+
+It is the same `aviso` command-line tool documented in the
+[CLI section](../cli/overview.md). The wheel installs it as a console script
+that runs the Rust CLI in-process through the extension (rather than shipping a
+separate compiled binary), so you do not need a `cargo install`. Pick whichever
+install path you prefer: `pip install pyaviso` and `cargo install aviso-cli`
+give you the same `aviso` command and behaviour.
 
 ## From source
+
+For an unreleased version, or when contributing:
 
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git
@@ -20,43 +53,12 @@ second command builds the Rust extension into the local virtualenv so
 `import pyaviso` works. The first build pulls the workspace's Rust dependencies
 and compiles them; subsequent builds are incremental.
 
-You need:
+For a source build you need:
 
 - Rust toolchain (`rustup`).
 - `uv` ([install instructions](https://docs.astral.sh/uv/)).
 - A C compiler and linker on the path. macOS uses the Apple toolchain; on Linux
   the system `gcc` or `clang` is fine.
-
-## Verifying the install
-
-```bash
-uv run python -c "import pyaviso; print(pyaviso.__version__)"
-```
-
-Expected output: a version string like `0.1.0` (matching the Rust workspace
-version).
-
-## The bundled `aviso` command
-
-Installing `pyaviso` also puts the `aviso` command-line tool on your PATH, so a
-single `pip install` gives you both the importable library and the CLI:
-
-```bash
-uv run aviso --version
-```
-
-It is the same `aviso` command-line tool documented in the
-[CLI section](../cli/overview.md). The wheel installs it as a console script
-that runs the Rust CLI in-process through the extension (rather than shipping a
-separate compiled binary), so you do not need a `cargo install`. Pick whichever
-install path you prefer: `pip install pyaviso` and `cargo install aviso-cli`
-give you the same `aviso` command and behaviour.
-
-## From PyPI
-
-Not available today. Install from a checkout as above. The wheel matrix
-(manylinux, macOS universal2) is the subject of a separate change; if
-and when it lands, `pip install pyaviso` becomes the simpler path.
 
 ## Python version
 
