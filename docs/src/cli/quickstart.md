@@ -87,6 +87,25 @@ aviso replay --event mars --identifiers '{"class":"od"}' --from 1000
 Replay runs once and ends when it reaches the live edge. Read more at
 [Replay history](./replay.md).
 
+## Catch up, then keep listening
+
+To backfill from a cursor and continue live in one command, give `listen` a
+starting point:
+
+```bash
+aviso listen --event mars --identifiers '{"class":"od"}' --from 2026-05-01
+```
+
+The stream replays every matching notification from the cursor, reaches the
+live edge, and keeps going as new ones arrive. `--from` takes the same forms as
+`aviso replay --from`; full list at
+[Configuration: `--from` formats](./configuration.md#from-value-formats).
+
+Unlike `aviso replay`, this run writes the state file, so the next plain
+`aviso listen` resumes from where it stopped. For a stateless backfill followed
+by a separate live listener, see
+[when you want both](./replay.md#when-you-want-both).
+
 ## Run a production listener with a YAML file
 
 For anything beyond ad-hoc inspection, write a small listener file:
