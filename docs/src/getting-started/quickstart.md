@@ -62,22 +62,27 @@ should be safe to run more than once. To start fresh next time, add
 
 ## Calling aviso from Python
 
-```python
-import json, subprocess
+The same listener as step 3, through the native Python API. The
+`pip install pyaviso` from step 1 already gave you the `pyaviso` package, and
+`pyaviso.Env()` reads the same environment variables you exported in step 2:
 
-proc = subprocess.Popen(
-    ["aviso", "listen",
-     "--event", "mars",
-     "--identifiers", '{"class":"od"}'],
-    stdout=subprocess.PIPE, text=True,
-)
-for line in proc.stdout:
-    notification = json.loads(line)
-    print(notification["sequence"], notification["payload"])
+```python
+"""Listen for mars notifications and print each one as it arrives."""
+
+import os
+import pyaviso
+
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
+
+for notification in client.listen("mars", filter={"class": "od"}):
+    print(f"seq={notification.sequence} payload={notification.payload}")
 ```
 
-The native Python client, which avoids the subprocess and gives you typed value
-objects, is documented at [Python overview](../python/overview.md).
+Notifications arrive as typed objects with `sequence`, `identifier`, and
+`payload` fields, so there is no JSON to re-parse. Publishing, resuming across
+restarts, async, and error handling are covered in the
+[Python section](../python/overview.md), starting with its
+[quickstart](../python/quickstart.md).
 
 ## Calling aviso from a Rust program
 
