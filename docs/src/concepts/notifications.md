@@ -46,6 +46,9 @@ you will see things like `class`, `stream`, `date`, `step`, `expver`. For
 another event type the keys will be different.
 
 The server determines which identifiers are valid; aviso just passes them along.
+Values may have any JSON shape. For spatial identifiers a point is `[lat, lon]`,
+while polygons and point clouds are `[[lat, lon], ...]`. That shape is preserved
+when a notification is published, delivered, printed, or passed to a trigger.
 To see the schema for a type:
 
 ```bash

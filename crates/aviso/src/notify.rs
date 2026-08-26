@@ -295,6 +295,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sends_structured_spatial_identifier_as_json_array() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/notification"))
+            .and(body_partial_json(json!({
+                "identifier": {
+                    "point_cloud": [[46.0, 8.0], [47.0, 9.0]],
+                },
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ok_body()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let request = NotificationRequest::new("observations").with_identifier(
+            [("point_cloud".to_string(), json!([[46.0, 8.0], [47.0, 9.0]]))]
+                .into_iter()
+                .collect(),
+        );
+        client_for(&server, None).notify(&request).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn transport_error_surfaces_as_transport_variant() {
         // Port 1 is unbindable on Unix-like systems; connecting fails before any HTTP exchange.
         let client = AvisoClient::builder()

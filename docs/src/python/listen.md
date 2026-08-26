@@ -29,7 +29,8 @@ import pyaviso
 
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+polygon = [[0, 0], [1, 0], [1, 1], [0, 0]]
+for notification in client.listen("test_polygon", filter={"polygon": polygon}):
     print(
         f"seq={notification.sequence} "
         f"date={notification.identifier.get('date')} "
@@ -48,14 +49,14 @@ seq=81 date=20260601 time=1202 payload={'location': 's3://example/data/2.grib'}
 ```
 
 `sequence` is monotonic across the stream. `identifier` is the per-notification
-identifier dict the publisher sent. `payload` is whatever JSON the publisher
-attached.
+identifier dict the publisher sent. Values retain their JSON shape, so a point
+cloud arrives as a list of `[lat, lon]` lists rather than an encoded string.
+`payload` is whatever JSON the publisher attached.
 
 ## Filtering
 
 `filter=` is a dict of identifier predicates. Each key matches an identifier
-field; each value is either a string for an exact match or a JSON object for a
-richer constraint that the field's handler interprets.
+field. Values may have any JSON shape supported by that field's handler.
 
 ```python
 """Listen for test_polygon notifications on a specific polygon and date."""
@@ -68,12 +69,16 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 for notification in client.listen(
     "test_polygon",
     filter={
-        "polygon": "0,0,1,0,1,1,0,0",
+        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
         "date": "20260601",
     },
 ):
     print(notification.sequence)
 ```
+
+Spatial filters use latitude first. A point is `[lat, lon]`. Polygons and point
+clouds are lists of those points. Legacy comma-separated point and polygon
+strings remain accepted by compatible servers, but new code should use lists.
 
 Each stream's schema declares a minimum identifier set that a filter must commit
 to (the fields flagged `"required": true`). For `test_polygon` that is just
@@ -105,7 +110,8 @@ client = pyaviso.AvisoClient(
     state_store=pyaviso.JsonFileStore(state_path),
 )
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+polygon = [[0, 0], [1, 0], [1, 1], [0, 0]]
+for notification in client.listen("test_polygon", filter={"polygon": polygon}):
     print(notification.sequence)
 ```
 
@@ -130,7 +136,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 
 for notification in client.listen(
     "test_polygon",
-    filter={"polygon": "0,0,1,0,1,1,0,0"},
+    filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
     from_=100,
 ):
     print(notification.sequence)
@@ -142,7 +148,7 @@ For a date-shaped start, pass an ISO 8601 string in UTC:
 ```python
 for notification in client.listen(
     "test_polygon",
-    filter={"polygon": "0,0,1,0,1,1,0,0"},
+    filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
     from_="2026-06-01T00:00:00Z",
 ):
     print(notification.sequence)
@@ -166,7 +172,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 count = 0
 for notification in client.listen(
     "test_polygon",
-    filter={"polygon": "0,0,1,0,1,1,0,0"},
+    filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
     from_=100,
     mode="replay_only",
 ):
@@ -202,7 +208,8 @@ client = pyaviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+polygon = [[0, 0], [1, 0], [1, 1], [0, 0]]
+with client.listen("test_polygon", filter={"polygon": polygon}) as iterator:
     for notification in iterator:
         print(notification.sequence)
 ```
@@ -234,7 +241,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 
 request = (
     pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
     .with_triggers([pyaviso.Trigger.echo()])
 )
 
@@ -268,7 +275,8 @@ import pyaviso
 async def main() -> None:
     client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
     async with client.listen(
-        "test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}
+        "test_polygon",
+        filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
     ) as iterator:
         async for notification in iterator:
             print(notification.sequence)

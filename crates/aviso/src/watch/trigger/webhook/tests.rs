@@ -35,7 +35,7 @@ use crate::watch::trigger::TemplateErrorKind;
 
 fn make_notification() -> Notification {
     let mut identifier = BTreeMap::new();
-    identifier.insert("country".to_string(), "uk".to_string());
+    identifier.insert("country".to_string(), serde_json::json!("uk"));
     Notification {
         event_type: "mars".to_string(),
         sequence: 42,

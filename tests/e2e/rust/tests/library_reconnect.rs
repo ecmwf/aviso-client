@@ -36,9 +36,9 @@ fn polygon_filter() -> BTreeMap<String, Value> {
 async fn publish(client: &aviso::AvisoClient, seq: u64) {
     let request = NotificationRequest::new(EVENT_TYPE)
         .with_identifier(BTreeMap::from([
-            ("polygon".into(), POLYGON.into()),
-            ("date".into(), "20260611".into()),
-            ("time".into(), format!("{seq:04}")),
+            ("polygon".into(), json!(POLYGON)),
+            ("date".into(), json!("20260611")),
+            ("time".into(), json!(format!("{seq:04}"))),
         ]))
         .with_payload(json!({"seq": seq}));
     client.notify(&request).await.unwrap();

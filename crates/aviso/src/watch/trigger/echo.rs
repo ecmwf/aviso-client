@@ -162,8 +162,8 @@ mod tests {
     #[test]
     fn format_human_body_is_serde_json_to_string_pretty_of_the_whole_notification() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
-        identifier.insert("date".to_string(), "20260521".to_string());
+        identifier.insert("class".to_string(), serde_json::json!("od"));
+        identifier.insert("date".to_string(), serde_json::json!("20260521"));
         let n = Notification {
             event_type: "mars".to_string(),
             sequence: 12,
@@ -183,8 +183,8 @@ mod tests {
     #[test]
     fn format_human_includes_identifier_keys_and_payload_in_pretty_json_block() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("date".to_string(), "20260522".to_string());
-        identifier.insert("time".to_string(), "1200".to_string());
+        identifier.insert("date".to_string(), serde_json::json!("20260522"));
+        identifier.insert("time".to_string(), serde_json::json!("1200"));
         let n = Notification {
             event_type: "test_polygon".to_string(),
             sequence: 33,
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn format_human_without_color_emits_no_ansi_escapes() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
+        identifier.insert("class".to_string(), serde_json::json!("od"));
         let n = Notification {
             event_type: "mars".to_string(),
             sequence: 12,

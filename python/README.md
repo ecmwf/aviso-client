@@ -36,7 +36,8 @@ import pyaviso
 
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+polygon = [[0, 0], [1, 0], [1, 1], [0, 0]]
+for notification in client.listen("test_polygon", filter={"polygon": polygon}):
     print(notification.sequence, notification.payload)
 ```
 

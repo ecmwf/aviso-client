@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pyaviso
 import pytest
 
@@ -62,6 +64,30 @@ def test_with_filter() -> None:
     assert req.event_type == "mars"
 
 
+def test_with_filter_rejects_cycle() -> None:
+    cycle: list[Any] = []
+    cycle.append(cycle)
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        pyaviso.WatchRequest.watch("mars").with_filter({"value": cycle})
+
+
+def test_with_filter_rejects_excessive_nesting() -> None:
+    nested: Any = "leaf"
+    for _ in range(101):
+        nested = [nested]
+
+    with pytest.raises(ValueError, match="100 nested containers"):
+        pyaviso.WatchRequest.watch("mars").with_filter({"value": nested})
+
+
+def test_with_filter_accepts_shared_acyclic_container() -> None:
+    shared = [46.0, 8.0]
+    req = pyaviso.WatchRequest.watch("mars").with_filter({"first": shared, "second": shared})
+
+    assert req.event_type == "mars"
+
+
 def test_with_triggers() -> None:
     req = pyaviso.WatchRequest.watch("mars").with_triggers(
         [pyaviso.Trigger.echo(), pyaviso.Trigger.echo(label="x")]
@@ -86,6 +112,25 @@ def test_listen_replay_only_requires_from() -> None:
     client = pyaviso.AvisoClient(base_url="http://127.0.0.1:1")
     with pytest.raises(pyaviso.AvisoError):
         client.listen("mars", mode="replay_only")
+
+
+def test_sync_listen_rejects_filter_cycle_before_network_io() -> None:
+    client = pyaviso.AvisoClient(base_url="http://127.0.0.1:1")
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        client.listen("mars", filter=cycle)
+
+
+def test_async_listen_rejects_deep_filter_before_network_io() -> None:
+    client = pyaviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+    nested: Any = "leaf"
+    for _ in range(101):
+        nested = [nested]
+
+    with pytest.raises(ValueError, match="100 nested containers"):
+        client.listen("mars", filter={"value": nested})
 
 
 def test_async_client_constructs() -> None:

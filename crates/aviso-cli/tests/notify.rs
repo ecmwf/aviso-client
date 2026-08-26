@@ -22,7 +22,7 @@ mod common;
 
 use predicates::prelude::*;
 use predicates::str::contains;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use common::aviso;
@@ -79,6 +79,83 @@ async fn embedded_json_object_payload_is_accepted() {
         .assert()
         .success()
         .stdout(contains("\"status\":\"success\""));
+}
+
+#[tokio::test]
+async fn point_cloud_identifier_reaches_http_body_as_array() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/notification"))
+        .and(body_partial_json(serde_json::json!({
+            "identifier": {
+                "point_cloud": [[46, 8], [47, 9]],
+                "enabled": "true",
+            },
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(notify_success_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    aviso()
+        .args([
+            "--base-url",
+            &server.uri(),
+            "notify",
+            "event=observations,point_cloud=[[46,8],[47,9]],enabled=true",
+        ])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn explicit_json_scalars_reach_http_body_with_their_types() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/notification"))
+        .and(body_partial_json(serde_json::json!({
+            "identifier": {
+                "count": 12,
+                "enabled": true,
+                "missing": null,
+                "label": "archive",
+                "point": [46, 8],
+                "area": {"north": 47, "south": 46},
+            },
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(notify_success_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    aviso()
+        .args([
+            "--base-url",
+            &server.uri(),
+            "notify",
+            r#"event=observations,count:=12,enabled:=true,missing:=null,label:="archive",point:=[46,8],area:={"north":47,"south":46}"#,
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn invalid_explicit_json_identifier_exits_2_with_context() {
+    aviso()
+        .args([
+            "--base-url",
+            "http://unused",
+            "notify",
+            "event=mars,count:=twelve",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("count"))
+        .stderr(contains(":=JSON"))
+        .stderr(contains("invalid JSON"))
+        .stderr(contains("line"))
+        .stderr(contains("column"));
 }
 
 #[tokio::test]

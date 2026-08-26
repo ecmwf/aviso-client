@@ -32,11 +32,11 @@ fn polygon_filter() -> BTreeMap<String, Value> {
     BTreeMap::from([("polygon".into(), Value::String(POLYGON.into()))])
 }
 
-fn identifier(seq: u64) -> BTreeMap<String, String> {
+fn identifier(seq: u64) -> BTreeMap<String, Value> {
     BTreeMap::from([
-        ("polygon".into(), POLYGON.into()),
-        ("date".into(), "20260610".into()),
-        ("time".into(), format!("{seq:04}")),
+        ("polygon".into(), json!(POLYGON)),
+        ("date".into(), json!("20260610")),
+        ("time".into(), json!(format!("{seq:04}"))),
     ])
 }
 

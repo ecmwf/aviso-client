@@ -39,6 +39,12 @@ Methods:
   `with` and supports `iterator.close()` for explicit teardown)
 - `__enter__` / `__exit__` for `with` blocks.
 
+`identifier` is a mapping from strings to JSON-compatible Python values. The
+same applies to each notification passed to `notify_many`. Structured values
+such as point-cloud lists are sent as JSON arrays. Cyclic containers are not
+valid JSON and raise `TypeError`. Identifier input deeper than 100 nested
+containers raises `ValueError` before conversion.
+
 `pyaviso.AsyncAvisoClient` is the same shape. `notify` / `schema` /
 `schema_for` / `wipe_*` / `delete_notification` return awaitables; `listen`
 returns an `AsyncNotificationIterator`.
@@ -49,6 +55,7 @@ returns an `AsyncNotificationIterator`.
 
 Properties: `event_type`, `sequence`, `identifier`, `payload`, `cloudevent`.
 Method: `as_dict()`. Unhashable (the payload may be a dict).
+Identifier values retain the JSON shape emitted by the server.
 
 `pyaviso.NotifyResponse(status, request_id, processed_at)`
 

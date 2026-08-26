@@ -20,13 +20,17 @@
 
 use std::collections::BTreeMap;
 
-use super::{build_command_config, dispatch_command, drain_to_ring, normalize_key};
+use super::{build_command_config, dispatch_command, drain_to_ring, env_injection, normalize_key};
 use crate::Notification;
 use crate::watch::TriggerError;
 
 fn make_notification() -> Notification {
     let mut identifier = BTreeMap::new();
-    identifier.insert("country".to_string(), "uk".to_string());
+    identifier.insert("country".to_string(), serde_json::json!("uk"));
+    identifier.insert(
+        "point_cloud".to_string(),
+        serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+    );
     Notification {
         event_type: "mars".to_string(),
         sequence: 42,
@@ -34,6 +38,16 @@ fn make_notification() -> Notification {
         payload: serde_json::json!({ "location": "south", "qty": 7 }),
         cloudevent: None,
     }
+}
+
+#[test]
+fn structured_identifier_is_injected_as_compact_json() {
+    let environment = env_injection(&make_notification()).expect("environment serializes");
+    assert!(environment.contains(&(
+        "AVISO_IDENTIFIER_POINT_CLOUD".to_string(),
+        "[[46.0,8.0],[47.0,9.0]]".to_string(),
+    )));
+    assert!(environment.contains(&("AVISO_IDENTIFIER_COUNTRY".to_string(), "uk".to_string(),)));
 }
 
 #[test]

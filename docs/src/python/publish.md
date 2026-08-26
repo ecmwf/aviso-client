@@ -27,7 +27,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 response = client.notify(
     event_type="test_polygon",
     identifier={
-        "polygon": "0,0,1,0,1,1,0,0",
+        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
         "date": "20260601",
         "time": "1200",
     },
@@ -96,7 +96,11 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 notifications = [
     {
         "event_type": "test_polygon",
-        "identifier": {"polygon": "0,0,1,0,1,1,0,0", "date": "20260601", "time": f"12{m:02d}"},
+        "identifier": {
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
+            "date": "20260601",
+            "time": f"12{m:02d}",
+        },
         "payload": {"location": f"s3://example/data/{m}.grib"},
     }
     for m in range(5)
@@ -145,7 +149,7 @@ try:
     response = client.notify(
         event_type="test_polygon",
         identifier={
-            "polygon": "0,0,1,0,1,1,0,0",
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
             "date": "20260601",
             "time": "1200",
         },
@@ -185,7 +189,11 @@ enforces the per-event-type schema; the client passes the value through.
 ```python
 client.notify(
     event_type="test_polygon",
-    identifier={"polygon": "0,0,1,0,1,1,0,0", "date": "20260601", "time": "1200"},
+    identifier={
+        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
+        "date": "20260601",
+        "time": "1200",
+    },
     payload={
         "location": "s3://example/data.grib",
         "size_bytes": 4_194_304,
@@ -195,9 +203,20 @@ client.notify(
 )
 ```
 
-Identifier values must all be strings. Numbers, booleans, and None are rejected
-before the request leaves the client (with a clear `TypeError`); the server
-itself accepts strings only.
+## Identifier shapes
+
+Identifier values may be any JSON value. Spatial handlers use latitude first:
+
+- A point is `[lat, lon]`, such as `[46.0, 8.0]`.
+- A polygon is `[[lat, lon], ...]`. Repeat the first point at the end when the
+  server schema requires a closed ring.
+- A point cloud is `[[lat, lon], ...]`, such as
+  `[[46.0, 8.0], [47.0, 9.0]]`.
+
+Pass Python lists directly. Do not encode them with `json.dumps`, since that
+would send a JSON string instead of an array. Older servers also accept polygon
+and point values as comma-separated strings. Keep those strings only when
+working with a legacy producer or schema.
 
 ## Admin operations
 
@@ -231,7 +250,7 @@ async def main() -> None:
     response = await client.notify(
         event_type="test_polygon",
         identifier={
-            "polygon": "0,0,1,0,1,1,0,0",
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
             "date": "20260601",
             "time": "1200",
         },

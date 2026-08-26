@@ -287,7 +287,11 @@ fn env_injection(n: &Notification) -> Result<Vec<(String, String)>, TriggerError
     out.push(("AVISO_EVENT_TYPE".to_string(), n.event_type.clone()));
     out.push(("AVISO_SEQUENCE".to_string(), n.sequence.to_string()));
     for (k, v) in &n.identifier {
-        out.push((format!("AVISO_IDENTIFIER_{}", normalize_key(k)), v.clone()));
+        let value = match v {
+            serde_json::Value::String(value) => value.clone(),
+            other => other.to_string(),
+        };
+        out.push((format!("AVISO_IDENTIFIER_{}", normalize_key(k)), value));
     }
     let payload_json = serde_json::to_string(&n.payload).map_err(TriggerError::Encode)?;
     out.push(("AVISO_PAYLOAD_JSON".to_string(), payload_json));

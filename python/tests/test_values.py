@@ -23,6 +23,9 @@ server harness for those calls lands in a follow-up.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import Any
+
 import pyaviso
 import pytest
 
@@ -39,6 +42,92 @@ def test_notification_constructs_and_exposes_fields() -> None:
     assert n.identifier == {"class": "od", "stream": "oper"}
     assert n.payload == {"location": "s3://bucket/path"}
     assert n.cloudevent is None
+
+
+def test_notification_preserves_structured_spatial_identifier() -> None:
+    point_cloud = [[46.0, 8.0], [47.0, 9.0]]
+    notification = pyaviso.Notification(
+        event_type="observations",
+        sequence=42,
+        identifier={"point_cloud": point_cloud},
+        payload=None,
+    )
+
+    assert notification.identifier == {"point_cloud": point_cloud}
+    assert notification.as_dict()["identifier"] == {"point_cloud": point_cloud}
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_notification_rejects_nested_non_finite_identifier(value: float) -> None:
+    with pytest.raises(TypeError, match="NaN or infinity"):
+        pyaviso.Notification(
+            event_type="observations",
+            sequence=42,
+            identifier={"point_cloud": [[46.0, value]]},
+            payload=None,
+        )
+
+
+def test_notification_rejects_non_finite_value_in_general_mapping() -> None:
+    identifier = MappingProxyType({"point_cloud": [[46.0, float("nan")]]})
+
+    with pytest.raises(TypeError, match="NaN or infinity"):
+        pyaviso.Notification(
+            event_type="observations",
+            sequence=7,
+            identifier=identifier,
+            payload=None,
+        )
+
+
+def _notification_with_identifier(identifier: dict[str, Any]) -> pyaviso.Notification:
+    return pyaviso.Notification(
+        event_type="observations",
+        sequence=7,
+        identifier=identifier,
+        payload=None,
+    )
+
+
+def test_notification_rejects_self_referential_list() -> None:
+    cycle: list[Any] = []
+    cycle.append(cycle)
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        _notification_with_identifier({"value": cycle})
+
+
+def test_notification_rejects_self_referential_dict() -> None:
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        _notification_with_identifier(cycle)
+
+
+def test_notification_rejects_indirect_container_cycle() -> None:
+    first: list[Any] = []
+    second: dict[str, Any] = {"first": first}
+    first.append(second)
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        _notification_with_identifier({"value": first})
+
+
+def test_notification_rejects_excessive_identifier_nesting() -> None:
+    nested: Any = "leaf"
+    for _ in range(101):
+        nested = [nested]
+
+    with pytest.raises(ValueError, match="100 nested containers"):
+        _notification_with_identifier({"value": nested})
+
+
+def test_notification_accepts_shared_acyclic_containers() -> None:
+    shared = [46.0, 8.0]
+    notification = _notification_with_identifier({"first": shared, "second": shared})
+
+    assert notification.identifier == {"first": [46.0, 8.0], "second": [46.0, 8.0]}
 
 
 def test_notification_as_dict_carries_documented_keys() -> None:
