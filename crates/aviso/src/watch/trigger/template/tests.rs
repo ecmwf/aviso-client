@@ -27,7 +27,11 @@ use crate::Notification;
 
 fn make_notification() -> Notification {
     let mut identifier = BTreeMap::new();
-    identifier.insert("country".to_string(), "uk".to_string());
+    identifier.insert("country".to_string(), serde_json::json!("uk"));
+    identifier.insert(
+        "point_cloud".to_string(),
+        serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+    );
     Notification {
         event_type: "mars".to_string(),
         sequence: 42,
@@ -70,6 +74,13 @@ fn compile_notification_nested_identifier_path() {
     let t = compile("country: {{ notification.identifier.country }}").expect("compile");
     let out = t.render(&make_notification()).expect("render");
     assert_eq!(out, "country: uk");
+}
+
+#[test]
+fn compile_structured_identifier_renders_compact_json() {
+    let template = compile("{{ notification.identifier.point_cloud }}").expect("compile");
+    let output = template.render(&make_notification()).expect("render");
+    assert_eq!(output, "[[46.0,8.0],[47.0,9.0]]");
 }
 
 #[test]

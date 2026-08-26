@@ -122,7 +122,7 @@ fn build_adaptive_card(notification: &Notification, title: &str) -> serde_json::
     for (key, value) in &notification.identifier {
         identifier_facts.push(serde_json::json!({
             "title": key,
-            "value": value,
+            "value": render_payload_value(value),
         }));
     }
 
@@ -278,7 +278,7 @@ mod tests {
     fn make_notification(
         event_type: &str,
         sequence: u64,
-        identifier: BTreeMap<String, String>,
+        identifier: BTreeMap<String, serde_json::Value>,
         payload: serde_json::Value,
     ) -> Notification {
         Notification {
@@ -293,8 +293,8 @@ mod tests {
     #[test]
     fn build_card_includes_title_event_sequence_and_each_identifier_field_as_facts() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
-        identifier.insert("step".to_string(), "42".to_string());
+        identifier.insert("class".to_string(), serde_json::json!("od"));
+        identifier.insert("step".to_string(), serde_json::json!("42"));
         let n = make_notification("mars", 99, identifier, serde_json::Value::Null);
         let card = build_adaptive_card(&n, "aviso mars #99");
         let facts = &card["attachments"][0]["content"]["body"][1]["facts"];
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn build_card_renders_string_identifier_value_without_extra_quotes() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
+        identifier.insert("class".to_string(), serde_json::json!("od"));
         let n = make_notification("mars", 1, identifier, serde_json::Value::Null);
         let card = build_adaptive_card(&n, "title");
         let facts = &card["attachments"][0]["content"]["body"][1]["facts"];
@@ -328,6 +328,25 @@ mod tests {
             .find(|f| f["title"] == "class")
             .unwrap();
         assert_eq!(class_fact["value"], "od");
+    }
+
+    #[test]
+    fn build_card_renders_structured_identifier_as_compact_json() {
+        let identifier = BTreeMap::from([(
+            "point_cloud".to_string(),
+            serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+        )]);
+        let notification =
+            make_notification("observations", 1, identifier, serde_json::Value::Null);
+        let card = build_adaptive_card(&notification, "observations");
+        let facts = card["attachments"][0]["content"]["body"][1]["facts"]
+            .as_array()
+            .expect("facts");
+        let point_cloud = facts
+            .iter()
+            .find(|fact| fact["title"] == "point_cloud")
+            .expect("point cloud fact");
+        assert_eq!(point_cloud["value"], "[[46.0,8.0],[47.0,9.0]]");
     }
 
     #[test]
@@ -395,7 +414,7 @@ mod tests {
         let mut identifier = BTreeMap::new();
         identifier.insert(
             "weird".to_string(),
-            "contains \"quotes\" and \\ backslash".to_string(),
+            serde_json::json!("contains \"quotes\" and \\ backslash"),
         );
         let n = make_notification("mars", 1, identifier, serde_json::Value::Null);
         let card = build_adaptive_card(&n, "title");

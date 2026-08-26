@@ -245,13 +245,12 @@ pub(crate) struct Cli {
 enum Commands {
     /// Publish one notification to /api/v1/notification.
     ///
-    /// Pyaviso-parity: parameters are a comma-separated key=value
-    /// list; `event=<TYPE>` is required, `data=<JSON>` is optional
-    /// (becomes the payload), all other key=value pairs enter the
-    /// identifier map.
+    /// Parameters are comma-separated. `event=<TYPE>` is required,
+    /// `data=<JSON>` is optional, and all other entries enter the
+    /// identifier map. Use `key:=JSON` for explicitly typed JSON values.
     Notify {
-        /// Comma-separated key=value list. e.g.
-        /// `event=mars,class=od,stream=oper,data={"x":1}`.
+        /// Comma-separated parameters, for example
+        /// `event=mars,count:=12,class=od,data={"x":1}`.
         parameters: String,
     },
 

@@ -71,6 +71,67 @@ def test_rejects_negative_concurrency() -> None:
         client.notify_many([{"event_type": "mars"}], concurrency=-1)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_notify_many_rejects_nested_non_finite_identifier(value: float) -> None:
+    client = pyaviso.AvisoClient(base_url="http://127.0.0.1:1")
+    with pytest.raises(TypeError, match="NaN or infinity"):
+        client.notify_many(
+            [
+                {
+                    "event_type": "observations",
+                    "identifier": {"point_cloud": [[46.0, value]]},
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_async_notify_many_rejects_nested_non_finite_identifier(value: float) -> None:
+    client = pyaviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+
+    async def publish() -> None:
+        await client.notify_many(
+            [
+                {
+                    "event_type": "observations",
+                    "identifier": {"point_cloud": [[46.0, value]]},
+                }
+            ]
+        )
+
+    with pytest.raises(TypeError, match="NaN or infinity"):
+        asyncio.run(publish())
+
+
+def test_notify_many_rejects_identifier_cycle_before_network_io() -> None:
+    client = pyaviso.AvisoClient(base_url="http://127.0.0.1:1")
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        client.notify_many([{"event_type": "observations", "identifier": cycle}])
+
+
+def test_async_notify_many_rejects_indirect_identifier_cycle() -> None:
+    client = pyaviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+    first: list[Any] = []
+    second: dict[str, Any] = {"first": first}
+    first.append(second)
+
+    with pytest.raises(TypeError, match="cyclic containers"):
+        client.notify_many([{"event_type": "observations", "identifier": {"value": first}}])
+
+
+def test_async_notify_many_rejects_deep_identifier() -> None:
+    client = pyaviso.AsyncAvisoClient(base_url="http://127.0.0.1:1")
+    nested: Any = "leaf"
+    for _ in range(101):
+        nested = [nested]
+
+    with pytest.raises(ValueError, match="100 nested containers"):
+        client.notify_many([{"event_type": "observations", "identifier": {"value": nested}}])
+
+
 def test_preserves_input_order(httpserver: Any) -> None:
     httpserver.expect_request("/api/v1/notification", method="POST").respond_with_handler(
         _notification_handler
@@ -99,16 +160,54 @@ def test_reports_per_item_errors(httpserver: Any) -> None:
     assert results[1].error.status == 400
 
 
-def test_async_notify_many(httpserver: Any) -> None:
-    httpserver.expect_request("/api/v1/notification", method="POST").respond_with_handler(
-        _notification_handler
+def test_structured_identifier_reaches_http_body_as_array(httpserver: Any) -> None:
+    received_identifiers: list[dict[str, Any]] = []
+
+    def handler(request: Request) -> Response:
+        received_identifiers.append(request.get_json()["identifier"])
+        return _notification_handler(request)
+
+    httpserver.expect_request("/api/v1/notification", method="POST").respond_with_handler(handler)
+    client = pyaviso.AvisoClient(base_url=httpserver.url_for("/"))
+
+    results = client.notify_many(
+        [
+            {
+                "event_type": "observations",
+                "identifier": {"point_cloud": [[46.0, 8.0], [47.0, 9.0]]},
+            }
+        ]
     )
+
+    assert results[0].ok
+    assert received_identifiers == [{"point_cloud": [[46.0, 8.0], [47.0, 9.0]]}]
+
+
+def test_async_notify_many(httpserver: Any) -> None:
+    received_identifiers: list[dict[str, Any]] = []
+
+    def handler(request: Request) -> Response:
+        received_identifiers.append(request.get_json().get("identifier", {}))
+        return _notification_handler(request)
+
+    httpserver.expect_request("/api/v1/notification", method="POST").respond_with_handler(handler)
     client = pyaviso.AsyncAvisoClient(base_url=httpserver.url_for("/"))
 
     async def drive() -> list[Any]:
-        return await client.notify_many([{"event_type": "ok"}, {"event_type": "bad"}])
+        return await client.notify_many(
+            [
+                {
+                    "event_type": "ok",
+                    "identifier": {"point_cloud": [[46.0, 8.0], [47.0, 9.0]]},
+                },
+                {"event_type": "bad"},
+            ]
+        )
 
     results = asyncio.run(drive())
     assert results[0].ok
     assert not results[1].ok
     assert isinstance(results[1].error, pyaviso.HttpError)
+    assert len(received_identifiers) == 2
+    assert {} in received_identifiers
+    assert {"point_cloud": [[46.0, 8.0], [47.0, 9.0]]} in received_identifiers

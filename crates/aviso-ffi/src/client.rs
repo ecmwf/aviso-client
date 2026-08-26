@@ -74,34 +74,27 @@ pub(crate) unsafe fn cstr_nullable<'a>(ptr: *const c_char) -> Result<Option<&'a 
         .map_err(|_| ())
 }
 
-/// Parses the `identifier_json` argument: a JSON object whose values are all
-/// strings, matching the core `BTreeMap<String, String>` identifier shape.
-pub(crate) fn parse_identifier(text: &str) -> Result<BTreeMap<String, String>, OutcomeError> {
+/// Parses the `identifier_json` argument as a JSON object with arbitrary JSON
+/// values.
+pub(crate) fn parse_identifier(
+    text: &str,
+) -> Result<BTreeMap<String, serde_json::Value>, OutcomeError> {
     let value: Value = serde_json::from_str(text).map_err(|err| {
         error::invalid_input(&format!("identifier_json is not valid JSON: {err}"))
     })?;
     let Value::Object(object) = value else {
         return Err(error::invalid_input(
-            "identifier_json must be a JSON object of string to string",
+            "identifier_json must be a JSON object",
         ));
     };
-    let mut identifier = BTreeMap::new();
-    for (key, value) in object {
-        let Value::String(value) = value else {
-            return Err(error::invalid_input(&format!(
-                "identifier_json value for {key:?} must be a string"
-            )));
-        };
-        identifier.insert(key, value);
-    }
-    Ok(identifier)
+    Ok(object.into_iter().collect())
 }
 
 /// Parses one element of the `notifications_json` array into a request.
 ///
 /// An element is a JSON object with a required string `event_type`, an optional
-/// `identifier` object of string-to-string pairs, and an optional `payload` of
-/// any shape. A `null` `identifier` or `payload`, like an absent one, is
+/// `identifier` object with arbitrary JSON values, and an optional `payload`
+/// of any shape. A `null` `identifier` or `payload`, like an absent one, is
 /// omitted. Any shape violation is an `InvalidInput` error naming the index.
 fn parse_notification_request(
     index: usize,
@@ -129,20 +122,12 @@ fn parse_notification_request(
     match object.remove("identifier") {
         None | Some(Value::Null) => {}
         Some(Value::Object(map)) => {
-            let mut identifier = BTreeMap::new();
-            for (key, value) in map {
-                let Value::String(value) = value else {
-                    return Err(error::invalid_input(&format!(
-                        "notifications[{index}].identifier value for {key:?} must be a string"
-                    )));
-                };
-                identifier.insert(key, value);
-            }
+            let identifier = map.into_iter().collect();
             request = request.with_identifier(identifier);
         }
         Some(_) => {
             return Err(error::invalid_input(&format!(
-                "notifications[{index}].identifier must be a JSON object of string to string"
+                "notifications[{index}].identifier must be a JSON object"
             )));
         }
     }
@@ -363,7 +348,7 @@ pub unsafe extern "C" fn aviso_client_schema(client: *const AvisoClient) -> *mut
 /// `aviso_outcome_take_string`), or a structured error.
 ///
 /// `event_type` is required. `identifier_json`, when non-null, is a JSON object
-/// of string-to-string identifier pairs; `payload_json`, when non-null, is any
+/// whose values may have any JSON shape; `payload_json`, when non-null, is any
 /// JSON value. A null `identifier_json` or `payload_json` means the field is
 /// omitted; a non-UTF-8 or otherwise malformed argument is an
 /// `AvisoErrorKind_InvalidInput` error.
@@ -438,7 +423,7 @@ pub unsafe extern "C" fn aviso_client_notify(
 ///
 /// `notifications_json` is a JSON array; each element is an object with a
 /// required string `event_type`, an optional `identifier` object of
-/// string-to-string pairs, and an optional `payload` of any shape. A malformed
+/// arbitrary JSON values, and an optional `payload` of any shape. A malformed
 /// array or element is an `AvisoErrorKind_InvalidInput` error and nothing is
 /// published. `max_concurrency` caps in-flight requests; `0` selects a default.
 ///
@@ -691,15 +676,17 @@ mod tests {
     }
 
     #[test]
-    fn notify_rejects_non_string_identifier_value() {
-        let client = build_client();
-        let event = cstr("test_event");
-        let identifier = cstr(r#"{"date": 1}"#);
-        let outcome = unsafe {
-            aviso_client_notify(client, event.as_ptr(), identifier.as_ptr(), ptr::null())
-        };
-        assert_kind(outcome, AvisoErrorKind::InvalidInput);
-        unsafe { aviso_client_free(client) };
+    fn parse_identifier_preserves_structured_spatial_values() {
+        let identifier =
+            parse_identifier(r#"{"point":[46,8],"point_cloud":[[46,8],[47,9]],"class":"od"}"#)
+                .ok()
+                .expect("valid identifier object");
+        assert_eq!(identifier["point"], serde_json::json!([46, 8]));
+        assert_eq!(
+            identifier["point_cloud"],
+            serde_json::json!([[46, 8], [47, 9]])
+        );
+        assert_eq!(identifier["class"], "od");
     }
 
     #[test]
@@ -826,5 +813,18 @@ mod tests {
             assert_eq!(item["status"], "error");
             assert_eq!(item["error"]["kind"], "transport");
         }
+    }
+
+    #[test]
+    fn parse_notifications_preserves_structured_identifier_values() {
+        let requests = parse_notifications(
+            r#"[{"event_type":"observations","identifier":{"point_cloud":[[46,8],[47,9]]}}]"#,
+        )
+        .ok()
+        .expect("valid notifications");
+        assert_eq!(
+            requests[0].identifier["point_cloud"],
+            serde_json::json!([[46, 8], [47, 9]])
+        );
     }
 }

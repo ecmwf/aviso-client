@@ -9,15 +9,17 @@
 //! `aviso notify` subcommand.
 //!
 //! Pyaviso-parity publisher (per Amendment I). The single
-//! positional argument is a comma-separated `key=value` list.
+//! positional argument is a comma-separated parameter list.
 //! Only `event=<TYPE>` is mandatory for parameter parsing; the
 //! server's notify endpoint additionally requires EVERY identifier
 //! key listed in the event-type's schema (the schema's
 //! `required: false` flag is a `listen`/`replay`-time filter
 //! semantic, not a notify-time semantic). The `data=<JSON>` key is
 //! optional; when present its value is parsed as JSON and attached
-//! as the notification payload. Every other `key=value` pair
-//! enters the notification identifier map.
+//! as the notification payload. Every other `key=value` pair enters
+//! the notification identifier map. `key:=JSON` explicitly parses any JSON
+//! value. The compatible `key=value` form parses values beginning with `[` or
+//! `{` as structured JSON and keeps all other values as strings.
 //!
 //! The parameter parser is brace-respecting: top-level commas
 //! split entries, but commas inside `{}` / `[]` nesting or inside
@@ -235,9 +237,9 @@ fn write_response(
     }
 }
 
-/// Splits a comma-separated `key=value` parameter string with
-/// brace and string awareness. Returns the entries in argv order.
-fn split_parameters(s: &str) -> Result<Vec<(String, String)>> {
+/// Splits comma-separated `key=value` and `key:=JSON` parameters with brace
+/// and string awareness. Returns the entries in argv order.
+fn split_parameters(s: &str) -> Result<Vec<(String, String, bool)>> {
     let mut entries = Vec::new();
     let mut depth: u32 = 0;
     let mut in_string = false;
@@ -291,24 +293,26 @@ fn split_parameters(s: &str) -> Result<Vec<(String, String)>> {
     Ok(entries)
 }
 
-fn push_kv(out: &mut Vec<(String, String)>, slice: &str) -> Result<()> {
+fn push_kv(out: &mut Vec<(String, String, bool)>, slice: &str) -> Result<()> {
     let slice = slice.trim();
     if slice.is_empty() {
         return Ok(());
     }
     let eq = slice.find('=').ok_or_else(|| {
         usage_error(format!(
-            "parameter parse: no `=` in entry `{slice}` (expected key=value)"
+            "parameter parse: no `=` in entry `{slice}` (expected key=value or key:=JSON)"
         ))
     })?;
-    let key = slice[..eq].trim().to_string();
+    let explicit_json = slice[..eq].ends_with(':');
+    let key_end = if explicit_json { eq - 1 } else { eq };
+    let key = slice[..key_end].trim().to_string();
     if key.is_empty() {
         return Err(usage_error(format!(
             "parameter parse: empty key in entry `{slice}`"
         )));
     }
     let value = slice[eq + 1..].to_string();
-    out.push((key, value));
+    out.push((key, value, explicit_json));
     Ok(())
 }
 
@@ -395,15 +399,53 @@ fn strip_outer_quotes(value: &str) -> String {
     }
 }
 
+/// Parses an identifier value without changing the legacy scalar convention.
+/// A value with explicit structured JSON syntax, such as `[[46,8],[47,9]]`, is
+/// decoded. An invalid structured value, such as `[46,]`, is rejected. All
+/// other values remain strings after legacy outer-quote stripping.
+fn parse_identifier_value(
+    key: &str,
+    value: &str,
+    explicit_json: bool,
+) -> Result<serde_json::Value> {
+    let trimmed = value.trim();
+    if explicit_json && trimmed.is_empty() {
+        return Err(usage_error(format!(
+            "parameter parse: identifier `{key}:=JSON` is empty; provide a valid JSON value such as null, 12, true, \"text\", [], or {{}}"
+        )));
+    }
+    if explicit_json || trimmed.starts_with('[') || trimmed.starts_with('{') {
+        serde_json::from_str(trimmed).map_err(|error| {
+            let syntax = if explicit_json { ":=JSON" } else { "structured JSON syntax" };
+            usage_error(format!(
+                "parameter parse: identifier `{key}` uses {syntax} but is invalid JSON at line {line} column {column}: {error}",
+                line = error.line(),
+                column = error.column(),
+            ))
+        })
+    } else {
+        Ok(serde_json::Value::String(strip_outer_quotes(value)))
+    }
+}
+
 fn build_request_parts(
-    entries: &[(String, String)],
-) -> Result<(String, BTreeMap<String, String>, Option<serde_json::Value>)> {
+    entries: &[(String, String, bool)],
+) -> Result<(
+    String,
+    BTreeMap<String, serde_json::Value>,
+    Option<serde_json::Value>,
+)> {
     let mut event_type: Option<String> = None;
     let mut payload: Option<serde_json::Value> = None;
-    let mut identifier: BTreeMap<String, String> = BTreeMap::new();
-    for (key, value) in entries {
+    let mut identifier: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    for (key, value, explicit_json) in entries {
         match key.as_str() {
             "event" => {
+                if *explicit_json {
+                    return Err(usage_error(
+                        "parameter parse: `event` must use `event=<TYPE>`, not `event:=JSON`",
+                    ));
+                }
                 if event_type.is_some() {
                     return Err(usage_error(
                         "parameter parse: duplicate `event=` key. Each notify accepts exactly one event_type.",
@@ -417,6 +459,11 @@ fn build_request_parts(
                 event_type = Some(value.clone());
             }
             "data" => {
+                if *explicit_json {
+                    return Err(usage_error(
+                        "parameter parse: `data` already expects JSON; use `data=<JSON>`, not `data:=JSON`",
+                    ));
+                }
                 if payload.is_some() {
                     return Err(usage_error(
                         "parameter parse: duplicate `data=` key. Each notify accepts at most one payload; combine multiple values into a single JSON object or array.",
@@ -443,7 +490,10 @@ fn build_request_parts(
                         "parameter parse: duplicate identifier key `{key}`. Each identifier may appear at most once."
                     )));
                 }
-                identifier.insert(key.clone(), strip_outer_quotes(value));
+                identifier.insert(
+                    key.clone(),
+                    parse_identifier_value(key, value, *explicit_json)?,
+                );
             }
         }
     }
@@ -461,7 +511,13 @@ fn build_request_parts(
 mod tests {
     use super::*;
 
-    fn parts(input: &str) -> (String, BTreeMap<String, String>, Option<serde_json::Value>) {
+    fn parts(
+        input: &str,
+    ) -> (
+        String,
+        BTreeMap<String, serde_json::Value>,
+        Option<serde_json::Value>,
+    ) {
         let entries = split_parameters(input).unwrap();
         build_request_parts(&entries).unwrap()
     }
@@ -470,8 +526,14 @@ mod tests {
     fn simple_event_and_identifiers() {
         let (event, ident, payload) = parts("event=mars,class=od,stream=oper");
         assert_eq!(event, "mars");
-        assert_eq!(ident.get("class").map(String::as_str), Some("od"));
-        assert_eq!(ident.get("stream").map(String::as_str), Some("oper"));
+        assert_eq!(
+            ident.get("class").and_then(|value| value.as_str()),
+            Some("od")
+        );
+        assert_eq!(
+            ident.get("stream").and_then(|value| value.as_str()),
+            Some("oper")
+        );
         assert!(payload.is_none());
     }
 
@@ -585,7 +647,7 @@ mod tests {
         let (event, ident, _) = build_request_parts(&entries).unwrap();
         assert_eq!(event, "test_polygon");
         assert_eq!(
-            ident.get("polygon").map(String::as_str),
+            ident.get("polygon").and_then(|value| value.as_str()),
             Some("46,8,46,9,47,9"),
             "polygon value should be the unquoted content; got: {ident:?}"
         );
@@ -595,7 +657,120 @@ mod tests {
     fn unquoted_identifier_value_passes_through_unchanged() {
         let entries = split_parameters("event=mars,class=od").unwrap();
         let (_, ident, _) = build_request_parts(&entries).unwrap();
-        assert_eq!(ident.get("class").map(String::as_str), Some("od"));
+        assert_eq!(
+            ident.get("class").and_then(|value| value.as_str()),
+            Some("od")
+        );
+    }
+
+    #[test]
+    fn explicit_point_cloud_is_parsed_as_json_array() {
+        let (_, identifier, _) = parts("event=observations,point_cloud=[[46,8],[47,9]]");
+        assert_eq!(
+            identifier.get("point_cloud"),
+            Some(&serde_json::json!([[46, 8], [47, 9]]))
+        );
+    }
+
+    #[test]
+    fn explicit_object_is_parsed_as_json_value() {
+        let (_, identifier, _) = parts(r#"event=mars,area={"north":47,"south":46}"#);
+        assert_eq!(
+            identifier.get("area"),
+            Some(&serde_json::json!({"north": 47, "south": 46}))
+        );
+    }
+
+    #[test]
+    fn bare_json_scalars_remain_strings() {
+        let (_, identifier, _) = parts("event=mars,step=12,enabled=true,missing=null");
+        assert_eq!(identifier.get("step"), Some(&serde_json::json!("12")));
+        assert_eq!(identifier.get("enabled"), Some(&serde_json::json!("true")));
+        assert_eq!(identifier.get("missing"), Some(&serde_json::json!("null")));
+    }
+
+    #[test]
+    fn explicit_json_supports_every_scalar_shape() {
+        let (_, identifier, _) = parts(
+            r#"event=mars,count:=12,ratio:=1.5,enabled:=true,missing:=null,label:="archive""#,
+        );
+        assert_eq!(identifier.get("count"), Some(&serde_json::json!(12)));
+        assert_eq!(identifier.get("ratio"), Some(&serde_json::json!(1.5)));
+        assert_eq!(identifier.get("enabled"), Some(&serde_json::json!(true)));
+        assert_eq!(identifier.get("missing"), Some(&serde_json::Value::Null));
+        assert_eq!(identifier.get("label"), Some(&serde_json::json!("archive")));
+    }
+
+    #[test]
+    fn explicit_json_supports_arrays_and_objects() {
+        let (_, identifier, _) = parts(r#"event=mars,point:=[46,8],area:={"north":47,"south":46}"#);
+        assert_eq!(identifier.get("point"), Some(&serde_json::json!([46, 8])));
+        assert_eq!(
+            identifier.get("area"),
+            Some(&serde_json::json!({"north": 47, "south": 46}))
+        );
+    }
+
+    #[test]
+    fn invalid_explicit_json_scalar_has_precise_error() {
+        let entries = split_parameters("event=mars,count:=twelve").unwrap();
+        let error = build_request_parts(&entries).unwrap_err().to_string();
+        assert!(error.contains("count"), "{error}");
+        assert!(error.contains(":=JSON"), "{error}");
+        assert!(error.contains("invalid JSON"), "{error}");
+        assert!(
+            error.contains("line") && error.contains("column"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn empty_explicit_json_has_actionable_error() {
+        let entries = split_parameters("event=mars,count:=").unwrap();
+        let error = build_request_parts(&entries).unwrap_err().to_string();
+        assert!(error.contains("count:=JSON"), "{error}");
+        assert!(error.contains("empty"), "{error}");
+    }
+
+    #[test]
+    fn reserved_parameters_reject_explicit_json_delimiter() {
+        for input in [r#"event:="mars""#, "event=mars,data:={}"] {
+            let entries = split_parameters(input).unwrap();
+            let error = build_request_parts(&entries).unwrap_err().to_string();
+            assert!(error.contains("not") && error.contains(":=JSON"), "{error}");
+        }
+    }
+
+    #[test]
+    fn quoted_array_syntax_remains_a_string() {
+        let (_, identifier, _) = parts(r#"event=mars,value="[1,2]""#);
+        assert_eq!(identifier.get("value"), Some(&serde_json::json!("[1,2]")));
+    }
+
+    #[test]
+    fn quoted_bracket_prefixed_bare_value_remains_a_string() {
+        let (_, identifier, _) = parts(r#"event=mars,label="[archive]""#);
+        assert_eq!(
+            identifier.get("label"),
+            Some(&serde_json::json!("[archive]"))
+        );
+    }
+
+    #[test]
+    fn quoted_brace_prefixed_bare_value_remains_a_string() {
+        let (_, identifier, _) = parts(r#"event=mars,label="{region}""#);
+        assert_eq!(
+            identifier.get("label"),
+            Some(&serde_json::json!("{region}"))
+        );
+    }
+
+    #[test]
+    fn invalid_explicit_json_identifier_errors() {
+        let entries = split_parameters("event=mars,point_cloud=[[46,8],[47,]]").unwrap();
+        let error = build_request_parts(&entries).unwrap_err();
+        assert!(error.to_string().contains("point_cloud"));
+        assert!(error.to_string().contains("invalid"));
     }
 
     #[test]

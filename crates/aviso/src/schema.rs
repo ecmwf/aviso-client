@@ -140,7 +140,11 @@ mod tests {
             "schema": {
                 "payload": { "type": "object" },
                 "identifier": {
-                    "class": { "rule": "any" }
+                    "class": { "rule": "any" },
+                    "point_cloud": {
+                        "type": "PointCloudHandler",
+                        "required": true
+                    }
                 }
             }
         })
@@ -187,6 +191,10 @@ mod tests {
 
         assert_eq!(response.event_type, "mars");
         assert!(response.schema.identifier.contains_key("class"));
+        assert_eq!(
+            response.schema.identifier["point_cloud"],
+            json!({"type": "PointCloudHandler", "required": true})
+        );
     }
 
     #[tokio::test]

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.13,<2"]
+requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
 
 [project]
@@ -40,14 +40,14 @@ aviso = "pyaviso.__main__:main"
 
 [dependency-groups]
 dev = [
-    "maturin>=1.13,<2",
-    "ruff>=0.14",
-    "ty>=0.0.1",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
+    "maturin>=1.15,<2",
+    "ruff>=0.16",
+    "ty>=0.0.74",
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
     "pytest-httpserver>=1.1",
-    "hypothesis>=6.100",
-    "aiohttp>=3.10",
+    "hypothesis>=6.165",
+    "aiohttp>=3.14",
 ]
 
 [tool.maturin]

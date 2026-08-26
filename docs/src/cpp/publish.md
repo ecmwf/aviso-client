@@ -1,10 +1,9 @@
 # Publishing
 
 `notify` publishes one notification and returns the server's response as a JSON
-string. The event type is required; the identifier is a
-`std::map<std::string, std::string>` matching the stream's schema, and the
-payload is an optional JSON string. Like every call it throws `aviso::Error` on
-failure (see [Overview](./overview.md#how-calls-behave)).
+string. Its map overload is convenient for string-only identifiers. The payload
+is an optional JSON string. Like every call it throws `aviso::Error` on failure
+(see [Overview](./overview.md#how-calls-behave)).
 
 ```cpp
 std::map<std::string, std::string> identifier = {{"date", "20260101"},
@@ -14,6 +13,22 @@ std::string response = client.notify("test_event", identifier);
 std::string with_payload =
     client.notify("test_event", identifier, std::string(R"({"value": 42})"));
 ```
+
+Use `notify_json` when an identifier contains arrays, objects, or other JSON
+values. Spatial coordinates use latitude first:
+
+```cpp
+const std::string identifier = R"({
+  "point": [46, 8],
+  "point_cloud": [[46, 8], [47, 9]]
+})";
+std::string response = client.notify_json("observations", identifier);
+```
+
+A polygon has the same `[[lat, lon], ...]` shape as a point cloud. Its points
+describe a ring, and the first point is repeated when the schema requires a
+closed polygon. Do not quote the arrays inside the JSON object. The
+`notify_json_async` method provides the same path for asynchronous calls.
 
 To see which identifier fields a stream expects, read its schema first with
 `schema_for`; see [Operations](./operations.md#schemas).
@@ -28,8 +43,8 @@ whatever JSON you like, and an optional `max_concurrency` (0 selects a default).
 
 ```cpp
 const std::string notifications = R"([
-  {"event_type": "test_event", "identifier": {"date": "20260101", "time": "0000"}},
-  {"event_type": "test_event", "identifier": {"date": "20260101", "time": "0001"}}
+  {"event_type": "observations", "identifier": {"point_cloud": [[46, 8], [47, 9]]}},
+  {"event_type": "observations", "identifier": {"point_cloud": [[48, 10], [49, 11]]}}
 ])";
 std::string results = client.notify_many(notifications);
 ```

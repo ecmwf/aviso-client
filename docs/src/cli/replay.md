@@ -46,6 +46,14 @@ delivery guarantee, replay stays stateless by design.
 The trade-off: if you interrupt a replay, the next replay needs an explicit
 `--from` to resume. There is no "resume my replay" mode.
 
+`--identifiers` accepts structured JSON values just like `aviso listen`. Quote
+the whole object for the shell, but leave arrays unquoted inside it:
+
+```bash
+aviso replay --event observations \
+  --identifiers '{"point_cloud":[[46,8],[47,9]]}' --from 2026-05-01
+```
+
 ## Replay vs listen
 
 | | `aviso listen` | `aviso replay` |

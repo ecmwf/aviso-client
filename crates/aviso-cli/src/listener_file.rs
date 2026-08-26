@@ -99,6 +99,17 @@ mod tests {
     }
 
     #[test]
+    fn listener_preserves_structured_spatial_identifier() {
+        let file = parse(
+            "listeners:\n  - event: observations\n    identifiers:\n      point_cloud:\n        - [46, 8]\n        - [47, 9]\n",
+        );
+        assert_eq!(
+            file.listeners[0].identifiers.get("point_cloud"),
+            Some(&serde_json::json!([[46, 8], [47, 9]]))
+        );
+    }
+
+    #[test]
     fn unknown_top_level_field_rejected() {
         let err = yaml::from_str::<ListenerFile>("bogus: 1\n").unwrap_err();
         let msg = err.to_string();

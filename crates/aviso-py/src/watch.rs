@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyInt};
 
 use crate::triggers::PyTrigger;
+use crate::values::validate_identifier;
 
 #[pyclass(name = "WatchRequest", module = "pyaviso._native", skip_from_py_object)]
 #[derive(Clone)]
@@ -50,6 +51,7 @@ impl PyWatchRequest {
     }
 
     fn with_filter(&self, filter: &Bound<'_, PyDict>) -> PyResult<Self> {
+        validate_identifier(filter.as_any())?;
         let mut map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         for (k, v) in filter {
             let key: String = k.extract()?;

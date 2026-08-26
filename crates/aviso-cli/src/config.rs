@@ -354,7 +354,8 @@ fn read_env(name: &str) -> Result<Option<String>> {
         Ok(v) if !v.is_empty() => Ok(Some(v)),
         Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
         Err(std::env::VarError::NotUnicode(raw)) => Err(usage_error(format!(
-            "env var {name} is set but its value is not valid UTF-8 ({raw:?}); set a UTF-8 value or unset the variable"
+            "env var {name} is set but its value is not valid UTF-8 ({}); set a UTF-8 value or unset the variable",
+            raw.display()
         ))),
     }
 }
