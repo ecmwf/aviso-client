@@ -35,11 +35,11 @@ default = []
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-aviso = { path = "../aviso", version = "=3.0.0" }
+aviso = { path = "../aviso", version = "=2.0.1" }
 # The Python wheel bundles the `aviso` CLI as a console command (see ADR D1):
 # the extension calls the CLI library's `run` entry point in-process so a
 # single wheel ships both `import pyaviso` and the `aviso` command.
-aviso-cli = { path = "../aviso-cli", version = "=3.0.0" }
+aviso-cli = { path = "../aviso-cli", version = "=2.0.1" }
 futures-util = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
 pyo3-async-runtimes = { workspace = true }
