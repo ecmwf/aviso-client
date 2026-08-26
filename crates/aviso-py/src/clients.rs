@@ -29,8 +29,18 @@ use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};
 use crate::triggers::PyTrigger;
-use crate::values::{PyNotifyResponse, PyNotifyResult, PySchemaCatalog, PySchemaResponse};
+use crate::values::{
+    PyNotifyResponse, PyNotifyResult, PySchemaCatalog, PySchemaResponse, validate_identifier,
+};
 use crate::watch::{PyWatchRequest, parse_resume_start};
+
+fn identifier_from_py(
+    obj: &Bound<'_, PyAny>,
+    error_message: impl FnOnce() -> String,
+) -> PyResult<BTreeMap<String, serde_json::Value>> {
+    validate_identifier(obj)?;
+    pythonize::depythonize(obj).map_err(|_| PyTypeError::new_err(error_message()))
+}
 
 fn request_from_mapping(index: usize, obj: &Bound<'_, PyAny>) -> PyResult<NotificationRequest> {
     let dict = obj.cast::<PyDict>().map_err(|_| {
@@ -51,21 +61,19 @@ fn request_from_mapping(index: usize, obj: &Bound<'_, PyAny>) -> PyResult<Notifi
         }
     };
     let mut request = NotificationRequest::new(event_type);
-    if let Some(identifier) = dict.get_item("identifier")? {
-        if !identifier.is_none() {
-            let map: BTreeMap<String, String> = identifier.extract().map_err(|_| {
-                PyTypeError::new_err(format!(
-                    "notifications[{index}].identifier must be a dict of str to str"
-                ))
-            })?;
-            request = request.with_identifier(map);
-        }
+    if let Some(identifier) = dict.get_item("identifier")?
+        && !identifier.is_none()
+    {
+        let map = identifier_from_py(&identifier, || {
+            format!("notifications[{index}].identifier must be a dict of str to JSON values")
+        })?;
+        request = request.with_identifier(map);
     }
-    if let Some(payload) = dict.get_item("payload")? {
-        if !payload.is_none() {
-            let value: serde_json::Value = pythonize::depythonize(&payload)?;
-            request = request.with_payload(value);
-        }
+    if let Some(payload) = dict.get_item("payload")?
+        && !payload.is_none()
+    {
+        let value: serde_json::Value = pythonize::depythonize(&payload)?;
+        request = request.with_payload(value);
     }
     Ok(request)
 }
@@ -168,7 +176,7 @@ impl PyAvisoClient {
         &self,
         py: Python<'_>,
         event_type: String,
-        identifier: Option<BTreeMap<String, String>>,
+        identifier: Option<&Bound<'_, PyAny>>,
         payload: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyNotifyResponse> {
         let payload_value: Option<serde_json::Value> = match payload {
@@ -176,8 +184,10 @@ impl PyAvisoClient {
             None => None,
         };
         let mut request = NotificationRequest::new(event_type);
-        if let Some(id) = identifier {
-            request = request.with_identifier(id);
+        if let Some(identifier) = identifier {
+            request = request.with_identifier(identifier_from_py(identifier, || {
+                "identifier must be a mapping from str to JSON values".to_string()
+            })?);
         }
         if let Some(value) = payload_value {
             request = request.with_payload(value);
@@ -359,7 +369,7 @@ impl PyAsyncAvisoClient {
         &self,
         py: Python<'py>,
         event_type: String,
-        identifier: Option<std::collections::BTreeMap<String, String>>,
+        identifier: Option<&Bound<'_, PyAny>>,
         payload: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let payload_value: Option<serde_json::Value> = match payload {
@@ -367,8 +377,10 @@ impl PyAsyncAvisoClient {
             None => None,
         };
         let mut request = NotificationRequest::new(event_type);
-        if let Some(id) = identifier {
-            request = request.with_identifier(id);
+        if let Some(identifier) = identifier {
+            request = request.with_identifier(identifier_from_py(identifier, || {
+                "identifier must be a mapping from str to JSON values".to_string()
+            })?);
         }
         if let Some(value) = payload_value {
             request = request.with_payload(value);
@@ -540,6 +552,7 @@ fn build_watch_request(
         }
     };
     if let Some(filter_dict) = filter {
+        validate_identifier(filter_dict.as_any())?;
         let mut map = std::collections::BTreeMap::<String, serde_json::Value>::new();
         for (k, v) in filter_dict {
             let key: String = k.extract()?;

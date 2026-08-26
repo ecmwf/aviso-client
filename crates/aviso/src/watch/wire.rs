@@ -95,13 +95,12 @@ pub(crate) struct WireCloudEvent {
 }
 
 /// Inner `data` object of a `CloudEvent`. `identifier` keys are the schema
-/// identifiers reconstructed by the server from the notification topic;
-/// values are strings on the read side (in contrast to the request body
-/// where values may be JSON constraint objects). `payload` defaults to JSON
-/// `null` when absent.
+/// identifiers reconstructed by the server from the notification topic. Their
+/// values retain their JSON shape. `payload` defaults to JSON `null` when
+/// absent.
 #[derive(Debug, Deserialize)]
 pub(crate) struct WireCloudEventData {
-    pub(crate) identifier: BTreeMap<String, String>,
+    pub(crate) identifier: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub(crate) payload: serde_json::Value,
 }
@@ -254,15 +253,26 @@ mod tests {
             "type": "int.ecmwf.aviso.mars",
             "time": "2026-05-17T12:34:56Z",
             "data": {
-                "identifier": { "country": "UK", "class": "od" },
+                "identifier": {
+                    "country": "UK",
+                    "class": "od",
+                    "point_cloud": [[46.0, 8.0], [47.0, 9.0]]
+                },
                 "payload": { "location": "south" }
             }
         });
         let wire: WireCloudEvent = serde_json::from_value(raw).unwrap();
         assert_eq!(wire.id, "mars@42");
         assert_eq!(
-            wire.data.identifier.get("country").map(String::as_str),
+            wire.data
+                .identifier
+                .get("country")
+                .and_then(|value| value.as_str()),
             Some("UK")
+        );
+        assert_eq!(
+            wire.data.identifier.get("point_cloud"),
+            Some(&json!([[46.0, 8.0], [47.0, 9.0]]))
         );
         assert_eq!(wire.data.payload, json!({ "location": "south" }));
     }

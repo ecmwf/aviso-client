@@ -209,7 +209,7 @@ mod tests {
     fn make_notification(
         event_type: &str,
         sequence: u64,
-        identifier: BTreeMap<String, String>,
+        identifier: BTreeMap<String, serde_json::Value>,
         payload: serde_json::Value,
     ) -> Notification {
         Notification {
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn envelope_has_specversion_type_source_id_and_data_fields() {
         let mut identifier = BTreeMap::new();
-        identifier.insert("class".to_string(), "od".to_string());
+        identifier.insert("class".to_string(), serde_json::json!("od"));
         let n = make_notification("mars", 42, identifier, serde_json::json!({"seed": "x"}));
         let envelope = build_reconstructed_envelope(&n);
         assert_eq!(envelope["specversion"], "1.0");
@@ -257,7 +257,7 @@ mod tests {
         let mut identifier = BTreeMap::new();
         identifier.insert(
             "weird".to_string(),
-            "has \"quote\" and \\backslash".to_string(),
+            serde_json::json!("has \"quote\" and \\backslash"),
         );
         let n = make_notification("mars", 1, identifier, serde_json::Value::Null);
         let envelope = build_reconstructed_envelope(&n);
@@ -266,6 +266,23 @@ mod tests {
         assert_eq!(
             reparsed["data"]["identifier"]["weird"],
             "has \"quote\" and \\backslash"
+        );
+    }
+
+    #[test]
+    fn reconstructed_envelope_preserves_structured_identifier() {
+        let identifier = BTreeMap::from([(
+            "point_cloud".to_string(),
+            serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+        )]);
+        let notification =
+            make_notification("observations", 2, identifier, serde_json::Value::Null);
+
+        let envelope = build_reconstructed_envelope(&notification);
+
+        assert_eq!(
+            envelope["data"]["identifier"]["point_cloud"],
+            serde_json::json!([[46.0, 8.0], [47.0, 9.0]])
         );
     }
 

@@ -383,7 +383,7 @@ AvisoOutcome *aviso_client_schema(const AvisoClient *client);
  * `aviso_outcome_take_string`), or a structured error.
  *
  * `event_type` is required. `identifier_json`, when non-null, is a JSON object
- * of string-to-string identifier pairs; `payload_json`, when non-null, is any
+ * whose values may have any JSON shape; `payload_json`, when non-null, is any
  * JSON value. A null `identifier_json` or `payload_json` means the field is
  * omitted; a non-UTF-8 or otherwise malformed argument is an
  * `AvisoErrorKind_InvalidInput` error.
@@ -410,7 +410,7 @@ AvisoOutcome *aviso_client_notify(const AvisoClient *client,
  *
  * `notifications_json` is a JSON array; each element is an object with a
  * required string `event_type`, an optional `identifier` object of
- * string-to-string pairs, and an optional `payload` of any shape. A malformed
+ * arbitrary JSON values, and an optional `payload` of any shape. A malformed
  * array or element is an `AvisoErrorKind_InvalidInput` error and nothing is
  * published. `max_concurrency` caps in-flight requests; `0` selects a default.
  *

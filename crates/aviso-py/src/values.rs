@@ -28,11 +28,14 @@
 //! `__hash__ = None` so a misuse like `set([notification])` raises
 //! `TypeError` loudly rather than falling back to an id-based hash.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use aviso::{Notification, NotifyResponse, SchemaCatalog, SchemaResponse, StreamSchema};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{
+    PyByteArray, PyBytes, PyDict, PyFloat, PyFrozenSet, PyMapping, PySequence, PySet, PyString,
+};
 use pythonize::pythonize;
 
 /// `PyO3` wrapper carrying a received notification's fields.
@@ -47,9 +50,76 @@ use pythonize::pythonize;
 pub(crate) struct PyNotification {
     event_type: String,
     sequence: u64,
-    identifier: BTreeMap<String, String>,
+    identifier: BTreeMap<String, serde_json::Value>,
     payload: serde_json::Value,
     cloudevent: Option<serde_json::Value>,
+}
+
+const MAX_IDENTIFIER_NESTING: usize = 100;
+
+pub(crate) fn validate_identifier(value: &Bound<'_, PyAny>) -> PyResult<()> {
+    validate_identifier_inner(value, 0, &mut HashSet::new())
+}
+
+fn validate_identifier_inner(
+    value: &Bound<'_, PyAny>,
+    depth: usize,
+    active_containers: &mut HashSet<usize>,
+) -> PyResult<()> {
+    if let Ok(float) = value.cast::<PyFloat>() {
+        if !float.value().is_finite() {
+            return Err(PyTypeError::new_err(
+                "identifier values must not contain NaN or infinity",
+            ));
+        }
+        return Ok(());
+    }
+    if value.cast::<PyString>().is_ok()
+        || value.cast::<PyBytes>().is_ok()
+        || value.cast::<PyByteArray>().is_ok()
+    {
+        return Ok(());
+    }
+    let is_container = value.cast::<PySet>().is_ok()
+        || value.cast::<PyFrozenSet>().is_ok()
+        || value.cast::<PyMapping>().is_ok()
+        || value.cast::<PySequence>().is_ok();
+    if !is_container {
+        return Ok(());
+    }
+    if depth >= MAX_IDENTIFIER_NESTING {
+        return Err(PyValueError::new_err(format!(
+            "identifier values must not exceed {MAX_IDENTIFIER_NESTING} nested containers"
+        )));
+    }
+
+    let identity = value.as_ptr() as usize;
+    if !active_containers.insert(identity) {
+        return Err(PyTypeError::new_err(
+            "identifier values must not contain cyclic containers",
+        ));
+    }
+
+    let result = if let Ok(set) = value.cast::<PySet>() {
+        set.iter()
+            .try_for_each(|item| validate_identifier_inner(&item, depth + 1, active_containers))
+    } else if let Ok(set) = value.cast::<PyFrozenSet>() {
+        set.iter()
+            .try_for_each(|item| validate_identifier_inner(&item, depth + 1, active_containers))
+    } else if let Ok(mapping) = value.cast::<PyMapping>() {
+        mapping
+            .values()?
+            .iter()
+            .try_for_each(|item| validate_identifier_inner(&item, depth + 1, active_containers))
+    } else if let Ok(sequence) = value.cast::<PySequence>() {
+        (0..sequence.len()?).try_for_each(|index| {
+            validate_identifier_inner(&sequence.get_item(index)?, depth + 1, active_containers)
+        })
+    } else {
+        Ok(())
+    };
+    active_containers.remove(&identity);
+    result
 }
 
 #[pymethods]
@@ -60,11 +130,14 @@ impl PyNotification {
         py: Python<'_>,
         event_type: String,
         sequence: u64,
-        identifier: BTreeMap<String, String>,
+        identifier: &Bound<'_, PyAny>,
         payload: &Bound<'_, PyAny>,
         cloudevent: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let _ = py;
+        validate_identifier(identifier)?;
+        let identifier_value: BTreeMap<String, serde_json::Value> =
+            pythonize::depythonize(identifier)?;
         let payload_value: serde_json::Value = pythonize::depythonize(payload)?;
         let cloudevent_value = match cloudevent {
             Some(obj) => Some(pythonize::depythonize(obj)?),
@@ -73,7 +146,7 @@ impl PyNotification {
         Ok(Self {
             event_type,
             sequence,
-            identifier,
+            identifier: identifier_value,
             payload: payload_value,
             cloudevent: cloudevent_value,
         })
@@ -93,7 +166,7 @@ impl PyNotification {
     fn identifier<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         for (k, v) in &self.identifier {
-            dict.set_item(k, v)?;
+            dict.set_item(k, pythonize(py, v)?)?;
         }
         Ok(dict)
     }

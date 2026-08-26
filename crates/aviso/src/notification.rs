@@ -35,7 +35,11 @@ pub struct NotificationRequest {
     pub event_type: String,
 
     /// Identifier key/value pairs, per the schema for `event_type`.
-    pub identifier: BTreeMap<String, String>,
+    ///
+    /// Values retain their JSON shape. Spatial identifiers use arrays, such as
+    /// `[46.0, 8.0]` for a point or `[[46.0, 8.0], [47.0, 9.0]]` for a point
+    /// cloud.
+    pub identifier: BTreeMap<String, Value>,
 
     /// Optional free-form payload.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -79,9 +83,23 @@ impl NotificationRequest {
     }
 
     /// Replaces the identifier map. Builder-style consumes and returns `self`.
+    ///
+    /// Values retain their JSON shape, including scalars, arrays, and objects.
     #[must_use]
-    pub fn with_identifier(mut self, identifier: BTreeMap<String, String>) -> Self {
+    pub fn with_identifier(mut self, identifier: BTreeMap<String, Value>) -> Self {
         self.identifier = identifier;
+        self
+    }
+
+    /// Replaces the identifier map with string values converted to JSON strings.
+    ///
+    /// Use [`Self::with_identifier`] when any value is not a string.
+    #[must_use]
+    pub fn with_string_identifier(mut self, identifier: BTreeMap<String, String>) -> Self {
+        self.identifier = identifier
+            .into_iter()
+            .map(|(key, value)| (key, Value::String(value)))
+            .collect();
         self
     }
 
@@ -117,8 +135,9 @@ pub struct Notification {
     /// Per-stream monotonic sequence, parsed from the `CloudEvent` id (the part after `@`).
     pub sequence: u64,
 
-    /// Identifier key/value pairs as published.
-    pub identifier: BTreeMap<String, String>,
+    /// Identifier key/value pairs as published, with each value's JSON shape
+    /// preserved.
+    pub identifier: BTreeMap<String, Value>,
 
     /// Payload as published. JSON `null` is preserved as [`serde_json::Value::Null`].
     pub payload: Value,
@@ -281,7 +300,7 @@ mod tests {
         #[test]
         fn builder_methods_set_optional_fields() {
             let mut id = BTreeMap::new();
-            id.insert("country".to_string(), "uk".to_string());
+            id.insert("country".to_string(), serde_json::json!("uk"));
             let req = NotificationRequest::new("mars")
                 .with_identifier(id.clone())
                 .with_payload(serde_json::json!({ "location": "south" }));
@@ -294,9 +313,20 @@ mod tests {
         }
 
         #[test]
+        fn string_identifier_builder_converts_values() {
+            let identifier = BTreeMap::from([("class".to_string(), "od".to_string())]);
+            let request = NotificationRequest::new("mars").with_string_identifier(identifier);
+            assert_eq!(request.identifier["class"], serde_json::json!("od"));
+        }
+
+        #[test]
         fn serializes_to_expected_wire_shape() {
             let mut id = BTreeMap::new();
-            id.insert("country".to_string(), "uk".to_string());
+            id.insert("country".to_string(), serde_json::json!("uk"));
+            id.insert(
+                "point_cloud".to_string(),
+                serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+            );
             let req = NotificationRequest::new("mars")
                 .with_identifier(id)
                 .with_payload(serde_json::json!({ "location": "south" }));
@@ -305,7 +335,10 @@ mod tests {
                 json,
                 serde_json::json!({
                     "event_type": "mars",
-                    "identifier": { "country": "uk" },
+                    "identifier": {
+                        "country": "uk",
+                        "point_cloud": [[46.0, 8.0], [47.0, 9.0]],
+                    },
                     "payload": { "location": "south" },
                 })
             );
@@ -353,7 +386,11 @@ mod tests {
         #[test]
         fn serializes_to_expected_wire_shape_with_all_fields() {
             let mut identifier = BTreeMap::new();
-            identifier.insert("country".to_string(), "uk".to_string());
+            identifier.insert("country".to_string(), serde_json::json!("uk"));
+            identifier.insert(
+                "point_cloud".to_string(),
+                serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+            );
             let notification = Notification {
                 event_type: "mars".to_string(),
                 sequence: 42,
@@ -367,7 +404,10 @@ mod tests {
                 serde_json::json!({
                     "event_type": "mars",
                     "sequence": 42,
-                    "identifier": { "country": "uk" },
+                    "identifier": {
+                        "country": "uk",
+                        "point_cloud": [[46.0, 8.0], [47.0, 9.0]],
+                    },
                     "payload": { "location": "south" },
                 })
             );

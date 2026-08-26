@@ -34,9 +34,9 @@ fn polygon_filter() -> BTreeMap<String, Value> {
 
 fn request(seq: u64) -> NotificationRequest {
     let identifier = BTreeMap::from([
-        ("polygon".into(), POLYGON.into()),
-        ("date".into(), "20260611".into()),
-        ("time".into(), format!("{seq:04}")),
+        ("polygon".into(), json!(POLYGON)),
+        ("date".into(), json!("20260611")),
+        ("time".into(), json!(format!("{seq:04}"))),
     ]);
     NotificationRequest::new(EVENT_TYPE)
         .with_identifier(identifier)

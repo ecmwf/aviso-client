@@ -38,7 +38,7 @@ def main() -> None:
         {
             "event_type": "test_polygon",
             "identifier": {
-                "polygon": "0,0,1,0,1,1,0,0",
+                "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
                 "date": "20260601",
                 "time": f"12{i:02d}",
             },

@@ -66,20 +66,20 @@ async fn handler_task(sender: watch::Sender<bool>, last_signal: Arc<Mutex<Option
                     Err(poison) => poison.into_inner(),
                 };
                 let window_secs = DOUBLE_SIGINT_WINDOW.as_secs();
-                if let Some(prev) = *guard {
-                    if now.duration_since(prev) <= DOUBLE_SIGINT_WINDOW {
-                        // Variable-capture form: `window_secs` is both a
-                        // structured field and a format-arg, position-
-                        // independent. The `field = expr` form also works
-                        // but only AFTER the message string, which is
-                        // brittle under future reorders.
-                        tracing::warn!(
-                            event.name = "cli.sigint.hard_exit",
-                            window_secs,
-                            "second SIGINT received within {window_secs}s; hard-exiting with code 130",
-                        );
-                        std::process::exit(crate::exit::HARD_SIGINT);
-                    }
+                if let Some(prev) = *guard
+                    && now.duration_since(prev) <= DOUBLE_SIGINT_WINDOW
+                {
+                    // Variable-capture form: `window_secs` is both a
+                    // structured field and a format-arg, position-
+                    // independent. The `field = expr` form also works
+                    // but only AFTER the message string, which is
+                    // brittle under future reorders.
+                    tracing::warn!(
+                        event.name = "cli.sigint.hard_exit",
+                        window_secs,
+                        "second SIGINT received within {window_secs}s; hard-exiting with code 130",
+                    );
+                    std::process::exit(crate::exit::HARD_SIGINT);
                 }
                 *guard = Some(now);
                 drop(guard);

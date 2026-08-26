@@ -63,6 +63,8 @@ export AVISO_PASSWORD=producer-pass
 - `publish.cpp`: publishes a notification with `notify()` and reads the stream's
   schema with `schema_for()`. The stream and identifier are declared at the top
   of the file. Against an auth-required stream, set the producer account above.
+  Use `notify_json()` for structured identifiers. Points use `[lat, lon]`;
+  polygons and point clouds use `[[lat, lon], ...]`.
 
   ```bash
   ./build/cpp/publish

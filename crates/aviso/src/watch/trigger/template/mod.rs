@@ -135,38 +135,38 @@ pub(crate) fn compile(template: &str) -> Result<CompiledTemplate, TemplateError>
     while let Some((_, ch)) = chars.next() {
         if ch == '\\' {
             // `\{{` escape: emit literal `{{` and skip both braces.
-            if let Some(&(_, next1)) = chars.peek() {
-                if next1 == '{' {
+            if let Some(&(_, next1)) = chars.peek()
+                && next1 == '{'
+            {
+                chars.next();
+                if let Some(&(_, next2)) = chars.peek()
+                    && next2 == '{'
+                {
                     chars.next();
-                    if let Some(&(_, next2)) = chars.peek() {
-                        if next2 == '{' {
-                            chars.next();
-                            literal_buf.push_str("{{");
-                            continue;
-                        }
-                    }
-                    // `\{` not followed by another `{`: treat as literal `\` and `{`.
-                    literal_buf.push('\\');
-                    literal_buf.push('{');
+                    literal_buf.push_str("{{");
                     continue;
                 }
+                // `\{` not followed by another `{`: treat as literal `\` and `{`.
+                literal_buf.push('\\');
+                literal_buf.push('{');
+                continue;
             }
             literal_buf.push('\\');
             continue;
         }
 
-        if ch == '{' {
-            if let Some(&(_, '{')) = chars.peek() {
-                chars.next();
-                // Found `{{`. Flush the literal buffer if non-empty,
-                // then parse the expression up to the matching `}}`.
-                if !literal_buf.is_empty() {
-                    segments.push(Segment::Literal(std::mem::take(&mut literal_buf)));
-                }
-                let segment = parse_expression(&mut chars, template)?;
-                segments.push(segment);
-                continue;
+        if ch == '{'
+            && let Some(&(_, '{')) = chars.peek()
+        {
+            chars.next();
+            // Found `{{`. Flush the literal buffer if non-empty,
+            // then parse the expression up to the matching `}}`.
+            if !literal_buf.is_empty() {
+                segments.push(Segment::Literal(std::mem::take(&mut literal_buf)));
             }
+            let segment = parse_expression(&mut chars, template)?;
+            segments.push(segment);
+            continue;
         }
 
         literal_buf.push(ch);
@@ -205,12 +205,12 @@ fn parse_expression(
                 kind: TemplateErrorKind::BadSyntax,
             });
         }
-        if ch == '}' {
-            if let Some(&(_, '}')) = chars.peek() {
-                chars.next();
-                closed = true;
-                break;
-            }
+        if ch == '}'
+            && let Some(&(_, '}')) = chars.peek()
+        {
+            chars.next();
+            closed = true;
+            break;
         }
         expr.push(ch);
     }

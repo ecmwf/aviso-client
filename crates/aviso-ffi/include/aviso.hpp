@@ -99,8 +99,8 @@ inline void append_json_string(std::string& out, const std::string& value) {
   out.push_back('"');
 }
 
-// Serialises a string-to-string map as a compact JSON object, the wire form
-// the C ABI's `identifier_json` argument expects.
+// Serialises a string-to-string map as a compact JSON object. Use the JSON
+// overload when an identifier contains arrays, objects, or other JSON values.
 inline std::string to_identifier_json(
     const std::map<std::string, std::string>& identifier) {
   std::string out = "{";
@@ -310,6 +310,7 @@ class Client {
   // Publishes a notification and returns the server's response as a
   // compact-JSON string, or throws `aviso::Error`. `identifier` is the
   // string-to-string identifier map; `payload`, when set, is a JSON string.
+  // Use `notify_json` when identifier values are structured JSON.
   [[nodiscard]] std::string notify(
       const std::string& event_type,
       const std::map<std::string, std::string>& identifier = {},
@@ -324,6 +325,18 @@ class Client {
     return take_string(aviso_client_notify(handle_.get(), event_type.c_str(),
                                            identifier_ptr, payload_ptr),
                        "notify");
+  }
+
+  // Publishes a notification whose identifier values may have any JSON shape.
+  // `identifier_json` must be a JSON object, for example
+  // {"point_cloud":[[46,8],[47,9]]}.
+  [[nodiscard]] std::string notify_json(
+      const std::string& event_type, const std::string& identifier_json,
+      const std::optional<std::string>& payload = std::nullopt) {
+    const char* payload_ptr = payload ? payload->c_str() : nullptr;
+    return take_string(aviso_client_notify(handle_.get(), event_type.c_str(),
+                                           identifier_json.c_str(), payload_ptr),
+                       "notify_json");
   }
 
   // Publishes many notifications concurrently and returns a compact-JSON array
@@ -378,6 +391,19 @@ class Client {
     aviso_client_notify_async(handle_.get(), event_type.c_str(), identifier_ptr,
                               payload_ptr, detail::async_complete_string,
                               promise.release());
+    return future;
+  }
+
+  // Async form of `notify_json` for JSON-valued identifiers.
+  [[nodiscard]] std::future<std::string> notify_json_async(
+      const std::string& event_type, const std::string& identifier_json,
+      const std::optional<std::string>& payload = std::nullopt) {
+    const char* payload_ptr = payload ? payload->c_str() : nullptr;
+    auto promise = std::make_unique<std::promise<std::string>>();
+    std::future<std::string> future = promise->get_future();
+    aviso_client_notify_async(handle_.get(), event_type.c_str(),
+                              identifier_json.c_str(), payload_ptr,
+                              detail::async_complete_string, promise.release());
     return future;
   }
 

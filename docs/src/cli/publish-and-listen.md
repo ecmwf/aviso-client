@@ -17,8 +17,42 @@ The single argument is a comma-separated list:
 - `data=<JSON>` is optional. Whatever you set here becomes the notification's
   payload.
 - Every other `key=value` pair lands in the identifier map.
+- Use `key:=JSON` when an identifier must be a JSON scalar rather than a string.
 
-### Quoting values that contain commas
+Identifier values beginning with `[` or `{` are parsed as JSON. This sends a
+point cloud as an array rather than a quoted JSON string:
+
+```bash
+aviso notify 'event=observations,point_cloud=[[46,8],[47,9]],date=20260601'
+```
+
+A point has shape `[lat,lon]`. A polygon and a point cloud both use
+`[[lat,lon],...]`; the schema determines how the coordinates are interpreted.
+The outer single quotes protect the argument from the shell. Do not add double
+quotes around the array.
+
+Bare scalar values keep the CLI's existing string behavior. For example,
+`step=12` and `enabled=true` send the strings `"12"` and `"true"`.
+Use the explicit JSON delimiter to retain scalar types:
+
+```bash
+aviso notify 'event=observations,count:=12,enabled:=true,missing:=null'
+```
+
+This sends the number `12`, the boolean `true`, and JSON `null`. The explicit
+form also accepts strings, arrays, and objects, such as `label:="archive"`,
+`point:=[46,8]`, or `area:={"north":47,"south":46}`.
+If a string itself starts with `[` or `{`, wrap that value in double quotes:
+
+```bash
+aviso notify 'event=mars,label="[archive]",region="{region}"'
+```
+
+The outer single quotes are interpreted by the shell. The inner double quotes
+are interpreted and removed by aviso. The values sent are the strings
+`"[archive]"` and `"{region}"`, not malformed JSON structures.
+
+### Legacy values that contain commas
 
 For a value that itself contains commas (a polygon, a comma-separated list),
 wrap it in double quotes:
@@ -28,7 +62,8 @@ aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=2026060
 ```
 
 The quotes are CLI-side; they are stripped before the value is sent to the
-server.
+server. This form remains available for compatibility. New point and polygon
+commands should use JSON arrays.
 
 ### Identifier fields the server requires
 
@@ -64,7 +99,12 @@ aviso listen --event mars --identifiers '{"class":"od"}'
 This runs one listener with a single echo trigger. Press Ctrl+C to stop.
 
 `--event` and `--identifiers` come as a pair: pass both or pass neither.
-`--identifiers` takes a JSON object literal (`'{"key":"value"}'`).
+`--identifiers` takes a JSON object literal. Values may have any JSON shape:
+
+```bash
+aviso listen --event observations \
+  --identifiers '{"point_cloud":[[46,8],[47,9]]}'
+```
 
 For an empty identifier map (every notification of this event type), pass
 `'{}'`. The server may still require certain fields to be present, depending on

@@ -27,10 +27,123 @@ trap 'rm -rf "$tmp"' EXIT
 
 ws_version="$("$root/scripts/ws-version.sh" "$root/Cargo.toml")"
 
-# The stub implements the one symbol the consumer smoke links,
-# aviso_version, returning the live workspace version.
+# The stub implements the symbols exercised by the consumer smoke. Builder
+# creation succeeds, while both notify paths reject the malformed identifier
+# with the same structured error shape as the real library.
 cat >"$tmp/stub.c" <<EOF
+#include "$root/crates/aviso-ffi/include/aviso.h"
+
+struct AvisoClient {
+  int unused;
+};
+
+struct AvisoClientBuilder {
+  int unused;
+};
+
+struct AvisoOutcome {
+  bool ok;
+  AvisoClient *client;
+  char *text;
+  AvisoError error;
+};
+
+static AvisoOutcome *error_outcome(void) {
+  AvisoOutcome *outcome = calloc(1, sizeof(*outcome));
+  if (outcome != NULL) {
+    outcome->error.kind = AvisoErrorKind_InvalidInput;
+    outcome->error.message = "identifier must be a JSON object";
+  }
+  return outcome;
+}
+
 const char *aviso_version(void) { return "$ws_version"; }
+
+AvisoClientBuilder *aviso_client_builder_new(const char *base_url) {
+  (void)base_url;
+  return calloc(1, sizeof(AvisoClientBuilder));
+}
+
+AvisoOutcome *aviso_client_builder_build(AvisoClientBuilder **builder) {
+  AvisoOutcome *outcome = calloc(1, sizeof(*outcome));
+  if (outcome == NULL) {
+    return NULL;
+  }
+  free(*builder);
+  *builder = NULL;
+  outcome->client = calloc(1, sizeof(AvisoClient));
+  outcome->ok = outcome->client != NULL;
+  if (!outcome->ok) {
+    outcome->error.kind = AvisoErrorKind_Internal;
+    outcome->error.message = "allocation failed";
+  }
+  return outcome;
+}
+
+void aviso_client_builder_free(AvisoClientBuilder *builder) { free(builder); }
+void aviso_client_free(AvisoClient *client) { free(client); }
+
+AvisoOutcome *aviso_client_notify(const AvisoClient *client,
+                                  const char *event_type,
+                                  const char *identifier_json,
+                                  const char *payload_json) {
+  (void)client;
+  (void)event_type;
+  (void)identifier_json;
+  (void)payload_json;
+  return error_outcome();
+}
+
+void aviso_client_notify_async(const AvisoClient *client,
+                               const char *event_type,
+                               const char *identifier_json,
+                               const char *payload_json,
+                               void (*on_complete)(void *, AvisoOutcome *),
+                               void *ctx) {
+  (void)client;
+  (void)event_type;
+  (void)identifier_json;
+  (void)payload_json;
+  if (on_complete != NULL) {
+    on_complete(ctx, error_outcome());
+  }
+}
+
+bool aviso_outcome_is_ok(const AvisoOutcome *outcome) {
+  return outcome != NULL && outcome->ok;
+}
+
+const AvisoError *aviso_outcome_error(const AvisoOutcome *outcome) {
+  return outcome == NULL || outcome->ok ? NULL : &outcome->error;
+}
+
+char *aviso_outcome_take_string(AvisoOutcome *outcome) {
+  if (outcome == NULL) {
+    return NULL;
+  }
+  char *text = outcome->text;
+  outcome->text = NULL;
+  return text;
+}
+
+AvisoClient *aviso_outcome_take_client(AvisoOutcome *outcome) {
+  if (outcome == NULL) {
+    return NULL;
+  }
+  AvisoClient *client = outcome->client;
+  outcome->client = NULL;
+  return client;
+}
+
+void aviso_outcome_free(AvisoOutcome *outcome) {
+  if (outcome != NULL) {
+    free(outcome->client);
+    free(outcome->text);
+    free(outcome);
+  }
+}
+
+void aviso_string_free(char *text) { free(text); }
 EOF
 
 # The audit fixture: a foreign shared library whose symbol the stub variant

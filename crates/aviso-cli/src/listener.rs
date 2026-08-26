@@ -278,6 +278,16 @@ mod tests {
     }
 
     #[test]
+    fn build_inline_listener_spec_preserves_point_cloud_array() {
+        let spec = build_inline_listener_spec("observations", r#"{"point_cloud":[[46,8],[47,9]]}"#)
+            .unwrap();
+        assert_eq!(
+            spec.identifiers.get("point_cloud"),
+            Some(&serde_json::json!([[46, 8], [47, 9]]))
+        );
+    }
+
+    #[test]
     fn build_inline_listener_spec_propagates_the_event_type_argument_unchanged() {
         for ev in &["mars", "test_polygon", "int.ecmwf.aviso.mars"] {
             let spec = build_inline_listener_spec(ev, "{}").unwrap();

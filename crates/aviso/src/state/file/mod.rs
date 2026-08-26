@@ -213,10 +213,10 @@ impl JsonFileStore {
         // pre_state. Intentional deletes (key absent from candidate)
         // skip this loop and reach the deletes map below.
         for (k, pre_cp) in &pre_state {
-            if let Some(cand_cp) = candidate.get(k) {
-                if cand_cp.last_committed_sequence <= pre_cp.last_committed_sequence {
-                    candidate.insert(k.clone(), pre_cp.clone());
-                }
+            if let Some(cand_cp) = candidate.get(k)
+                && cand_cp.last_committed_sequence <= pre_cp.last_committed_sequence
+            {
+                candidate.insert(k.clone(), pre_cp.clone());
             }
         }
 

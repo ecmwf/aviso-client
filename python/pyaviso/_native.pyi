@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import Awaitable, Mapping, Sequence
 
-# reason: Notification.payload and filter values are JSON-shaped values
+# reason: Notification payload and identifier/filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
 # at those positions deliberately.
 from typing import Any
@@ -23,7 +23,7 @@ class Notification:
         self,
         event_type: str,
         sequence: int,
-        identifier: Mapping[str, str],
+        identifier: Mapping[str, Any],
         payload: Any,
         cloudevent: Mapping[str, Any] | None = None,
     ) -> None: ...
@@ -32,7 +32,7 @@ class Notification:
     @property
     def sequence(self) -> int: ...
     @property
-    def identifier(self) -> dict[str, str]: ...
+    def identifier(self) -> dict[str, Any]: ...
     @property
     def payload(self) -> Any: ...
     @property
@@ -211,7 +211,7 @@ class AvisoClient:
         self,
         *,
         event_type: str,
-        identifier: Mapping[str, str] | None = None,
+        identifier: Mapping[str, Any] | None = None,
         payload: Any | None = None,
     ) -> NotifyResponse: ...
     def notify_many(
@@ -262,7 +262,7 @@ class AsyncAvisoClient:
         self,
         *,
         event_type: str,
-        identifier: Mapping[str, str] | None = None,
+        identifier: Mapping[str, Any] | None = None,
         payload: Any | None = None,
     ) -> Awaitable[NotifyResponse]: ...
     def notify_many(

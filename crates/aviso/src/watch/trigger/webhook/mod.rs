@@ -247,10 +247,8 @@ pub(super) async fn dispatch_webhook(
                 is_connect,
                 "webhook request send failed"
             );
-            if is_timeout {
-                if let Some(t) = timeout {
-                    return Err(TriggerError::Timeout(t));
-                }
+            if is_timeout && let Some(t) = timeout {
+                return Err(TriggerError::Timeout(t));
             }
             if is_builder {
                 return Err(TriggerError::WebhookBuild {
