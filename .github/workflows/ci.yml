@@ -52,6 +52,11 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      - name: Minimum supported Rust version
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          cargo +1.88.0 check --locked --workspace --all-targets
+
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
 

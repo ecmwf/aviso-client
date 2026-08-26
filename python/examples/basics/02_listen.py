@@ -47,7 +47,8 @@ from _common import break_after, require_env
 def main() -> None:
     client = pyaviso.AvisoClient(base_url=require_env(), auth=pyaviso.Env())
     count = 0
-    with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+    polygon = [[0, 0], [1, 0], [1, 1], [0, 0]]
+    with client.listen("test_polygon", filter={"polygon": polygon}) as iterator:
         for n in break_after(iterator, 3):
             print(f"seq={n.sequence} identifier={n.identifier} payload={n.payload}")
             count += 1

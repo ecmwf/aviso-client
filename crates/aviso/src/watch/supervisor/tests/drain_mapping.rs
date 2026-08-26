@@ -11,9 +11,11 @@ use super::*;
 #[tokio::test]
 async fn drain_frames_mapping_covers_live_notification_with_cloudevent() {
     let server = MockServer::start().await;
+    let mut event = cloud_event("mars", 7);
+    event["data"]["identifier"]["point_cloud"] = json!([[46.0, 8.0], [47.0, 9.0]]);
     let body = format!(
         "{}{}",
-        sse_chunk("live-notification", cloud_event("mars", 7)),
+        sse_chunk("live-notification", event),
         sse_chunk("connection-closing", closing("end_of_stream"))
     );
     Mock::given(method("POST"))
@@ -31,6 +33,10 @@ async fn drain_frames_mapping_covers_live_notification_with_cloudevent() {
     let first = rx.recv().await.unwrap().unwrap();
     assert_eq!(first.event_type, "mars");
     assert_eq!(first.sequence, 7);
+    assert_eq!(
+        first.identifier["point_cloud"],
+        json!([[46.0, 8.0], [47.0, 9.0]])
+    );
     // In watch mode end_of_stream reconnects; drop the cancel to break
     // the reconnect loop and let the supervisor exit.
     drop(cancel_tx);

@@ -29,6 +29,24 @@ listeners:
 | `from_id` | integer | no | unset | Default starting sequence for the first connection. Overridden by `--from`. |
 | `from_date` | string | no | unset | Default starting ISO-8601 datetime. The value is sent verbatim to the server, so it must be in a form the server accepts: `YYYY-MM-DDTHH:MM:SSZ`, `YYYY-MM-DDTHH:MM:SS.ffffffZ`, or `YYYY-MM-DD HH:MM:SS+HH:MM`. A bare `YYYY-MM-DD` is **not** accepted here (the CLI's `--from` flag does that normalisation, but the YAML field does not). Mutually exclusive with `from_id`. |
 
+Identifier values may have any JSON-compatible YAML shape. Spatial values use
+latitude first. This listener filters on a point cloud:
+
+```yaml
+listeners:
+  - name: alpine-observations
+    event: observations
+    identifiers:
+      point_cloud:
+        - [46, 8]
+        - [47, 9]
+    triggers:
+      - type: echo
+```
+
+A point is `[lat, lon]`. Polygons and point clouds are lists of points. Legacy
+comma-separated point and polygon strings remain valid for compatible servers.
+
 ## Trigger fields
 
 Every trigger entry has a `type:` field plus per-kind fields. Shared options:

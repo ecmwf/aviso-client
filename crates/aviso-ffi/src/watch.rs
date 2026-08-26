@@ -685,13 +685,15 @@ mod tests {
     use crate::AvisoErrorKind;
     use crate::client::{aviso_client_builder_build, aviso_client_builder_new, aviso_client_free};
     use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
-    use std::ffi::CString;
+    use std::ffi::{CStr, CString};
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize};
 
     struct Sink {
         ended: AtomicBool,
         end_kind: AtomicI32,
         notifications: AtomicUsize,
+        identifier_json: Mutex<Option<String>>,
     }
 
     impl Sink {
@@ -700,16 +702,24 @@ mod tests {
                 ended: AtomicBool::new(false),
                 end_kind: AtomicI32::new(-2),
                 notifications: AtomicUsize::new(0),
+                identifier_json: Mutex::new(None),
             }
         }
     }
 
     extern "C" fn on_notification(
         ctx: *mut c_void,
-        _notification: *const AvisoNotification,
+        notification: *const AvisoNotification,
     ) -> bool {
         let sink = unsafe { &*(ctx as *const Sink) };
         sink.notifications.fetch_add(1, Ordering::SeqCst);
+        let identifier = unsafe { aviso_notification_identifier_json(notification) };
+        if !identifier.is_null() {
+            let text = unsafe { CStr::from_ptr(identifier) }
+                .to_string_lossy()
+                .into_owned();
+            *sink.identifier_json.lock().expect("identifier lock") = Some(text);
+        }
         true
     }
 
@@ -738,6 +748,29 @@ mod tests {
 
     fn cstr(value: &str) -> CString {
         CString::new(value).expect("cstring")
+    }
+
+    #[test]
+    fn notification_callback_exposes_structured_identifier_json() {
+        let notification = AvisoNotification {
+            event_type: cstr("observations"),
+            identifier_json: cstr(r#"{"point_cloud":[[46.0,8.0],[47.0,9.0]]}"#),
+            payload_json: cstr("null"),
+            sequence: 7,
+        };
+        let sink = Box::new(Sink::new());
+        let ctx = (&raw const *sink) as *mut c_void;
+
+        assert!(on_notification(ctx, &raw const notification));
+
+        let identifier = sink.identifier_json.lock().expect("identifier lock");
+        let parsed: serde_json::Value =
+            serde_json::from_str(identifier.as_deref().expect("callback captured identifier"))
+                .expect("identifier JSON");
+        assert_eq!(
+            parsed["point_cloud"],
+            serde_json::json!([[46.0, 8.0], [47.0, 9.0]])
+        );
     }
 
     #[test]

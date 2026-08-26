@@ -278,15 +278,15 @@ impl AvisoClient {
         // this attempt read its credential (not merely during the read).
         let observed = self.refresh_coordinator.generation();
         let response = first.send().await.map_err(ClientError::from)?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            if let Some(auth) = self.auth() {
-                drop(response);
-                self.refresh_coordinator
-                    .refresh_once(auth, observed)
-                    .await?;
-                let retry = self.attach_auth(build(self.http())).await?;
-                return retry.send().await.map_err(ClientError::from);
-            }
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED
+            && let Some(auth) = self.auth()
+        {
+            drop(response);
+            self.refresh_coordinator
+                .refresh_once(auth, observed)
+                .await?;
+            let retry = self.attach_auth(build(self.http())).await?;
+            return retry.send().await.map_err(ClientError::from);
         }
         Ok(response)
     }

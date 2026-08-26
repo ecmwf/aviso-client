@@ -77,8 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let mut identifier = BTreeMap::new();
-    identifier.insert("class".into(), "od".into());
-    identifier.insert("stream".into(), "oper".into());
+    identifier.insert("class".into(), serde_json::json!("od"));
+    identifier.insert(
+        "point_cloud".into(),
+        serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
+    );
 
     let request = NotificationRequest::new("mars")
         .with_identifier(identifier)
@@ -92,6 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+`NotificationRequest::identifier` is a
+`BTreeMap<String, serde_json::Value>`. Points use `[lat, lon]`; polygons and
+point clouds use `[[lat, lon], ...]`. Received `Notification` values use the
+same map type, so structured identifiers retain their array shape.
+
+`with_identifier` accepts `BTreeMap<String, serde_json::Value>`. For a
+string-only map, use `with_string_identifier`; it converts each entry to a JSON
+string. The public `identifier` fields themselves are JSON-valued. Code that
+reads `Notification.identifier` must therefore handle `serde_json::Value`
+rather than assuming every received value is a `String`.
 
 On a 401, the client calls `AuthProvider::refresh` and retries once. A second
 401 is surfaced as `ClientError::Http`.
@@ -174,7 +188,7 @@ let req = WatchRequest::replay_only("mars", ResumeStart::Date("2026-01-01T00:00:
 let mut filter = BTreeMap::new();
 filter.insert("class".to_string(), json!("od"));
 filter.insert("polygon".to_string(),
-              json!({"type": "polygon", "points": [[0,0],[1,1]]}));
+              json!([[46.0, 8.0], [46.0, 9.0], [47.0, 9.0], [46.0, 8.0]]));
 let req = WatchRequest::watch("mars").with_filter(filter);
 ```
 

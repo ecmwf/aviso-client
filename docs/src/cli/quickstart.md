@@ -37,17 +37,26 @@ aviso notify 'event=mars,class=od,stream=oper,date=20260601,domain=g,expver=0001
 
 The parameters are a comma-separated list. `event=<TYPE>` is required.
 `data=<JSON>` is the optional payload. Every other `key=value` pair lands in the
-identifier map.
+identifier map as a string unless it starts with `[` or `{`. Use `key:=JSON`
+for an explicitly typed scalar, such as `step:=12`, `enabled:=true`, or
+`missing:=null`.
 
-Values that contain commas (a polygon, for example) must be wrapped in quotes:
+Explicit JSON arrays and objects may contain commas. Keep the whole parameter
+list inside shell quotes, but do not quote the structured value itself:
 
 ```bash
-aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200,data={"test":true}'
+aviso notify 'event=test_polygon,polygon=[[46,8],[46,9],[47,9],[47,8],[46,8]],date=20260601,time=1200,data={"test":true}'
 ```
 
-The quotes are part of the CLI syntax (so the comma inside the value is not
-mistaken for a separator); they are stripped before the value is sent to the
-server.
+The polygon reaches the server as an array. For a legacy comma-separated
+polygon string, add double quotes around only that value:
+
+```bash
+aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200'
+```
+
+Those inner double quotes are stripped by the CLI, so the server receives one
+string rather than an array.
 
 ## Listen for live notifications
 

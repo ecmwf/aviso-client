@@ -10,9 +10,9 @@ members = [
 ]
 
 [workspace.package]
-version = "2.0.0"
+version = "3.0.0"
 edition = "2024"
-rust-version = "1.86"
+rust-version = "1.88"
 license = "Apache-2.0"
 authors = [
     "Samet Demir <samet.demir@ecmwf.int>",
@@ -35,7 +35,7 @@ fd-lock = "4.0"
 clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 clap_complete = { version = "4.6", default-features = false }
 directories = "6.0"
-finesse = { version = "2.0.0", path = "crates/finesse" }
+finesse = { version = "3.0.0", path = "crates/finesse" }
 futures-core = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", default-features = false }
 hex = "0.4"

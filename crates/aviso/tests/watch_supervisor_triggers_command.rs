@@ -129,10 +129,10 @@ fn two_notifications_body() -> String {
 async fn read_until_lines(path: &std::path::Path, min_lines: usize) -> String {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(c) = std::fs::read_to_string(path) {
-                if c.lines().count() >= min_lines {
-                    return c;
-                }
+            if let Ok(c) = std::fs::read_to_string(path)
+                && c.lines().count() >= min_lines
+            {
+                return c;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

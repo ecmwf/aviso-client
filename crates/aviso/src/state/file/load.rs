@@ -23,20 +23,20 @@ pub(super) fn load_from_disk(path: &Path) -> Result<HashMap<ResumeKey, Checkpoin
             // failure on the first `put`. Distinguish missing parent
             // from a parent that exists but is not a directory; the
             // two are different operator errors.
-            if let Some(parent) = path.parent() {
-                if !parent.as_os_str().is_empty() {
-                    if !parent.exists() {
-                        return Err(StoreError::Io(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("parent directory does not exist: {}", parent.display()),
-                        )));
-                    }
-                    if !parent.is_dir() {
-                        return Err(StoreError::Io(std::io::Error::new(
-                            std::io::ErrorKind::NotADirectory,
-                            format!("parent path is not a directory: {}", parent.display()),
-                        )));
-                    }
+            if let Some(parent) = path.parent()
+                && !parent.as_os_str().is_empty()
+            {
+                if !parent.exists() {
+                    return Err(StoreError::Io(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("parent directory does not exist: {}", parent.display()),
+                    )));
+                }
+                if !parent.is_dir() {
+                    return Err(StoreError::Io(std::io::Error::new(
+                        std::io::ErrorKind::NotADirectory,
+                        format!("parent path is not a directory: {}", parent.display()),
+                    )));
                 }
             }
             return Ok(HashMap::new());

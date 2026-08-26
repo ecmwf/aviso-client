@@ -7,8 +7,8 @@ the book.
 
 ## What you need installed
 
-- Rust through [rustup](https://rustup.rs/). The MSRV is in the workspace's root
-  `Cargo.toml`.
+- Rust 1.88 or newer through [rustup](https://rustup.rs/). The MSRV is also
+  declared in the workspace's root `Cargo.toml`.
 - `mdbook` for the documentation: `cargo install mdbook`.
 - `mdbook-mermaid` for diagram rendering in the book:
   `cargo install mdbook-mermaid`. Without it, `mdbook build docs` leaves mermaid

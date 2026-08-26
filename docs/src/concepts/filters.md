@@ -61,13 +61,19 @@ each required field in the filter.
 
 ## Spatial filters
 
-Some event types support a polygon filter. The polygon is a single scalar value:
-a comma-separated string of `lat,lng` pairs, with the last pair equal to the
-first so the ring closes.
+Spatial identifiers use latitude-longitude arrays. A point is `[lat, lon]`. A
+polygon is a list of points, with the first point repeated at the end when the
+schema requires a closed ring. A point cloud is also a list of points, but does
+not describe a ring.
 
 ```yaml
 identifiers:
-  polygon: "46,8,46,9,47,9,47,8,46,8"
+  polygon:
+    - [46, 8]
+    - [46, 9]
+    - [47, 9]
+    - [47, 8]
+    - [46, 8]
 ```
 
 You get notifications whose geometry overlaps the polygon.
@@ -76,18 +82,20 @@ On the command line, the same value comes through with quoting because of the
 embedded commas:
 
 ```bash
-aviso listen --event test_polygon --identifiers '{"polygon":"46,8,46,9,47,9,47,8,46,8"}'
+aviso listen --event test_polygon \
+  --identifiers '{"polygon":[[46,8],[46,9],[47,9],[47,8],[46,8]]}'
 ```
 
-For `aviso notify`, the same quoting rule applies to comma-bearing values; see
-[Publish and listen: quoting values](../cli/publish-and-listen.md#quoting-values-that-contain-commas).
+Point-cloud filters use the same JSON shape:
 
-The server expects polygon as a scalar; passing a structured object
-(`polygon: {type: polygon, points: [...]}`) returns
-`400 Field 'polygon' does not support constraint filters; expected scalar value`.
-Other geospatial shapes depend on what the server's schema for an event type
-declares; run `aviso schema get <TYPE>` to see which identifier fields are
-valid.
+```json
+{"point_cloud":[[46,8],[47,9],[46.5,8.5]]}
+```
+
+Older point and polygon handlers also accept comma-separated strings. Keep that
+form for compatibility with existing configurations, but prefer arrays in new
+filters. Other geospatial shapes depend on the event type's schema. Run
+`aviso schema get <TYPE>` to see which identifier fields are valid.
 
 ## When the filter does not match
 
