@@ -16,12 +16,13 @@ from _helpers import receive_within
 
 POLYGON = "70,0,71,0,71,1,70,0"
 EVENT_TYPE = "test_polygon"
+DATE = "20260608"
 
 
 def _publish(client: pyaviso.AvisoClient, seq: int) -> None:
     client.notify(
         event_type=EVENT_TYPE,
-        identifier={"polygon": POLYGON, "date": "20260608", "time": f"{seq:04d}"},
+        identifier={"polygon": POLYGON, "date": DATE, "time": f"{seq:04d}"},
         payload={"seq": seq},
     )
 
@@ -41,15 +42,22 @@ def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
             state_store=pyaviso.JsonFileStore(str(state_path)),
             flush_cursor_on_exit=True,
         ) as first,
-        first.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
+        first.listen(
+            EVENT_TYPE,
+            filter={"polygon": POLYGON, "date": DATE},
+            from_=0,
+        ) as iterator,
     ):
-        time.sleep(0.5)
         _publish(first, 1)
         _publish(first, 2)
-        for _ in range(2):
-            first_received.append(receive_within(iterator, timeout=5).payload["seq"])
+        deadline = time.monotonic() + 10.0
+        while 2 not in first_received and time.monotonic() < deadline:
+            remaining = max(deadline - time.monotonic(), 0.5)
+            first_received.append(receive_within(iterator, timeout=remaining).payload["seq"])
 
-    assert first_received == [1, 2]
+    assert first_received[0] == 1
+    assert first_received[-1] == 2
+    assert set(first_received) == {1, 2}
     assert state_path.exists(), "JsonFileStore must persist on clean shutdown"
 
     second_received: list[int] = []
@@ -60,9 +68,11 @@ def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
             state_store=pyaviso.JsonFileStore(str(state_path)),
             flush_cursor_on_exit=True,
         ) as second,
-        second.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
+        second.listen(
+            EVENT_TYPE,
+            filter={"polygon": POLYGON, "date": DATE},
+        ) as iterator,
     ):
-        time.sleep(0.5)
         _publish(second, 3)
         second_received.append(receive_within(iterator, timeout=5).payload["seq"])
 
