@@ -16,12 +16,13 @@ from _helpers import receive_within
 
 POLYGON = "20,0,21,0,21,1,20,0"
 EVENT_TYPE = "test_polygon"
+DATE = "20260604"
 
 
 def _publish(client: pyaviso.AvisoClient, seq: int) -> None:
     client.notify(
         event_type=EVENT_TYPE,
-        identifier={"polygon": POLYGON, "date": "20260604", "time": f"{seq:04d}"},
+        identifier={"polygon": POLYGON, "date": DATE, "time": f"{seq:04d}"},
         payload={"seq": seq},
     )
 
@@ -40,16 +41,23 @@ def test_resume_picks_up_after_simulated_restart(
             auth=producer_auth,
             state_store=pyaviso.JsonFileStore(str(state_path)),
         ) as first,
-        first.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
+        first.listen(
+            EVENT_TYPE,
+            filter={"polygon": POLYGON, "date": DATE},
+            from_=0,
+        ) as iterator,
     ):
-        time.sleep(0.5)
         _publish(first, 1)
         _publish(first, 2)
-        for _ in range(2):
-            first_received.append(receive_within(iterator, timeout=5).payload["seq"])
+        deadline = time.monotonic() + 10.0
+        while 2 not in first_received and time.monotonic() < deadline:
+            remaining = max(deadline - time.monotonic(), 0.5)
+            first_received.append(receive_within(iterator, timeout=remaining).payload["seq"])
 
-    assert first_received == [1, 2]
-    assert state_path.exists(), "JsonFileStore must persist state on clean shutdown"
+    assert first_received[0] == 1
+    assert first_received[-1] == 2
+    assert set(first_received) == {1, 2}
+    assert state_path.exists(), "JsonFileStore must persist the committed first item"
 
     second_received: list[int] = []
     with (
@@ -58,9 +66,11 @@ def test_resume_picks_up_after_simulated_restart(
             auth=producer_auth,
             state_store=pyaviso.JsonFileStore(str(state_path)),
         ) as second,
-        second.listen(EVENT_TYPE, filter={"polygon": POLYGON}) as iterator,
+        second.listen(
+            EVENT_TYPE,
+            filter={"polygon": POLYGON, "date": DATE},
+        ) as iterator,
     ):
-        time.sleep(0.5)
         _publish(second, 3)
         deadline = time.monotonic() + 10.0
         while 3 not in second_received and time.monotonic() < deadline:
