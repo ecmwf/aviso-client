@@ -120,11 +120,11 @@ The whole suite releases under one shared version, read from `[workspace.package
 Local tooling is `just` plus `cargo-release` (`cargo install just cargo-release`). The recipes prepare and tag; CI does every actual publish, so registry credentials never touch a laptop:
 
 ```bash
-just release-preflight 3.0.0   # local dry-run gate: version consistency, fmt,
+just release-preflight 2.0.1   # local dry-run gate: version consistency, fmt,
                                # clippy, tests, crate packaging, ordered
                                # publish dry-run, wheel + sdist + twine check
-just release-version 3.0.0     # bump the workspace and every internal pin
-just release-tag 3.0.0         # annotated bare tag + the push command to run
+just release-version 2.0.1     # bump the workspace and every internal pin
+just release-tag 2.0.1         # annotated bare tag + the push command to run
 just publish-dry               # launch the CI crates.io publish dry-run via gh
 ```
 
