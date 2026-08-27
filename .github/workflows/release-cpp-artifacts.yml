@@ -14,8 +14,8 @@ name: Release Assets
 # glibc floor matches the wheels (and RHEL8-era consumers), which is the
 # point of shipping prebuilt artifacts to users without a Rust toolchain.
 #
-# Re-attach path after a partial failure: dispatch ON THE TAG; the release
-# step updates the existing release and overwrites same-name assets.
+# Recovery after a partial failure: dispatch from main with the existing tag.
+# Every build checks out that tag, and the release step overwrites named assets.
 
 on:
   push:
@@ -23,6 +23,11 @@ on:
     # the release invariant is the strict validator.
     tags: ["[0-9]*.[0-9]*.[0-9]*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag whose assets should be rebuilt
+        required: true
+        type: string
 
 concurrency:
   group: release-cpp-artifacts
@@ -34,6 +39,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   gate:
@@ -43,15 +49,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ env.RELEASE_TAG }}
           # The invariant peels the release tag locally, so the tag refs must
           # be present even on a manual dispatch.
           fetch-depth: 0
       - name: Assert the release invariant
-        uses: ./.github/actions/release-invariant
-        with:
-          github-token: ${{ github.token }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REF_NAME="$RELEASE_TAG" \
+            SHA="$(git rev-parse HEAD)" \
+            REPO="$GITHUB_REPOSITORY" \
+            bash scripts/release-invariant.sh
       - name: Check version consistency across every manifest
-        run: scripts/version-consistency.sh "$GITHUB_REF_NAME"
+        run: scripts/version-consistency.sh "$RELEASE_TAG"
 
   linux-x86_64:
     name: linux x86_64 tarball
@@ -60,6 +71,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Build, relocate, pack, and verify inside manylinux_2_28
         run: |
           docker run --rm -v "$PWD":/workspace -w /workspace \
@@ -67,7 +80,7 @@ jobs:
             -e HOME=/tmp -e TMPDIR=/tmp \
             -e CARGO_HOME=/tmp/cargo -e RUSTUP_HOME=/tmp/rustup \
             -e CARGO_TARGET_DIR=/tmp/target \
-            -e VERSION="$GITHUB_REF_NAME" -e PLATFORM=linux-x86_64 \
+            -e VERSION="$RELEASE_TAG" -e PLATFORM=linux-x86_64 \
             quay.io/pypa/manylinux_2_28_x86_64 bash -euxc '
               command -v pkg-config
               curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -92,6 +105,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Build, relocate, pack, and verify inside manylinux_2_28
         run: |
           docker run --rm -v "$PWD":/workspace -w /workspace \
@@ -99,7 +114,7 @@ jobs:
             -e HOME=/tmp -e TMPDIR=/tmp \
             -e CARGO_HOME=/tmp/cargo -e RUSTUP_HOME=/tmp/rustup \
             -e CARGO_TARGET_DIR=/tmp/target \
-            -e VERSION="$GITHUB_REF_NAME" -e PLATFORM=linux-aarch64 \
+            -e VERSION="$RELEASE_TAG" -e PLATFORM=linux-aarch64 \
             quay.io/pypa/manylinux_2_28_aarch64 bash -euxc '
               command -v pkg-config
               curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -126,14 +141,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Materialize the pinned toolchain
         run: rustup show
       - name: Install cargo-c
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-c
+        # cargo-c's Rust requirement can advance beyond the workspace MSRV.
+        # Build the tool with stable; package-ffi still uses the pinned cargo.
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable install cargo-c --locked
       - name: Build, relocate, pack, and verify
-        run: scripts/package-ffi.sh "$GITHUB_REF_NAME" macos-arm64
+        run: scripts/package-ffi.sh "$RELEASE_TAG" macos-arm64
       - uses: actions/upload-artifact@v7
         with:
           name: ffi-macos-arm64
@@ -148,21 +167,25 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Materialize the pinned toolchain with the Intel target
         run: |
           rustup show
           rustup target add x86_64-apple-darwin
       - name: Install cargo-c
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-c
+        # cargo-c's Rust requirement can advance beyond the workspace MSRV.
+        # Build the tool with stable; package-ffi still uses the pinned cargo.
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable install cargo-c --locked
       - name: Build, relocate, pack, and verify
         # Cross-compiled on the arm64 runner; the consumer smoke compiles
         # with the matching -arch and executes under Rosetta.
         env:
           TARGET: x86_64-apple-darwin
           SMOKE_CXXFLAGS: -arch x86_64
-        run: scripts/package-ffi.sh "$GITHUB_REF_NAME" macos-x86_64
+        run: scripts/package-ffi.sh "$RELEASE_TAG" macos-x86_64
       - uses: actions/upload-artifact@v7
         with:
           name: ffi-macos-x86_64
@@ -188,7 +211,7 @@ jobs:
         run: |
           ls -l dist/
           for platform in linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64; do
-            test -f "dist/aviso-ffi-$GITHUB_REF_NAME-$platform.tar.gz"
+            test -f "dist/aviso-ffi-$RELEASE_TAG-$platform.tar.gz"
           done
           test "$(find dist -type f | wc -l)" -eq 4
 
@@ -201,14 +224,15 @@ jobs:
       - name: Create or update the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: aviso-client ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: aviso-client ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           overwrite_files: true
           # A pre-release tag (2.0.0-rc.1) must not present itself as the
           # latest stable release.
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          make_latest: ${{ contains(env.RELEASE_TAG, '-') && 'false' || 'true' }}
           files: |
             dist/aviso-ffi-*.tar.gz
             dist/SHA256SUMS
