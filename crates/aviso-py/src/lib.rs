@@ -31,6 +31,7 @@
 
 use std::sync::OnceLock;
 
+use log::{Log, Metadata, Record};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
@@ -56,6 +57,38 @@ mod watch;
 pub const VERSION: &str = aviso::VERSION;
 
 static LOGGER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+/// Prevents Rust worker threads from entering Python after interpreter
+/// shutdown has started.
+///
+/// `pyo3-log` uses `Python::attach` internally. That is appropriate while
+/// Python is running, but a late Tokio or HTTP connection-cleanup log can
+/// arrive while the interpreter is being finalized. Acquiring Python through
+/// `try_attach` first keeps the interpreter attached for the whole forwarding
+/// call and drops only those records which arrive too late to be delivered.
+struct FinalizationSafeLogger<L> {
+    inner: L,
+}
+
+impl<L> FinalizationSafeLogger<L> {
+    fn new(inner: L) -> Self {
+        Self { inner }
+    }
+}
+
+impl<L: Log> Log for FinalizationSafeLogger<L> {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        self.inner.enabled(metadata)
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        let _ = Python::try_attach(|_| self.inner.log(record));
+    }
+
+    fn flush(&self) {
+        let _ = Python::try_attach(|_| self.inner.flush());
+    }
+}
 
 /// `pyaviso._native` `PyO3` extension module entry point.
 ///
@@ -85,9 +118,9 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// in the host application's Python `logging` configuration.
 ///
 /// Idempotent. A concurrent first-time race between two threads importing
-/// the module is benign: both threads call `Logger::new` (cheap, valid
-/// handles) and `install` (one succeeds, the other returns
-/// `SetLoggerError`); only one `set(())` commits.
+/// the module is benign: both threads construct a logger and try to install
+/// it (one succeeds, the other receives `SetLoggerError`); only one `set(())`
+/// commits.
 ///
 /// A `Logger::new` failure (rare; would imply a broken pyo3-log
 /// installation) propagates as `PyRuntimeError` and aborts module init
@@ -100,15 +133,71 @@ fn install_logging_bridge(py: Python<'_>) -> PyResult<()> {
     }
     let logger = Logger::new(py, Caching::Loggers)
         .map_err(|e| PyRuntimeError::new_err(format!("pyo3-log Logger::new failed: {e}")))?;
+    let logger = FinalizationSafeLogger::new(logger);
     // reason: SetLoggerError means another bridge is already installed
     // for this process (a host application has its own log facade). The
     // library does not fight an existing installation; treating that one
     // failure mode as success is the documented behaviour.
-    logger.install().ok();
+    if log::set_boxed_logger(Box::new(logger)).is_ok() {
+        log::set_max_level(log::LevelFilter::Debug);
+    }
     // reason: benign race between concurrent first-time imports. Only one
     // thread's `set(())` commits; the other is a no-op because the cell
     // already holds `()`. Either order is correct because the work above
     // is idempotent.
     LOGGER_INSTALLED.set(()).ok();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use log::Level;
+
+    use super::*;
+
+    struct CountingLogger {
+        records: Arc<AtomicUsize>,
+    }
+
+    impl Log for CountingLogger {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+
+        fn log(&self, _record: &Record<'_>) {
+            self.records.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn flush(&self) {}
+    }
+
+    #[test]
+    fn finalization_safe_logger_forwards_worker_thread_records() {
+        Python::attach(|_| {});
+        let records = Arc::new(AtomicUsize::new(0));
+        let logger = FinalizationSafeLogger::new(CountingLogger {
+            records: Arc::clone(&records),
+        });
+
+        let worker = std::thread::spawn(move || {
+            let record = Record::builder()
+                .args(format_args!("worker record"))
+                .level(Level::Info)
+                .target("aviso_py::test")
+                .build();
+            logger.log(&record);
+        });
+
+        assert!(worker.join().is_ok(), "worker logger thread panicked");
+        assert_eq!(records.load(Ordering::Relaxed), 1);
+
+        let metadata = Metadata::builder()
+            .level(Level::Info)
+            .target("aviso_py::test")
+            .build();
+        assert!(FinalizationSafeLogger::new(CountingLogger { records }).enabled(&metadata));
+    }
 }

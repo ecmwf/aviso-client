@@ -41,6 +41,7 @@ aviso = { path = "../aviso", version = "=2.0.1" }
 # single wheel ships both `import pyaviso` and the `aviso` command.
 aviso-cli = { path = "../aviso-cli", version = "=2.0.1" }
 futures-util = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "auto-initialize"] }
 pyo3-async-runtimes = { workspace = true }
 pyo3-log = { workspace = true }
