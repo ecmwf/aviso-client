@@ -1,9 +1,22 @@
 # Install the CLI
 
-The fastest way to get `aviso` is `cargo install`. You will need
-[Rust installed](https://rustup.rs/) first.
+The fastest way to get `aviso` is pip. The Python package bundles the CLI, so
+one install works even if you never write a line of Python.
+
+## From PyPI
+
+```bash
+pip install pyaviso
+aviso --version
+```
+
+The wheel installs a console script that runs the Rust CLI in-process through
+the extension, so you do not need a Rust toolchain. See the
+[Python install page](../python/install.md) for wheel coverage and details.
 
 ## From crates.io
+
+If you have a Rust toolchain and prefer a native binary:
 
 ```bash
 cargo install aviso-cli
@@ -11,7 +24,9 @@ aviso --version
 ```
 
 `cargo install` builds from source and puts the binary in `~/.cargo/bin/aviso`.
-That directory is on your PATH when you installed Rust through rustup.
+That directory is on your PATH when you installed Rust through
+[rustup](https://rustup.rs/). Both install paths give you the same `aviso`
+command and behaviour.
 
 ## From a git checkout
 
@@ -22,13 +37,6 @@ git clone https://github.com/ecmwf/aviso-client.git
 cd aviso-client
 cargo install --path crates/aviso-cli
 ```
-
-## From the Python package
-
-If you already use Python, `pip install pyaviso` gives you the same `aviso`
-command alongside the importable library: it installs a console script that runs
-the Rust CLI in-process through the extension, so you do not need a separate
-Rust toolchain. See the [Python install page](../python/install.md).
 
 ## Verify
 
@@ -48,7 +56,8 @@ executable is plain `aviso` so it reads cleanly on the command line.
 ```bash
 # Linux, macOS
 which aviso
-# /home/you/.cargo/bin/aviso
+# pip install: <venv-or-user-base>/bin/aviso
+# cargo install: /home/you/.cargo/bin/aviso
 ```
 
 ## Shell completions
@@ -71,17 +80,20 @@ Restart the shell (or source the file) for completions to take effect.
 
 ## Upgrading
 
-`cargo install aviso-cli` again. Cargo replaces the binary in place. To force a
-rebuild from scratch, add `--force`.
+- pip: `pip install --upgrade pyaviso`.
+- cargo: `cargo install aviso-cli` again. Cargo replaces the binary in place;
+  add `--force` to rebuild from scratch.
 
 ## Uninstalling
 
 ```bash
-cargo uninstall aviso-cli
+pip uninstall pyaviso        # pip install
+cargo uninstall aviso-cli    # cargo install
 ```
 
-You can also delete `~/.cargo/bin/aviso` by hand. Configuration and state files
-in `~/.config/aviso/` are left alone; remove them if you want a clean slate:
+A cargo-installed binary can also be deleted from `~/.cargo/bin/aviso` by hand.
+Configuration and state files in `~/.config/aviso/` are left alone; remove them
+if you want a clean slate:
 
 ```bash
 rm -rf ~/.config/aviso
