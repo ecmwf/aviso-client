@@ -19,7 +19,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-aviso = { path = "../aviso", version = "=2.0.1" }
+aviso = { path = "../aviso", version = "=2.0.2" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
