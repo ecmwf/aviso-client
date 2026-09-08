@@ -183,10 +183,19 @@ pub(super) async fn drain_frames(
                         {
                             return Ok(DrainOutcome::StopRequested);
                         }
-                        *pending_commit = Some(PendingCommit {
-                            sequence,
-                            event_id: format!("{event_type}@{sequence}"),
-                        });
+                        // Backward notifications still run triggers and reach the
+                        // consumer, but cannot lower either checkpoint. Use only
+                        // successfully sent items, never the highest received id.
+                        if commit_cursor.is_none_or(|committed| sequence > committed)
+                            && pending_commit
+                                .as_ref()
+                                .is_none_or(|pending| sequence > pending.sequence)
+                        {
+                            *pending_commit = Some(PendingCommit {
+                                sequence,
+                                event_id: format!("{event_type}@{sequence}"),
+                            });
+                        }
                     }
                     Err(reason) => {
                         apply_outcome(

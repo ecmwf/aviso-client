@@ -41,8 +41,9 @@
 use super::{ReconnectPolicy, WatchOutcome};
 use crate::ClientError;
 
-/// A notification already sent on the channel whose sequence and event id
-/// will be persisted on the NEXT successful send. Promoted to
+/// The highest-sequence notification successfully sent above the initial
+/// cursor. Retained across backward deliveries and persisted before the next
+/// notification's triggers run. Promoted to
 /// `commit_cursor` (and persisted to the state store) inside `drain_frames`
 /// before each new notification leaves the supervisor.
 pub(crate) struct PendingCommit {
