@@ -240,7 +240,7 @@ pub(crate) async fn run_supervisor(
         // Build the wire-request cursor with this precedence:
         //   1. The persisted commit cursor (`commit_cursor`), once any
         //      notification has been committed.
-        //   2. The last-sent-but-not-yet-committed sequence in
+        //   2. The highest successfully sent sequence in
         //      `pending_commit` (the supervisor sent it to the channel
         //      but the commit-on-next-send promotion has not run yet).
         //      Without this fallback, a `Date` initial cursor would be
