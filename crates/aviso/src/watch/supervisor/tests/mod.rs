@@ -191,6 +191,8 @@ fn start_supervisor_full(
 #[cfg(test)]
 mod cancellation;
 #[cfg(test)]
+mod checkpoints;
+#[cfg(test)]
 mod connection;
 #[cfg(test)]
 mod drain_mapping;
