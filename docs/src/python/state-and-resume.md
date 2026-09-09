@@ -22,6 +22,16 @@ The commit policy is commit-on-next-send: before sending notification N+1 to the
 consumer iterator, the supervisor commits N. Pulling N+1 from the iterator
 therefore implies N is durable.
 
+Checkpoints never move backwards within a watch session. An out-of-order
+notification still runs its triggers and reaches the iterator, but does not
+replace a higher pending or committed sequence. Only successfully sent
+notifications can advance the pending checkpoint; receiving a higher sequence
+alone is not enough. A notification whose required trigger fails cannot advance
+the pending checkpoint, including when exit flushing is enabled. A previously
+sent notification may already have been committed before that failure. A sequence
+checkpoint is not a per-event acknowledgement or a guarantee that duplicates
+are suppressed.
+
 ```mermaid
 sequenceDiagram
     autonumber
