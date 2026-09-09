@@ -1,40 +1,48 @@
 # Architecture
 
-A bird's-eye view of how aviso is built.
+A view of the shared Rust client and its language bindings.
 
-## The four crates
+## Crate dependencies
+
+The client has five product crates. The workspace also includes `aviso-e2e`,
+an unpublished package for end-to-end tests. Arrows below point from a crate
+to its dependency; the server connection is a network call.
 
 ```mermaid
 flowchart TB
     subgraph consumers["consumers"]
         direction LR
-        cli["aviso-cli<br/>Rust binary<br/>installed as <tt>aviso</tt>"]
+        cli["aviso-cli<br/>CLI library and binary"]
         py["aviso-py<br/>PyO3 cdylib<br/>(Python bindings)"]
+        ffi["aviso-ffi<br/>C ABI and C++ facade"]
     end
 
-    core["aviso<br/>(core Rust library)<br/><br/>HTTP via reqwest + rustls<br/>SSE parser (finesse crate)<br/>Reconnect supervisor<br/>State store + checkpoints<br/>AuthProvider trait<br/>Trigger dispatcher"]
+    core["aviso<br/>Core Rust client"]
+    parser["finesse<br/>Synchronous SSE parser"]
 
     server["aviso-server<br/>(separate repo)"]
 
     cli --> core
     py --> core
+    py -- bundled CLI --> cli
+    ffi --> core
+    core --> parser
     core -- HTTP + SSE --> server
 ```
 
-The CLI and the Python extension are peer consumers of the core library. They
-never depend on each other. The core library never depends on PyO3, the CLI, or
-any binding machinery.
-
-A new language surface (a C/C++ adapter, for example) becomes a new adapter
-crate next to `aviso-cli` and `aviso-py`. The core library does not change.
+The CLI and language bindings share the core library. The Python extension
+also depends on the CLI library so the Python distribution can bundle the
+`aviso` command. The core library does not depend on the CLI or any binding
+crate.
 
 ## The crates in more detail
 
 ### `aviso` (core library)
 
-The whole client lives here. Everything else is a thin wrapper.
+The shared client behavior lives here. Adapters handle language-specific
+interfaces and application setup.
 
-- **HTTP**: `reqwest` with `rustls-tls`. Matches the server's choice.
+- **HTTP**: `reqwest` with rustls for TLS.
 - **SSE**: an in-tree parser (`finesse`) implementing the WHATWG parsing
   algorithm. The reconnect loop is owned, not delegated; off-the-shelf SSE
   crates assume the WHATWG `Last-Event-ID` mechanism, but aviso-server's resume
@@ -49,9 +57,12 @@ The whole client lives here. Everything else is a thin wrapper.
 
 ### `aviso-cli`
 
-The thin binary on top. Resolves the layered config (flag > env > file >
-default), builds an `AvisoClient`, attaches a `JsonFileStore`, parses listener
-YAML, dispatches subcommands.
+The CLI library resolves layered config (flag > env > file > default),
+builds an `AvisoClient`, attaches a `JsonFileStore`, parses listener YAML,
+and dispatches subcommands. A small binary exposes it as `aviso`.
+
+The standalone binary and the Python-bundled command call the same
+`aviso_cli::run` entry point.
 
 The CLI's responsibilities are mostly about composition and I/O surfaces. It
 does not implement any of the SSE, reconnect, or trigger logic; that is all in
@@ -64,6 +75,25 @@ The PyO3 extension crate. Built as a `cdylib` for the Python wheel and as an
 `AvisoClient` and an asynchronous `AsyncAvisoClient` over the same channel the
 Rust core uses, plus typed value classes, the trigger builder, auth providers,
 state stores, and the exception hierarchy.
+
+The distribution and public Python package are named `pyaviso`. The compiled
+extension is `pyaviso._native`; `pyaviso/__init__.py` re-exports its classes
+and defines Python-side enums and type aliases.
+
+The installed `aviso` command and `python -m pyaviso` both enter through
+`pyaviso.__main__:main`. A native bridge releases the GIL and calls the CLI
+library in-process, rather than starting a separate executable.
+
+### `aviso-ffi`
+
+The C adapter exposes a stable ABI over the core library and builds static
+and shared libraries. Its committed `aviso.h` header is generated with
+`cbindgen`.
+
+The hand-written `aviso.hpp` header provides a C++17 facade over that ABI.
+It wraps C handles with RAII and translates errors into C++ exceptions.
+It supports blocking calls, asynchronous calls returning `std::future`, and
+callback-based watches. The facade is header-only, not a separate Rust crate.
 
 ### `finesse`
 
