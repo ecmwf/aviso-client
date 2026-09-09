@@ -8,16 +8,16 @@ Installing `pyaviso` also puts the `aviso` command-line tool on your PATH, so on
 
 ## Install
 
-PyPI wheels are not published yet. Install from a checkout of this repository:
+Add `pyaviso` to a project:
 
 ```bash
-git clone https://github.com/ecmwf/aviso-client.git
-cd aviso-client
-uv venv
-uv sync --locked --group dev
-uv run maturin develop --release --locked
-uv run python -c "import pyaviso; print(pyaviso.__version__)"
-uv run aviso --version
+uv add pyaviso
+```
+
+For the standalone CLI:
+
+```bash
+uv tool install pyaviso
 ```
 
 ## Quickstart
