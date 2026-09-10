@@ -23,11 +23,12 @@ Identifier values beginning with `[` or `{` are parsed as JSON. This sends a
 point cloud as an array rather than a quoted JSON string:
 
 ```bash
-aviso notify 'event=observations,point_cloud=[[46,8],[47,9]],date=20260601'
+aviso notify 'event=observations,point_cloud=[[46,8],[47,9]],date=20260601,data={"source":"stations"}'
 ```
 
-A point has shape `[lat,lon]`. A polygon and a point cloud both use
-`[[lat,lon],...]`; the schema determines how the coordinates are interpreted.
+A point has shape `[latitude,longitude]`. A polygon and a point cloud both use
+`[[latitude,longitude],...]`. Polygons need at least four pairs, with the first
+pair repeated last. Clouds do not need a closing repeat.
 The outer single quotes protect the argument from the shell. Do not add double
 quotes around the array.
 
@@ -52,7 +53,7 @@ The outer single quotes are interpreted by the shell. The inner double quotes
 are interpreted and removed by aviso. The values sent are the strings
 `"[archive]"` and `"{region}"`, not malformed JSON structures.
 
-### Legacy values that contain commas
+### Alternative coordinate format
 
 For a value that itself contains commas (a polygon, a comma-separated list),
 wrap it in double quotes:
@@ -62,8 +63,9 @@ aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=2026060
 ```
 
 The quotes are CLI-side; they are stripped before the value is sent to the
-server. This form remains available for compatibility. New point and polygon
-commands should use JSON arrays.
+server. The HTTP API also accepts point strings such as `"46,8"` in watch and
+replay filters. Point clouds have no string format. Prefer arrays for spatial
+values; CloudEvent spatial identifiers are always arrays.
 
 ### Identifier fields the server requires
 
@@ -103,8 +105,13 @@ This runs one listener with a single echo trigger. Press Ctrl+C to stop.
 
 ```bash
 aviso listen --event observations \
-  --identifiers '{"point_cloud":[[46,8],[47,9]]}'
+  --identifiers '{"date":"20260601","polygon":[[46,8],[46,9],[47,9],[47,8],[46,8]]}'
 ```
+
+For `observations`, use the server's
+[point-cloud schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html).
+Providers send `point_cloud`; subscribers send a closed `polygon` and the
+required `date`. A cloud matches when any point is inside or on the boundary.
 
 For an empty identifier map (every notification of this event type), pass
 `'{}'`. The server may still require certain fields to be present, depending on
