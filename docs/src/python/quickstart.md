@@ -78,17 +78,17 @@ A schema response looks like this (your fields and types will differ):
 }
 ```
 
-So a `test_polygon` notification is keyed on three identifier fields: `polygon`
-(a string of comma-separated lat,lon pairs forming a closed shape), `date`
-(YYYYMMDD), and `time` (HHMM). Identifier values are always strings on the wire;
-the `type` is the validator the server runs against the string. The `payload` is
-whatever JSON the publisher attached.
+So a `test_polygon` notification has three identifier fields: `polygon` (an
+array of `[latitude, longitude]` pairs), `date` (YYYYMMDD), and `time` (HHMM).
+A polygon needs at least four pairs, with the first pair repeated last.
+Identifier values are JSON values; the handler determines which shapes are
+valid. The `payload` is whatever JSON the publisher attached.
 
 **What `"required": true` means.** The `required` flag on each identifier field
 says whether a **filter or watch** call must include it. For `test_polygon`, the
 only `required: true` field is `polygon`, so a listener can subscribe with just
-`{"polygon": "..."}` and the rest narrow the match further if you want. A
-**notify** call is different: it must supply every identifier field the schema
+`{"polygon": [[0,0],[1,0],[1,1],[0,0]]}`. Other fields narrow the match further.
+A **notify** call is different: it must supply every identifier field the schema
 defines, regardless of the flag, because the schema enumerates the complete
 identifier of a notification. Publishing `test_polygon` without `date` or `time`
 returns `400 Required field 'date' missing for notify operation`. If a publish
@@ -153,7 +153,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 response = client.notify(
     event_type="test_polygon",
     identifier={
-        "polygon": "0,0,1,0,1,1,0,0",
+        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
         "date": "20260601",
         "time": "1200",
     },
@@ -191,7 +191,9 @@ import pyaviso
 
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+for notification in client.listen(
+    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+):
     print(f"seq={notification.sequence} time={notification.identifier.get('time')} payload={notification.payload}")
 ```
 
@@ -228,13 +230,15 @@ client = pyaviso.AvisoClient(
     state_store=pyaviso.JsonFileStore(state_path),
 )
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+for notification in client.listen(
+    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+):
     print(f"seq={notification.sequence}")
 ```
 
-The first run reads from the live edge. Subsequent runs pick up at the last
-committed sequence, so a Ctrl+C followed by a fresh start replays nothing it has
-already processed.
+The first run reads from the live edge. Subsequent runs pick up after the last
+committed sequence. The last delivered notification can repeat if it was not
+committed before exit; see [State and resume](./state-and-resume.md).
 
 The file is locked across cooperating processes on local filesystems (ext4, xfs,
 apfs, ntfs). See [State and resume](./state-and-resume.md) for the commit
@@ -262,7 +266,9 @@ import pyaviso
 
 async def main() -> None:
     client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-    async for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+    async for notification in client.listen(
+        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+    ):
         print(f"seq={notification.sequence}")
 
 

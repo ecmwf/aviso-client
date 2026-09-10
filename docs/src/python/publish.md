@@ -208,15 +208,18 @@ client.notify(
 Identifier values may be any JSON value. Spatial handlers use latitude first:
 
 - A point is `[lat, lon]`, such as `[46.0, 8.0]`.
-- A polygon is `[[lat, lon], ...]`. Repeat the first point at the end when the
-  server schema requires a closed ring.
+- A polygon is `[[lat, lon], ...]`, with at least four pairs. Repeat the first
+  point at the end.
 - A point cloud is `[[lat, lon], ...]`, such as
   `[[46.0, 8.0], [47.0, 9.0]]`.
 
 Pass Python lists directly. Do not encode them with `json.dumps`, since that
-would send a JSON string instead of an array. Older servers also accept polygon
-and point values as comma-separated strings. Keep those strings only when
-working with a legacy producer or schema.
+would send a JSON string instead of an array. See
+[Alternative coordinate format](../cli/publish-and-listen.md#alternative-coordinate-format)
+for point and polygon string input. Point clouds use arrays only.
+
+The built-in `point` identifier is only a watch/replay filter for polygon
+streams, not a provider identifier. Point-cloud subscribers use `polygon`.
 
 ## Admin operations
 

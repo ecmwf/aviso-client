@@ -77,8 +77,9 @@ for notification in client.listen(
 ```
 
 Spatial filters use latitude first. A point is `[lat, lon]`. Polygons and point
-clouds are lists of those points. Legacy comma-separated point and polygon
-strings remain accepted by compatible servers, but new code should use lists.
+clouds are lists of those points. Use Python lists directly. Polygons need at
+least four pairs, with the first pair repeated last. For point-cloud streams,
+subscribers send a polygon, not a point cloud.
 
 Each stream's schema declares a minimum identifier set that a filter must commit
 to (the fields flagged `"required": true`). For `test_polygon` that is just

@@ -22,7 +22,7 @@ trigger = pyaviso.Trigger.echo(label="demo").retries(2).required(False)
 
 request = (
     pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
     .with_triggers([trigger])
 )
 
@@ -66,7 +66,7 @@ import pyaviso
 
 request = (
     pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
     .with_triggers([pyaviso.Trigger.echo()])
 )
 ```
@@ -112,7 +112,7 @@ for i in range(3):
     response = client.notify(
         event_type="test_polygon",
         identifier={
-            "polygon": "0,0,1,0,1,1,0,0",
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
             "date": "20260601",
             "time": f"120{i}",
         },
@@ -134,7 +134,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 
 request = (
     pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
     .with_triggers([pyaviso.Trigger.echo(label="demo")])
 )
 
@@ -148,7 +148,7 @@ trigger, then a `seq=... payload=...` line from the loop body. The sequence
 numbers depend on the server's history, so yours will differ:
 
 ```text
-{"event_type":"test_polygon","sequence":1,"identifier":{"date":"20260601","polygon":"0,0,1,0,1,1,0,0","time":"1200"},"payload":{"location":"s3://example/data/0.grib"}}
+{"event_type":"test_polygon","sequence":1,"identifier":{"date":"20260601","polygon":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]],"time":"1200"},"payload":{"location":"s3://example/data/0.grib"}}
 seq=1 payload={'location': 's3://example/data/0.grib'}
 ```
 
@@ -171,14 +171,14 @@ import os
 import pyaviso
 
 # A polygon unique to this script, so the replay sees only its own data.
-polygon = "40,10,41,10,41,11,40,10"
+polygon = [[40, 10], [41, 10], [41, 11], [40, 10]]
 
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 for i in range(3):
     client.notify(
         event_type="test_polygon",
-        identifier={"polygon": polygon, "date": "20260101", "time": "0000"},
+        identifier={"polygon": polygon, "date": "20260101", "time": f"000{i}"},
         payload={"location": f"s3://example/backfill-{i}.grib"},
     )
 
@@ -194,8 +194,7 @@ with client.listen(request=request) as iterator:
 print(f"replayed {count} notifications; exiting")
 ```
 
-Expected output on a fresh stream (later runs replay more, since the data
-accumulates):
+Expected output on a fresh stream:
 
 ```text
 seq=1 {'location': 's3://example/backfill-0.grib'}
@@ -203,6 +202,10 @@ seq=2 {'location': 's3://example/backfill-1.grib'}
 seq=3 {'location': 's3://example/backfill-2.grib'}
 replayed 3 notifications; exiting
 ```
+
+The time identifiers differ so all three notifications survive the default
+latest-per-subject retention. Later runs replace those subjects; schemas with
+longer history retention can replay more notifications.
 
 `replay_only(event_type, 0)` starts at the beginning of the stream; `0` means
 "everything after sequence 0". To resume from a checkpoint, pass the last
@@ -222,8 +225,8 @@ does nothing:
 import pyaviso
 
 request = pyaviso.WatchRequest.watch("test_polygon")
-request.with_filter({"polygon": "0,0,1,0,1,1,0,0"})  # discarded: no effect
-request = request.with_filter({"polygon": "0,0,1,0,1,1,0,0"})  # kept
+request.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})  # discarded
+request = request.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})  # kept
 ```
 
 Second, a shared base is safe to branch. Build the base once, then derive
@@ -236,8 +239,8 @@ base = pyaviso.WatchRequest.watch("test_polygon").with_triggers(
     [pyaviso.Trigger.echo()]
 )
 
-north = base.with_filter({"polygon": "0,0,1,0,1,1,0,0"})
-south = base.with_filter({"polygon": "0,0,-1,0,-1,-1,0,0"})
+north = base.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
+south = base.with_filter({"polygon": [[0, 0], [-1, 0], [-1, -1], [0, 0]]})
 # base is untouched; north and south are independent requests
 ```
 
