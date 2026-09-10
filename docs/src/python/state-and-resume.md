@@ -28,9 +28,9 @@ replace a higher pending or committed sequence. Only successfully sent
 notifications can advance the pending checkpoint; receiving a higher sequence
 alone is not enough. A notification whose required trigger fails cannot advance
 the pending checkpoint, including when exit flushing is enabled. A previously
-sent notification may already have been committed before that failure. A sequence
-checkpoint is not a per-event acknowledgement or a guarantee that duplicates
-are suppressed.
+sent notification may already have been committed before that failure. A
+sequence checkpoint is not a per-event acknowledgement or a guarantee that
+duplicates are suppressed.
 
 ```mermaid
 sequenceDiagram
@@ -75,7 +75,9 @@ client = pyaviso.AvisoClient(
     state_store=pyaviso.JsonFileStore(state_path),
 )
 
-for notification in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+for notification in client.listen(
+    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+):
     print(f"seq={notification.sequence}")
 ```
 
@@ -160,7 +162,9 @@ client = pyaviso.AvisoClient(
     flush_cursor_on_exit=True,
 )
 
-with client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}) as iterator:
+with client.listen(
+    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+) as iterator:
     for notification in iterator:
         print(notification.sequence)
 ```
@@ -187,7 +191,7 @@ async def main() -> None:
         flush_cursor_on_exit=True,
     )
     async with client.listen(
-        "test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}
+        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
     ) as iterator:
         async for notification in iterator:
             print(notification.sequence)
