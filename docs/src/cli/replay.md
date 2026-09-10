@@ -51,8 +51,13 @@ the whole object for the shell, but leave arrays unquoted inside it:
 
 ```bash
 aviso replay --event observations \
-  --identifiers '{"point_cloud":[[46,8],[47,9]]}' --from 2026-05-01
+  --identifiers '{"date":"20260601","polygon":[[46,8],[46,9],[47,9],[47,8],[46,8]]}' \
+  --from 2026-05-01
 ```
+
+Use the `observations` schema described in
+[Publish and listen](./publish-and-listen.md). Providers publish `point_cloud`;
+replay filters use a closed `polygon`, not `point_cloud`.
 
 ## Replay vs listen
 
