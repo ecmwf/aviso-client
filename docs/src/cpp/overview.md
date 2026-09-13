@@ -13,9 +13,9 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 
 - Build a client from a base URL, optionally with HTTP Basic credentials.
 - Publish notifications with `notify`; see [Publishing](./publish.md).
-- Watch a stream with a callback handler, with filtering and replay; see
-  [Watching](./watch.md).
-- Attach triggers (echo, log, command, webhook, Teams, post) to a watch; see
+- Listen to a stream with a callback handler, with filtering and replay; see
+  [Listening](./watch.md).
+- Attach triggers (echo, log, command, webhook, Teams, post) to a listener; see
   [Triggers](./triggers.md).
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
   calls `wipe_stream`, `wipe_all`, and `delete_notification`; see
@@ -53,9 +53,9 @@ failure, so wrap them in `try` / `catch`. JSON-shaped data crosses as strings:
 as JSON strings, which you parse with whatever JSON library your application
 already uses.
 
-These calls must not run inside a watch or async callback (a runtime thread);
+These calls must not run inside a listener or async callback (a runtime thread);
 doing so throws an `aviso::Error` with kind `AvisoErrorKind_InvalidUsage` rather
-than deadlocking. See [Watching](./watch.md) for the callback surface.
+than deadlocking. See [Listening](./watch.md) for the callback surface.
 
 ## Building against the library
 

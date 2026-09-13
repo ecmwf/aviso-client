@@ -1,6 +1,6 @@
 # Triggers
 
-A trigger is a per-notification side effect attached to a watch. When the watch
+A trigger is a per-notification side effect attached to a listener. When it
 processes a notification, its triggers fire before the notification reaches your
 handler. Build a trigger with a factory, tune it with the chainable setters, and
 attach it to a `WatchRequest` with `add_trigger`.
@@ -42,14 +42,14 @@ request.add_trigger(std::move(hook));
 
 Every trigger has `retries` (default 0), `required` (default true), a `timeout`,
 and `fail_fast` (default true). A required trigger that still fails after its
-retries ends the watch with an `aviso::Error` whose `error().kind` is
+retries ends the listener with an `aviso::Error` whose `error().kind` is
 `AvisoErrorKind_Trigger`; `error().trigger_kind` names the trigger and
 `error().error_kind` names the failure. An optional trigger (`required(false)`)
-that fails is logged and the watch continues.
+that fails is logged and the listener continues.
 
 ## A complete example
 
 [`examples/cpp/trigger.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/trigger.cpp)
-attaches a log trigger to a watch and, once the watch has received a few
+attaches a log trigger to a listener and, once the listener has received a few
 notifications, prints the file the trigger wrote. Publish to the stream from
 another terminal to drive it.

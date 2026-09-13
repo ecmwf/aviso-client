@@ -93,7 +93,7 @@ and shared libraries. Its committed `aviso.h` header is generated with
 The hand-written `aviso.hpp` header provides a C++17 facade over that ABI.
 It wraps C handles with RAII and translates errors into C++ exceptions.
 It supports blocking calls, asynchronous calls returning `std::future`, and
-callback-based watches. The facade is header-only, not a separate Rust crate.
+callback-based listeners. The facade is header-only, not a separate Rust crate.
 
 ### `finesse`
 
@@ -106,7 +106,7 @@ frames out.
 
 When you call `client.watch(WatchRequest::watch("mars"))`:
 
-1. The watch surface constructs a `WatchRequest`, derives a resume key, and
+1. The listening surface constructs a `WatchRequest`, derives a resume key, and
    spawns a supervisor task.
 2. The supervisor reads the cursor from the state store (if one is configured).
 3. The supervisor sends a `POST /api/v1/watch` to the server with the filter and
@@ -143,7 +143,7 @@ The supervisor's `select!` is `biased` so cancellation cannot be starved by a
 fast stream. Every supervisor await (auth header, HTTP send, chunk read, channel
 send) is wrapped in the cancel arm.
 
-## Why a single supervisor per watch
+## Why a single supervisor per listener
 
 A bounded channel (capacity 128 by default; 1 when a state store is configured)
 sits between the supervisor and the consumer. The channel applies TCP

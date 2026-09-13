@@ -49,7 +49,7 @@ The leader line uses muted color when color is enabled. The JSON body stays
 plain text so it can be copied into `jq` and similar tools.
 
 The `(listener: <name>, ...)` segment appears when the listener carries a name.
-Multi-listener configurations watching the same event_type can interleave
+Multi-listener configurations listening to the same event_type can interleave
 deliveries on shared stdout; the leader names the listener so operators can
 attribute each line. The label comes from three places, in priority order:
 
