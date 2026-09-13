@@ -12,8 +12,6 @@ Rust library in their own program. If you just want to use the CLI, start at
   own code.
 - [Contributing](./contributing.md): how to make a change to this repository:
   tests, gates, the local workflow.
-- [Docs style guide](./docs-style.md): the voice and the conventions
-  documentation pages follow.
 
 The CLI and the future Python package are both consumers of the `aviso` core
 library. The core library does not depend on either of them. The
