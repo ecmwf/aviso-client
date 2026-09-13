@@ -168,7 +168,7 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
 
 /// Per-handler-type validation hint for the server-side schema
 /// constraint errors that aviso-server emits (StringHandler max_length,
-/// EnumHandler allowed values, IntHandler range, DateHandler format,
+/// EnumHandler allowed values, IntHandler/FloatHandler range, DateHandler format,
 /// TimeHandler format).
 ///
 /// The hint repeats the constraint as a self-contained tip AND always
@@ -197,7 +197,7 @@ pub(crate) fn constraint_violation_hint(body: &str, subcommand: &str) -> Option<
     }
     if body.contains("outside allowed range") {
         return Some(format!(
-            "integer identifier value is outside the schema's allowed range (the server lists [min, max] inline above). {action_suffix}"
+            "numeric identifier value is outside the schema's allowed range (the server lists [min, max] inline above). {action_suffix}"
         ));
     }
     if body.contains("contains invalid date") || body.contains("Failed to parse date") {
@@ -904,7 +904,10 @@ mod tests {
             "Field 'step' value 100001 is outside allowed range [0, 100000]",
         );
         let hint = hint_for_client_error(&err).expect("int range MUST yield a hint");
-        assert!(hint.contains("integer") && hint.contains("range"), "{hint}");
+        assert!(
+            hint.contains("numeric identifier value") && hint.contains("range"),
+            "{hint}"
+        );
     }
 
     #[test]
