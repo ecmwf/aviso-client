@@ -27,6 +27,92 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use common::aviso;
 
+#[tokio::test]
+async fn numeric_range_http_errors_have_contextual_hints() {
+    // Server responses for FloatHandler range [-100, 100] and IntHandler
+    // range [0, 100000]. Float errors can display whole numbers without a dot.
+    for (command, endpoint, title) in [
+        ("notify", "notification", "Notification"),
+        ("listen", "watch", "Watch"),
+        ("replay", "replay", "Replay"),
+    ] {
+        for (field, value, range) in [
+            ("anomaly", serde_json::json!(101), "[-100, 100]"),
+            ("anomaly", serde_json::json!(100.5), "[-100, 100]"),
+            ("step", serde_json::json!(100_001), "[0, 100000]"),
+        ] {
+            let server = MockServer::start().await;
+            let qualifier = if command == "notify" {
+                ""
+            } else {
+                "constraint "
+            };
+            let details = format!(
+                "Field '{field}' {qualifier}value {value} is outside allowed range {range}"
+            );
+            let identifier = if command == "notify" {
+                let mut identifiers = serde_json::json!({"anomaly": "0", "step": "0"});
+                identifiers[field] = serde_json::json!(value.to_string());
+                identifiers
+            } else {
+                serde_json::json!({field: {"gte": value}})
+            };
+            Mock::given(method("POST"))
+                .and(path(format!("/api/v1/{endpoint}")))
+                .and(body_partial_json(serde_json::json!({
+                    "event_type": "weather", "identifier": identifier
+                })))
+                .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                    "code": format!("INVALID_{}_REQUEST", title.to_uppercase()),
+                    "details": details,
+                    "error": format!("Invalid {title} Request"),
+                    "message": details,
+                    "request_id": "range-error"
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut cli = aviso();
+            cli.args(["--base-url", &server.uri(), command]);
+            if command == "notify" {
+                cli.arg(format!(
+                    "event=weather,anomaly={},step={}",
+                    identifier["anomaly"], identifier["step"]
+                ));
+            } else {
+                cli.args([
+                    "--event",
+                    "weather",
+                    "--identifiers",
+                    &identifier.to_string(),
+                ]);
+                if command == "replay" {
+                    cli.args(["--from", "0"]);
+                } else {
+                    cli.arg("--no-state-store");
+                }
+            }
+            let action = if command == "listen" {
+                "Check the identifier value in your `--identifiers` JSON (inline mode) or in the listener YAML's `identifiers:` block (YAML mode)"
+            } else {
+                "Check the value you supplied for this identifier"
+            };
+            let hint = format!(
+                "numeric identifier value is outside the schema's allowed range (the server lists [min, max] inline above). {action}; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
+            );
+            cli.timeout(std::time::Duration::from_secs(10))
+                .assert()
+                .failure()
+                .code(1)
+                .stderr(contains("http 400"))
+                .stderr(contains(&details))
+                .stderr(contains(hint))
+                .stderr(contains("integer identifier value").not());
+        }
+    }
+}
+
 fn notify_success_body() -> serde_json::Value {
     serde_json::json!({
         "status": "success",

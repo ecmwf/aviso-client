@@ -80,8 +80,7 @@ Pages live under `docs/src/` in the layout described in
 [`SUMMARY.md`](https://github.com/ecmwf/aviso-client/blob/main/docs/src/SUMMARY.md).
 When you add or move a page, keep the SUMMARY in sync.
 
-The voice and the conventions are codified in [Docs style](./docs-style.md). The
-short version:
+Keep the documentation easy to follow:
 
 - Lead with what the user is trying to do, not with how the code is laid out.
 - Examples come early, prose later.

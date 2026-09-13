@@ -77,7 +77,7 @@ BASE_URL = os.environ["AVISO_BASE_URL"]
 async def main() -> None:
     client = pyaviso.AsyncAvisoClient(base_url=BASE_URL, auth=pyaviso.Env())
 
-    async def drain(tag: str, polygon: str) -> None:
+    async def drain(tag: str, polygon: list[list[float]]) -> None:
         count = 0
         async for n in client.listen("test_polygon", filter={"polygon": polygon}):
             print(f"[{tag}] seq={n.sequence} time={n.identifier.get('time')}")
@@ -86,8 +86,8 @@ async def main() -> None:
                 return
 
     await asyncio.gather(
-        drain("square-a", "0,0,1,0,1,1,0,0"),
-        drain("square-b", "2,2,3,2,3,3,2,2"),
+        drain("square-a", [[0, 0], [1, 0], [1, 1], [0, 0]]),
+        drain("square-b", [[2, 2], [3, 2], [3, 3], [2, 2]]),
     )
 
 
@@ -119,7 +119,7 @@ async def main() -> None:
         client.notify(
             event_type="test_polygon",
             identifier={
-                "polygon": "0,0,1,0,1,1,0,0",
+                "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
                 "date": "20260601",
                 "time": f"12{i:02d}",
             },

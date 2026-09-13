@@ -5,7 +5,7 @@ iterator that yields one `Notification` at a time as the server delivers them.
 Iterate it with `for`. Press Ctrl+C to stop. The underlying supervisor handles
 reconnects, checkpoints, and the watch protocol.
 
-The examples on this page use `test_polygon` as the event type. If your server
+Most examples on this page use `test_polygon` as the event type. If your server
 does not have it configured, replace the event type and identifier fields with
 one of your own; the call shape is the same. See
 [What is on your server](./quickstart.md#what-is-on-your-server) in the
@@ -77,8 +77,9 @@ for notification in client.listen(
 ```
 
 Spatial filters use latitude first. A point is `[lat, lon]`. Polygons and point
-clouds are lists of those points. Legacy comma-separated point and polygon
-strings remain accepted by compatible servers, but new code should use lists.
+clouds are lists of those points. Use Python lists directly. Polygons need at
+least four pairs, with the first pair repeated last. For point-cloud streams,
+subscribers send a polygon, not a point cloud.
 
 Each stream's schema declares a minimum identifier set that a filter must commit
 to (the fields flagged `"required": true`). For `test_polygon` that is just
@@ -87,6 +88,40 @@ to (the fields flagged `"required": true`). For `test_polygon` that is just
 and see [What is on your server](./quickstart.md#what-is-on-your-server) in the
 quickstart for the difference between the filter minimum and what a publish
 needs.
+
+### Numeric and enum constraints
+
+After installing the schema and publishing the five seeds in the
+[weather tutorial](../cli/publish-and-listen.md#weather-constraints), this
+replay prints B and C and ends. Set `AVISO_BASE_URL` to that test server.
+
+This uses [environment credentials](./auth.md#environment), not the CLI's config
+file. Set `AVISO_TOKEN`, or both `AVISO_USERNAME` and `AVISO_PASSWORD`, for your
+server. `Env()` requires credentials; for an anonymous server, omit the
+`auth=pyaviso.Env()` argument.
+
+```python
+import os
+import pyaviso
+
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+)
+request = pyaviso.WatchRequest.replay_only("weather", 0).with_filter({
+    "date": "20260913",
+    "severity": {"gte": 5},
+    "anomaly": {"between": [40, 50]},
+    "region": {"in": ["north", "south"]},
+})
+with client.listen(request=request) as notifications:
+    for notification in notifications:
+        print(notification.payload["id"])
+```
+
+Use nested dicts and numeric operands, not JSON-encoded strings. For live
+delivery, build with `WatchRequest.watch("weather")` instead and start before
+publishing. These are identifier predicates, not payload queries; see the
+[shared constraint rules](../concepts/filters.md#constraint-filters).
 
 ## Resume across restarts
 

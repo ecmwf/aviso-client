@@ -23,11 +23,12 @@ Identifier values beginning with `[` or `{` are parsed as JSON. This sends a
 point cloud as an array rather than a quoted JSON string:
 
 ```bash
-aviso notify 'event=observations,point_cloud=[[46,8],[47,9]],date=20260601'
+aviso notify 'event=observations,point_cloud=[[46,8],[47,9]],date=20260601,data={"source":"stations"}'
 ```
 
-A point has shape `[lat,lon]`. A polygon and a point cloud both use
-`[[lat,lon],...]`; the schema determines how the coordinates are interpreted.
+A point has shape `[latitude,longitude]`. A polygon and a point cloud both use
+`[[latitude,longitude],...]`. Polygons need at least four pairs, with the first
+pair repeated last. Clouds do not need a closing repeat.
 The outer single quotes protect the argument from the shell. Do not add double
 quotes around the array.
 
@@ -52,7 +53,7 @@ The outer single quotes are interpreted by the shell. The inner double quotes
 are interpreted and removed by aviso. The values sent are the strings
 `"[archive]"` and `"{region}"`, not malformed JSON structures.
 
-### Legacy values that contain commas
+### Alternative coordinate format
 
 For a value that itself contains commas (a polygon, a comma-separated list),
 wrap it in double quotes:
@@ -62,8 +63,9 @@ aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=2026060
 ```
 
 The quotes are CLI-side; they are stripped before the value is sent to the
-server. This form remains available for compatibility. New point and polygon
-commands should use JSON arrays.
+server. The HTTP API also accepts point strings such as `"46,8"` in watch and
+replay filters. Point clouds have no string format. Prefer arrays for spatial
+values; CloudEvent spatial identifiers are always arrays.
 
 ### Identifier fields the server requires
 
@@ -103,8 +105,13 @@ This runs one listener with a single echo trigger. Press Ctrl+C to stop.
 
 ```bash
 aviso listen --event observations \
-  --identifiers '{"point_cloud":[[46,8],[47,9]]}'
+  --identifiers '{"date":"20260601","polygon":[[46,8],[46,9],[47,9],[47,8],[46,8]]}'
 ```
+
+For `observations`, use the server's
+[point-cloud schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html).
+Providers send `point_cloud`; subscribers send a closed `polygon` and the
+required `date`. A cloud matches when any point is inside or on the boundary.
 
 For an empty identifier map (every notification of this event type), pass
 `'{}'`. The server may still require certain fields to be present, depending on
@@ -214,6 +221,108 @@ aviso listen mars.yaml cosmo.yaml
 
 Each listener has its own connection, its own resume cursor, and its own
 triggers. A failure in one does not stop the others.
+
+## Worked example: weather constraints {#weather-constraints}
+
+This synthetic example uses no external data services. You need a test server
+whose operator has installed the following schema in its server configuration.
+This is **server YAML**, not a client listener file. It declares the complete
+`weather` event type; it is not a schema shipped on every server.
+
+The operator adds this block to the server configuration; see the
+[schema guide](https://sites.ecmwf.int/docs/aviso-server/main/schema-guide.html).
+The client can inspect a schema, but `aviso schema get` does not install one.
+
+```yaml
+notification_schema:
+  weather:
+    topic:
+      base: weather
+      key_order: [date, severity, anomaly, region]
+    identifier:
+      date:
+        type: DateHandler
+        required: true
+        canonical_format: '%Y%m%d'
+      severity:
+        type: IntHandler
+        required: false
+        range: [0, 10]
+      anomaly:
+        type: FloatHandler
+        required: false
+        range: [-100, 100]
+      region:
+        type: EnumHandler
+        required: false
+        values: [north, south, west]
+```
+
+Set `AVISO_BASE_URL` in both terminals to your test server's address, using the
+connection and authentication settings from [Configuration](./configuration.md).
+For example, `http://127.0.0.1:8000` is only a placeholder for a locally running
+server; it is not a hosted service. Inspect the installed schema before running
+the example:
+
+```bash
+aviso schema get weather
+```
+
+All four fields are required when publishing. Only `date` is required in a
+filter; omitting an optional filter field accepts all its values. Each seed
+below has a distinct combination of routing identifiers, so the records do not
+replace one another on a backend that retains only the latest record per
+subject. Use a fresh test stream to get exactly the results shown.
+
+### Start the listener first
+
+In the first terminal, run:
+
+```bash
+aviso listen --event weather \
+  --identifiers '{"date":"20260913","severity":{"gte":5},"anomaly":{"between":[40,50]},"region":{"in":["north","south"]}}' \
+  --from 0 --no-state-store
+```
+
+Leave it running, then publish in the second terminal. `--from 0` reads retained
+records after sequence zero and continues with live notifications, without
+reading or writing a saved cursor. On this fresh test stream, seeds published
+before or during connection setup are still included; there is no readiness
+message to wait for. This cannot recover records removed by retention.
+
+The filter means severity at least 5, anomaly from 40 through 50 inclusive, and
+region either north or south. See
+[Filters](../concepts/filters.md#constraint-filters) for the operator rules.
+
+### Publish five records
+
+In the second terminal, run these commands in order:
+
+```bash
+aviso notify 'event=weather,date=20260913,severity:=3,anomaly:=39.5,region=north,data={"id":"A"}'
+aviso notify 'event=weather,date=20260913,severity:=5,anomaly:=40,region=NORTH,data={"id":"B"}'
+aviso notify 'event=weather,date=20260913,severity:=6,anomaly:=42.5,region=south,data={"id":"C"}'
+aviso notify 'event=weather,date=20260913,severity:=7,anomaly:=50,region=west,data={"id":"D"}'
+aviso notify 'event=weather,date=20260913,severity:=8,anomaly:=50.5,region=south,data={"id":"E"}'
+```
+
+`severity:=5` sends a JSON number; `severity=5` sends a string. These commands
+use concrete numbers, not constraint objects. `data={"id":"B"}` is the payload
+label used to recognise a record, not a filter or the server's notification ID.
+The single quotes protect each complete argument from the shell.
+
+| Record | Severity | Anomaly | Region | Selected? |
+|---|---|---|---|---|
+| A | 3 | 39.5 | north | No: severity and anomaly too low |
+| B | 5 | 40 | NORTH | Yes: lower boundaries included, case normalised |
+| C | 6 | 42.5 | south | Yes |
+| D | 7 | 50 | west | No: region excluded |
+| E | 8 | 50.5 | south | No: anomaly too high |
+
+The listener prints two notifications, with `payload.id` values **B** then
+**C**. Press Ctrl+C to stop it. To read the same retained records again, use
+[replay with this filter](./replay.md#weather-constraints). To keep the filter
+in a file, use the [YAML equivalent](../reference/listener-yaml.md#constraints).
 
 ## What next
 

@@ -6,7 +6,7 @@ How to use the `aviso` crate from your own Rust code.
 
 ```toml
 [dependencies]
-aviso = "0.1"
+aviso = "2.0"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 ```
@@ -77,13 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let mut identifier = BTreeMap::new();
-    identifier.insert("class".into(), serde_json::json!("od"));
+    identifier.insert("date".into(), serde_json::json!("20260601"));
     identifier.insert(
         "point_cloud".into(),
         serde_json::json!([[46.0, 8.0], [47.0, 9.0]]),
     );
 
-    let request = NotificationRequest::new("mars")
+    let request = NotificationRequest::new("observations")
         .with_identifier(identifier)
         .with_payload(serde_json::json!({ "location": "s3://bucket/path" }));
 
@@ -101,6 +101,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 point clouds use `[[lat, lon], ...]`. Received `Notification` values use the
 same map type, so structured identifiers retain their array shape.
 
+This spatial example uses the server's public
+[observations schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html).
+Polygons need at least four pairs with the first repeated last. Clouds need no
+closing repeat; duplicate points are valid and their order is preserved.
+Subscribers filter clouds with `polygon`, not `point_cloud`. The built-in
+`point` is only a watch/replay filter for polygon streams.
+
 `with_identifier` accepts `BTreeMap<String, serde_json::Value>`. For a
 string-only map, use `with_string_identifier`; it converts each entry to a JSON
 string. The public `identifier` fields themselves are JSON-valued. Code that
@@ -116,7 +123,8 @@ duplicate).
 
 ## Listening for notifications
 
-Two surfaces, one supervisor underneath.
+Listen with `watch()` for a stream or `watch_with_handler()` for callbacks.
+Both take a `WatchRequest` and use the same supervisor underneath.
 
 ### Stream surface
 
@@ -144,6 +152,40 @@ The filter must include every identifier the event type's schema marks
 `required: true`. Omitting one returns
 `400 Required field '<name>' missing for watch operation`. Run
 `aviso schema get <TYPE>` to see which fields are required.
+
+### Numeric and enum constraints
+
+Use JSON objects in the filter map. With the `client` above connected to the
+test server from the
+[weather tutorial](../cli/publish-and-listen.md#weather-constraints), this
+replays the seeded records B and C and then ends:
+
+```rust,ignore
+use std::collections::BTreeMap;
+use aviso::watch::WatchRequest;
+use serde_json::json;
+
+let filter = BTreeMap::from([
+    ("date".into(), json!("20260913")),
+    ("severity".into(), json!({"gte": 5})),
+    ("anomaly".into(), json!({"between": [40, 50]})),
+    ("region".into(), json!({"in": ["north", "south"]})),
+]);
+let request = WatchRequest::replay_only(
+    "weather",
+    aviso::watch::ResumeStart::AfterSequence(0),
+)
+.with_filter(filter);
+let mut stream = client.watch(request)?;
+while let Some(item) = stream.recv().await {
+    println!("{}", item?.payload["id"]);
+}
+```
+
+For live delivery, use `WatchRequest::watch("weather")` and start before
+publishing. All bindings use the same
+[constraint rules](../concepts/filters.md#constraint-filters); the map selects
+identifiers, not payload contents.
 
 ### Callback surface
 
@@ -176,20 +218,22 @@ use serde_json::json;
 use aviso::watch::{ResumeStart, WatchRequest};
 
 // Live: stream new notifications as they arrive.
-let req = WatchRequest::watch("mars");
+let live = WatchRequest::watch("mars");
 
 // Historical then live: replay after sequence 41, then keep going.
-let req = WatchRequest::watch_from("mars", ResumeStart::AfterSequence(41));
+let historical = WatchRequest::watch_from("mars", ResumeStart::AfterSequence(41));
 
 // Replay only: replay from a date, then close cleanly.
-let req = WatchRequest::replay_only("mars", ResumeStart::Date("2026-01-01T00:00:00Z".into()));
+let replay = WatchRequest::replay_only("mars", ResumeStart::Date("2026-01-01T00:00:00Z".into()));
+
+println!("{live:?}\n{historical:?}\n{replay:?}");
 
 // Add a filter. Values are JSON, so spatial filters fit too.
 let mut filter = BTreeMap::new();
-filter.insert("class".to_string(), json!("od"));
+filter.insert("date".to_string(), json!("20260601"));
 filter.insert("polygon".to_string(),
               json!([[46.0, 8.0], [46.0, 9.0], [47.0, 9.0], [46.0, 8.0]]));
-let req = WatchRequest::watch("mars").with_filter(filter);
+let req = WatchRequest::watch("observations").with_filter(filter);
 ```
 
 `ResumeStart::AfterSequence(n)` reads as "I already have everything up to n;
@@ -239,8 +283,8 @@ let client = AvisoClient::builder()
 
 When a store is configured:
 
-- At watch start, if your `WatchRequest` has no explicit resume position, the
-  supervisor reads the stored checkpoint and resumes from there.
+- When listening starts, if your `WatchRequest` has no explicit resume position,
+  the supervisor reads the stored checkpoint and resumes from there.
 - After each successful notification dispatch, the supervisor commits the
   previous notification's sequence before letting the consumer pull the next.
 - The user-facing contract is "pulling item N+1 implies item N is durable".

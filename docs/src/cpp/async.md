@@ -2,7 +2,7 @@
 
 Every blocking verb has an async form that returns a `std::future` and runs on
 a background thread, so several calls can be in flight at once. The async forms
-are also safe to call from inside a watch or async callback, where a blocking
+are also safe to call from inside a listener or async callback, where a blocking
 verb would throw `AvisoErrorKind_InvalidUsage`.
 
 The future holds the same value the blocking verb returns: a JSON string for

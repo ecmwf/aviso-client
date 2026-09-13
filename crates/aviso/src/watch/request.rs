@@ -128,8 +128,8 @@ impl WatchRequest {
     ///
     /// Filter values are `serde_json::Value` because the server's wire
     /// contract accepts JSON values, not just strings: spatial filters
-    /// (polygon, point) and range constraints are JSON objects. Pass scalar
-    /// string filters as `Value::String(...)`.
+    /// (polygon, point) are JSON arrays and range constraints are JSON objects.
+    /// Pass scalar string filters as `Value::String(...)`.
     ///
     /// This method replaces the entire map (it does not merge); callers that
     /// want incremental population should accumulate their own map and call

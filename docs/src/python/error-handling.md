@@ -46,7 +46,7 @@ try:
     response = client.notify(
         event_type="test_polygon",
         identifier={
-            "polygon": "0,0,1,0,1,1,0,0",
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
             "date": "20260601",
             "time": "1200",
         },
@@ -109,7 +109,9 @@ import pyaviso
 client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
 
 try:
-    for n in client.listen("test_polygon", filter={"polygon": "0,0,1,0,1,1,0,0"}):
+    for n in client.listen(
+        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
+    ):
         ...
 except pyaviso.HistoryGapError as e:
     if e.reason == "replay_limit_reached":
@@ -138,7 +140,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 
 request = (
     pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": "0,0,1,0,1,1,0,0"})
+    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
     .with_triggers([pyaviso.Trigger.command("./process.sh {{ notification.sequence }}")])
 )
 
