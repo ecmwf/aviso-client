@@ -96,4 +96,3 @@
 - [Architecture](./developers/architecture.md)
 - [Library guide](./developers/lib-guide.md)
 - [Contributing](./developers/contributing.md)
-- [Docs style](./developers/docs-style.md)
