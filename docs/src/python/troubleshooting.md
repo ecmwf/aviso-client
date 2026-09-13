@@ -119,7 +119,10 @@ import asyncio
 result = await asyncio.to_thread(
     client.notify,
     event_type="test_polygon",
-    identifier={"polygon": "0,0,1,0,1,1,0,0", "date": "20260601", "time": "1200"},
+    identifier={
+        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
+        "date": "20260601", "time": "1200",
+    },
     payload={"location": "s3://example/data.grib"},
 )
 ```

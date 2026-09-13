@@ -36,7 +36,7 @@ client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso
 print(f"writing log to {log_path}")
 with client.listen(
     "test_polygon",
-    filter={"polygon": "0,0,1,0,1,1,0,0"},
+    filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
     triggers=[pyaviso.Trigger.echo(), pyaviso.Trigger.log(log_path)],
 ) as iterator:
     for _ in iterator:

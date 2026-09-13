@@ -37,7 +37,7 @@ Publish one notification to `/api/v1/notification`.
 
 | Argument | Description |
 |---|---|
-| `<PARAMETERS>` | Comma-separated parameter list. `event=<TYPE>` is required; `data=<JSON>` is the optional payload; every other pair enters the identifier map. Use `key:=JSON` for any JSON identifier value, including numbers, booleans, and null. The compatible `key=value` form keeps bare scalars as strings but auto-parses arrays and objects. Double-quote legacy strings containing commas. |
+| `<PARAMETERS>` | Comma-separated parameter list. `event=<TYPE>` is required; `data=<JSON>` is the optional payload; every other pair enters the identifier map. Use `key:=JSON` for any JSON identifier value, including numbers, booleans, and null. The `key=value` form keeps bare scalars as strings but auto-parses arrays and objects. Double-quote strings containing commas. |
 
 Returns exit code 0 on success, 1 on a server error or network failure, 2 on
 missing parameters.

@@ -15,20 +15,27 @@ std::string with_payload =
 ```
 
 Use `notify_json` when an identifier contains arrays, objects, or other JSON
-values. Spatial coordinates use latitude first:
+values. Spatial coordinates use latitude first. These spatial examples use the
+server's public
+[observations schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html),
+which requires a date, a point cloud, and a payload:
 
 ```cpp
 const std::string identifier = R"({
-  "point": [46, 8],
+  "date": "20260601",
   "point_cloud": [[46, 8], [47, 9]]
 })";
-std::string response = client.notify_json("observations", identifier);
+std::string response = client.notify_json(
+    "observations", identifier, std::string(R"({"source":"stations"})"));
 ```
 
-A polygon has the same `[[lat, lon], ...]` shape as a point cloud. Its points
-describe a ring, and the first point is repeated when the schema requires a
-closed polygon. Do not quote the arrays inside the JSON object. The
-`notify_json_async` method provides the same path for asynchronous calls.
+A polygon has the same `[[lat, lon], ...]` shape as a point cloud, but needs at
+least four pairs with the first pair repeated last. Clouds need no closing
+repeat; duplicate points are valid and their order is preserved. Subscribers
+filter clouds with `polygon`, not `point_cloud`. The built-in `point` is only a
+watch/replay filter for polygon streams, not a provider identifier. Do not quote
+arrays inside the JSON object. The `notify_json_async` method provides the same
+path for asynchronous calls.
 
 To see which identifier fields a stream expects, read its schema first with
 `schema_for`; see [Operations](./operations.md#schemas).
@@ -43,8 +50,8 @@ whatever JSON you like, and an optional `max_concurrency` (0 selects a default).
 
 ```cpp
 const std::string notifications = R"([
-  {"event_type": "observations", "identifier": {"point_cloud": [[46, 8], [47, 9]]}},
-  {"event_type": "observations", "identifier": {"point_cloud": [[48, 10], [49, 11]]}}
+  {"event_type": "observations", "identifier": {"date": "20260601", "point_cloud": [[46, 8], [47, 9]]}, "payload": {"source": "stations-a"}},
+  {"event_type": "observations", "identifier": {"date": "20260602", "point_cloud": [[48, 10], [49, 11]]}, "payload": {"source": "stations-b"}}
 ])";
 std::string results = client.notify_many(notifications);
 ```

@@ -48,15 +48,10 @@ list inside shell quotes, but do not quote the structured value itself:
 aviso notify 'event=test_polygon,polygon=[[46,8],[46,9],[47,9],[47,8],[46,8]],date=20260601,time=1200,data={"test":true}'
 ```
 
-The polygon reaches the server as an array. For a legacy comma-separated
-polygon string, add double quotes around only that value:
-
-```bash
-aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200'
-```
-
-Those inner double quotes are stripped by the CLI, so the server receives one
-string rather than an array.
+The polygon reaches the server as an array. It contains at least four
+latitude-longitude pairs, with the first pair repeated last. For string input,
+see
+[Alternative coordinate format](./publish-and-listen.md#alternative-coordinate-format).
 
 ## Listen for live notifications
 

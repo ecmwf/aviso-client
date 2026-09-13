@@ -48,7 +48,7 @@
 
 - [Overview](./cpp/overview.md)
 - [Publishing](./cpp/publish.md)
-- [Watching](./cpp/watch.md)
+- [Listening](./cpp/watch.md)
 - [Triggers](./cpp/triggers.md)
 - [Operations](./cpp/operations.md)
 - [Async](./cpp/async.md)
@@ -96,4 +96,3 @@
 - [Architecture](./developers/architecture.md)
 - [Library guide](./developers/lib-guide.md)
 - [Contributing](./developers/contributing.md)
-- [Docs style](./developers/docs-style.md)
