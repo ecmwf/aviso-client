@@ -76,6 +76,33 @@ JSON object (an exact value per key, or a server-defined rule object):
 aviso::WatchRequest("test_event").filter_json(R"({"date":"20260101"})");
 ```
 
+### Numeric and enum constraints
+
+With the schema and seeds from the
+[weather tutorial](../cli/publish-and-listen.md#weather-constraints), use this
+request with the `Handler` above and a `client` built as in
+[A first call](./overview.md#a-first-call), using your test server's address and
+credentials. Replay delivers B and C, then ends; inspect their labels in
+`n.payload_json()`.
+
+```cpp
+aviso::WatchRequest request("weather");
+request.replay_from_sequence(0).filter_json(R"({
+  "date": "20260913",
+  "severity": {"gte": 5},
+  "anomaly": {"between": [40, 50]},
+  "region": {"in": ["north", "south"]}
+})");
+Handler handler;
+auto watch = client.watch(request, handler);
+watch.wait();
+```
+
+For live delivery, omit `replay_from_sequence(0)` and start before publishing.
+The raw string contains JSON objects with numeric operands, not quoted JSON
+objects. See [Filters](../concepts/filters.md#constraint-filters) for supported
+operators and schema requirements.
+
 ## A complete example
 
 [`examples/cpp/watch.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/watch.cpp)

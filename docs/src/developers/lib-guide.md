@@ -152,6 +152,40 @@ The filter must include every identifier the event type's schema marks
 `400 Required field '<name>' missing for watch operation`. Run
 `aviso schema get <TYPE>` to see which fields are required.
 
+### Numeric and enum constraints
+
+Use JSON objects in the filter map. With the `client` above connected to the
+test server from the
+[weather tutorial](../cli/publish-and-listen.md#weather-constraints), this
+replays the seeded records B and C and then ends:
+
+```rust,ignore
+use std::collections::BTreeMap;
+use aviso::watch::WatchRequest;
+use serde_json::json;
+
+let filter = BTreeMap::from([
+    ("date".into(), json!("20260913")),
+    ("severity".into(), json!({"gte": 5})),
+    ("anomaly".into(), json!({"between": [40, 50]})),
+    ("region".into(), json!({"in": ["north", "south"]})),
+]);
+let request = WatchRequest::replay_only(
+    "weather",
+    aviso::watch::ResumeStart::AfterSequence(0),
+)
+.with_filter(filter);
+let mut stream = client.watch(request)?;
+while let Some(item) = stream.recv().await {
+    println!("{}", item?.payload["id"]);
+}
+```
+
+For live delivery, use `WatchRequest::watch("weather")` and start before
+publishing. All bindings use the same
+[constraint rules](../concepts/filters.md#constraint-filters); the map selects
+identifiers, not payload contents.
+
 ### Callback surface
 
 ```rust,ignore
