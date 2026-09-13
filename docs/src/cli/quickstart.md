@@ -50,7 +50,8 @@ aviso notify 'event=test_polygon,polygon=[[46,8],[46,9],[47,9],[47,8],[46,8]],da
 
 The polygon reaches the server as an array. It contains at least four
 latitude-longitude pairs, with the first pair repeated last. For string input,
-see [Alternative coordinate format](./publish-and-listen.md#alternative-coordinate-format).
+see
+[Alternative coordinate format](./publish-and-listen.md#alternative-coordinate-format).
 
 ## Listen for live notifications
 
