@@ -121,7 +121,7 @@ for i in range(3):
     print(f"published {i}: request_id={response.request_id}")
 ```
 
-Save the listener as `listen_builder.py` and start it first, so it is watching
+Save the listener as `listen_builder.py` and start it first, so it is listening
 when the publisher runs:
 
 ```python

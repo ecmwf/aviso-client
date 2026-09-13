@@ -123,7 +123,8 @@ duplicate).
 
 ## Listening for notifications
 
-Two surfaces, one supervisor underneath.
+Listen with `watch()` for a stream or `watch_with_handler()` for callbacks.
+Both take a `WatchRequest` and use the same supervisor underneath.
 
 ### Stream surface
 
@@ -282,8 +283,8 @@ let client = AvisoClient::builder()
 
 When a store is configured:
 
-- At watch start, if your `WatchRequest` has no explicit resume position, the
-  supervisor reads the stored checkpoint and resumes from there.
+- When listening starts, if your `WatchRequest` has no explicit resume position,
+  the supervisor reads the stored checkpoint and resumes from there.
 - After each successful notification dispatch, the supervisor commits the
   previous notification's sequence before letting the consumer pull the next.
 - The user-facing contract is "pulling item N+1 implies item N is durable".

@@ -78,8 +78,8 @@ export AVISO_PASSWORD=producer-pass
   ./build/cpp/publish_many
   ```
 
-- `watch.cpp`: watches a stream (declared at the top of the file) and prints
-  each notification, stopping after a fixed count. It only watches; publish to
+- `watch.cpp`: listens to a stream (declared at the top of the file) and prints
+  each notification, stopping after a fixed count. It only listens; publish to
   the stream from another terminal to see notifications:
 
   ```bash
@@ -87,8 +87,8 @@ export AVISO_PASSWORD=producer-pass
   ./build/cpp/publish    # in another, a few times
   ```
 
-- `trigger.cpp`: watches a stream with a `log` trigger attached, so the trigger
-  appends each notification to a file as the watch runs, then prints the file.
+- `trigger.cpp`: listens to a stream with a `log` trigger attached, so the trigger
+  appends each notification to a file as the listener runs, then prints the file.
   Drive it by publishing from another terminal as with `watch`.
 
   ```bash
