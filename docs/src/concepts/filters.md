@@ -2,8 +2,8 @@
 
 A filter selects notifications using supported identifier fields. The server
 combines the filter conditions with AND. Check the event's schema for identifier
-names and types. Spatial filters can use different names: use `polygon` to filter
-point clouds, or `point` to filter polygons. See
+names and types. Spatial filters can use different names: use `polygon` to
+filter point clouds, or `point` to filter polygons. See
 [Spatial filters](#spatial-filters).
 
 ## A scalar filter
