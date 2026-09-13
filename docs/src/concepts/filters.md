@@ -1,8 +1,8 @@
 # Filters
 
-A filter is the set of identifiers you want notifications for. The server
-returns only events whose identifier map matches your filter on every field you
-set.
+A filter selects notifications using supported fields from the event's schema.
+For those fields, the server combines the filter conditions with AND. Check the
+schema for valid field names before building a filter.
 
 ## A scalar filter
 
@@ -24,6 +24,63 @@ Inline equivalent:
 ```bash
 aviso listen --event mars --identifiers '{"class":"od","stream":"oper"}'
 ```
+
+## Constraint filters
+
+Constraints select **identifier fields**, not fields inside the payload. They
+work in both listen and replay. Publishers send concrete values, not predicates.
+Use the event's schema to choose valid fields and types; the server operator
+controls that schema, not the client.
+
+The [weather tutorial](../cli/publish-and-listen.md#weather-constraints)
+provides the schema and five synthetic records. This filter selects records B
+and C:
+
+```json
+{
+  "date": "20260913",
+  "severity": {"gte": 5},
+  "anomaly": {"between": [40, 50]},
+  "region": {"in": ["north", "south"]}
+}
+```
+
+Read it as: on this date, severity is at least 5 **and** anomaly is from 40
+through 50 **and** region is either north or south. Fields combine with AND; the
+choices inside one `in` combine with OR. Keep the required `date` even when
+other fields use constraints.
+
+### Operators
+
+| Operator | Meaning | Example field value |
+|---|---|---|
+| `eq` | Equal to | `{"eq": 6}` |
+| `in` | Equal to any listed value | `{"in": [3, 7]}` |
+| `gt` | Greater than | `{"gt": 6}` |
+| `gte` | Greater than or equal to | `{"gte": 6}` |
+| `lt` | Less than | `{"lt": 6}` |
+| `lte` | Less than or equal to | `{"lte": 6}` |
+| `between` | Within an inclusive range | `{"between": [5, 7]}` |
+
+- `IntHandler` and `FloatHandler` support all seven operators.
+- `EnumHandler` supports only `eq` and `in`, with strings from its `values`
+  list. Matching ignores case, but does not trim whitespace: `"NORTH"` matches
+  `"north"`; `" north "` is not the same value.
+- Use exactly one lowercase operator per object. To bound a range, use
+  `between`, not an object containing both `gte` and `lte`.
+- `in` needs a nonempty list. `between` needs exactly two endpoints in ascending
+  order; equal endpoints are allowed. Both endpoints are included.
+- Operands must satisfy the field's schema bounds. `IntHandler` needs JSON
+  integers, not `5.0`, strings, or booleans. `FloatHandler` accepts finite JSON
+  numbers, including integers and decimals. For either numeric handler, write
+  `{"gte": 5}`, not `{"gte": "5"}`. Enum operands are strings.
+- Keep objects as objects. `"{\"gte\":5}"` is a string, not a constraint.
+  Other handlers, such as dates and plain strings, do not accept these objects.
+
+For numeric and enum fields, a scalar selects one exact value. Numeric scalar
+strings can be canonicalised by the handler, but that does not make quoted
+numeric operands valid inside a constraint. Float `eq` and `in` use exact
+numeric equality, with no tolerance. Use `between` for a tolerance interval.
 
 ## Required vs optional identifiers
 

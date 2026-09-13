@@ -59,6 +59,25 @@ Use the `observations` schema described in
 [Publish and listen](./publish-and-listen.md). Providers publish `point_cloud`;
 replay filters use a closed `polygon`, not `point_cloud`.
 
+## Replay the weather example {#weather-constraints}
+
+After publishing the five records in the
+[weather tutorial](./publish-and-listen.md#weather-constraints), reuse exactly
+the same identifier filter:
+
+```bash
+aviso replay --event weather \
+  --identifiers '{"date":"20260913","severity":{"gte":5},"anomaly":{"between":[40,50]},"region":{"in":["north","south"]}}' \
+  --from 0
+```
+
+On the fresh test stream this prints `payload.id` values B and C, then exits.
+`--from 0` reads retained history after sequence zero; it cannot recover records
+that the backend no longer retains. The wire filter is the same object used by
+listen, with JSON numbers inside the constraint objects. The
+[operator rules](../concepts/filters.md#constraint-filters) are shared by both
+commands.
+
 ## Replay vs listen
 
 | | `aviso listen` | `aviso replay` |

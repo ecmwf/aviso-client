@@ -24,7 +24,7 @@ listeners:
 |---|---|---|---|---|
 | `name` | string | no | unnamed | Label for logs and the echo trigger's leader line. |
 | `event` | string | yes | | Event type to subscribe to. Must match a type the server publishes. |
-| `identifiers` | map | no | `{}` | Filter. The server returns only notifications whose identifier matches every field here. Empty map allowed; the server may still require certain fields per the schema. |
+| `identifiers` | map | no | `{}` | Filter using supported fields from the event's schema. Conditions on those fields combine with AND. Empty map allowed only when the schema has no required filter fields. |
 | `triggers` | list | no | `[]` | Triggers to run for each matching notification. Empty list is accepted, but a useful listener normally has at least one trigger. |
 | `from_id` | integer | no | unset | Default starting sequence for the first connection. Overridden by `--from`. |
 | `from_date` | string | no | unset | Default starting ISO-8601 datetime. The value is sent verbatim to the server, so it must be in a form the server accepts: `YYYY-MM-DDTHH:MM:SSZ`, `YYYY-MM-DDTHH:MM:SS.ffffffZ`, or `YYYY-MM-DD HH:MM:SS+HH:MM`. A bare `YYYY-MM-DD` is **not** accepted here (the CLI's `--from` flag does that normalisation, but the YAML field does not). Mutually exclusive with `from_id`. |
@@ -52,6 +52,54 @@ A point is `[latitude, longitude]`. Polygons need at least four pairs, with the
 first pair repeated last. Providers send `point_cloud`; subscribers send
 `polygon`. This uses the `observations` schema from
 [Publish and listen](../cli/publish-and-listen.md).
+
+## Constraint mappings {#constraints}
+
+Use YAML mappings for constraints, not strings containing JSON. With the schema
+and seed records from the
+[weather tutorial](../cli/publish-and-listen.md#weather-constraints), put this
+in `weather-listeners.yaml`:
+
+```yaml
+listeners:
+  - name: selected-weather
+    event: weather
+    identifiers:
+      date: "20260913"
+      severity:
+        gte: 5
+      anomaly:
+        between: [40, 50]
+      region:
+        in: [north, south]
+    triggers:
+      - type: echo
+```
+
+Quote the date so it stays a string. Leave numeric operands unquoted. This
+selects B and C; the
+[central operator reference](../concepts/filters.md#operators) explains the
+allowed mappings.
+
+Run the file directly, replaying the retained seeds before listening live:
+
+```bash
+aviso listen weather-listeners.yaml --from 0 --no-state-store
+aviso replay weather-listeners.yaml --from 0
+```
+
+The listen command runs until Ctrl+C; run replay separately. Alternatively,
+place the same `listeners:` block in your client config, `weather-config.yaml`,
+alongside your connection settings. Select its listener by name for replay:
+
+```bash
+aviso --config weather-config.yaml listen --from 0 --no-state-store
+aviso --config weather-config.yaml replay --listener selected-weather --from 0
+```
+
+Both config commands use the same mapping; they do not read the positional
+listener file. `AVISO_BASE_URL` can supply the test server address for either
+form.
 
 ## Trigger fields
 
