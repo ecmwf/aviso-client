@@ -24,7 +24,7 @@ listeners:
 |---|---|---|---|---|
 | `name` | string | no | unnamed | Label for logs and the echo trigger's leader line. |
 | `event` | string | yes | | Event type to subscribe to. Must match a type the server publishes. |
-| `identifiers` | map | no | `{}` | Filter using supported fields from the event's schema. Conditions on those fields combine with AND. Empty map allowed only when the schema has no required filter fields. |
+| `identifiers` | map | no | `{}` | Filter using supported identifier fields. Spatial filters can use different names from the schema: `polygon` for point clouds or `point` for polygons. See [Spatial filters](../concepts/filters.md#spatial-filters). Conditions combine with AND. Empty map allowed only when the schema has no required filter fields. |
 | `triggers` | list | no | `[]` | Triggers to run for each matching notification. Empty list is accepted, but a useful listener normally has at least one trigger. |
 | `from_id` | integer | no | unset | Default starting sequence for the first connection. Overridden by `--from`. |
 | `from_date` | string | no | unset | Default starting ISO-8601 datetime. The value is sent verbatim to the server, so it must be in a form the server accepts: `YYYY-MM-DDTHH:MM:SSZ`, `YYYY-MM-DDTHH:MM:SS.ffffffZ`, or `YYYY-MM-DD HH:MM:SS+HH:MM`. A bare `YYYY-MM-DD` is **not** accepted here (the CLI's `--from` flag does that normalisation, but the YAML field does not). Mutually exclusive with `from_id`. |

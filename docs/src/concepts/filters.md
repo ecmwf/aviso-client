@@ -1,8 +1,9 @@
 # Filters
 
-A filter selects notifications using supported fields from the event's schema.
-For those fields, the server combines the filter conditions with AND. Check the
-schema for valid field names before building a filter.
+A filter selects notifications using supported identifier fields. The server
+combines the filter conditions with AND. Check the event's schema for identifier
+names and types. Spatial filters can use different names: use `polygon` to filter
+point clouds, or `point` to filter polygons. See [Spatial filters](#spatial-filters).
 
 ## A scalar filter
 
@@ -152,7 +153,9 @@ Providers publish point clouds using the same nested-array shape:
 Subscribers use `polygon`, not `point_cloud`, to select clouds with any point
 inside or on the polygon boundary. See
 [Publish and listen](../cli/publish-and-listen.md) for the complete request and
-schema. Run `aviso schema get <TYPE>` to see which identifier fields are valid.
+schema. Subscribers to polygon events can use `polygon` for overlap or `point`
+for containment. Run `aviso schema get <TYPE>` to see the published identifier
+fields and their types.
 
 ## When the filter does not match
 
