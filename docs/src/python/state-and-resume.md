@@ -79,9 +79,9 @@ custom Python store objects.
 
 ## How it works
 
-The client derives a resume key from the server URL, event type, filter and
-schema. A different filter or schema can select a different key and have no
-saved cursor.
+The Python client derives a resume key from the server URL, event type and
+filter. Changing one of these can select a different key with no saved cursor.
+A server schema change alone does not change the key.
 
 For each notification, the background listener:
 
