@@ -13,9 +13,9 @@ quickstart for how to discover what is configured.
 
 ## A complete listener
 
-Save as `listen.py` and run it. In a second terminal, publish notifications with
-the script from the [Publishing page](./publish.md); the listener prints each
-one as it arrives.
+Save as `listen.py` and run it. The listener prints matching `test_polygon`
+notifications as they arrive. For publishing and listening scripts that work
+together with the small `mars` schema, see the [quickstart](./quickstart.md).
 
 ```python
 """Listen for test_polygon notifications and print each one as it arrives.
