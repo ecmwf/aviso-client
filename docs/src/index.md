@@ -26,21 +26,6 @@ aviso listen --event mars --identifiers '{"class":"od"}'
 
 Start with the [CLI overview](./cli/overview.md).
 
-## From a Rust program
-
-The Rust library powers the CLI and is on crates.io. Use it when you want
-notifications inside a Rust binary or service.
-
-```rust,ignore
-use aviso::AvisoClient;
-
-let client = AvisoClient::builder()
-    .base_url("https://aviso.example")
-    .build()?;
-```
-
-Start with the [library guide](./developers/lib-guide.md).
-
 ## From Python
 
 The `pyaviso` package wraps the Rust core through PyO3, so you get a real Python
@@ -58,6 +43,21 @@ for notification in client.listen("mars", filter={"class": "od"}):
 ```
 
 Start with the [Python overview](./python/overview.md).
+
+## From a Rust program
+
+The Rust library powers the CLI and is on crates.io. Use it when you want
+notifications inside a Rust binary or service.
+
+```rust,ignore
+use aviso::AvisoClient;
+
+let client = AvisoClient::builder()
+    .base_url("https://aviso.example")
+    .build()?;
+```
+
+Start with the [library guide](./developers/lib-guide.md).
 
 ## New here?
 
