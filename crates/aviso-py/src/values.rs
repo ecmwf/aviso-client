@@ -196,6 +196,24 @@ impl PyNotification {
         Ok(dict)
     }
 
+    /// Display the original `CloudEvent`, or the fields of a manually built notification.
+    fn __str__(&self) -> PyResult<String> {
+        let fallback;
+        let value = if let Some(ce) = &self.cloudevent {
+            ce
+        } else {
+            fallback = serde_json::json!({
+                "event_type": self.event_type,
+                "sequence": self.sequence,
+                "identifier": self.identifier,
+                "payload": self.payload,
+            });
+            &fallback
+        };
+        serde_json::to_string_pretty(value)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Notification(event_type={:?}, sequence={}, identifier={:?})",
