@@ -32,15 +32,37 @@ client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
 )
 print(client.schema().event_types)
-print(json.dumps(client.schema_for("mars").as_dict(), sort_keys=True))
+print(json.dumps(client.schema_for("mars").as_dict(), indent=2, sort_keys=True))
 ```
 
-With only this example schema installed, output looks like this (the JSON is
-shown on one line to keep the small schema together):
+With only this example schema installed, output looks like this:
 
 ```text
 ['mars']
-{"event_type": "mars", "schema": {"identifier": {"class": {"required": true, "type": "EnumHandler", "values": ["od", "rd"]}, "step": {"range": null, "required": false, "type": "IntHandler"}}, "payload": {"required": false}}, "status": "success"}
+{
+  "event_type": "mars",
+  "schema": {
+    "identifier": {
+      "class": {
+        "required": true,
+        "type": "EnumHandler",
+        "values": [
+          "od",
+          "rd"
+        ]
+      },
+      "step": {
+        "range": null,
+        "required": false,
+        "type": "IntHandler"
+      }
+    },
+    "payload": {
+      "required": false
+    }
+  },
+  "status": "success"
+}
 ```
 
 `class` must be `od` or `rd`; `EnumHandler` means a choice from a list. `step`
