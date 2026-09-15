@@ -137,8 +137,9 @@ preserve the file while investigating rather than deleting your resume data.
 See the
 [complete resuming listener](./state-and-resume.md#a-complete-resuming-listener).
 
-A changed URL, schema or filter can select a different resume key. With no saved
-cursor, the listener starts live. The default exit policy can leave the final
+A changed URL, event type or filter can select a different resume key. A server
+schema change alone does not change the key. With no saved cursor, the listener
+starts live. The default exit policy can leave the final
 notification uncommitted, so repeats are possible. Enabling exit flushing can
 skip unfinished buffered work on restart; it is not a work acknowledgement.
 See [Flush on exit](./state-and-resume.md#flush-on-exit).
