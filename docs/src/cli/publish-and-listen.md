@@ -1,9 +1,44 @@
 # Publish and listen
 
-Notification providers use `aviso notify` to announce data or events. Users
-use `aviso listen` to receive matching notifications. If you only need to
-receive notifications, go straight to [Listen](#listen); you do not need to
-publish anything first.
+> **For providers:** use `aviso notify` to announce data or events.
+>
+> **For users:** use `aviso listen` to receive matching notifications. Go
+> straight to [Listen](#listen); you do not need to publish anything first.
+
+## Schema assumptions
+
+The following `mars` examples assume your server operator has installed this
+small schema, also used in the [CLI quickstart](./quickstart.md). This is a
+**server YAML** configuration section, not a client listener file:
+
+```yaml
+notification_schema:
+  mars:
+    topic:
+      base: mars
+      key_order: [class, step]
+    identifier:
+      class:
+        type: EnumHandler
+        values: [od, rd]
+        required: true
+      step:
+        type: IntHandler
+        required: false
+    payload:
+      required: false
+```
+
+Providers must include both `class` and `step`. In listener filters, `class` is
+required and `step` is optional: `required: false` applies to filters, not to
+publishing. The payload is optional and can carry a data location.
+
+Use the connection and authentication settings from
+[Configuration](./configuration.md). Inspect your server with
+`aviso schema get mars` and adapt the examples if its schema differs. This
+command reads a schema; only the server operator configures one. See the
+[server schema guide](https://sites.ecmwf.int/docs/aviso-server/main/schema-guide.html).
+The spatial and weather examples below state their own schema assumptions.
 
 ## Publish {#publish}
 
@@ -12,16 +47,32 @@ This section is for providers with permission to publish to the event type.
 data the notification describes.
 
 ```bash
-aviso notify 'event=mars,class=od,stream=oper,date=20260601,domain=g,expver=0001,step=0,time=1200,data={"location":"s3://bucket/path"}'
+aviso notify 'event=mars,class=od,step:=12,data={"location":"s3://bucket/path"}'
 ```
 
 The single argument is a comma-separated list:
 
 - `event=<TYPE>` is required. It names the event type.
-- `data=<JSON>` is optional. Whatever you set here becomes the notification's
-  payload.
+- `data=<JSON>` supplies the notification's payload. It is optional for this
+  `mars` schema; other schemas may require it.
 - Every other `key=value` pair lands in the identifier map.
 - Use `key:=JSON` when an identifier must be a JSON scalar rather than a string.
+
+Bare scalar values are sent as strings: `step=12` sends `"12"`, while `step:=12`
+sends the JSON number `12`. Both are accepted by this schema's integer
+validator. Keep `event=` for the event name; `data=` already parses JSON.
+The `:=` form also accepts other JSON values, but the server's schema must
+allow the field and its value. If a string itself starts with `[` or `{`, wrap
+the value in double quotes inside the outer shell quotes to keep it as text.
+
+### Spatial schema assumptions
+
+The `observations` examples assume the operator has installed the server's
+[point-cloud schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html#schema).
+It declares `date` (`DateHandler`, format `%Y%m%d`) and `point_cloud`
+(`PointCloudHandler`, at most 10,000 points), both required, plus a required
+payload. Providers send `date`, `point_cloud`, and `data`. Subscribers send
+`date` and a closed `polygon` instead of `point_cloud`.
 
 Identifier values beginning with `[` or `{` are parsed as JSON. This sends a
 point cloud as an array rather than a quoted JSON string:
@@ -36,45 +87,27 @@ pair repeated last. Clouds do not need a closing repeat.
 The outer single quotes protect the argument from the shell. Do not add double
 quotes around the array.
 
-Bare scalar values keep the CLI's existing string behavior. For example,
-`step=12` and `enabled=true` send the strings `"12"` and `"true"`.
-Use the explicit JSON delimiter to retain scalar types:
-
-```bash
-aviso notify 'event=observations,count:=12,enabled:=true,missing:=null'
-```
-
-This sends the number `12`, the boolean `true`, and JSON `null`. The explicit
-form also accepts strings, arrays, and objects, such as `label:="archive"`,
-`point:=[46,8]`, or `area:={"north":47,"south":46}`.
-If a string itself starts with `[` or `{`, wrap that value in double quotes:
-
-```bash
-aviso notify 'event=mars,label="[archive]",region="{region}"'
-```
-
-The outer single quotes are interpreted by the shell. The inner double quotes
-are interpreted and removed by aviso. The values sent are the strings
-`"[archive]"` and `"{region}"`, not malformed JSON structures.
-
 ### Alternative coordinate format
 
-For a value that itself contains commas (a polygon, a comma-separated list),
-wrap it in double quotes:
+The same `observations` listener can use a comma-separated polygon string
+instead of an array. Inside the JSON filter, keep the string in double quotes:
 
 ```bash
-aviso notify 'event=test_polygon,polygon="46,8,46,9,47,9,47,8,46,8",date=20260601,time=1200'
+aviso listen --event observations \
+  --identifiers '{"date":"20260601","polygon":"46,8,46,9,47,9,47,8,46,8"}'
 ```
 
-The quotes are CLI-side; they are stripped before the value is sent to the
-server. The HTTP API also accepts point strings such as `"46,8"` in watch and
-replay filters. Point clouds have no string format. Prefer arrays for spatial
-values; CloudEvent spatial identifiers are always arrays.
+This filter matches the cloud above because its points lie on the polygon's
+boundary. The HTTP API also accepts point strings such as `"46,8"` in watch and
+replay filters where the schema supports them. Point clouds have no string
+format. Prefer arrays for spatial values; CloudEvent spatial identifiers are
+always arrays.
 
 ### Identifier fields the server requires
 
-Every event type's schema declares which identifier fields the server insists
-on. If you omit one, the server rejects the notification with a helpful error.
+Publishing requires every identifier field declared by the schema, even fields
+marked `required: false` for filters. If you omit one, the server rejects the
+notification with a helpful error.
 
 To see what fields a schema asks for:
 
@@ -112,8 +145,8 @@ aviso listen --event observations \
   --identifiers '{"date":"20260601","polygon":[[46,8],[46,9],[47,9],[47,8],[46,8]]}'
 ```
 
-For `observations`, use the server's
-[point-cloud schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html).
+For `observations`, use the [spatial schema assumptions](#spatial-schema-assumptions)
+above.
 Providers send `point_cloud`; subscribers send a closed `polygon` and the
 required `date`. A cloud matches when any point is inside or on the boundary.
 
@@ -143,14 +176,13 @@ listeners:
         headers:
           Authorization: "Bearer {{ env.WEBHOOK_TOKEN }}"
 
-  - name: cosmo-fc
-    event: cosmo
+  - name: mars-rd
+    event: mars
     identifiers:
-      class: od
-      type: fc
+      class: rd
     triggers:
       - type: command
-        command: "./on-cosmo.sh {{ notification.identifier.step }}"
+        command: "./on-mars.sh {{ notification.identifier.step }}"
 ```
 
 Run them:
@@ -217,10 +249,11 @@ mean a date, and so on) live in
 ### Listening for several event types at once
 
 Put multiple listeners in the same YAML file (or in separate files; the CLI
-accepts a list):
+accepts a list). For example, save the `mars` and `observations` filters above
+in listener files named `mars.yaml` and `observations.yaml`:
 
 ```bash
-aviso listen mars.yaml cosmo.yaml
+aviso listen mars.yaml observations.yaml
 ```
 
 Each listener has its own connection, its own resume cursor, and its own
