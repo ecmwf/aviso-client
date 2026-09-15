@@ -1,5 +1,7 @@
 # Teams trigger
 
+<div class="trigger-guide">
+
 Auto-builds a Microsoft Teams Adaptive Card from the notification and POSTs it
 to a Teams Workflows endpoint. Shortcut over the [webhook](./webhook.md)
 trigger; saves operators ~30 lines of Adaptive Card boilerplate per listener.
@@ -138,10 +140,20 @@ Inherits all of webhook's error semantics. Common Teams-specific issues:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| HTTP 400 from receiver | Body shape mismatch (operator customised the Workflow to expect a different schema) | Either use the Adaptive Card shape (default) or switch to `webhook` with a hand-written body |
-| HTTP 401/403 | URL's SAS token expired or workflow deleted | Regenerate the URL in Teams and update the env var |
-| HTTP 202 + no card in channel | Workflow succeeded but Power Automate flow has a downstream error | Open the Workflow run history in Power Automate to inspect |
-| Card arrives but renders as plain text | Receiver Workflow not using the Adaptive Card output schema | Check the workflow's response schema |
+| HTTP 400 | Body shape mismatch | Check the schema |
+| HTTP 401/403 | Expired token or deleted workflow | Regenerate the URL |
+| HTTP 202, no card | Downstream flow error | Check run history |
+| Plain-text card | Wrong output schema | Use Adaptive Card |
+
+- **HTTP 400:** a customised Workflow may expect a different body schema. Use
+  the default Adaptive Card shape or switch to `webhook` with a hand-written
+  body.
+- **HTTP 401/403:** regenerate the URL in Teams and update the environment
+  variable. The URL's SAS token may have expired, or the workflow was deleted.
+- **HTTP 202 with no card:** the Workflow accepted the request, but a later
+  step failed. Open its run history in Power Automate to inspect the error.
+- **Plain-text card:** check that the receiver Workflow's response schema
+  uses Adaptive Card output.
 
 ## When to use
 
@@ -159,3 +171,5 @@ Inherits all of webhook's error semantics. Common Teams-specific issues:
   legacy, use [`webhook`](./webhook.md) with the `MessageCard` body. Microsoft
   is deprecating legacy connectors anyway.
 - Non-Teams receivers: use [`webhook`](./webhook.md).
+
+</div>

@@ -1,5 +1,7 @@
 # Echo trigger
 
+<div class="trigger-guide">
+
 Writes the notification to standard output. Format adapts to whether stdout is a
 terminal or a pipe, so it works for both humans and tools.
 
@@ -87,7 +89,7 @@ The CLI's global `--color` flag selects from three modes (interacts with the
 |---|---|
 | `--color never` (default) | No color anywhere; no ANSI escapes emitted |
 | `--color auto` | Color enabled on TTY, disabled in pipe; respects `NO_COLOR=1` |
-| `--color always` | Color enabled always (still no color in pipe-mode body since pipe mode emits compact NDJSON, not the human format) |
+| `--color always` | Color enabled; pipe-mode body stays plain NDJSON |
 
 Note: `--color always` does **not** force the human format when stdout is piped.
 Pipe mode always emits compact NDJSON because downstream tools expect clean
@@ -114,3 +116,5 @@ needs an operator fix before the same write can succeed.
   append-only).
 - Forwarding to a remote service: use [`webhook`](./webhook.md),
   [`teams`](./teams.md), or [`post`](./post.md).
+
+</div>
