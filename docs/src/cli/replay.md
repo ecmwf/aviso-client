@@ -2,8 +2,8 @@
 
 `aviso replay` re-reads past notifications and runs them through your triggers,
 just like `aviso listen` does for live ones. The difference: replay always
-starts from a cursor you supply, ends when it catches up, and never touches the
-state file.
+starts from a cursor you supply, ends at a fixed history boundary, and never
+touches the state file.
 
 Use it when:
 
@@ -14,24 +14,85 @@ Use it when:
 
 ## A first replay
 
+These examples assume your server operator has installed the same small `mars`
+schema used in [Publish and listen](./publish-and-listen.md#schema-assumptions).
+This is **server YAML**, not a client listener file:
+
+```yaml
+notification_schema:
+  mars:
+    topic:
+      base: mars
+      key_order: [class, step]
+    identifier:
+      class:
+        type: EnumHandler
+        values: [od, rd]
+        required: true
+      step:
+        type: IntHandler
+        required: false
+    payload:
+      required: false
+```
+
+In filters, `class` is required and `step` is optional. The integer `step` has
+no configured range, and the payload is optional. Use the connection and
+authentication settings from [Configuration](./configuration.md), then inspect
+the installed schema:
+
+```bash
+aviso schema get mars
+```
+
+This command only reads the schema; the operator configures it. Adapt the filter
+if your server's schema differs. Replay reads notifications already published
+by providers. You do not need to publish your own; for test history, see the
+[publish example](./publish-and-listen.md#publish).
+
 ```bash
 aviso replay --event mars --identifiers '{"class":"od"}' --from 2026-05-01
 ```
 
-This re-streams every matching notification from 1 May 2026 onwards. When replay
-catches up to the live edge, it stops.
+This selects stored `mars` notifications with `class=od`, with no restriction
+on `step`. The date selects publication time from midnight UTC on 1 May 2026,
+not a date in the notification's metadata. Replay prints matching retained
+notifications and stops at the history boundary captured when the run starts.
+It does not wait for new notifications.
+
+Retention limits what is available, and a server replay cap can stop a run
+before catch-up completes. See the server's
+[historical replay limits](https://sites.ecmwf.int/docs/aviso-server/main/streaming-semantics.html#historical-replay-limits).
+An empty matching history prints no notifications.
 
 `--from` takes either a sequence id or a date. The rules are the same as for
 `aviso listen --from`; full list at
 [Configuration: `--from` formats](./configuration.md#from-value-formats).
 
-You can also use a YAML file:
+You can also save this client listener as `my-listeners.yaml`. Its `echo`
+trigger prints each matching notification:
 
-```bash
-aviso replay --from 1000 my-listeners.yaml
+```yaml
+listeners:
+  - name: mars-od
+    event: mars
+    identifiers:
+      class: od
+    triggers:
+      - type: echo
 ```
 
-When more than one listener resolves, pick one with `--listener <NAME>`.
+```bash
+aviso replay --from 0 my-listeners.yaml
+```
+
+`--from 0` reads retained history after sequence zero. To resume from a known
+notification, replace `0` with its actual sequence id; only later sequences are
+selected. If a file defines several listeners, select one by name:
+
+```bash
+aviso replay --from 0 --listener mars-od my-listeners.yaml
+```
 
 ## Replay does not write the state file
 
@@ -47,7 +108,16 @@ The trade-off: if you interrupt a replay, the next replay needs an explicit
 `--from` to resume. There is no "resume my replay" mode.
 
 `--identifiers` accepts structured JSON values just like `aviso listen`. Quote
-the whole object for the shell, but leave arrays unquoted inside it:
+the whole object for the shell, but leave arrays unquoted inside it.
+
+The following assumes the operator has installed the server's
+[point-cloud schema](https://sites.ecmwf.int/docs/aviso-server/main/practical-examples/point-cloud-filtering.html#schema),
+also used in
+[Publish and listen](./publish-and-listen.md#spatial-schema-assumptions).
+Its `date` is required (`DateHandler`, format `%Y%m%d`). Providers publish the
+required `point_cloud` array and payload; replay filters supply `date` and a
+closed `polygon` array instead of `point_cloud`. Coordinates are
+`[latitude,longitude]`, with the first pair repeated last to close the polygon.
 
 ```bash
 aviso replay --event observations \
@@ -55,9 +125,7 @@ aviso replay --event observations \
   --from 2026-05-01
 ```
 
-Use the `observations` schema described in
-[Publish and listen](./publish-and-listen.md). Providers publish `point_cloud`;
-replay filters use a closed `polygon`, not `point_cloud`.
+A cloud matches when any point lies inside or on the polygon's boundary.
 
 ## Replay the weather example {#weather-constraints}
 
@@ -80,30 +148,26 @@ commands.
 
 ## Replay vs listen
 
-| | `aviso listen` | `aviso replay` |
+| Behavior | Listen | Replay |
 |---|---|---|
 | Starts from | The state file, or `--from` if you set it | `--from` (required) |
-| Writes the state file? | Yes | No |
-| Runs forever? | Yes (until you stop it) | No (ends at the live edge) |
+| Writes the state file? | Yes, unless disabled | No |
+| After catching up | Stays open for new notifications | Stops at the fixed history boundary |
 | Reconnect on routine server close? | Yes | Yes |
 
 ## When you want both
 
-Run replay first to backfill, then start listen for live:
+To read retained history and continue with new notifications, use `listen` with
+`--from` and the same schema and filter:
 
 ```bash
-# Backfill from a known starting point.
-aviso replay --event mars --identifiers '{"class":"od"}' --from 2026-05-01
-
-# Then start the live listener.
-aviso listen --event mars --identifiers '{"class":"od"}'
+aviso listen --event mars --identifiers '{"class":"od"}' --from 2026-05-01
 ```
 
-The live listener's first run with an empty state file picks up from "now" (the
-server's current tip). There can be a small gap between where replay ended and
-where listen starts. For an exact handover, run listen first with
-`--from <a known cursor>` to seed the state file, then run replay to fill in any
-older history.
+Press Ctrl+C to stop. Listen records progress in its state file. Running replay
+and then starting a separate listener without `--from` or saved state can leave
+a gap: that listener starts at the server's current tip, after replay's fixed
+boundary. Seeding a state file separately is not an exact-handover guarantee.
 
 ## What next
 
