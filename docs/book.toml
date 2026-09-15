@@ -19,7 +19,7 @@ preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/ecmwf/aviso-client"
 edit-url-template = "https://github.com/ecmwf/aviso-client/edit/main/docs/{path}"
 additional-js = ["mermaid.min.js", "mermaid-init.js", "theme/logo-theme.js", "theme/troubleshooting.js"]
-additional-css = ["mermaid-extra.css", "theme/custom.css", "theme/troubleshooting.css", "theme/trigger.css"]
+additional-css = ["mermaid-extra.css", "theme/custom.css", "theme/troubleshooting.css", "theme/reference.css"]
 
 [output.html.redirect]
 "welcome/introduction.html" = "../index.html"
