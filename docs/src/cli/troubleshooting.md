@@ -1,7 +1,106 @@
 # Troubleshooting
 
-The most common things that surprise people. If you hit one of these, the fix is
-usually a one-liner.
+Choose the symptom that matches what you see. Open a panel for checks and links
+to the relevant reference.
+
+<div class="cli-troubleshooting">
+
+<details>
+<summary id="server-url-or-connection-errors">Server URL or connection errors</summary>
+
+If aviso says `base_url is required`, supply the server URL through
+`--base-url`, `AVISO_BASE_URL`, or `base_url` in your config file. Flags override
+environment variables, which override the file. See
+[Configuration](./configuration.md#tell-aviso-where-the-server-is).
+
+For connection failures, check the URL and whether the server is reachable from
+your machine. Confirm the hostname, port, and HTTP or HTTPS scheme with your
+server operator. For certificate errors, see
+[TLS errors](#tls-errors-when-connecting).
+
+</details>
+
+<details>
+<summary id="authentication-errors">Authentication fails with 401 or 403</summary>
+
+A 401 means credentials are missing, invalid, or expired. Check the credentials
+selected by your flags, environment variables, and config file. A 403 can mean
+your credentials were accepted but lack permission for the operation or event
+type. Ask your server operator to check access. See
+[Authentication](./configuration.md#authentication).
+
+## A listener that worked before suddenly returns 401 after I rotated the token
+
+aviso retries once after a 401 by asking the auth provider to refresh. For
+static credentials (`--token`, `AVISO_TOKEN`), refresh is a no-op: a second 401
+surfaces as an error.
+
+The fix: update the token in your env var or config file, then restart aviso.
+
+## Token or password values appearing in logs
+
+They should not be. aviso marks the `Authorization` header as sensitive and the
+`Debug` impl on every auth provider redacts the secret. If you see a credential
+in a log line, please file a bug.
+
+</details>
+
+<details>
+<summary id="no-events">The listener is running, but no events arrive</summary>
+
+Check that the event type and identifier filters match the notifications you
+expect. A listener without a saved cursor or a starting point waits for new
+notifications; it does not read all existing history. A saved cursor resumes
+after the last committed notification. See
+[Resume and state](../concepts/resume-and-state.md).
+
+## `aviso listen` runs forever, but I am pointing at a finite test stream
+
+Expected. `aviso listen` is the live mode: it reconnects on close and waits for
+more events. To re-read history once and stop, use
+`aviso replay --from <cursor>`.
+
+## `--from 20260601` is treated as a sequence id, not a date
+
+Pure-digit input is always a sequence id. To pass a date, use the dashed form:
+
+```bash
+aviso listen --from 2026-06-01
+```
+
+The full set of accepted `--from` formats is in
+[Configuration: `--from` value formats](./configuration.md#from-value-formats).
+
+</details>
+
+<details>
+<summary id="invalid-request-or-filters">The server rejects the request or identifier filters</summary>
+
+Read the server's error message for the field it rejected. For listen and
+replay, identifiers marked `required: true` in the server's schema must be
+supplied. Omitting a `required: false` identifier makes it a wildcard. Supplied
+values must still satisfy the schema's type and constraints.
+
+Publishing is different: every identifier in the schema must be supplied, even
+those marked `required: false`. See
+[Publish and listen](./publish-and-listen.md) and the
+[Listener YAML reference](../reference/listener-yaml.md).
+
+</details>
+
+<details>
+<summary id="schema-or-event-type-errors">The event type is unknown or the schema is unexpected</summary>
+
+Event types and identifier rules come from the server you connect to. Check the
+server URL and the spelling of your event type against that server's schema.
+An example event type is not guaranteed to exist on your server. See
+[Schema discovery](./operations.md) for how to inspect the available types and
+their identifiers.
+
+</details>
+
+<details>
+<summary id="configuration-or-state-errors">Listener configuration, saved state, or duplicates after restart</summary>
 
 ## "no listeners to run"
 
@@ -16,32 +115,32 @@ You ran `aviso listen` without any listener configuration. Fix one of these:
 - Use the inline form:
   `aviso listen --event mars --identifiers '{"class":"od"}'`.
 
-## "admin wipe-all requires --yes"
+## "state file format version 2 does not match supported version 1"
 
-```text
-error: aviso admin wipe-all requires --yes
-```
+The file uses format version 2, but this binary supports version 1. Two recovery
+paths:
 
-The destructive admin commands need an explicit `--yes` flag on the command
-line:
+- Install an aviso whose format matches the file.
+- Stop all clients using the state file, then delete it and start fresh:
+  `rm ~/.config/aviso/state.json ~/.config/aviso/state.json.lock`. You will
+  start from "now" (or from `--from` if you pass one).
 
-```bash
-aviso admin wipe-all --yes
-```
+The full recovery story is at [State file](../reference/state-file.md).
 
-The flag cannot be set in the config file (a config-file `--yes` would defeat
-the safety).
+## Multiple notifications delivered after a restart
 
-## `--from 20260601` is treated as a sequence id, not a date
+Expected, by design. aviso guarantees **at-least-once** delivery: when a
+notification finishes processing (every required trigger ran successfully), the
+cursor advances. If aviso crashes between running a trigger and saving the
+cursor, the next run will redeliver that notification.
 
-Pure-digit input is always a sequence id. To pass a date, use the dashed form:
+Triggers should be designed to be idempotent. For example,
+`kubectl annotate ... --overwrite` is idempotent; `mail -s subject ...` is not.
 
-```bash
-aviso listen --from 2026-06-01
-```
+</details>
 
-The full set of accepted `--from` formats is in
-[Configuration: `--from` value formats](./configuration.md#from-value-formats).
+<details>
+<summary id="tls-errors">TLS certificate errors or insecure-mode warnings</summary>
 
 ## TLS errors when connecting
 
@@ -65,60 +164,28 @@ Your aviso-server is behind a certificate aviso does not trust. Two paths:
 
 You have `--danger-accept-invalid-certs` set (or
 `tls.danger_accept_invalid_certs: true` in the config file). The warning is
-intentional: log scrapers can flag the situation in production. Switch to
-`--ca-bundle` to silence it.
+intentional: log scrapers can flag the situation in production. Remove the
+insecure setting and use `--ca-bundle` to trust your CA instead.
 
-## `aviso listen` runs forever, but I am pointing at a finite test stream
+</details>
 
-Expected. `aviso listen` is the live mode: it reconnects on close and waits for
-more events. To re-read history once and stop, use
-`aviso replay --from <cursor>`.
-
-## A listener that worked before suddenly returns 401 after I rotated the token
-
-aviso retries once after a 401 by asking the auth provider to refresh. For
-static credentials (`--token`, `AVISO_TOKEN`), refresh is a no-op: a second 401
-surfaces as an error.
-
-The fix: update the token in your env var or config file, then restart aviso.
-
-## Token or password values appearing in logs
-
-They should not be. aviso marks the `Authorization` header as sensitive and the
-`Debug` impl on every auth provider redacts the secret. If you see a credential
-in a log line, please file a bug.
-
-## "state file format version 2 does not match supported version 1"
-
-You upgraded the aviso binary and the state-file format has moved on. Two
-recovery paths:
-
-- Install an aviso whose format matches the file (revert to the older version).
-- Delete the state file and start fresh:
-  `rm ~/.config/aviso/state.json ~/.config/aviso/state.json.lock`. You will
-  start from "now" (or from `--from` if you pass one).
-
-The full recovery story is at [State file](../reference/state-file.md).
-
-## Multiple notifications delivered after a restart
-
-Expected, by design. aviso guarantees **at-least-once** delivery: when a
-notification finishes processing (every required trigger ran successfully), the
-cursor advances. If aviso crashes between running a trigger and saving the
-cursor, the next run will redeliver that notification.
-
-Triggers should be designed to be idempotent. For example,
-`kubectl annotate ... --overwrite` is idempotent; `mail -s subject ...` is not.
+<details>
+<summary id="command-trigger-errors">A command trigger times out or leaves processes behind</summary>
 
 ## A `command` trigger times out and leaves background processes behind
 
 The dispatcher's `SIGKILL` reaches the `/bin/sh -c ...` child but not pipelines,
-backgrounded jobs, or grandchildren. Two patterns help:
+backgrounded jobs, or grandchildren.
 
 - For a single binary, use `exec`: `command: "exec ./my-binary"`. The shell
   replaces itself with the binary, so the kill reaches it directly.
-- For a pipeline, wrap in a script with a `trap` handler that cleans up child
-  processes on signal.
+- A shell `trap` cannot catch `SIGKILL`. Pipelines and background jobs need
+  process-tree cleanup outside the dispatcher's timeout handling.
+
+</details>
+
+<details>
+<summary id="webhook-or-log-trigger-errors">A webhook keeps retrying or a log file cannot be opened</summary>
 
 ## A `webhook` trigger keeps retrying despite a 4xx
 
@@ -134,6 +201,31 @@ The log trigger does not create directories. Make sure the parent exists:
 ```bash
 mkdir -p /var/log/aviso
 ```
+
+</details>
+
+<details>
+<summary id="admin-command-errors">An admin command requires confirmation</summary>
+
+## "admin wipe-all requires --yes"
+
+```text
+error: aviso admin wipe-all requires --yes
+```
+
+The destructive admin commands need an explicit `--yes` flag on the command
+line:
+
+```bash
+aviso admin wipe-all --yes
+```
+
+The flag cannot be set in the config file (a config-file `--yes` would defeat
+the safety).
+
+</details>
+
+</div>
 
 ## How to file a useful issue
 
