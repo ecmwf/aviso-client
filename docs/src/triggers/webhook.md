@@ -1,6 +1,6 @@
 # Webhook trigger
 
-<div class="webhook-guide">
+<div class="trigger-guide">
 
 Generic HTTP request per notification. Operators get full control of method,
 URL, headers, and body via the [template engine](./template-engine.md). Use this
@@ -71,8 +71,8 @@ When `body_template` is **set**, that string is template-rendered at dispatch.
 Two patterns are common:
 
 The following fragments belong inside a webhook trigger. The selected-fields
-example expects `class` and `date` in the notification's identifier; the metadata
-example embeds its payload as JSON.
+example expects `class` and `date` in the notification's identifier; the
+metadata example embeds its payload as JSON.
 
 **Forward selected fields**:
 

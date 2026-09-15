@@ -1,0 +1,33 @@
+.trigger-guide {
+    overflow-wrap: anywhere;
+}
+
+.trigger-guide pre,
+.trigger-guide pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.trigger-guide table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.trigger-guide th,
+.trigger-guide td {
+    padding: 0.4em 0.5em;
+    white-space: normal;
+    vertical-align: top;
+}
+
+/* Keep links and red syntax tokens readable on navy backgrounds. */
+html.navy .trigger-guide {
+    --links: #6ab0de;
+}
+
+html.navy .trigger-guide .hljs-attr,
+html.navy .trigger-guide .hljs-attribute,
+html.navy .trigger-guide .hljs-variable {
+    color: #d47676;
+}

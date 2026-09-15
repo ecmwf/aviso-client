@@ -1,5 +1,7 @@
 # Command trigger
 
+<div class="trigger-guide">
+
 Spawns `/bin/sh -c <rendered>` per notification, with the notification's fields
 exposed as `AVISO_*` environment variables. Useful for any operator task that
 fits in a shell command. **Unix only** (`#[cfg(unix)]`).
@@ -49,9 +51,12 @@ Every command runs with these `AVISO_*` env vars set automatically:
 |---|---|
 | `AVISO_EVENT_TYPE` | The event type (e.g. `mars`) |
 | `AVISO_SEQUENCE` | The sequence number (decimal string) |
-| `AVISO_IDENTIFIER_<KEY>` | One per identifier field; `<KEY>` is uppercased with non-alphanumerics replaced by `_` (so `class` becomes `AVISO_IDENTIFIER_CLASS`) |
+| `AVISO_IDENTIFIER_<KEY>` | One per identifier field |
 | `AVISO_PAYLOAD_JSON` | The payload as compact JSON |
 | `AVISO_NOTIFICATION_JSON` | The whole notification as compact JSON (matches the echo trigger's pipe-mode output) |
+
+In `AVISO_IDENTIFIER_<KEY>`, `<KEY>` is uppercased with non-alphanumerics
+replaced by `_`. For example, `class` becomes `AVISO_IDENTIFIER_CLASS`.
 
 Operator-supplied `env:` keys are applied **after** the dispatcher-injected
 vars, so user keys override dispatcher keys when both are present.
@@ -97,10 +102,13 @@ wrapper script with a `trap` handler.
 
 ## Fail-fast classification
 
-| Error | Terminal under `fail_fast: true` | Retryable under `fail_fast: false` |
+The `fail_fast` setting defaults to `true` (on). Set it to `false` to turn it
+off.
+
+| Error | Fail-fast on | Fail-fast off |
 |---|---|---|
-| Non-zero exit code (`TriggerError::Command`) | ✓ | ✓ |
-| Template render error (`TriggerError::Template`) | ✓ | ✓ |
+| Non-zero exit code (`TriggerError::Command`) | terminal | retryable |
+| Template render error (`TriggerError::Template`) | terminal | retryable |
 | Timeout (`TriggerError::Timeout`) | retryable | retryable |
 | I/O error spawning the child (`TriggerError::Io`) | retryable | retryable |
 
@@ -152,3 +160,5 @@ For non-idempotent commands, either:
   `stderr_tail`, not the command itself, but the command's own stderr can still
   leak secrets it echoed. Pass secrets via `env:` instead (env values are also
   redacted from the trigger's `Debug` impl and never echoed by the dispatcher).
+
+</div>
