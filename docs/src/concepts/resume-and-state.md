@@ -1,90 +1,79 @@
 # Resume and state
 
-aviso processes every notification end to end before it commits the sequence
-number. If aviso restarts, the next run starts from the last committed sequence.
-This avoids skipping ahead; at-least-once delivery means the same notification
-can still run more than once.
+<div class="reference-guide">
 
-The cursor lives in a small JSON file on disk. By default,
-`~/.config/aviso/state.json`.
+A cursor records how far a listener has reached, using a notification's sequence
+number. Saving it lets a later run request notifications after that position.
+The server must still have the history you need.
+
+The CLI saves state in `~/.config/aviso/state.json` by default. Python clients
+have no state store by default. To save Python progress across runs, configure a
+[file store](../python/state-and-resume.md).
+
+A saved cursor does not confirm that your analysis finished. Notifications can
+still be waiting in the client's queue when it saves progress. A crash can
+therefore leave unfinished work behind the saved position. Track completed work
+separately when you need to recover it, and make repeated processing safe.
 
 ## When the cursor advances
 
-Each notification goes through these steps:
+For each notification, the background listener:
 
-1. The server sends it on the SSE stream.
-2. aviso decodes it.
-3. **Every required trigger runs successfully** (echo, log, command, webhook,
-   teams, post).
-4. aviso writes the new sequence to disk and asks the kernel to flush.
+1. Saves the previous pending sequence, if there is one and a store is set.
+2. Runs this notification's triggers. Required triggers must succeed.
+3. Places the notification in the queue for your code to read.
+4. Marks its sequence as pending if it advances the current position.
 
-Only after step 4 does the cursor advance. If step 3 fails for a required
-trigger, the cursor stays where it was. On the next run, aviso re-delivers the
-same notification and runs the triggers again.
+These steps do not wait for your code to finish its work. If a required trigger
+fails, this notification does not become pending, but the previous position
+may already have been saved. The final pending position is saved on exit only
+if `flush_cursor_on_exit` is enabled. Python defaults to `False`.
 
-This is the **at-least-once delivery** rule. It is the most important thing to
-know about how aviso behaves.
+Saved positions only move forwards. Older notifications can still be delivered
+without moving the saved position backwards.
 
 ## What at-least-once means for your triggers
 
-A required trigger might run more than once for the same notification (after a
-crash, after a network blip during the commit step). Triggers should produce the
-same observable outcome either way.
+A trigger can run more than once if the process stops after the action but
+before its sequence is saved. This repeat behaviour is often called
+at-least-once delivery. It is not a guarantee that every notification reaches
+your application after a crash: recovery also needs a usable starting position
+and retained history.
 
-| Idempotent (safe) | Not idempotent |
+Where possible, design an action so repeating it has the same result as doing
+it once. This is called being idempotent.
+
+| Same result when repeated | Additional effect when repeated |
 |---|---|
-| Appending the notification to a log file. | Sending an email. Each run sends another email. |
-| `kubectl annotate ... --overwrite`. | `psql -c "INSERT ..."` without `ON CONFLICT`. |
-| `cp src dest` (copy is overwriting). | `kubectl create ...` (fails on conflict). |
+| Replace a file with the same contents. | Append another log entry. |
+| Update a record using its unique id. | Insert another database row. |
+| Record that an email was already sent. | Send another email. |
 
-For triggers that are not inherently idempotent, build a dedupe layer keyed on
-`event_type@sequence`.
+Use the pair `event_type@sequence` to recognise notifications you have already
+handled. Recording this and performing the action must be coordinated if a
+crash between the two would cause a problem.
 
 ## Optional triggers are different
 
-A trigger with `required: false` (in YAML) is fire-and-forget. Its failure logs
-a `WARN` and the cursor still advances. Optional triggers do not cause
-redelivery.
+A trigger with `required: false` in YAML is still attempted. If it fails, aviso
+logs a warning and allows progress to continue. Its failure does not by itself
+cause redelivery.
 
-Use optional for "nice to have" sinks (a metrics endpoint, a backup webhook).
-Use required for the work you cannot lose.
-
-## The state file format, very briefly
-
-```json
-{
-  "version": 1,
-  "key_format_version": 1,
-  "checkpoints": {
-    "46fe3e30...": {
-      "last_committed_sequence": 72,
-      "last_event_id": "mars@72"
-    }
-  }
-}
-```
-
-- `version` and `key_format_version` are integer format versions.
-- `checkpoints` is a map. The hex key is a hash of the server URL, the event
-  type, and the filter. Two listeners with different filters get different
-  cursors.
-- `last_committed_sequence` is the cursor. `last_event_id` is a human-readable
-  form for the file's reader; aviso does not consult it on restart.
-
-The full reference (every field, edit safety, how to genuinely rewind) is at
-[State file](../reference/state-file.md).
+Use optional triggers for actions whose failure should not stop listening.
+Use required triggers when a failed action should stop that listener.
 
 ## Where the file lives
 
-By default:
+For the CLI, the default paths are:
 
 ```text
 ~/.config/aviso/state.json
 ~/.config/aviso/state.json.lock
 ```
 
-Both are created lazily on the first commit. If you have never run
-`aviso listen`, neither file exists.
+The lockfile coordinates access from cooperating processes. The JSON state
+file is written when progress is saved; merely starting a listener does not
+mean it has saved a position.
 
 Change the location:
 
@@ -93,11 +82,7 @@ Change the location:
 state_file: "/var/lib/aviso/state.json"
 ```
 
-or:
-
-```bash
-aviso listen --state-file /var/lib/aviso/state.json ...
-```
+The equivalent CLI option is `--state-file`, followed by the local file path.
 
 The CLI creates the parent directory for its configured state file. Library
 callers using `JsonFileStore::open` directly must create the parent directory
@@ -108,7 +93,9 @@ because the cross-process advisory lock does not work reliably on them.
 
 ## Running aviso without a state file
 
-For one-off exploration where you do not want to persist anything:
+For one-off exploration where you do not want to save progress, add
+`--no-state-store`. This example assumes the `mars` schema accepts `class: od`
+and requires no other filter fields; check with `aviso schema get mars` first:
 
 ```bash
 aviso listen --no-state-store --event mars --identifiers '{"class":"od"}'
@@ -128,25 +115,61 @@ has not processed.
 The trade-off: if you interrupt a replay, the next replay needs an explicit
 `--from`.
 
+This rule describes the CLI command. Python replay-only listening still uses
+the client's configured state store, if any; it is not automatically stateless.
+For an independent inspection, use a Python client without a state store. See
+[Python replay-only listening](../python/listen.md#replay-only) for the call.
+
+## The state file format, very briefly
+
+This shortened example shows the saved fields. A real key has 64 hexadecimal
+characters; `46fe3e30...` stands for the full key here.
+
+```json
+{
+  "version": 1,
+  "key_format_version": 1,
+  "checkpoints": {
+    "46fe3e30...": {
+      "last_committed_sequence": 72,
+      "last_event_id": "mars@72"
+    }
+  }
+}
+```
+
+- `version` and `key_format_version` are integer format versions.
+- `checkpoints` contains saved positions. Each key is calculated from the server
+  URL, event type and filter. Different filters can have separate
+  positions.
+- `last_committed_sequence` is the cursor. `last_event_id` is a human-readable
+  form for the file's reader; aviso does not consult it on restart.
+
+See the [state file reference](../reference/state-file.md) for every field and
+how to change saved state safely.
+
 ## Rewinding the cursor
 
-A "rewind" pushes the cursor back to an earlier point. Three approaches,
-depending on how committed you are:
+A rewind reads from an earlier position. A sequence start is exclusive:
+`--from 41` in the CLI or `start_from=41` in Python reads strictly after
+sequence 41, not including 41. You receive only matching notifications that the
+server still stores.
 
-1. **One-shot rewind**: run `aviso listen ... --from <earlier>` once and stop.
-   The state file's high-water mark is preserved (a guard in the file store
-   ignores updates that would move the cursor backwards). You will redeliver the
-   notifications between `<earlier>` and the previous cursor, but the file does
-   not regress.
-2. **Permanent rewind**: stop aviso, delete the state file, restart with
-   `--from <earlier>` once, then remove `--from` from the invocation. The new
-   cursor takes hold from the first commit.
-3. **Surgical, no downtime**: not supported. The store guards against backwards
-   movement on purpose.
+Choose whether you want a one-time read or a new saved position:
 
-A long-lived systemd unit that keeps `--from <date>` in its `ExecStart` will
-redeliver from that date on every restart, forever. `--from` is meant as a
-one-shot operator decision, not a permanent setting.
+1. For a one-time read, use CLI replay or a Python client without a state store.
+   You can also give a listener an earlier explicit start. It may repeat
+   notifications, but its saved position will not move backwards.
+2. To replace saved positions, stop aviso before removing its state file. Start
+   again with your chosen starting position. Once progress has been saved,
+   remove the explicit start so later runs use the saved position.
+3. Do not edit a running listener's state file to move its position backwards.
+
+Deleting a state file removes every saved position in that file, not just the
+listener you are investigating. Prefer replay for a one-time inspection.
+
+An explicit start takes precedence over saved state. If you leave it in a
+recurring command or script, every restart requests that same starting point.
 
 ## What next
 
@@ -154,3 +177,5 @@ one-shot operator decision, not a permanent setting.
   safety, recovery from a format mismatch.
 - [Streams](./streams.md): when the cursor matters (every reconnect).
 - [Filters](./filters.md): how the hash key is derived (filter content matters).
+
+</div>

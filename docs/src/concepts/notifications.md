@@ -1,49 +1,73 @@
 # Notifications
 
-A notification is one event that the server has published. aviso receives them
-on a stream, deserialises them, and passes them through triggers (or your code).
+<div class="reference-guide">
+
+A notification tells you that something happened, such as a dataset becoming
+available. A data provider publishes it to the server. You receive matching
+notifications with a listener, then use their details in your analysis or in
+[triggers](../triggers/overview.md), actions that aviso runs for you.
+
+The notification usually describes the data rather than containing the dataset
+itself. A file location in a notification does not download the file for you.
 
 ## The four fields you care about
 
 | Field | What it is |
 |---|---|
-| `event_type` | A string naming the kind of event. For example `mars`. |
-| `sequence` | A 64-bit integer that strictly increases per event type. Used to resume. |
-| `identifier` | A map of named fields that describe which event it is. |
-| `payload` | A JSON value the publisher attached. Often the location of a file. May be `null`. |
+| `event_type` | Kind of event, such as `mars`. |
+| `sequence` | Number used to resume listening. |
+| `identifier` | Named values describing the event. |
+| `payload` | Extra information from the provider. |
 
 ## Reading a notification
 
+This example uses the
+[small quickstart schema](../python/quickstart.md#what-is-on-your-server).
+It has a required `class` filter and an optional `step` filter. Data providers
+supply both identifiers when publishing. Here is the original server message
+printed by Python's `print(notification)`; the id and publication time vary:
+
 ```json
 {
-  "event_type": "mars",
-  "sequence": 42,
-  "identifier": {
-    "class": "od",
-    "stream": "oper",
-    "date": "20260601",
-    "time": "1200",
-    "domain": "g",
-    "expver": "0001",
-    "step": "0"
+  "data": {
+    "identifier": {
+      "class": "od",
+      "step": "12"
+    },
+    "payload": {
+      "location": "file:///data/forecast.grib"
+    }
   },
-  "payload": {
-    "location": "s3://bucket/key"
-  }
+  "datacontenttype": "application/json",
+  "dataschema": "https://aviso.example/schema/mars",
+  "id": "mars@1",
+  "source": "https://aviso.example",
+  "specversion": "1.0",
+  "time": "2026-09-15T15:15:15.799578652Z",
+  "type": "int.ecmwf.aviso.mars"
 }
 ```
 
-This is exactly what `aviso listen` writes to stdout (one such object per line
-in NDJSON when piped).
+This format is called a CloudEvent. The client exposes `event_type` as `mars`
+and `sequence` as `1`, taken from the message's `id`. The `data` object holds
+the identifiers and payload. The server represents scalar identifiers such as
+`step` as strings. `source` identifies the service, and `time` is publication
+time, not a forecast date.
+
+The CLI's default echo output uses the four client fields in the table above,
+not the original CloudEvent. When piped to another command, it writes one JSON
+object per line. See [Python listening](../python/listen.md) for a complete
+script and how to access individual fields.
 
 ## Identifiers
 
-The identifier map is the address of the event. Two notifications of the same
-type but with different identifier values are different events.
+Identifiers describe what a notification concerns. Different values distinguish
+different data, but the same values can appear in more than one notification.
 
-Which fields belong in the map depends on the event type's schema. For `mars`,
-you will see things like `class`, `stream`, `date`, `step`, `expver`. For
-another event type the keys will be different.
+Which fields belong in the map depends on the event type's schema. The small
+`mars` example has `class` and `step`. Your service may define more forecast
+fields, or use a different event type. Check the schema before choosing a
+filter.
 
 The server determines which identifiers are valid; aviso just passes them along.
 Values may have any JSON shape. For spatial identifiers a point is `[lat, lon]`,
@@ -62,10 +86,10 @@ server returns only notifications whose identifier matches *every* field you
 set:
 
 ```bash
-aviso listen --event mars --identifiers '{"class":"od","stream":"oper"}'
+aviso listen --event mars --identifiers '{"class":"od","step":12}'
 ```
 
-You get notifications with `class=od` *and* `stream=oper`. Identifiers you do
+You get notifications with `class=od` and `step=12`. Identifiers you do
 not mention act as wildcards (subject to the schema's `required: true` fields,
 which the server still demands).
 
@@ -74,20 +98,17 @@ The full filter rules, including spatial filters, are at
 
 ## Sequence numbers and ordering
 
-Every notification has a sequence number. The server guarantees:
+The server assigns increasing sequence numbers within each event type. They
+are 64-bit whole numbers. A filtered listener can skip numbers because other
+notifications do not match its filter.
 
-- Sequences are strictly increasing per event type.
-- The server delivers them to one listener in order.
+Do not assume every delivery arrives in increasing order. Repeated or older
+notifications can still reach your code and triggers. Saved resume positions
+only move forwards. See [Resume and state](./resume-and-state.md) for the limits
+of recovery after a crash.
 
-aviso uses the sequence to resume after a restart and to detect history gaps.
-The number is a u64; it does not overflow in any realistic timeframe.
-
-The sequence is also part of the notification id you can use with
-`aviso admin delete`:
-
-```bash
-aviso admin delete 'mars@42' --yes
-```
+The sequence is also part of the notification id, such as `mars@42`. Server
+operators use that id for [administration](../cli/operations.md).
 
 ## Payloads
 
@@ -112,4 +133,6 @@ triggers:
 - [Streams](./streams.md): how aviso talks to the server.
 - [Filters](./filters.md): the matching rules.
 - [Triggers overview](../triggers/overview.md): what aviso does with each
-  notification.
+   notification.
+
+</div>
