@@ -115,26 +115,36 @@ that a user has received it or downloaded the file.
 
 ## Publishing many notifications at once
 
-`notify_many` sends a batch concurrently. In `publish.py`, replace the
-`response = client.notify(...)` call and its print with this block, keeping the
-imports and client initialization:
+To announce several datasets, put their notifications in a list and pass it to
+`notify_many`. Here we announce forecasts for steps 24 and 48. In `publish.py`,
+replace the `response = client.notify(...)` call and its print with this block,
+keeping the imports and client initialization:
 
 ```python
 notifications = [
     {
         "event_type": "mars",
-        "identifier": {"class": "od", "step": step},
-        "payload": {"location": f"file:///data/forecast-{step}.grib"},
-    }
-    for step in [24, 36, 48]
+        "identifier": {"class": "od", "step": 24},
+        "payload": {"location": "file:///data/forecast-24.grib"},
+    },
+    {
+        "event_type": "mars",
+        "identifier": {"class": "od", "step": 48},
+        "payload": {"location": "file:///data/forecast-48.grib"},
+    },
 ]
-results = client.notify_many(notifications, concurrency=4)
+
+results = client.notify_many(notifications)
+
 for result in results:
     if result.response is not None:
-        print(f"[{result.index}] ok request_id={result.response.request_id}")
+        print("Notification accepted")
     else:
-        print(f"[{result.index}] failed: {result.error}")
+        print("Notification failed:", result.error)
 ```
+
+Each notification has its own result. Check for failures even if others
+succeeded. Results are returned in the same order as the input list.
 
 Each input is a dict using the same keys as `notify`. The schema still decides
 which fields must be supplied. Results are in input order; `index` starts at
@@ -146,8 +156,8 @@ The batch is not atomic: valid notifications can be stored even if another
 fails. Check the outcome before retrying. Malformed batch input, such as an
 item missing `event_type`, raises `ValueError` before sending any requests.
 A non-dict item raises `TypeError`.
-`concurrency` limits requests in flight; omitting it or passing `0` uses the
-client's default.
+The optional `concurrency` argument limits how many notifications are sent at
+the same time. Omitting it or passing `0` uses the client's default.
 
 The batch uses different `step` values from the single notification. On a
 backend that keeps only the latest notification per subject, publishing the
