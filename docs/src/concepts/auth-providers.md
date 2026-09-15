@@ -42,9 +42,9 @@ selected authentication provider to refresh them, then retries once. A second
 401 in the same attempt cycle stops the request with an authentication error.
 
 - `Bearer` and `Basic` hold fixed credentials. Refresh does not change them.
-- `Env` re-reads the current process's environment. Changing a variable in
-  another terminal does not change the environment of an already running
-  listener.
+- `Env` reads the process's environment once, when the provider is created.
+  Refresh does not change those credentials. Create a new provider and client
+  after updating the environment, or restart the listener with the new values.
 - `ConfigFile` re-reads its credentials file, so a replaced credential can be
   picked up on refresh.
 - `Chain` refreshes the member that supplied the rejected header.
