@@ -79,7 +79,10 @@ the example above), not inside `"text": "..."`.
 
 ## Retry classifier
 
-| Outcome | `fail_fast: true` (default) | `fail_fast: false` |
+The `fail_fast` setting controls which failures can be retried. It is enabled
+by default (`true`); set it to `false` to disable it.
+
+| Outcome | Fail-fast enabled (default) | Fail-fast disabled |
 |---|---|---|
 | 2xx response | success | success |
 | 4xx response | **terminal** (no retry) | retryable |
