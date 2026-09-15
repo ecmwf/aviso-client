@@ -47,7 +47,8 @@ selected authentication provider to refresh them, then retries once. A second
   after updating the environment, or restart the listener with the new values.
 - `ConfigFile` re-reads its credentials file, so a replaced credential can be
   picked up on refresh.
-- `Chain` refreshes the member that supplied the rejected header.
+- `Chain` checks its members again in order and refreshes the first one that
+  can currently supply a header.
 
 The CLI turns credentials from its main config file into a fixed `Bearer` or
 `Basic` provider. Editing that file does not give it `ConfigFile` refresh
@@ -103,7 +104,10 @@ These are credentials-file examples, not main CLI configuration files.
 Library callers can use `Chain` to try several credential sources in order.
 The first member that successfully supplies a request header wins. This is a
 fallback between sources, not an attempt to log in with every credential until
-the server accepts one. A 401 refreshes the selected member.
+the server accepts one. On a 401, the chain checks its members again and
+refreshes the first one that can currently supply a header. If a custom
+provider's availability has changed, this can be a different member from the
+one that supplied the rejected header.
 
 The CLI already checks flags, environment and configuration in order, so you do
 not need to construct a chain for ordinary command-line use. See the
