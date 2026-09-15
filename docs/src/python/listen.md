@@ -22,6 +22,7 @@ and fields.
 Save this as `listen.py`:
 
 ```python
+import json
 import os
 
 import pyaviso
@@ -33,14 +34,13 @@ client = pyaviso.AvisoClient(
 try:
     with client.listen("mars", filter={"class": "od"}) as notifications:
         for notification in notifications:
-            print(
-                f"seq={notification.sequence} "
-                f"labels={notification.identifier} "
-                f"payload={notification.payload}"
-            )
+            print(json.dumps(notification.as_dict(), indent=2))
 except KeyboardInterrupt:
     print("Stopped listening")
 ```
+
+`as_dict()` makes a dictionary of the notification, and `json.dumps(..., indent=2)`
+formats it as JSON with indentation for readability.
 
 Run `python listen.py` in the terminal where you set the environment. It waits
 for **new** `mars` notifications with `class=od`, at any step. Silence is normal
@@ -48,10 +48,39 @@ when nothing matches. For a local trial, start this listener first, then run
 the [publish script](./publish.md#a-complete-publish-script) in another terminal
 with the same environment. Press Ctrl+C to stop.
 
-That publish produces a line like this (your sequence will differ):
+That publish produces a notification like this (your sequence, timestamp and
+server URLs will differ):
 
-```text
-seq=1 labels={'class': 'od', 'step': '12'} payload={'location': 'file:///data/forecast.grib'}
+```json
+{
+  "event_type": "mars",
+  "sequence": 1,
+  "identifier": {
+    "class": "od",
+    "step": "12"
+  },
+  "payload": {
+    "location": "file:///data/forecast.grib"
+  },
+  "cloudevent": {
+    "data": {
+      "identifier": {
+        "class": "od",
+        "step": "12"
+      },
+      "payload": {
+        "location": "file:///data/forecast.grib"
+      }
+    },
+    "datacontenttype": "application/json",
+    "dataschema": "http://127.0.0.1:47893/schema/mars",
+    "id": "mars@1",
+    "source": "http://127.0.0.1:47893",
+    "specversion": "1.0",
+    "time": "2026-09-15T15:06:57.011498496Z",
+    "type": "int.ecmwf.aviso.mars"
+  }
+}
 ```
 
 `identifier` holds the notification's labels. The server normalizes scalar
@@ -60,6 +89,9 @@ labels, so the published integer `step=12` arrives as the string `"12"`.
 receiving it does not download the file. It is `None` when absent. `sequence`
 is a position used for replay, not a promise of strictly increasing delivery
 order or a count of your matches.
+
+`cloudevent` contains the original server message, including its timestamp.
+For most scripts, start with `identifier` and `payload` above it.
 
 This script does not save a cursor to disk. Starting it again starts fresh at
 the live edge, rather than reading notifications published while it was off.
