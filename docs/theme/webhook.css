@@ -1,0 +1,21 @@
+.webhook-guide {
+    overflow-wrap: anywhere;
+}
+
+.webhook-guide pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.webhook-guide table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.webhook-guide th,
+.webhook-guide td {
+    padding: 0.4em 0.5em;
+    white-space: normal;
+    vertical-align: top;
+}
