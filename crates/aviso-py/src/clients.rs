@@ -257,19 +257,19 @@ impl PyAvisoClient {
         result.map_err(|e| map_client_error(py, e))
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, triggers = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, mode = None, triggers = None, request = None))]
     #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
         py: Python<'_>,
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
-        from_: Option<&Bound<'_, PyAny>>,
+        start_from: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyNotificationIterator> {
-        let req = build_watch_request(event_type, filter, from_, mode, triggers, request)?;
+        let req = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
         let client = self.inner.clone();
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
@@ -471,19 +471,19 @@ impl PyAsyncAvisoClient {
         })
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, from_ = None, mode = None, triggers = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, mode = None, triggers = None, request = None))]
     #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
         py: Python<'_>,
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
-        from_: Option<&Bound<'_, PyAny>>,
+        start_from: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<PyAsyncNotificationIterator> {
-        let req = build_watch_request(event_type, filter, from_, mode, triggers, request)?;
+        let req = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
         let client = self.inner.clone();
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
@@ -501,15 +501,15 @@ impl PyAsyncAvisoClient {
 fn build_watch_request(
     event_type: Option<String>,
     filter: Option<&Bound<'_, PyDict>>,
-    from_: Option<&Bound<'_, PyAny>>,
+    start_from: Option<&Bound<'_, PyAny>>,
     mode: Option<&str>,
     triggers: Option<&Bound<'_, PyAny>>,
     request: Option<PyRef<'_, PyWatchRequest>>,
 ) -> PyResult<aviso::watch::WatchRequest> {
     if let Some(req) = request {
-        if event_type.is_some() || filter.is_some() || from_.is_some() {
+        if event_type.is_some() || filter.is_some() || start_from.is_some() {
             return Err(crate::error::AvisoError::new_err(
-                "request is mutually exclusive with event_type, filter, and from_",
+                "request is mutually exclusive with event_type, filter, and start_from",
             ));
         }
         if mode.is_some() {
@@ -530,7 +530,7 @@ fn build_watch_request(
         )
     })?;
     let effective_mode = mode.unwrap_or("watch");
-    let mut req = match (effective_mode, from_) {
+    let mut req = match (effective_mode, start_from) {
         ("watch", None) => aviso::watch::WatchRequest::watch(event),
         ("watch", Some(from_obj)) => {
             let resume = parse_resume_start(from_obj)?;
@@ -542,7 +542,7 @@ fn build_watch_request(
         }
         ("replay_only", None) => {
             return Err(crate::error::AvisoError::new_err(
-                "replay_only mode requires from_=<int sequence or date string>",
+                "replay_only mode requires start_from=<int sequence or date string>",
             ));
         }
         _ => {
