@@ -1,11 +1,15 @@
 # Publish and listen
 
-The two commands you will use most: `aviso notify` to send notifications,
-`aviso listen` to receive them.
+Notification providers use `aviso notify` to announce data or events. Users
+use `aviso listen` to receive matching notifications. If you only need to
+receive notifications, go straight to [Listen](#listen); you do not need to
+publish anything first.
 
 ## Publish {#publish}
 
-`aviso notify` sends one notification to the server.
+This section is for providers with permission to publish to the event type.
+`aviso notify` sends one notification to the server; it does not upload the
+data the notification describes.
 
 ```bash
 aviso notify 'event=mars,class=od,stream=oper,date=20260601,domain=g,expver=0001,step=0,time=1200,data={"location":"s3://bucket/path"}'
