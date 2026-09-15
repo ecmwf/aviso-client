@@ -1,131 +1,158 @@
 # Troubleshooting
 
-Common failure modes and how to fix them.
+Choose the symptom that matches what you see. Open a panel for checks and links
+to the relevant guide. Keep the exception message and any request ID when
+asking your server operator for help; do not include credentials.
 
-## `import pyaviso` fails with `ModuleNotFoundError: No module named 'pyaviso._native'`
+<div class="troubleshooting">
 
-The compiled extension was not built. From a checkout:
+<details>
+<summary id="import-pyaviso-fails-with-modulenotfounderror-no-module-named-pyaviso_native">Import fails: no module named pyaviso._native</summary>
 
-```bash
-uv sync --locked --group dev
-uv run maturin develop --release --locked
-```
+The compiled extension is missing from the Python environment running your
+script. Check that your terminal, editor or notebook uses the environment where
+you installed pyaviso. See [Install](./install.md).
 
-The `--group dev` flag is what makes `maturin` available in the environment;
-without it `uv run maturin` will not find the executable. `--locked` on both
-commands matches the CI workflow and avoids unexpected `Cargo.lock`
-modifications during local builds.
+For a source checkout, run the build commands under
+[From source](./install.md#from-source). The dev group supplies `maturin`, which
+builds the extension. If the build fails, check the Rust and C compiler
+requirements there. Reinstalling into a different environment will not fix the
+one your notebook uses.
 
-If the build itself fails, check that you have Rust installed
-(`rustc --version`) and a C compiler on the path.
+</details>
 
-## `pyaviso.ConfigError: invalid base_url`
+<details>
+<summary id="pyavisoconfigerror-invalid-base_url">ConfigError: invalid base_url</summary>
 
-Pass a full URL including the scheme:
+Pass the complete URL supplied by your operator, including `https://` or
+`http://` and any required port. A hostname alone, such as `localhost`, is not
+a complete URL. The Python constructor requires `base_url`; the examples read
+it from `os.environ["AVISO_BASE_URL"]`. A `KeyError` for that name means the
+environment variable is missing before the client is even constructed.
 
-<!-- not-runnable -->
-```python
-pyaviso.AvisoClient(base_url="https://aviso.example.org")
-```
+See [Set the environment](./quickstart.md#set-the-environment).
 
-`localhost`, `aviso.example.org`, and `//aviso.example.org` are all rejected
-because the underlying URL parser cannot read them as absolute.
+</details>
 
-## `pyaviso.HttpError: 401`
+<details>
+<summary id="pyavisohttperror-401">Credentials fail: AuthError, HTTP 401 or 403</summary>
 
-The configured auth source did not produce credentials the server accepts. Check
-that:
+`Env()` requires credentials. Set `AVISO_TOKEN`, or unset it and set both
+`AVISO_USERNAME` and `AVISO_PASSWORD`. A non-empty token takes precedence. For
+an anonymous server, omit `auth=pyaviso.Env()` from the client initialization;
+there is no automatic anonymous fallback.
 
-- `Bearer` was constructed with a token the server's auth backend recognises.
-- `Basic` was constructed with the right username and password.
-- `Env()` is reading the env vars you expect (`AVISO_TOKEN`, `AVISO_USERNAME`,
-  `AVISO_PASSWORD`).
-- `ConfigFile(...)` points at a file with exactly one of `bearer:` or `basic:`
-  at the top level.
+A 401 means the server did not accept the request's credentials. A 403 can mean
+the credentials lack permission for the operation or event type. Ask your
+operator to check receiving or publishing access as appropriate. Listing schemas
+does not prove those permissions.
 
-## `pyaviso.TransportError`
+`ConfigFile` expects an auth-only file with one top-level `bearer` or `basic`
+section, not a general CLI config. `Env` caches credentials at construction;
+`ConfigFile` rereads its file on a requested refresh after 401. See
+[Authentication](./auth.md) for the exact shapes and retry behavior.
 
-Network failure before the response begins. The error message names the cause
-(DNS, TCP, TLS). For self-signed certificates in dev, use
-`pyaviso.AvisoClient(base_url="...", danger_accept_invalid_certs=True)` and
-accept the loud warning that comes with it.
+</details>
 
-## `pyaviso.HistoryGapError`
+<details>
+<summary id="pyavisotransporterror">TransportError: connection or TLS failure</summary>
 
-A gap was detected in the watch stream. Two reasons:
+Check the URL, network access and server availability. The exception message
+can identify a DNS, TCP or certificate problem. For TLS, check the hostname and
+trusted certificate chain with your operator. Disabling certificate validation
+is not a fix for a production certificate problem.
 
-- `reason == "replay_limit_reached"`: the server's
-  `notification_replay_limit_reached` payload says some of the requested
-  backfill is older than its retention. `.max_allowed` tells you how many
-  notifications can be replayed at most.
-- `reason == "sequence_jump"`: the wire delivered a non-consecutive sequence.
-  `.expected` and `.observed` name the boundary.
+A transport error can also occur while receiving a response. It does not prove
+the server stored nothing. Check before retrying a publish to avoid duplicates.
+See [Error handling](./error-handling.md).
 
-A gap is terminal: continuing past it would silently violate at-least-once. The
-client raises and exits the iterator. Decide what the right recovery is (for
-example, restart from the live edge with `from_=None`).
+</details>
 
-## `pyaviso.TriggerError: command failed`
+<details>
+<summary id="no-notifications">The listener is running, but nothing arrives</summary>
 
-A required command trigger exited non-zero or timed out. The exception carries:
+A fresh listener waits for new notifications. Silence can be normal. Confirm
+the event type and filter against the
+[server's schema](./quickstart.md#what-is-on-your-server). In the example `mars`
+schema, `class=od` excludes `rd`; omitting `step` selects all steps.
 
-- `.exit_code`: the child's exit code (`-1` for signal-terminated).
-- `.stderr_tail`: the last 4 KiB of the child's stderr.
+Use [replay-only mode](./listen.md#replay-only) to read retained history once
+and exit. `start_from=0` requests retained history after sequence zero.
+It cannot restore expired records. You do not need to publish anything yourself.
 
-If the failure is transient, raise the trigger's `retries=` count or set
-`required=False` so the watch continues past a failed dispatch.
+</details>
 
-## `Ctrl+C` does not stop a listening loop
+<details>
+<summary id="pyavisohistorygaperror">HistoryGapError: replay stopped early</summary>
 
-The sync iterator polls the channel every 100 ms and checks for pending signals
-between polls. If it takes longer than that to respond, you may have a Python
-operation in the loop body that does not yield. Move heavy work into a
-background thread or use the async client.
+Inspect `reason`. `replay_limit_reached` means the server capped the requested
+replay; `max_allowed` reports the cap. It does not by itself mean all missing
+records expired. `sequence_jump` reports an unexpected protocol sequence
+boundary through `expected` and `observed`.
 
-## `pyaviso.StateStoreError` on first run
+The iterator stops rather than silently treating that replay as complete. Check
+retention and replay limits with your operator before choosing a new start.
+`start_from=None` still uses a saved cursor if available. Starting live can skip
+historical work. See
+[State and resume](./state-and-resume.md#choose-a-starting-position).
 
-`JsonFileStore` does not create parent directories. Create them first:
+</details>
 
-```python
-"""Construct the state file's parent directory before passing it to the client."""
+<details>
+<summary id="pyavisotriggererror-command-failed">TriggerError: a required action failed</summary>
 
-import os
-import pathlib
-import pyaviso
+Check `trigger_kind`, `error_kind` and the exception message. For a failed
+command, `exit_code` and `stderr_tail` help identify the cause. A timeout has
+`error_kind="timeout"` and `timeout_seconds`; inspect fields appropriate to that
+kind rather than assuming every command error has an exit code.
 
-path = pathlib.Path("~/.config/aviso/state.json").expanduser()
-path.parent.mkdir(parents=True, exist_ok=True)
+Fix the command, path or receiving service. Retries can help a transient
+failure, but fail-fast may stop immediately. Set `required=False` only if
+continuing without that action is acceptable; it can leave work undone. See
+[trigger settings](./triggers.md#tunables).
 
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"],
-    auth=pyaviso.Env(),
-    state_store=pyaviso.JsonFileStore(path),
-)
+</details>
 
-print(f"using state file: {path}")
-```
+<details>
+<summary id="ctrlc-does-not-stop-a-listening-loop">Ctrl+C or closing a listener takes time</summary>
 
-## Mixing sync and async clients
+Use `with client.listen(...)` so context exit calls `close()`. This cancels and
+waits for the background listener. The sync iterator checks Python signals
+while waiting for notifications, but that is not a 100 ms shutdown guarantee.
+Your loop's work and cleanup can take longer.
 
-Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The
-sync surface drives the underlying tokio runtime with `block_on`, which blocks
-the asyncio thread until the call returns. Other coroutines stop making progress
-until then. Use `AsyncAvisoClient` from inside async code, or push the sync
-client onto a thread:
+For async code, use `async with` on the iterator; exit awaits `aclose()`. Catch
+`KeyboardInterrupt` outside `asyncio.run()` and let cancellation propagate
+inside tasks. See the [async listener](./async.md#a-complete-async-listener).
 
-<!-- not-runnable -->
-```python
-import asyncio
-result = await asyncio.to_thread(
-    client.notify,
-    event_type="test_polygon",
-    identifier={
-        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
-        "date": "20260601", "time": "1200",
-    },
-    payload={"location": "s3://example/data.grib"},
-)
-```
+</details>
 
-See [the Async page](./async.md) for the situations where the async client
-actually helps.
+<details>
+<summary id="pyavisostatestoreerror-on-first-run">StateStoreError or unexpected resume behavior</summary>
+
+Create the state file's parent directory before constructing `JsonFileStore`.
+Choose local storage where your account can create the lockfile and replace the
+state file. Check file contents and permissions if an existing store fails;
+preserve the file while investigating rather than deleting your resume data.
+See the
+[complete resuming listener](./state-and-resume.md#a-complete-resuming-listener).
+
+A changed URL, event type or filter can select a different resume key. A server
+schema change alone does not change the key. With no saved cursor, the listener
+starts live. The default exit policy can leave the final
+notification uncommitted, so repeats are possible. Enabling exit flushing can
+skip unfinished buffered work on restart; it is not a work acknowledgement.
+See [Flush on exit](./state-and-resume.md#flush-on-exit).
+
+</details>
+
+<details>
+<summary id="mixing-sync-and-async-clients">Other async tasks stop while Aviso is waiting</summary>
+
+Synchronous methods block the event-loop thread. Use `AsyncAvisoClient` in async
+code and await its HTTP methods. `listen()` returns an async iterator directly;
+use `async for`, not `await client.listen(...)`. See [Async](./async.md).
+
+</details>
+
+</div>

@@ -1,17 +1,33 @@
 # Triggers
 
+<div class="trigger-guide">
+
 A trigger is a per-notification side-effect attached to a listener. When a
 notification matches the listener's filter, every configured trigger runs in
 declaration order. The core has six built-in trigger kinds:
 
 | Kind | What it does | Use when |
 |---|---|---|
-| [echo](./echo.md) | Writes the notification to stdout (pretty JSON on TTY, NDJSON in pipe) | Interactive inspection; piping into `jq` / file ingestion |
-| [log](./log.md) | Appends NDJSON to a file | Local persistence; audit trails; later batch processing |
-| [command](./command.md) | Runs `/bin/sh -c <rendered>` with `AVISO_*` env vars set (Unix only) | Custom scripts; CLI integration; anything you can put in a shell |
-| [webhook](./webhook.md) | Generic HTTP request with custom URL / headers / method / body | Any REST endpoint; full control over the request shape |
-| [teams](./teams.md) | HTTP POST that auto-builds a Microsoft Teams Adaptive Card | Teams channels via Workflows / Power Automate |
-| [post](./post.md) | HTTP POST that forwards the server's CloudEvent verbatim | pyaviso migration; generic CloudEvent receivers |
+| [echo](./echo.md) | Prints JSON | Inspect or pipe |
+| [log](./log.md) | Appends NDJSON | Save to a file |
+| [command](./command.md) | Runs a shell | Custom scripts |
+| [webhook](./webhook.md) | Sends HTTP | REST endpoints |
+| [teams](./teams.md) | Posts a card | Teams channels |
+| [post](./post.md) | Posts a CloudEvent | Forward events |
+
+- **Echo** writes pretty JSON on a terminal and NDJSON in a pipe, for tools
+  such as `jq` or file ingestion.
+- **Log** keeps a local file for audit trails or later batch processing.
+- **Command** runs `/bin/sh -c <rendered>` with `AVISO_*` environment variables
+  set. Use it for shell scripts or CLI integration. Unix only.
+- **Webhook** lets you choose the URL, headers, method, and body of the HTTP
+  request.
+- **Teams** builds a Microsoft Teams Adaptive Card and sends it by HTTP POST
+  through Workflows or Power Automate.
+- **Post** forwards the server's CloudEvent by HTTP POST. Use it for pyaviso
+  migration or generic CloudEvent receivers. See
+  [Body shape](./post.md#body-shape) for how values and JSON formatting are
+  preserved.
 
 All six triggers share the same dispatch contract: retry budget,
 required-vs-optional, timeout, and fail-fast policy. The
@@ -47,12 +63,12 @@ sequentially: echo prints to stdout, then webhook POSTs the notification.
 YAML loader rejects them on `echo` and `log` (those triggers do not have a
 meaningful timeout or fail-fast concept).
 
-| Field | Type | Default | Accepted by |
-|---|---|---|---|
-| `retries` | integer | `0` | All kinds |
-| `required` | boolean | `true` | All kinds |
-| `timeout` | duration | `30s` for webhook/teams/post; absent for command | command, webhook, teams, post |
-| `fail_fast` | boolean | `true` | command, webhook, teams, post |
+| Field | Type | Default |
+|---|---|---|
+| `retries` | integer | `0` |
+| `required` | boolean | `true` |
+| `timeout` | duration | See below |
+| `fail_fast` | boolean | `true` |
 
 Field meanings:
 
@@ -63,7 +79,8 @@ Field meanings:
   `ClientError::TriggerFailed`. When `false`, the failure is logged at `WARN`
   and the listener continues.
 - `timeout`: per-trigger wall clock. Parsed as a humantime string (`30s`, `2m`,
-  `1h30m`, `500ms`).
+  `1h30m`, `500ms`). Defaults to `30s` for webhook, teams, and post. Absent by
+  default for command.
 - `fail_fast`: when `true`, deterministic failures bypass the retry budget. When
   `false`, every failure is retryable up to the `retries` budget.
 
@@ -118,3 +135,5 @@ for a notification succeed**. This means:
 | Send an email per notification | `command` or `webhook`, see [Sending email](./email.md) |
 | Forward the unmodified CloudEvent that aviso-server emitted | `post` |
 | Forward to multiple of the above | Combine - listeners accept multiple triggers |
+
+</div>

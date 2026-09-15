@@ -1,183 +1,173 @@
 # Async
 
-The Python package includes two clients: `pyaviso.AvisoClient` (sync) and
-`pyaviso.AsyncAvisoClient` (async). The two share the same constructor, the same
-auth and state-store configuration, the same exception hierarchy, and return the
-same value types. The choice between them is about call style, not capability.
-
-This page is about when the async client is worth using, and what the patterns
-look like when it is.
-
-The runnable examples on this page use `test_polygon` as the event type. If your
-server does not have it configured, replace the event type and identifier fields
-with one of your own; the call shape is the same. See
-[What is on your server](./quickstart.md#what-is-on-your-server) in the
-quickstart for how to discover what is configured.
+Use `AvisoClient` for an ordinary script or notebook. This page is for
+applications already using `asyncio`, Python's way of letting tasks share a
+thread while they wait for input or network responses.
 
 ## Use `AvisoClient` by default
 
-For most aviso users, `AvisoClient` is what you want. Scripts, batch jobs,
-one-shot CLI tools, cron entries, notebooks: all of these benefit from
-straight-line code with no event loop ceremony. If your first `asyncio.run`
-would exist only because of aviso, stop. Use the sync client.
+You do not need async to receive notifications. The
+[regular listener](./listen.md#a-complete-listener) is the simplest starting
+point. Use `AsyncAvisoClient` when your application already has an event loop,
+or you need several listeners to wait concurrently in one thread.
+
+## A complete async listener
+
+Use the [quickstart environment](./quickstart.md#set-the-environment): install
+pyaviso, set `AVISO_BASE_URL` and provide credentials for `pyaviso.Env()`.
+For an anonymous server, omit `auth=pyaviso.Env()` from the initialization.
+
+The examples use the
+[small `mars` schema](./quickstart.md#what-is-on-your-server).
+`class` is a required `od`/`rd` filter; `step` is an optional whole-number
+filter. Providers supply both fields and may omit the payload. You only need
+receiving permission for the listener.
+
+Save this as `listen_async.py` and run `python listen_async.py`:
+
+```python
+import asyncio
+import os
+
+import pyaviso
+
+
+async def main() -> None:
+    client = pyaviso.AsyncAvisoClient(
+        base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+    )
+    async with client.listen("mars", filter={"class": "od"}) as notifications:
+        async for notification in notifications:
+            print(notification)
+
+
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("Stopped listening")
+```
+
+It prints each matching new notification as indented CloudEvent JSON. Silence
+means no matching notification has arrived. For a local trial, leave it running
+and run the [provider script](./publish.md#a-complete-publish-script) in another
+terminal. Press Ctrl+C to stop.
+
+`listen()` returns an async iterator directly; do not await the `listen()` call.
+`async for` waits for each notification. `async with` awaits the iterator's
+`aclose()` when the block exits, including on an exception or a `break`.
+
+On Python 3.11 and newer, the default `asyncio.run()` signal handler makes the
+first Ctrl+C cancel the main task so its context managers can clean up. On
+Python 3.10, `asyncio.run()` cancels remaining tasks during its final cleanup.
+The script works on both: `KeyboardInterrupt` is caught outside `asyncio.run()`.
+Do not swallow `asyncio.CancelledError` inside your tasks. Cleanup duration
+depends on work in progress; it is not a fixed deadline.
+
+<a id="1-you-are-already-inside-an-event-loop"></a>
+
+In a notebook or framework that already runs an event loop, await `main()` from
+that environment instead of nesting `asyncio.run()`.
 
 ## When async helps
 
-Three situations make the async client worth the extra ceremony.
+<a id="2-you-want-to-drain-several-streams-concurrently"></a>
 
-### 1. You are already inside an event loop
+To replay operational and research notifications concurrently, replace `main`
+in `listen_async.py` with this definition. This example uses Python 3.11 or
+newer for `TaskGroup`:
 
-A FastAPI, Starlette, or aiohttp endpoint cannot block the calling thread with
-sync HTTP. Use `AsyncAvisoClient` and `await` directly.
-
-<!-- not-runnable -->
 ```python
-from fastapi import FastAPI
-import pyaviso
-
-app = FastAPI()
-client = pyaviso.AsyncAvisoClient(
-    base_url="https://aviso.example.org",
-    auth=pyaviso.Env(),
-)
-
-@app.post("/publish")
-async def publish(identifier: dict, payload: dict) -> dict:
-    response = await client.notify(
-        event_type="mars",
-        identifier=identifier,
-        payload=payload,
+async def main() -> None:
+    client = pyaviso.AsyncAvisoClient(
+        base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
     )
-    return {"request_id": response.request_id}
+
+    async def replay(data_class: str) -> None:
+        async with client.listen(
+            "mars",
+            filter={"class": data_class},
+            start_from=0,
+            mode="replay_only",
+        ) as notifications:
+            async for notification in notifications:
+                print(notification)
+
+    async with asyncio.TaskGroup() as tasks:
+        tasks.create_task(replay("od"))
+        tasks.create_task(replay("rd"))
 ```
 
-The same applies to a Jupyter notebook with an active event loop (the IPython
-kernel) or to any framework that runs your code as a coroutine.
+It prints matching retained notifications and ends after both replays finish.
+Empty history prints nothing. Output from the two listeners can interleave.
+The task group waits for its tasks; if one fails, it cancels and waits for the
+others and raises an exception group. Each listener still closes its iterator.
+See [replay limits](./listen.md#replay-only).
 
-### 2. You want to drain several streams concurrently
+<a id="3-you-want-to-fan-out-publishes"></a>
 
-Sync iteration blocks the calling thread. If you need to listen on three streams
-from one process, sync forces you into threads. Async lets you express it
-directly.
+## Concurrent publishing (providers)
+
+Providers with publishing permission can use `await client.notify_many(...)`
+for a batch. Save this as `publish_async.py` and run
+`python publish_async.py` with the same environment:
 
 ```python
-"""Listen on two test_polygon shapes at once and tag each notification.
-
-Run alongside a publisher and you will see notifications from both shapes
-interleaved on stdout, tagged by the polygon they matched.
-"""
-
 import asyncio
 import os
-import pyaviso
 
-BASE_URL = os.environ["AVISO_BASE_URL"]
+import pyaviso
 
 
 async def main() -> None:
-    client = pyaviso.AsyncAvisoClient(base_url=BASE_URL, auth=pyaviso.Env())
-
-    async def drain(tag: str, polygon: list[list[float]]) -> None:
-        count = 0
-        async for n in client.listen("test_polygon", filter={"polygon": polygon}):
-            print(f"[{tag}] seq={n.sequence} time={n.identifier.get('time')}")
-            count += 1
-            if count >= 2:
-                return
-
-    await asyncio.gather(
-        drain("square-a", [[0, 0], [1, 0], [1, 1], [0, 0]]),
-        drain("square-b", [[2, 2], [3, 2], [3, 3], [2, 2]]),
+    client = pyaviso.AsyncAvisoClient(
+        base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
     )
+    notifications = [
+        {"event_type": "mars", "identifier": {"class": "od", "step": 24}},
+        {"event_type": "mars", "identifier": {"class": "rd", "step": 48}},
+    ]
+    results = await client.notify_many(notifications, concurrency=2)
+    for result in results:
+        if result.response is not None:
+            print("Notification accepted")
+        else:
+            print("Notification failed:", result.error)
 
 
 asyncio.run(main())
 ```
 
-You could do this with two threads, but the async version is shorter, has no
-shared-state hazards, and uses a single HTTP connection pool.
-
-### 3. You want to fan out publishes
-
-The shared HTTP client pool reuses connections across calls. `asyncio.gather`
-lets you push many publishes in flight at once.
-
-```python
-"""Publish a batch of test_polygon notifications concurrently."""
-
-import asyncio
-import os
-import pyaviso
-
-BASE_URL = os.environ["AVISO_BASE_URL"]
-
-
-async def main() -> None:
-    client = pyaviso.AsyncAvisoClient(base_url=BASE_URL, auth=pyaviso.Env())
-
-    responses = await asyncio.gather(*[
-        client.notify(
-            event_type="test_polygon",
-            identifier={
-                "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
-                "date": "20260601",
-                "time": f"12{i:02d}",
-            },
-            payload={"location": f"s3://example/data/{i}.grib", "n": i},
-        )
-        for i in range(5)
-    ])
-
-    for response in responses:
-        print(response.request_id)
-
-
-asyncio.run(main())
-```
-
-The five publishes complete in roughly the time of one round-trip plus the
-slowest of them. The serial sync equivalent would take five round-trips.
+For valid input and permitted access, it prints `Notification accepted` twice.
+Both identifiers are supplied; this schema's payload is optional. The batch is
+not atomic: some requests can succeed while others fail. Results stay in input
+order. See
+[batch publishing](./publish.md#publishing-many-notifications-at-once)
+before retrying failures.
 
 ## What stays the same
 
-The async client is the same shape as the sync one. The methods, parameters,
-return types, exceptions, auth providers, and state stores are identical. Only
-the calling style changes.
+The clients use the same constructor options, filters, value types and auth
+providers. State-store behavior and its
+[unfinished-work limits](./state-and-resume.md) also apply to async listeners.
 
-| Sync | Async |
-|---|---|
-| `client.notify(...)` | `await client.notify(...)` |
-| `for n in client.listen(...): ...` | `async for n in client.listen(...): ...` |
-| `client.schema()` | `await client.schema()` |
-| `client.schema_for(...)` | `await client.schema_for(...)` |
-| `client.wipe_stream(...)` | `await client.wipe_stream(...)` |
-| `iterator.close()` | `await iterator.aclose()` |
+| Task | Sync | Async |
+|---|---|---|
+| Publish one | `client.notify(...)` | `await client.notify(...)` |
+| Publish a batch | `client.notify_many(...)` | `await client.notify_many(...)` |
+| Discover schemas | `client.schema()` | `await client.schema()` |
+| Inspect one schema | `client.schema_for(...)` | `await client.schema_for(...)` |
+| Iterate | `for notification in iterator` | `async for notification in iterator` |
+| Close a listener | `iterator.close()` | `await iterator.aclose()` |
 
-Anywhere a sync method returns `T`, the async equivalent returns `Awaitable[T]`.
-Exceptions come from the same `pyaviso.AvisoError` hierarchy in both cases.
+HTTP and schema methods, including admin methods, return awaitables on the
+async client. `listen()` is the exception: it returns the iterator directly.
+The async client itself is not an async context manager; use `async with` on
+its listener. Both clients use the same [error types](./error-handling.md).
 
 ## Mixing the two is a mistake
 
-Do not call sync methods on `AvisoClient` from inside an asyncio event loop. The
-sync surface drives the underlying tokio runtime with `block_on`, which blocks
-the asyncio thread until the call returns. Other coroutines stop making
-progress; timeouts and cancellations queued on the loop do not fire; on a long
-enough call the loop stalls visibly.
-
-The only safe way to use the sync client from inside asyncio is to push it onto
-a thread:
-
-<!-- not-runnable -->
-```python
-import asyncio
-result = await asyncio.to_thread(
-    client.notify,
-    event_type="mars",
-    identifier={"class": "od", "stream": "oper", "expver": "0001",
-                "date": "20260601", "time": "1200", "step": "0", "domain": "g"},
-    payload={"location": "s3://example/data.grib"},
-)
-```
-
-If you are doing this often, switch to `AsyncAvisoClient` and stop fighting the
-loop.
+Synchronous calls block the thread running your event loop, preventing other
+tasks from making progress. Use `AsyncAvisoClient` inside async code. If you
+must call existing synchronous code, `asyncio.to_thread()` can move it to a
+worker thread. Async also does not make CPU-heavy analysis nonblocking: move
+that work out of the event-loop thread.

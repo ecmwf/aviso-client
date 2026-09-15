@@ -1,5 +1,7 @@
 # Post trigger
 
+<div class="trigger-guide">
+
 HTTP POST per notification with the CloudEvent envelope from aviso-server as the
 request body. Custom headers are supported. Use this when migrating from
 pyaviso's `post` trigger or sending to any receiver that expects CloudEvents.
@@ -102,7 +104,10 @@ pyaviso's `post` trigger forwards the notification as a POST body. The aviso
 | `type: post` | `type: post` |
 | `url: ...` | `url: "..."` |
 | `headers: {...}` | `headers: {...}` |
-| AWS-specific options (S3, SNS) | **not supported** - use a custom receiver or the [`webhook`](./webhook.md) trigger with a hand-written body |
+| AWS-specific options (S3, SNS) | **not supported** |
+
+For AWS-specific options, use a custom receiver or the [`webhook`](./webhook.md)
+trigger with a hand-written body.
 
 The dispatched body shape matches pyaviso's (CloudEvent envelope with
 `specversion`, `type`, `source`, `id`, `time`, `data`). Downstream receivers
@@ -171,3 +176,5 @@ operator-facing wording.
 - Microsoft Teams: use [`teams`](./teams.md) for the Adaptive Card auto-build.
 - Receivers expecting the notification in a different envelope (Slack message,
   Discord embed, PagerDuty event): use [`webhook`](./webhook.md).
+
+</div>

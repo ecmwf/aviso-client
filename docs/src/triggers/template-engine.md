@@ -1,5 +1,7 @@
 # Template engine
 
+<div class="trigger-guide">
+
 The shared template engine that `command`, `webhook`, `teams`, and `post`
 triggers use to substitute notification fields and environment variables into
 their templated inputs.
@@ -153,7 +155,11 @@ Template errors fall into one of five `TemplateErrorKind` values, surfaced via
 | `EnvNotSet` | A `{{ env.<NAME> }}` variable is not in the process environment | `{{ env.UNDEFINED_VAR }}` when `UNDEFINED_VAR` is not exported |
 | `EnvNotUnicode` | A `{{ env.<NAME> }}` variable's value is not valid UTF-8 | (rare; usually a misconfigured deployment) |
 | `BadSyntax` | Template parse failure: unclosed `{{`, empty path segment, unknown namespace | `{{ unclosed`, `{{ notification..empty }}`, `{{ unknown.foo }}` |
-| `NotificationEncode` | The notification could not be serialised to JSON when resolving a path | Practically unreachable for well-typed notifications; the variant exists so the operator's diagnosis points at the notification rather than chasing a missing-path template bug |
+| `NotificationEncode` | Notification could not be serialised to JSON | Practically unreachable |
+
+`NotificationEncode` occurs when resolving a path. It is practically
+unreachable for well-typed notifications. The variant points the diagnosis at
+the notification rather than a missing-path template bug.
 
 All five are **terminal** under `fail_fast: true` (the default): retrying with
 the same notification and environment will produce the same template error.
@@ -180,3 +186,5 @@ This is intentional: a more featureful template engine adds attack surface and
 complexity for marginal value. Operators wanting full programmability should use
 the [`command`](./command.md) trigger (which runs arbitrary shell code) or
 process the notification downstream.
+
+</div>

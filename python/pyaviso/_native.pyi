@@ -38,6 +38,7 @@ class Notification:
     @property
     def cloudevent(self) -> dict[str, Any] | None: ...
     def as_dict(self) -> dict[str, Any]: ...
+    def __str__(self) -> str: ...
 
 class NotifyResponse:
     def __init__(self, status: str, request_id: str, processed_at: str) -> None: ...
@@ -158,9 +159,9 @@ class WatchRequest:
     @staticmethod
     def watch(event_type: str) -> WatchRequest: ...
     @staticmethod
-    def watch_from(event_type: str, from_: int | str) -> WatchRequest: ...
+    def watch_from(event_type: str, start_from: int | str) -> WatchRequest: ...
     @staticmethod
-    def replay_only(event_type: str, from_: int | str) -> WatchRequest: ...
+    def replay_only(event_type: str, start_from: int | str) -> WatchRequest: ...
     def with_filter(self, filter: dict[str, Any]) -> WatchRequest: ...
     def with_triggers(self, triggers: list[Trigger]) -> WatchRequest: ...
     @property
@@ -230,7 +231,7 @@ class AvisoClient:
         event_type: str | None = None,
         *,
         filter: dict[str, Any] | None = None,
-        from_: int | str | None = None,
+        start_from: int | str | None = None,
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
@@ -281,7 +282,7 @@ class AsyncAvisoClient:
         event_type: str | None = None,
         *,
         filter: dict[str, Any] | None = None,
-        from_: int | str | None = None,
+        start_from: int | str | None = None,
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,

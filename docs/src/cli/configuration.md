@@ -91,60 +91,6 @@ refresh is a no-op; for providers backed by an OAuth or OIDC cache, the refresh
 rotates the token. A second 401 in the same attempt cycle is surfaced as an
 error.
 
-## TLS
-
-aviso talks HTTPS by default and uses the system trust store. Two flags adjust
-validation when that is not enough.
-
-### Trust an internal CA
-
-When your aviso-server is fronted by a TLS endpoint whose certificate is signed
-by an internal certificate authority (a corporate root, a self-hosted ACME, a
-private cluster), point aviso at the CA file:
-
-```bash
-aviso --base-url https://aviso.internal --ca-bundle ~/.config/aviso/internal-ca.pem schema list
-```
-
-Or in the config file:
-
-```yaml
-tls:
-  ca_bundle:
-    - /home/you/.config/aviso/internal-ca.pem
-```
-
-The `--ca-bundle` flag is repeatable, so you can pass intermediate and root
-certificates separately (or put them all in one PEM file). The system trust
-store stays in effect; `--ca-bundle` only adds.
-
-To fetch the CA's certificate from a running server (for inspection or for use
-here):
-
-```bash
-openssl s_client -connect aviso.internal:443 -showcerts < /dev/null 2>/dev/null \
-  | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
-  > internal-ca.pem
-
-openssl x509 -in internal-ca.pem -noout -subject -issuer
-```
-
-### Bypass TLS validation (insecure)
-
-For short-lived development against a self-signed certificate when shipping the
-CA file is impractical:
-
-```bash
-aviso --base-url https://localhost:8443 --danger-accept-invalid-certs schema list
-```
-
-aviso logs a `WARN` at every startup when this is set, so log scrapers can flag
-misuse. Do not use this in production.
-
-The recommended order: try the system trust store first, fall back to
-`--ca-bundle`, use `--danger-accept-invalid-certs` only as a last resort during
-development.
-
 ## The state file
 
 Each successful listener run records its cursor in `~/.config/aviso/state.json`.
@@ -233,6 +179,60 @@ when the target stream is a TTY and `NO_COLOR` is unset. `always` overrides
 
 Color only ever applies to human-readable output. JSON output (piped or
 redirected) is always plain.
+
+## TLS
+
+aviso talks HTTPS by default and uses the system trust store. Two flags adjust
+validation when that is not enough.
+
+### Trust an internal CA
+
+When your aviso-server is fronted by a TLS endpoint whose certificate is signed
+by an internal certificate authority (a corporate root, a self-hosted ACME, a
+private cluster), point aviso at the CA file:
+
+```bash
+aviso --base-url https://aviso.internal --ca-bundle ~/.config/aviso/internal-ca.pem schema list
+```
+
+Or in the config file:
+
+```yaml
+tls:
+  ca_bundle:
+    - /home/you/.config/aviso/internal-ca.pem
+```
+
+The `--ca-bundle` flag is repeatable, so you can pass intermediate and root
+certificates separately (or put them all in one PEM file). The system trust
+store stays in effect; `--ca-bundle` only adds.
+
+To fetch the CA's certificate from a running server (for inspection or for use
+here):
+
+```bash
+openssl s_client -connect aviso.internal:443 -showcerts < /dev/null 2>/dev/null \
+  | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
+  > internal-ca.pem
+
+openssl x509 -in internal-ca.pem -noout -subject -issuer
+```
+
+### Bypass TLS validation (insecure)
+
+For short-lived development against a self-signed certificate when shipping the
+CA file is impractical:
+
+```bash
+aviso --base-url https://localhost:8443 --danger-accept-invalid-certs schema list
+```
+
+aviso logs a `WARN` at every startup when this is set, so log scrapers can flag
+misuse. Do not use this in production.
+
+The recommended order: try the system trust store first, fall back to
+`--ca-bundle`, use `--danger-accept-invalid-certs` only as a last resort during
+development.
 
 ## What next
 

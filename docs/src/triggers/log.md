@@ -1,5 +1,7 @@
 # Log trigger
 
+<div class="trigger-guide">
+
 Appends each notification as one line of compact NDJSON to a user-specified
 file. The shape matches what the [echo](./echo.md) trigger emits in pipe mode,
 so a log file is interchangeable with `aviso listen > notifications.ndjson`
@@ -34,12 +36,18 @@ output to a log aggregator, if that matters.
 
 ## Failure modes
 
-| Error | Surfaces as | Operator action |
+All these failures surface as `TriggerError::Io`. Opening errors occur at the
+first dispatch; disk and file errors can occur while writing.
+
+| Error | Message | Action |
 |---|---|---|
-| Parent directory does not exist | `TriggerError::Io` with `No such file or directory` at first dispatch | Create the parent: `mkdir -p $(dirname /path/to/log)` |
-| Path is not writable by the aviso user | `TriggerError::Io` with `Permission denied` at first dispatch | `chown` / `chmod` the parent + file |
-| Disk full | `TriggerError::Io` with `No space left on device` at write time | Free space; logs are usually the symptom of a real problem |
-| Broken pipe / file vanished | `TriggerError::Io` at write time | `ls -ld $(dirname /path/to/log)` to verify the directory still exists |
+| Missing parent directory | `No such file or directory` | Create the parent: `mkdir -p $(dirname /path/to/log)` |
+| Path not writable | `Permission denied` | `chown` / `chmod` the parent + file |
+| Disk full | `No space left on device` | Free space |
+| Broken pipe / file vanished | I/O error | `ls -ld $(dirname /path/to/log)` to verify the directory still exists |
+
+Check that the aviso user can write to the path. A full disk usually points to
+a wider problem; logs may only be the symptom.
 
 The CLI surfaces these via a specific operator-facing hint:
 
@@ -76,3 +84,5 @@ Downstream log processors should be ready for this. Filter on
   collector.
 - Strict-once semantics: log appends are at-least-once. Use a deduplicating
   downstream consumer keyed on `event_type@sequence`.
+
+</div>

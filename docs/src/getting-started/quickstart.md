@@ -1,7 +1,7 @@
 # Quickstart
 
 The fastest path from nothing to a working notification. Pick the surface you
-have, follow the three steps, and you are done.
+have, follow the four steps, and you are done.
 
 ## 1. Get the binary
 
@@ -29,7 +29,67 @@ Or pass them on the command line each time, with `--base-url` and `--token`.
 If you would rather keep them in a file, see
 [CLI configuration](../cli/configuration.md).
 
-## 3. Listen for something
+## 3. Discover notification types
+
+First, see which notification types the server offers:
+
+```bash
+aviso schema list
+```
+
+For a server configured with just the example `mars` type, the terminal output
+is:
+
+```text
+1 schema(s) registered (status: success)
+- mars
+```
+
+This lists registered notification types, not stored notifications or data
+files. Pick a type from your server's list and inspect its schema to see which
+identifiers you can filter on:
+
+```bash
+aviso schema get mars
+```
+
+Example output from a server with a minimal `mars` schema:
+
+```json
+{
+  "event_type": "mars",
+  "schema": {
+    "identifier": {
+      "class": {
+        "description": "MARS class.",
+        "required": true,
+        "type": "EnumHandler",
+        "values": [
+          "od",
+          "rd"
+        ]
+      }
+    },
+    "payload": {
+      "required": false
+    }
+  },
+  "status": "success"
+}
+```
+
+Here, `class` is required in the listener's filter. `EnumHandler` means its
+value must come from the listed values, `od` or `rd`. We will choose `od` below.
+The payload is optional for notifications of this type.
+
+This JSON describes the schema already registered on the server; it is command
+output, not a configuration file to install. Your server may offer other types
+or require more identifiers. Use its schema to choose the event type and supply
+all required identifiers in the examples below.
+
+## 4. Listen for something
+
+For the example schema above, listen for `mars` notifications with `class=od`:
 
 ```bash
 aviso listen --event mars --identifiers '{"class":"od"}'
@@ -62,7 +122,7 @@ should be safe to run more than once. To start fresh next time, add
 
 ## Calling aviso from Python
 
-The same listener as step 3, through the native Python API. The
+The same listener as step 4, through the native Python API. The
 `pip install pyaviso` from step 1 already gave you the `pyaviso` package, and
 `pyaviso.Env()` reads the same environment variables you exported in step 2:
 

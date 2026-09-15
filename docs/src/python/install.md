@@ -1,5 +1,8 @@
 # Install
 
+Use Python 3.10 or newer. Install into the Python environment where you will run
+your scripts or notebook kernel.
+
 ## From PyPI
 
 ```bash
@@ -15,8 +18,8 @@ No Rust toolchain is needed; the compiled extension comes inside the wheel.
 python -c "import pyaviso; print(pyaviso.__version__)"
 ```
 
-Expected output: a version string like `2.0.0` (matching the Rust workspace
-version).
+It prints the installed package version. This checks the import, not a
+connection to an Aviso server.
 
 ## The bundled `aviso` command
 
@@ -36,7 +39,7 @@ give you the same `aviso` command and behaviour.
 
 ## From source
 
-For an unreleased version, or when contributing:
+To build a checkout locally, including when contributing:
 
 ```bash
 git clone https://github.com/ecmwf/aviso-client.git
@@ -68,7 +71,7 @@ the same platform.
 
 ## What next
 
-- [Quickstart](./quickstart.md) walks three end-to-end scripts you can paste and
-  run against a server.
+- [Quickstart](./quickstart.md) shows how to discover schemas, listen for
+  notifications, and replay history.
 - [Overview](./overview.md) is the page-by-page guide to what the package gives
   you.

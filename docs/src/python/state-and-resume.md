@@ -1,200 +1,140 @@
 # State and resume
 
-The aviso client delivers at-least-once. A notification advances its stream's
-resume cursor only after the consumer has accepted it (drawn it off the
-iterator) and any required triggers have succeeded. Across reconnects and across
-process restarts the supervisor picks up at the last committed cursor and
-re-delivers anything that did not get committed.
+A state store saves a **cursor**, the sequence position used to resume a
+listener. This helps a restarted script read retained notifications published
+while it was stopped. It does not record whether your Python analysis finished.
 
-The examples on this page use `test_polygon` as the event type. If your server
-does not have it configured, replace the event type and identifier fields with
-one of your own; the call shape is the same. See
-[What is on your server](./quickstart.md#what-is-on-your-server) in the
-quickstart for how to discover what is configured.
-
-## How it works
-
-Each watch derives a stable resume key from the base URL, the event type, the
-canonical filter body, and a schema fingerprint. That key is the address under
-which the cursor is stored.
-
-The commit policy is commit-on-next-send: before sending notification N+1 to the
-consumer iterator, the supervisor commits N. Pulling N+1 from the iterator
-therefore implies N is durable.
-
-Checkpoints never move backwards within a watch session. An out-of-order
-notification still runs its triggers and reaches the iterator, but does not
-replace a higher pending or committed sequence. Only successfully sent
-notifications can advance the pending checkpoint; receiving a higher sequence
-alone is not enough. A notification whose required trigger fails cannot advance
-the pending checkpoint, including when exit flushing is enabled. A previously
-sent notification may already have been committed before that failure. A
-sequence checkpoint is not a per-event acknowledgement or a guarantee that
-duplicates are suppressed.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Server as aviso-server
-    participant Supervisor as Rust supervisor
-    participant Iter as Python iterator
-    participant Code as your code
-    Server-->>Supervisor: notification N
-    Supervisor->>Iter: send N
-    Iter->>Code: yield N
-    Code->>Iter: ask for next
-    Server-->>Supervisor: notification N+1
-    Supervisor->>Supervisor: commit cursor at N
-    Supervisor->>Iter: send N+1
-    Iter->>Code: yield N+1
-```
-
-If the process crashes between sending N and committing N, the next start
-re-delivers N. If the process crashes before sending N at all, the next start
-re-delivers N. At-least-once.
+**A saved cursor is not an acknowledgement of completed work.** The client can
+save progress while notifications are still waiting in the iterator's buffer.
+A crash can therefore leave application work unfinished even for a saved
+sequence. Make repeated processing safe and track completed work separately
+when it matters. The cursor alone gives neither lossless processing nor
+exactly-once execution.
 
 ## A complete resuming listener
 
+Use the [quickstart environment](./quickstart.md#set-the-environment), including
+`AVISO_BASE_URL` and credentials for `pyaviso.Env()`. For an anonymous server,
+omit `auth=pyaviso.Env()` from the client initialization.
+
+This uses the [small `mars` schema](./quickstart.md#what-is-on-your-server):
+`class` is a required choice of `od` or `rd`; `step` is a whole number optional
+in filters. Omitting it receives all steps. Providers supply both identifiers;
+the payload is optional. You only need receiving permission for this script.
+
+Save this as `listen_saved.py` and run `python listen_saved.py`:
+
 ```python
-"""Listen for notifications with a persistent cursor.
-
-The first run reads from the live edge. Every subsequent run resumes
-from the last sequence the supervisor committed.
-"""
-
 import os
-import pathlib
+from pathlib import Path
+
 import pyaviso
 
-state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
+state_path = Path.home() / ".config" / "aviso" / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
-
 client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
     auth=pyaviso.Env(),
     state_store=pyaviso.JsonFileStore(state_path),
 )
 
-for notification in client.listen(
-    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-):
-    print(f"seq={notification.sequence}")
+try:
+    with client.listen("mars", filter={"class": "od"}) as notifications:
+        for notification in notifications:
+            print(notification)
+except KeyboardInterrupt:
+    print("Stopped listening")
 ```
 
-Run it once and Ctrl+C after seeing a few notifications. Run it again and the
-iterator picks up at the sequence after the last one that was committed.
+It prints each original CloudEvent as indented JSON. Press Ctrl+C to stop. With
+no saved cursor, the first run waits for new notifications. Later runs with the
+same settings resume after the saved sequence, if one exists. The last printed
+notification may be delivered again. If nothing was saved, restarting begins at
+the live edge, so do not assume a one-notification first run has saved progress.
+
+For a local trial, start this listener, then run the
+[provider publish script](./publish.md#a-complete-publish-script) in another
+terminal. Publish several different steps, stop the listener, publish another
+step, then restart it. What remains available depends on server retention.
 
 ## Where state lives
 
-Two store implementations are included with the package:
+- With `state_store=None` (the default), there is no saved state across runs.
+- `MemoryStore()` holds checkpoints in memory for clients using that store
+  instance. They disappear when the process exits.
+- `JsonFileStore(path)` writes checkpoints to a local JSON file, using an atomic
+  rename and a sidecar lockfile for cooperating writers.
 
-- `pyaviso.MemoryStore()` keeps the cursor in process memory. It dies with the
-  process. Use it in tests and one-shot scripts that do not need to survive
-  restart.
-- `pyaviso.JsonFileStore(path)` writes a JSON file with a crash-safe atomic
-  rename and a sidecar lockfile so cooperating processes on a local filesystem
-  can share the cursor.
-
-<!-- not-runnable -->
-```python
-import pyaviso
-
-client = pyaviso.AvisoClient(
-    base_url="https://aviso.example.org",
-    state_store=pyaviso.JsonFileStore("/var/lib/aviso/state.json"),
-)
-```
-
-The store fails on construction if the parent directory does not exist. Create
-it first:
-
-```python
-"""Construct the state file's parent directory before passing it to the client."""
-
-import os
-import pathlib
-import pyaviso
-
-path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
-path.parent.mkdir(parents=True, exist_ok=True)
-
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"],
-    auth=pyaviso.Env(),
-    state_store=pyaviso.JsonFileStore(path),
-)
-
-print(f"using state file: {path}")
-```
+The example creates the parent directory first. Choose a local path your user
+can write to, including permission to create the lockfile and replace the state
+file. Relative paths are relative to the working directory. `~` is expanded.
+Keep the state file if you want to resume; deleting it discards that position.
 
 ## Local filesystems only
 
-`JsonFileStore` uses `flock`, which is not safe over NFS or CIFS. Use a local
-filesystem (ext4, xfs, apfs, ntfs) for the state file. If you need to share a
-cursor across machines, run one process and have the others consume its output,
-or write your own state store against a coordination service.
+Use local storage rather than NFS or CIFS for `JsonFileStore`. File locking does
+not make several listeners a work-sharing queue: they can receive the same
+notifications. The Python API accepts the two built-in stores, not arbitrary
+custom Python store objects.
+
+## How it works
+
+The Python client derives a resume key from the server URL, event type and
+filter. Changing one of these can select a different key with no saved cursor.
+A server schema change alone does not change the key.
+
+For each notification, the background listener:
+
+1. Saves the previous pending sequence, if any.
+2. Runs this notification's triggers.
+3. Sends it to the iterator's buffer.
+4. Records its sequence as pending if it advances the current position.
+
+These steps do not wait for your Python loop to finish processing the previous
+notification. A required trigger failure prevents the failing notification from
+becoming pending, but the previous position may already have been saved.
+Checkpoints do not move backwards within a watch session; out-of-order
+notifications can still reach triggers and your loop.
+
+Redelivery depends on retained history and a usable cursor. A sequence is a
+resume boundary, not a separate acknowledgement for every event. See
+[Listening](./listen.md#replay-only) for retention and replay limits.
+
+## Choose a starting position
+
+An explicit `start_from` takes precedence over saved state. An integer is
+exclusive: `start_from=1024` reads after sequence 1024; `start_from=0` requests
+all retained history after zero. A UTC timestamp such as
+`start_from="2026-06-01T00:00:00Z"` selects publication time, not identifier
+labels. Subsequent checkpoints use sequences.
+
+With `start_from=None`, a matching saved cursor is used if available; otherwise
+listening starts live. To deliberately start fresh without affecting existing
+state, construct a client without that state store. Do not delete your state
+file just to investigate a problem.
 
 ## Flush on exit
 
-The default commit policy commits N when N+1 arrives. The very last notification
-of a session is therefore never committed automatically: a Ctrl+C while waiting
-for the next publish leaves that last notification uncommitted, and the next run
-replays it.
+Keep the default `flush_cursor_on_exit=False` for a processing script unless you
+have a reason to advance the final pending position during shutdown. With the
+default, the last pending sequence is not saved just because the iterator
+closes. It may be replayed on restart, provided a usable starting position and
+retained record exist. This does not protect all unfinished buffered work:
+earlier checkpoints can already be ahead of your processing.
 
-For interactive operators who want a clean Ctrl+C, set
-`flush_cursor_on_exit=True` on the client and call `iter.close()` in a
-`finally`:
+Setting `flush_cursor_on_exit=True` on the client attempts to save the last
+pending cursor on shutdown. This can reduce final-notification repeats for a
+display-only listener. It can also skip unfinished application work on restart,
+including after your loop raises an exception. A failed storage write can
+prevent the flush. It is not a successful-work acknowledgement.
 
-```python
-"""Commit the last notification before exit."""
-
-import os
-import pathlib
-import pyaviso
-
-state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
-state_path.parent.mkdir(parents=True, exist_ok=True)
-
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"],
-    auth=pyaviso.Env(),
-    state_store=pyaviso.JsonFileStore(state_path),
-    flush_cursor_on_exit=True,
-)
-
-with client.listen(
-    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-) as iterator:
-    for notification in iterator:
-        print(notification.sequence)
-```
-
-The iterator's `with` form calls `close()` automatically on exit (whether the
-loop body returns, raises, or breaks), so the supervisor's final cursor flush
-always lands. Without `flush_cursor_on_exit=True`, the at-least-once contract
-still holds; you just see one replayed notification per restart.
+The iterator's `with` block calls `close()`, which cancels and waits for the
+background listener, including any exit-flush attempt. A `break` alone does not
+close an iterator you still hold outside a context manager.
 
 ## With `AsyncAvisoClient`
 
-Both state stores work identically with the async client. The async iterator is
-an `async with` context manager that calls `aclose()` on exit:
-
-<!-- not-runnable -->
-```python
-import asyncio
-import pyaviso
-
-async def main() -> None:
-    client = pyaviso.AsyncAvisoClient(
-        base_url="https://aviso.example.org",
-        state_store=pyaviso.JsonFileStore("/var/lib/aviso/state.json"),
-        flush_cursor_on_exit=True,
-    )
-    async with client.listen(
-        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-    ) as iterator:
-        async for notification in iterator:
-            print(notification.sequence)
-
-asyncio.run(main())
-```
+Use the same store and constructor options. Wrap the returned iterator in
+`async with`; it awaits `aclose()` on exit. See the complete
+[async listener](./async.md#a-complete-async-listener). The checkpoint and
+unfinished-work limits above apply equally to async code.
