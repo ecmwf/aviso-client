@@ -42,8 +42,8 @@ connection.
 | You want to | Use | Read next |
 |---|---|---|
 | Run aviso in a terminal or a script | The `aviso` CLI | [CLI overview](../cli/overview.md) |
-| Embed aviso in a Rust program | The `aviso` Rust library | [Library guide](../developers/lib-guide.md) |
 | Call aviso from Python | The native `pyaviso` package (it bundles the `aviso` CLI too) | [Python overview](../python/overview.md) |
+| Embed aviso in a Rust program | The `aviso` Rust library | [Library guide](../developers/lib-guide.md) |
 
 The CLI and the library are the same code. Pick the surface that matches the
 program you are writing.
