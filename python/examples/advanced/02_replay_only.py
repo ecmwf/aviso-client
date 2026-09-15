@@ -18,11 +18,12 @@ start". To resume from a checkpoint, pass the last sequence you saw.
 
 This example publishes three notifications under a polygon unique to
 the script, then replays everything matching that polygon. On a fresh
-stack the count is 3. Later runs replace the same subjects with default
-latest-per-subject retention; longer retention can replay more records.
+stack the count is 3. The local test stack allows duplicates for ``test_polygon``,
+so each run adds three records until backend retention removes older records.
+Other servers may keep only the latest notification per subject.
 
-Expected output (the count depends on how many prior runs the stream
-has accumulated; the polygon filter keeps it scoped to this example):
+Expected output on a fresh stream (later runs can replay more records;
+the polygon filter keeps it scoped to this example):
 
     publishing 3 notifications to seed the stream
     replaying from sequence 0
