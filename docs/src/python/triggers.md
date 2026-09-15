@@ -1,188 +1,204 @@
 # Triggers
 
-Triggers are declarative side effects that run per notification: write to a
-file, post to a webhook, post to a Microsoft Teams channel, run a shell command.
-The Python `Trigger` class wraps the same six kinds the Rust core ships, with
-the same semantics: retries, optional-vs-required, fail-fast.
+A trigger runs an action automatically for each matching notification, such as
+appending to a file or sending an HTTP request. Add triggers to
+`client.listen()` to run them before Python receives the notification in your
+loop. To run your own Python analysis in the loop, you do not need a trigger.
 
-Triggers attach to a watch via the `triggers=` kwarg on `client.listen(...)`.
-The supervisor dispatches each trigger for each notification before the iterator
-yields it. A required trigger that fails after retries stops the watch with
-`pyaviso.TriggerError`.
-
-The listener example below uses `test_polygon` as the event type. If your server
-does not have it configured, replace the event type and identifier fields with
-one of your own. See
-[What is on your server](./quickstart.md#what-is-on-your-server) in the
-quickstart for how to discover what is configured.
+Triggers run in your client process. They do not keep listening or start new
+actions after your Python program exits.
 
 ## A complete listener with triggers
 
-The watch below prints every notification (`echo`) and also appends it to a log
-file (`log`). Stop with Ctrl+C.
+Use the installation and environment setup from the
+[quickstart](./quickstart.md#set-the-environment), including `AVISO_BASE_URL`
+and credentials for `pyaviso.Env()`. For an anonymous server, omit
+`auth=pyaviso.Env()` from the client initialization.
+
+This uses the quickstart's `mars` schema: `class` is a required choice of `od`
+or `rd`; `step` is an integer, optional in filters. Leaving it out selects all
+steps. Providers must supply both identifier fields when publishing. The
+optional payload can carry a file location. Check
+[your server's schema](./quickstart.md#what-is-on-your-server) if it differs.
+
+Save this as `listen.py` and run `python listen.py` in that terminal:
 
 ```python
-"""Listen with two triggers: print to stdout and append to a log file."""
-
 import os
-import pathlib
-import tempfile
+
 import pyaviso
+from pyaviso import Trigger
 
-log_path = pathlib.Path(tempfile.gettempdir()) / "aviso-doc-example.log"
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-print(f"writing log to {log_path}")
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+)
 with client.listen(
-    "test_polygon",
-    filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]},
-    triggers=[pyaviso.Trigger.echo(), pyaviso.Trigger.log(log_path)],
-) as iterator:
-    for _ in iterator:
-        pass  # the echo trigger already printed; the log trigger already wrote
+    "mars",
+    filter={"class": "od"},
+    triggers=[Trigger.log('mars.log')],
+) as notifications:
+    for notification in notifications:
+        print(notification)
 ```
 
-Each notification produces one line on stdout (from echo) and one line in
-`log_path` (from log). Both are compact JSON, one object per line. If you want
-to build the watch once and reuse it across several `listen()` calls, see
-[Reusing a watch request](./listen.md#reusing-a-watch-request) for the builder
-form.
+The script waits for new `mars` notifications with `class=od`. For each one, it
+appends a JSON line to `mars.log` in your current directory, then prints the
+notification. A notification with `class=rd` causes neither action. Press Ctrl+C
+to stop; the `with` block closes the listener.
+
+Run this from a directory you can write to. If the log file cannot be written,
+the listener stops with an error by default.
+
+The two outputs contain different views of the same notification.
+`print(notification)` shows the original CloudEvent as indented JSON, including
+its `specversion`, `type` and `data`. The log contains a smaller JSON object on
+one line, with fields such as `event_type`, `sequence`, `identifier` and
+`payload`. A payload such as `{"location": "file:///data/forecast.grib"}` is a
+reference to a file; the log trigger does not copy that file.
+
+## When to use which
+
+| You want to | Use | Details |
+|---|---|---|
+| Print notifications automatically | `Trigger.echo()` | [Echo guide](../triggers/echo.md) |
+| Append notifications to a file | `Trigger.log()` | [Log guide](../triggers/log.md) |
+| Run a shell command | `Trigger.command()` | [Command guide](../triggers/command.md) |
+| Send an HTTP request with your chosen body | `Trigger.webhook()` | [Webhook guide](../triggers/webhook.md) |
+| Send a card to a Teams workflow webhook | `Trigger.teams()` | [Teams guide](../triggers/teams.md) |
+| Forward the original CloudEvent | `Trigger.post()` | [Post guide](../triggers/post.md) |
 
 ## The six kinds
 
+Each fragment below replaces the `triggers=[...],` line in `listen.py`. Keep the
+imports, client setup and loop. Run `python listen.py` again after each change.
+For HTTP examples, set the named environment variable to a receiver URL you
+control before running the script.
+
 ### Echo
 
-Writes one line of compact JSON per notification to standard output. The
-simplest way to see what is arriving in a stream.
+Print each matching notification, using the same smaller view as the log
+trigger:
 
 ```python
-import pyaviso
-
-pyaviso.Trigger.echo()
-pyaviso.Trigger.echo(label="test-stream")  # adds a label leader line on TTY
+    triggers=[Trigger.echo()],
 ```
+
+In a terminal, echo prints a heading and indented JSON. When redirected or
+piped, it prints one compact JSON line. The loop still prints the CloudEvent
+afterwards, so you see both views.
 
 ### Log
 
-Appends one line of compact JSON per notification to a file. The file opens
-lazily on first dispatch.
+To keep a log and also echo each notification, put both actions in the list:
 
 ```python
-import pyaviso
-
-pyaviso.Trigger.log("/var/log/aviso/test-polygon.log")
-pyaviso.Trigger.log("/var/log/aviso/test-polygon.log", retries=2, required=False)
+    triggers=[Trigger.log("mars.log"), Trigger.echo()],
 ```
+
+Actions run in list order before the loop receives that notification. The log
+file opens on the first matching notification and appends to existing content.
 
 ### Command (Unix only)
 
-Runs `/bin/sh -c <rendered_command>` per notification. The notification's fields
-are injected as `AVISO_*` environment variables; the command string can also
-reference them via `{{ notification.<dotted.path> }}` and `{{ env.<NAME> }}`
-templates.
+Append each forecast step to `steps.txt` in your current directory:
 
-<!-- not-runnable -->
 ```python
-import pyaviso
-
-pyaviso.Trigger.command(
-    "./process.sh {{ notification.identifier.date }}",
-    env={"DEST": "/data"},
-    working_dir="/srv/jobs",
-    retries=2,
-    timeout=300.0,
-)
+    triggers=[
+        Trigger.command('printf "%s\\n" "$AVISO_IDENTIFIER_STEP" >> steps.txt')
+    ],
 ```
 
+This runs through `/bin/sh -c`. The client automatically supplies
+`AVISO_IDENTIFIER_CLASS` and `AVISO_IDENTIFIER_STEP` for this schema, plus
+`AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`, `AVISO_PAYLOAD_JSON` and
+`AVISO_NOTIFICATION_JSON`. Quote shell variable expansions as above. Prefer
+these variables to inserting notification text into shell source with templates.
+Command stdout is captured, so write to a file when you want to keep the output.
 On non-Unix builds, the constructor raises `pyaviso.ConfigError`.
 
 ### Webhook
 
-Sends an HTTP request per notification to a configured URL. URL, header values,
-and body all run through the template engine.
+Set `FORECAST_WEBHOOK_URL` to your HTTP receiver's URL. Send it a JSON body with
+the forecast step:
 
-<!-- not-runnable -->
 ```python
-import pyaviso
-
-pyaviso.Trigger.webhook(
-    "https://hooks.example.org/notify",
-    method=pyaviso.HttpMethod.POST,
-    headers={"Authorization": "Bearer {{ env.HOOK_TOKEN }}"},
-    body_template='{"sequence": "{{ notification.sequence }}"}',
-)
+    triggers=[
+        Trigger.webhook(
+            os.environ["FORECAST_WEBHOOK_URL"],
+            body_template='{"step": {{ notification.identifier.step }}}',
+        )
+    ],
 ```
 
-The default method is `POST` with a compact JSON body of the full notification.
-The default timeout is 30 seconds.
+The default method is `POST`. Here the template writes `step` as a JSON number.
+Without `body_template`, the body is the smaller notification view used by log
+and echo. URL, header values and body templates can read notification fields
+and environment variables. See the
+[template guide](../triggers/template-engine.md) for syntax and escaping rules.
 
 ### Teams
 
-A webhook with an auto-built Adaptive Card body, aimed at Microsoft Teams
-workflow webhooks.
+Set `FORECAST_TEAMS_URL` to your Teams workflow webhook URL:
 
-<!-- not-runnable -->
 ```python
-import pyaviso
-
-pyaviso.Trigger.teams("https://prod-x.westeurope.logic.azure.com/workflows/...")
+    triggers=[Trigger.teams(os.environ["FORECAST_TEAMS_URL"])],
 ```
+
+The client builds an Adaptive Card from the notification and sends it by HTTP
+POST. Configure the receiving workflow as described in the
+[Teams guide](../triggers/teams.md).
 
 ### Post
 
-A webhook that forwards the raw server-emitted CloudEvent envelope rather than
-the library's narrowed `Notification` view. Use it when a downstream consumer
-expects the full CloudEvent shape.
+Set `FORECAST_COLLECTOR_URL` to your CloudEvent receiver's URL:
 
-<!-- not-runnable -->
 ```python
-import pyaviso
-
-pyaviso.Trigger.post("https://collector.example.org/events")
+    triggers=[Trigger.post(os.environ["FORECAST_COLLECTOR_URL"])],
 ```
+
+This sends the original server CloudEvent as JSON by HTTP POST. It preserves the
+envelope fields shown by `print(notification)`, including CloudEvent extensions.
+Use it when the receiver needs those fields rather than the smaller default
+webhook body.
 
 ## Tunables
 
-Every trigger accepts the same four tunables, either as keyword arguments to the
-constructor or as chainable setters:
+By default, every trigger is required and has no retries. If a required action
+fails, listening stops with `pyaviso.TriggerError`; that notification does not
+reach the Python loop. Earlier actions are not undone. Set `required=False` for
+an action whose failure should emit a warning and let later actions and the
+Python loop continue.
+
+For example, replace the trigger list with this optional webhook, allowing two
+extra attempts and a five-second timeout per request:
 
 ```python
-import pyaviso
-
-pyaviso.Trigger.echo(retries=3, required=False)
-pyaviso.Trigger.echo().retries(3).required(False)
+    triggers=[
+        Trigger.webhook(
+            os.environ["FORECAST_WEBHOOK_URL"],
+            retries=2,
+            required=False,
+            timeout=5.0,
+        )
+    ],
 ```
 
-- `retries`: number of additional attempts after the first failure. Default `0`.
-- `required`: a required trigger terminates the watch on failure; an optional
-  trigger logs a `WARN` and the watch continues. Default `True`.
-- `timeout`: meaningful for command and HTTP-based triggers; silently ignored on
-  echo and log.
-- `fail_fast`: meaningful for command and HTTP-based triggers; treats
-  deterministic failures (non-zero exit, 4xx HTTP) as terminal. Default `True`.
+- `retries=0` means one attempt. `retries=2` allows up to three attempts.
+- `fail_fast=True` is the default for command and HTTP triggers. A non-zero
+  command exit, an HTTP 4xx response, an invalid request or a template error
+  fails immediately, bypassing retries. HTTP 5xx responses, connection errors
+  and timeouts can retry. Set `fail_fast=False` to retry those immediate
+  failures too, within the configured retry count.
+- HTTP triggers (`webhook`, `teams`, `post`) default to a 30-second timeout per
+  request. Commands have no timeout by default; use `timeout` to set one in
+  seconds. Echo and log do not accept a timeout keyword. Their `.timeout()`
+  setter is ignored, as is `.fail_fast()`.
 
-Both forms produce the same trigger. The
-[Builder pattern](./builder-pattern.md) page covers the fluent style in full,
-including how to reuse a built trigger across watch requests.
-
-## When to use which
-
-| You want to | Use |
-|---|---|
-| Eyeball what is arriving | `echo` |
-| Keep an audit log of every delivery | `log` |
-| Kick off a shell pipeline | `command` |
-| Push to a generic HTTP receiver | `webhook` |
-| Push to a Microsoft Teams channel | `teams` |
-| Forward raw CloudEvents to a collector | `post` |
-| Run arbitrary Python code per notification | (use the iteration loop body, no trigger needed) |
-
-In-process Python logic belongs in the iteration loop body. Triggers exist for
-declarative durable side effects that should keep working when the calling
-program exits.
+The [builder pattern](./builder-pattern.md) covers chainable setters and reusing
+triggers. See [error handling](./error-handling.md) for catching client errors.
 
 ## With `AsyncAvisoClient`
 
-The Trigger class is a value type; it has no async surface of its own. Pass the
-same `triggers=[...]` list to either client.
+Pass the same `triggers=[...]` list to `AsyncAvisoClient.listen()`. Actions
+still run before the notification reaches your `async for` loop. See
+[Async](./async.md) for a complete listener.
