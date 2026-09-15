@@ -37,12 +37,13 @@ You ask aviso to listen for a type and the identifiers you care about. The
 server streams every matching new event to you over a long-lived HTTP
 connection.
 
-## Three ways to use it
+## Four ways to use it
 
 | You want to | Use | Read next |
 |---|---|---|
 | Run aviso in a terminal or a script | The `aviso` CLI | [CLI overview](../cli/overview.md) |
 | Call aviso from Python | The native `pyaviso` package (it bundles the `aviso` CLI too) | [Python overview](../python/overview.md) |
+| Use aviso in a C++ program | The C++ bindings | [C++ overview](../cpp/overview.md) |
 | Embed aviso in a Rust program | The `aviso` Rust library | [Library guide](../developers/lib-guide.md) |
 
 The CLI and the library are the same code. Pick the surface that matches the
