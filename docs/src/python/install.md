@@ -68,7 +68,7 @@ the same platform.
 
 ## What next
 
-- [Quickstart](./quickstart.md) walks three end-to-end scripts you can paste and
-  run against a server.
+- [Quickstart](./quickstart.md) shows how to discover schemas, listen for
+  notifications, and replay history.
 - [Overview](./overview.md) is the page-by-page guide to what the package gives
   you.
