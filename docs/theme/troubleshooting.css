@@ -1,0 +1,58 @@
+/* Native symptom panels, scoped to CLI troubleshooting (including print). */
+.cli-troubleshooting details {
+    margin-block: 0.75em;
+    padding: 0.85em clamp(0.75em, 3vw, 1.25em);
+    color: var(--fg);
+    background: var(--table-alternate-bg);
+    border: 1px solid var(--table-border-color);
+    border-left: 3px solid var(--links);
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+}
+
+.cli-troubleshooting summary {
+    cursor: pointer;
+    font-weight: 600;
+    line-height: 1.6;
+    scroll-margin-top: 60px;
+}
+
+.cli-troubleshooting summary:focus-visible {
+    outline: 2px solid var(--links);
+    outline-offset: 4px;
+}
+
+.cli-troubleshooting details[open] > summary {
+    padding-bottom: 0.75em;
+    border-bottom: 1px solid var(--table-border-color);
+}
+
+.cli-troubleshooting h2 {
+    margin-top: 1.25em;
+    font-size: 1.15em;
+}
+
+.cli-troubleshooting details > :last-child {
+    margin-bottom: 0;
+}
+
+.cli-troubleshooting :not(pre) > code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.cli-troubleshooting a:not(.header) {
+    color: var(--fg);
+    text-decoration: underline;
+}
+
+@media print {
+    .cli-troubleshooting details::details-content {
+        content-visibility: visible;
+        display: block;
+    }
+
+    .cli-troubleshooting details > :not(summary) {
+        display: block;
+    }
+}
