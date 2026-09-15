@@ -157,7 +157,7 @@ fails. Check the outcome before retrying. Malformed batch input, such as an
 item missing `event_type`, raises `ValueError` before sending any requests.
 A non-dict item raises `TypeError`.
 The optional `concurrency` argument limits how many notifications are sent at
-the same time. Omitting it or passing `0` uses the client's default.
+the same time. Omitting it or passing `0` allows up to **16 requests at a time**.
 
 The batch uses different `step` values from the single notification. On a
 backend that keeps only the latest notification per subject, publishing the
