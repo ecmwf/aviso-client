@@ -52,23 +52,22 @@ The Adaptive Card aviso builds for each notification has three sections:
    row per payload key; when scalar/array, a monospace TextBlock with the JSON;
    when `null`, the section is omitted.
 
-Example rendering for `mars` event with payload `{"seed": "x", "count": 5}`:
+Illustrative card content for a `mars` event with payload
+`{"seed": "x", "count": 5}`. Teams controls the card's final appearance:
 
 ```text
-+----------------------------------------------+
-| aviso mars #42                                |
-|                                                |
-| Event:    mars                                 |
-| Sequence: 42                                   |
-| class:    od                                   |
-| date:     20260601                             |
-| domain:   g                                    |
-| ...                                            |
-|                                                |
-| Payload                                        |
-| seed:  x                                       |
-| count: 5                                       |
-+----------------------------------------------+
+aviso mars #42
+
+Event:    mars
+Sequence: 42
+class:    od
+date:     20260601
+domain:   g
+...
+
+Payload
+seed:  x
+count: 5
 ```
 
 The card is built programmatically at dispatch time using the notification's
