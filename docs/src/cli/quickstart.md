@@ -95,7 +95,8 @@ aviso replay --event mars --identifiers '{"class":"od"}' --from 2026-05-01
 aviso replay --event mars --identifiers '{"class":"od"}' --from 1000
 ```
 
-Replay reads retained history once and ends when it catches up to the present.
+Replay reads retained history up to the boundary captured when the run starts.
+Notifications published after that boundary are not included.
 The date refers to notification publication time. Replace `1000` with a sequence
 id from your stream. Read more at
 [Replay history](./replay.md).
