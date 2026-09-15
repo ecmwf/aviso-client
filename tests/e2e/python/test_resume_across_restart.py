@@ -44,7 +44,7 @@ def test_resume_picks_up_after_simulated_restart(
         first.listen(
             EVENT_TYPE,
             filter={"polygon": POLYGON, "date": DATE},
-            from_=0,
+            start_from=0,
         ) as iterator,
     ):
         _publish(first, 1)

@@ -28,8 +28,8 @@ def test_watch_from_with_sequence() -> None:
     assert req.mode == "watch"
 
 
-def test_watch_from_accepts_from_underscore_kwarg() -> None:
-    req = pyaviso.WatchRequest.watch_from("mars", from_=42)
+def test_watch_from_accepts_start_from_kwarg() -> None:
+    req = pyaviso.WatchRequest.watch_from("mars", start_from=42)
     assert req.event_type == "mars"
 
 
