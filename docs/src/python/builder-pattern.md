@@ -86,7 +86,7 @@ See [State and resume](./state-and-resume.md) for what the start position means,
 and [Listening](./listen.md#replay-only) for how replay-only ends.
 
 Pass the request with the `request=` keyword. It is mutually exclusive with
-`event_type=`, `filter=`, `from_=`, `mode=`, and `triggers=`. Passing the
+`event_type=`, `filter=`, `start_from=`, `mode=`, and `triggers=`. Passing the
 request and any of those together raises `pyaviso.AvisoError`, so it stays clear
 which surface you meant.
 
@@ -159,9 +159,9 @@ Ctrl+C. See [Listening](./listen.md) for how resuming works, and
 
 Swap the `watch` factory for `replay_only` and the same request replays
 history from a start position up to the live edge, then stops on its own at
-end-of-stream. It is the builder form of the `from_=` and `mode="replay_only"`
-keywords. This script publishes three notifications under a polygon unique to
-it, then replays them and exits:
+end-of-stream. It is the builder form of the `start_from=` and
+`mode="replay_only"` keywords. This script publishes three notifications under a
+polygon unique to it, then replays them and exits:
 
 ```python
 """Publish three notifications, then replay them with the builder and exit."""

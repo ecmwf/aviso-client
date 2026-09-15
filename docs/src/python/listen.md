@@ -22,7 +22,6 @@ and fields.
 Save this as `listen.py`:
 
 ```python
-import json
 import os
 
 import pyaviso
@@ -34,13 +33,12 @@ client = pyaviso.AvisoClient(
 try:
     with client.listen("mars", filter={"class": "od"}) as notifications:
         for notification in notifications:
-            print(json.dumps(notification.as_dict(), indent=2))
+            print(notification)
 except KeyboardInterrupt:
     print("Stopped listening")
 ```
 
-`as_dict()` makes a dictionary of the notification, and `json.dumps(..., indent=2)`
-formats it as JSON with indentation for readability.
+`print(notification)` displays the original server message as indented JSON.
 
 Run `python listen.py` in the terminal where you set the environment. It waits
 for **new** `mars` notifications with `class=od`, at any step. Silence is normal
@@ -53,45 +51,37 @@ server URLs will differ):
 
 ```json
 {
-  "event_type": "mars",
-  "sequence": 1,
-  "identifier": {
-    "class": "od",
-    "step": "12"
-  },
-  "payload": {
-    "location": "file:///data/forecast.grib"
-  },
-  "cloudevent": {
-    "data": {
-      "identifier": {
-        "class": "od",
-        "step": "12"
-      },
-      "payload": {
-        "location": "file:///data/forecast.grib"
-      }
+  "data": {
+    "identifier": {
+      "class": "od",
+      "step": "12"
     },
-    "datacontenttype": "application/json",
-    "dataschema": "http://127.0.0.1:47893/schema/mars",
-    "id": "mars@1",
-    "source": "http://127.0.0.1:47893",
-    "specversion": "1.0",
-    "time": "2026-09-15T15:06:57.011498496Z",
-    "type": "int.ecmwf.aviso.mars"
-  }
+    "payload": {
+      "location": "file:///data/forecast.grib"
+    }
+  },
+  "datacontenttype": "application/json",
+  "dataschema": "https://aviso.example/schema/mars",
+  "id": "mars@1",
+  "source": "https://aviso.example",
+  "specversion": "1.0",
+  "time": "2026-09-15T15:15:15.799578652Z",
+  "type": "int.ecmwf.aviso.mars"
 }
 ```
 
-`identifier` holds the notification's labels. The server normalizes scalar
-labels, so the published integer `step=12` arrives as the string `"12"`.
-`payload` holds extra information from the provider, such as a file location;
-receiving it does not download the file. It is `None` when absent. `sequence`
+`notification.identifier` holds the notification's labels. The server normalizes
+scalar labels, so the published integer `step=12` arrives as the string `"12"`.
+`notification.payload` holds extra information, such as a file location;
+receiving it does not download the file. It is `None` when absent.
+`notification.sequence`
 is a position used for replay, not a promise of strictly increasing delivery
 order or a count of your matches.
 
-`cloudevent` contains the original server message, including its timestamp.
-For most scripts, start with `identifier` and `payload` above it.
+`notification.cloudevent` contains the original server message shown above.
+`notification.as_dict()` returns a convenience dictionary with `event_type`,
+`sequence`, `identifier`, `payload`, and `cloudevent`. That outer dictionary is
+created by the client; it is not the server's wire format.
 
 This script does not save a cursor to disk. Starting it again starts fresh at
 the live edge, rather than reading notifications published while it was off.
@@ -172,30 +162,31 @@ without the `try`/`except`, Python also prints a `KeyboardInterrupt` traceback.
 
 ## Start from a specific position
 
-Add `from_=` to read retained notifications before continuing with new ones.
-An integer starts **after** that sequence; `from_=0` requests retained history
-after sequence zero. A UTC date string such as `from_="2026-06-01T00:00:00Z"`
-selects publication time, not a `date` field in the notification's labels.
-To filter those labels, put `date` in `filter=` if the schema supports it.
+Add `start_from` to read retained notifications before continuing with new ones.
+An integer starts **after** that sequence; `start_from=0` requests retained
+history after sequence zero. A UTC date string such as
+`start_from="2026-06-01T00:00:00Z"` selects publication time, not a `date` field
+in the notification's labels. To filter those labels, put `date` in `filter=` if
+the schema supports it.
 
 ## Replay only
 
-Use `mode="replay_only"` with a starting position for a script that finishes:
+`start_from=0` starts from the beginning of retained history.
+`mode="replay_only"` finishes after that history instead of waiting for new
+notifications:
 
 ```python
 with client.listen(
-    "mars", filter={"class": "od"}, from_=0, mode="replay_only"
+    "mars",
+    filter={"class": "od"},
+    start_from=0,
+    mode="replay_only",
 ) as notifications:
     for notification in notifications:
-        print(notification.identifier)
+        print(notification)
 ```
 
-If the publish script's step-12 notification is the only matching retained
-record, this prints:
-
-```text
-{'class': 'od', 'step': '12'}
-```
+Each notification is printed as indented JSON, as in the listener above.
 
 An empty matching history prints nothing. Replay ends at the history boundary
 captured at the start, when the server signals `replay_completed`. It does not
@@ -226,7 +217,7 @@ with client.listen(
         "anomaly": {"between": [40, 50]},
         "region": {"in": ["north", "south"]},
     },
-    from_=0,
+    start_from=0,
     mode="replay_only",
 ) as notifications:
     for notification in notifications:

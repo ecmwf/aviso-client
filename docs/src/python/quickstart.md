@@ -134,13 +134,14 @@ again:
 
 ```python
 for notification in client.listen(
-    "mars", filter={"class": "od"}, from_=0, mode="replay_only"
+    "mars", filter={"class": "od"}, start_from=0, mode="replay_only"
 ):
     print(notification.payload)
 ```
 
-`from_=0` starts from the beginning of retained history. `mode="replay_only"`
-makes the script end when it catches up, rather than wait for new notifications.
+`start_from=0` starts from the beginning of retained history.
+`mode="replay_only"` makes the script end when it catches up, rather than wait
+for new notifications.
 It prints matching payloads in sequence order. No output means no retained
 notifications match. Running it again reads the same retained history; it does
 not save a position.

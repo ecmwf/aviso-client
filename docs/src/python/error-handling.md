@@ -122,8 +122,8 @@ except pyaviso.HistoryGapError as e:
 
 A gap is terminal: the iterator stops and the supervisor exits. Decide what the
 right recovery is for your case. Common moves are restart from the live edge
-with `from_=None`, or restart from a specific known-good sequence with
-`from_=<n>`.
+with `start_from=None`, or restart from a specific known-good sequence with
+`start_from=<n>`.
 
 ## `TriggerError` carries a kind and a sub-kind
 
