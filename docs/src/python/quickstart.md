@@ -1,279 +1,192 @@
 # Quickstart
 
-Three end-to-end scripts. Each one runs against an `aviso-server` you point at
-with two environment variables. Pick the one that matches what you want to do.
+Use Python to receive notifications from data providers. Start by checking what
+your server offers, then listen for new notifications or replay past ones. You
+do not need to publish anything to listen.
 
 ## Set the environment
 
-Every script in this page reads two environment variables: `AVISO_BASE_URL` for
-the server URL and one of `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD` for
-credentials. `pyaviso.Env()` picks up whichever is set.
+You need Python 3.10 or newer and [pyaviso installed](./install.md) in your
+Python environment. Ask your server operator for a server URL and credentials
+with permission to receive notifications.
+
+Set these in your terminal, replacing the example values with yours:
 
 ```bash
 export AVISO_BASE_URL=https://aviso.example.org
-export AVISO_USERNAME=alice
-export AVISO_PASSWORD=wonderland
+export AVISO_TOKEN=your-bearer-token
 ```
 
-If you have a bearer token instead, `export AVISO_TOKEN=...` works the same way.
+The scripts use `pyaviso.Env()` to read credentials. If you have a username and
+password instead, unset `AVISO_TOKEN` and set `AVISO_USERNAME` and
+`AVISO_PASSWORD`. A token takes precedence when both are set. `Env()` requires
+credentials; for an anonymous server, omit `auth=pyaviso.Env()` from each client
+initialization. See [Authentication](./auth.md) for other options.
 
 ## What is on your server
 
-An aviso-server publishes notifications for one or more streams its operator has
-configured. Each stream is an "event type" with a schema that names the
-identifier fields the stream uses and which of them are required. The Python
-client never defines schemas: it discovers and consumes them.
+The server operator configures **event types**, each with a schema describing
+its notifications. The examples below use the same small `mars` schema as the
+[CLI quickstart](../cli/quickstart.md#see-what-the-server-knows). Your server
+may have different event types or a different `mars` schema.
 
-List what your server has configured:
-
-```python
-"""List the event types this server publishes."""
-
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-print(client.schema().event_types)
-```
-
-The output is a list of event-type names. It will look like
-`['mars', 'test_polygon']` or whatever your operator has configured. The exact
-set depends on your deployment.
-
-Inspect what one stream expects:
+Save this as `discover.py` and run `python discover.py` in the terminal where
+you set the environment variables. It lists event types, then prints the schema
+for `mars`. If `mars` is absent, use a listed name and run again.
 
 ```python
-"""Print the schema for one event type."""
-
 import json
 import os
+
 import pyaviso
 
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-print(json.dumps(client.schema_for("test_polygon").schema, indent=2))
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+)
+print(client.schema().event_types)
+print(json.dumps(client.schema_for("mars").as_dict(), indent=2, sort_keys=True))
 ```
 
-A schema response looks like this (your fields and types will differ):
+On a server configured with only this example schema, the output is:
 
-```json
+```text
+['mars']
 {
-  "payload": {
-    "required": true
-  },
-  "identifier": {
-    "polygon": {
-      "required": true,
-      "type": "PolygonHandler"
+  "event_type": "mars",
+  "schema": {
+    "identifier": {
+      "class": {
+        "required": true,
+        "type": "EnumHandler",
+        "values": [
+          "od",
+          "rd"
+        ]
+      },
+      "step": {
+        "range": null,
+        "required": false,
+        "type": "IntHandler"
+      }
     },
-    "date": {
-      "canonical_format": "%Y%m%d",
-      "required": false,
-      "type": "DateHandler"
-    },
-    "time": {
-      "required": false,
-      "type": "TimeHandler"
+    "payload": {
+      "required": false
     }
-  }
+  },
+  "status": "success"
 }
 ```
 
-So a `test_polygon` notification has three identifier fields: `polygon` (an
-array of `[latitude, longitude]` pairs), `date` (YYYYMMDD), and `time` (HHMM).
-A polygon needs at least four pairs, with the first pair repeated last.
-Identifier values are JSON values; the handler determines which shapes are
-valid. The `payload` is whatever JSON the publisher attached.
+The list names configured schemas, not available datasets or access rights.
+`as_dict()` makes the schema response printable as JSON.
 
-**What `"required": true` means.** The `required` flag on each identifier field
-says whether a **filter or watch** call must include it. For `test_polygon`, the
-only `required: true` field is `polygon`, so a listener can subscribe with just
-`{"polygon": [[0,0],[1,0],[1,1],[0,0]]}`. Other fields narrow the match further.
-A **notify** call is different: it must supply every identifier field the schema
-defines, regardless of the flag, because the schema enumerates the complete
-identifier of a notification. Publishing `test_polygon` without `date` or `time`
-returns `400 Required field 'date' missing for notify operation`. If a publish
-fails with `Required field X missing`, add X and retry.
+### Filters
 
-**The rest of this page uses `test_polygon` as the example event type.** It is
-one stream that may exist on your server.
+**Identifiers** are labels you can filter on. Here, `class` must be `od` or `rd`
+(`EnumHandler` means a choice from a list). In this example, `od` means
+operational data. `step` is a whole number (`IntHandler`) for forecast hours;
+`range: null` adds no range limit.
 
-If your server has no `test_polygon` configured, you have two paths:
+`required: true` means a field must appear in a filter. You can leave out `step`
+to receive all steps. Publishing is different: a provider must supply **every
+identifier field**, including `step`. The optional **payload** carries extra
+information, such as a file location, rather than labels to filter on.
 
-1. **Use the local stack from this repo.** From a checkout,
-   `bash tests/e2e/shared/stack.sh up` brings up an aviso-server with
-   `test_polygon` pre-configured (auth required, write role `producer`). See
-   [`python/examples/README.md`](https://github.com/ecmwf/aviso-client/tree/main/python/examples#run-the-examples-against-the-local-stack-recommended)
-   for the env-var setup. This is the fastest way to try the rest of this page.
+Use your server's schema to adapt the event name and filters below. You do not
+need to configure a server schema to receive notifications from an existing
+service.
 
-2. **Add the schema to your own aviso-server.** If you have access to the
-   server's config, paste this snippet into `notification_schema:` and restart:
+<a id="2-listen-for-notifications"></a>
 
-   ```yaml
-   notification_schema:
-     test_polygon:
-       payload:
-         required: true
-       topic:
-         base: "polygon"
-         key_order: ["date", "time"]
-       identifier:
-         polygon:
-           type: PolygonHandler
-           required: true
-         date:
-           type: DateHandler
-           canonical_format: "%Y%m%d"
-           required: false
-         time:
-           type: TimeHandler
-           required: false
-   ```
+## Listen for notifications
 
-   The same schema lives in
-   [`tests/e2e/aviso-server.config.yaml`](https://github.com/ecmwf/aviso-client/blob/main/tests/e2e/aviso-server.config.yaml).
-   After restart, `client.schema().event_types` should include `test_polygon`.
-
-If you do not run the server yourself and cannot reach a server that has
-`test_polygon`, substitute your own event type and identifier fields in every
-example below. The shape of every call is the same; only the event-type string
-and the identifier keys change.
-
-## 1. Publish one notification
-
-Save as `publish.py` and run it.
+Save this as `listen.py` and run `python listen.py` in the same terminal. It
+selects `mars` notifications whose `class` is `od`, at any forecast step:
 
 ```python
-"""Publish one notification and print the server's request_id."""
-
 import os
+
 import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-response = client.notify(
-    event_type="test_polygon",
-    identifier={
-        "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
-        "date": "20260601",
-        "time": "1200",
-    },
-    payload={"location": "s3://example/data.grib"},
-)
-
-print(f"status={response.status} request_id={response.request_id}")
-print(f"processed_at={response.processed_at}")
-```
-
-Expected output (one line each; the UUID and timestamp differ on every run):
-
-```text
-status=success request_id=06348659-a3bb-45bd-8541-6e49557c1400
-processed_at=2026-05-25T09:01:46Z
-```
-
-The `status` is always `success` on a 2xx response; anything else raises
-`pyaviso.HttpError` before the print line.
-
-## 2. Listen for notifications
-
-Save as `listen.py` and run it. While it runs, run `publish.py` from a second
-terminal a few times and watch the listener pick up each notification.
-
-```python
-"""Listen for test_polygon notifications and print each one as it arrives.
-
-Press Ctrl+C to stop. The iterator polls every 100 ms and checks for
-pending Python signals between polls, so Ctrl+C responds within ~100 ms.
-"""
-
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-for notification in client.listen(
-    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-):
-    print(f"seq={notification.sequence} time={notification.identifier.get('time')} payload={notification.payload}")
-```
-
-Expected output (one line per matching publish; sequences differ between servers
-and advance over time):
-
-```text
-seq=80 time=1200 payload={'location': 's3://example/data.grib'}
-seq=81 time=1201 payload={'location': 's3://example/data.grib'}
-```
-
-The `sequence` number increases monotonically across the stream. Filtering by
-`polygon` value means the listener only sees notifications whose polygon
-matches.
-
-## 3. Resume across restarts
-
-The first two scripts hold no state. If you stop the listener and restart it,
-you miss whatever was published in between. Attaching a state store fixes that.
-
-```python
-"""Listen for notifications, remembering where we left off across restarts."""
-
-import os
-import pathlib
-import pyaviso
-
-state_path = pathlib.Path.home() / ".config" / "aviso" / "state.json"
-state_path.parent.mkdir(parents=True, exist_ok=True)
 
 client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"],
-    auth=pyaviso.Env(),
-    state_store=pyaviso.JsonFileStore(state_path),
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
 )
-
-for notification in client.listen(
-    "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-):
-    print(f"seq={notification.sequence}")
+for notification in client.listen("mars", filter={"class": "od"}):
+    print(notification.payload)
 ```
 
-The first run reads from the live edge. Subsequent runs pick up after the last
-committed sequence. The last delivered notification can repeat if it was not
-committed before exit; see [State and resume](./state-and-resume.md).
+The script waits for matching new notifications and prints each payload. Silence
+can simply mean none have arrived. For a notification carrying a file location,
+you would see:
 
-The file is locked across cooperating processes on local filesystems (ext4, xfs,
-apfs, ntfs). See [State and resume](./state-and-resume.md) for the commit
-policy.
+```text
+{'location': 'file:///data/forecast.grib'}
+```
 
-## Filters
+Notifications with `class=rd` do not match. Press Ctrl+C to stop. This script
+does not save progress: restarting it waits for new notifications again.
 
-`filter=` is a dict of identifier predicates. A field flagged `"required": true`
-in the schema must appear in your filter; the rest are optional and narrow what
-you see further. (A notify call has to supply every identifier field defined in
-the schema regardless of the flag, but a listener only has to commit to the
-required ones; see "What is on your server" above.)
+## Replay past notifications
+
+To read retained history, replace the `for` loop in `listen.py` with this loop,
+keeping the imports and client initialization above it. Run `python listen.py`
+again:
+
+```python
+for notification in client.listen(
+    "mars", filter={"class": "od"}, from_=0, mode="replay_only"
+):
+    print(notification.payload)
+```
+
+`from_=0` starts from the beginning of retained history. `mode="replay_only"`
+makes the script end when it catches up, rather than wait for new notifications.
+It prints matching payloads in sequence order. No output means no retained
+notifications match. Running it again reads the same retained history; it does
+not save a position.
+
+<a id="3-resume-across-restarts"></a>
+
+## Resume across restarts
+
+For a listener that remembers its position, see
+[State and resume](./state-and-resume.md). For more filters and replay options,
+see [Listening](./listen.md).
 
 ## What about async?
 
-The async equivalent of recipe 2 looks like this:
+Use the regular client above for a simple script. If your application already
+uses `asyncio`, see [Async](./async.md) for complete examples.
+
+<a id="1-publish-one-notification"></a>
+
+## Publish a notification (optional, for providers)
+
+You need permission to publish. With the schema above, save this as `publish.py`
+and run `python publish.py` to announce an operational forecast at step 12:
 
 ```python
-"""Async listener for test_polygon notifications."""
-
-import asyncio
 import os
+
 import pyaviso
 
-
-async def main() -> None:
-    client = pyaviso.AsyncAvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-    async for notification in client.listen(
-        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-    ):
-        print(f"seq={notification.sequence}")
-
-
-asyncio.run(main())
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+)
+response = client.notify(
+    event_type="mars",
+    identifier={"class": "od", "step": 12},
+    payload={"location": "file:///data/forecast.grib"},
+)
+print(response.status)
 ```
 
-If your script is just running aviso, the sync version is what you want. See
-[Async](./async.md) for the situations where the async client actually helps.
+It prints `success` when the server accepts the notification. Both `class` and
+`step` are supplied, even though `step` is optional in filters. The location is
+an example reference: publishing sends the notification, not the file, and does
+not grant access to the file.
+
+An active matching listener receives this payload. To try it yourself, leave
+the live version of `listen.py` running and publish from another terminal with
+the same environment setup. A publish sent before the listener connects can be
+read with the replay loop. See [Publishing](./publish.md) for more options.

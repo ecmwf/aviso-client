@@ -37,7 +37,7 @@ See [`tests/e2e/README.md`](../../tests/e2e/README.md) for the two read-only tes
 
 ## Run the examples against your own server
 
-Set the same three environment variables to point at an aviso-server you can reach. The examples assume `test_polygon` is configured on the server; if it is not, see [the quickstart's "What is on your server" section](../../docs/src/python/quickstart.md#what-is-on-your-server) for the schema snippet to paste into your server's config, or substitute your own event type and identifier fields in each example (the shape of every call stays the same).
+Set the same three environment variables to point at an aviso-server you can reach. The examples assume `test_polygon` is configured on the server; if it is not, see [the quickstart's "What is on your server" section](../../docs/src/python/quickstart.md#what-is-on-your-server) to discover your server's schemas, then substitute your own event type and identifier fields in each example (the shape of every call stays the same).
 
 Each script terminates on its own (most listeners stop after receiving 3 notifications) so you do not have to Ctrl+C anything. The terminate-after-N pattern is for the harness and for users following along; remove the `break_after(...)` call in real long-running code.
 
