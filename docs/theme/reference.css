@@ -1,0 +1,34 @@
+/* Shared reading layout for trigger guides and concept references. */
+:is(.trigger-guide, .reference-guide) {
+    overflow-wrap: anywhere;
+}
+
+:is(.trigger-guide, .reference-guide) pre,
+:is(.trigger-guide, .reference-guide) pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+:is(.trigger-guide, .reference-guide) table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+:is(.trigger-guide, .reference-guide) th,
+:is(.trigger-guide, .reference-guide) td {
+    padding: 0.4em 0.5em;
+    white-space: normal;
+    vertical-align: top;
+}
+
+/* Keep links and red syntax tokens readable on navy backgrounds. */
+html.navy :is(.trigger-guide, .reference-guide) {
+    --links: #6ab0de;
+}
+
+html.navy :is(.trigger-guide, .reference-guide) .hljs-attr,
+html.navy :is(.trigger-guide, .reference-guide) .hljs-attribute,
+html.navy :is(.trigger-guide, .reference-guide) .hljs-variable {
+    color: #d47676;
+}

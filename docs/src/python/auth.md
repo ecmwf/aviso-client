@@ -1,134 +1,147 @@
 # Authentication
 
-The Python package includes five auth providers. They wrap the same Rust
-providers the CLI uses; pick the one that matches where your credentials live.
+Ask your server operator for its URL and credentials. Users need permission to
+receive notifications; providers need permission to publish. An auth provider
+tells the client where to get credentials. It does not grant permissions.
 
-Every example on this page constructs a client. Replace the placeholder
-credentials with real values for your server (or set the matching environment
-variables and switch to `pyaviso.Env()`).
+## Environment
 
-## Bearer token
+Start with [pyaviso installed](./install.md) and the
+[quickstart environment](./quickstart.md#set-the-environment). Set
+`AVISO_BASE_URL` and `AVISO_TOKEN`, or unset the token and set both
+`AVISO_USERNAME` and `AVISO_PASSWORD`.
 
-<!-- not-runnable -->
+Save this as `check_auth.py` and run `python check_auth.py`:
+
 ```python
+import os
+
 import pyaviso
 
 client = pyaviso.AvisoClient(
-    base_url="https://aviso.example.org",
-    auth=pyaviso.Bearer("opaque-jwt-or-token"),
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
 )
-
 print(client.schema().event_types)
 ```
 
-The token is redacted from `repr()` and from every log line the client emits.
-Substitute your own token for the placeholder.
+It prints the server's configured event types, for example `['mars']` for the
+[quickstart schema](./quickstart.md#what-is-on-your-server). Schema discovery
+does not prove you can listen or publish: those operations have their own
+permission checks, and discovery may be public.
+
+`Env()` reads credentials when constructed:
+
+- A non-empty `AVISO_TOKEN` takes precedence over username and password.
+- Otherwise it uses a non-empty `AVISO_USERNAME` with `AVISO_PASSWORD` set.
+  The password may be an empty string if your service permits that.
+- Without either combination, construction raises `pyaviso.AuthError`.
+
+There is no anonymous fallback. For an anonymous server, omit
+`auth=pyaviso.Env()` from the client initialization. Updating environment
+variables does not change an existing `Env` provider; create it again or restart
+the script.
+
+## Bearer token
+
+To select a token explicitly, replace the client initialization in
+`check_auth.py` with this block. Keep the imports and schema call:
+
+```python
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"],
+    auth=pyaviso.Bearer(os.environ["AVISO_TOKEN"]),
+)
+```
+
+This sends the token in the HTTP `Authorization` header. `Bearer` redacts it in
+`repr()`. Keep credentials out of source files and do not print them.
 
 ## Basic auth
 
+With `AVISO_USERNAME` and `AVISO_PASSWORD` set, use this replacement instead:
+
 ```python
-"""Authenticate with username and password."""
-
-import os
-import pyaviso
-
 client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
     auth=pyaviso.Basic(os.environ["AVISO_USERNAME"], os.environ["AVISO_PASSWORD"]),
 )
-
-print(client.schema().event_types)
 ```
 
-The password is redacted from `repr()` and from logs.
-
-## Environment
-
-`pyaviso.Env()` reads `AVISO_TOKEN`, `AVISO_USERNAME`, and `AVISO_PASSWORD` at
-construction. A bearer token wins over the user/password pair when both are set.
-If nothing is set, `Env()` raises `pyaviso.AuthError`.
-
-```python
-"""Pick credentials up from environment variables."""
-
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-print(client.schema().event_types)
-```
-
-This is the most common shape for CI jobs, containers, and one-shot scripts
-where credentials live in the environment.
+This explicitly selects username/password authentication even if `AVISO_TOKEN`
+is also set. Basic authentication encodes credentials; HTTPS protects them in
+transit. `Basic` redacts its password in `repr()`.
 
 ## Config file
 
-<!-- not-runnable -->
-```python
-import os
-import pyaviso
+`ConfigFile` reads an **auth-only YAML file**, not the CLI's general
+configuration file. Create `~/.config/aviso/auth.yaml` with exactly one of the
+following shapes, replacing the example values with your credentials:
 
+```yaml
+bearer:
+  token: your-bearer-token
+```
+
+Or, for Basic authentication:
+
+```yaml
+basic:
+  username: your-username
+  password: your-password
+```
+
+Restrict file access to the account running your script. Keep the URL in the
+client initialization, not this file. Unknown fields, both sections, neither
+section, an unreadable file or malformed YAML raise `pyaviso.ConfigError` at
+construction.
+
+Use this replacement client initialization in `check_auth.py`:
+
+```python
 client = pyaviso.AvisoClient(
     base_url=os.environ["AVISO_BASE_URL"],
     auth=pyaviso.ConfigFile("~/.config/aviso/auth.yaml"),
 )
-
-print(client.schema().event_types)
 ```
 
-The file must contain exactly one of:
-
-```yaml
-bearer:
-  token: opaque-jwt-or-token
-```
-
-or:
-
-```yaml
-basic:
-  username: alice
-  password: wonderland
-```
-
-Both sections, or neither, is a `pyaviso.ConfigError`. The path is expanded with
-`os.path.expanduser` so `~` works.
-
-## Chain
-
-`Chain` composes providers with first-success-wins semantics. Each member is
-tried in order; the first one to produce a credential wins.
-
-<!-- not-runnable -->
-```python
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"],
-    auth=pyaviso.Chain(
-        pyaviso.Env(),
-        pyaviso.ConfigFile("~/.config/aviso/auth.yaml"),
-        pyaviso.Bearer("emergency-fallback-token"),
-    ),
-)
-
-print(client.schema().event_types)
-```
-
-If every member fails, the last error propagates as `pyaviso.AuthError`.
+The path accepts a string or `Path`; `~` is expanded. The file is read at
+construction and reread when the client requests a credential refresh after
+HTTP 401. A file change alone does not immediately replace the cached value.
 
 ## Refresh on 401
 
-On a 401 the client calls the provider's `refresh()` and retries the original
-request once. The five providers shipped today carry static credentials, so
-`refresh()` is a no-op and a stale credential still produces a 401 on the retry.
-The retry-once contract is in place so a provider that rotates tokens drops in
-without a code change; for the shipped providers it is just protocol.
+With an auth provider, the client attempts refresh after a 401 and retries the
+request once if refresh succeeds. A second 401 is still an error: `HttpError`
+for a one-shot request, or `AuthError` when watch authentication remains
+rejected.
+
+- `Bearer`, `Basic` and `Env` keep their original credentials; refresh does not
+  change them.
+- `ConfigFile` rereads its source file. An invalid replacement file raises
+  `AuthError` during refresh.
+- `Chain` refreshes the first member currently able to produce a header.
+
+For static credentials, fix the source and construct a new provider/client or
+restart the script. Inspect
+[HTTP errors](./error-handling.md#httperror-exposes-the-servers-response)
+to distinguish a server rejection from a local credential setup failure.
+
+## Chain
+
+This is an advanced option for already-constructed providers. `Chain` asks each
+member for an authorization header in order and uses the first successful
+result. If all fail, it propagates the last provider error. An empty chain
+raises `AuthError` when a request needs credentials.
+
+It is not a list of credentials to try against a server. A 401 does not switch
+to the next member. `Env()` and `ConfigFile(...)` are constructed before being
+passed to `Chain`; a missing environment or invalid file raises immediately,
+before the chain can provide fallback. Choose and validate your available
+credential source during setup rather than relying on a chain to skip those
+construction errors.
 
 ## With `AsyncAvisoClient`
 
-Every provider on this page works identically with the async client. Swap
-`AvisoClient` for `AsyncAvisoClient` and the rest of the construction is the
-same.
+The same providers work with the async client. Credential setup remains
+synchronous; HTTP methods are awaited. See [Async](./async.md) if your
+application already uses `asyncio`.

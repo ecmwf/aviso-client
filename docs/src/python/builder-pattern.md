@@ -1,261 +1,143 @@
 # Builder pattern
 
-`pyaviso` constructs two values with a fluent, chainable style: `Trigger` and
-`WatchRequest`. Each factory returns a value, and each setter returns a new
-value, so you keep chaining until the value describes what you want. There is no
-final `.build()` step. You pass the value straight to the client.
+Start with the keyword arguments on [Listening](./listen.md). Use a
+`WatchRequest` when you want to name a set of listener settings and reuse it.
+A builder is simply a series of calls that returns those settings. There is no
+final `.build()` call.
 
-The keyword-argument forms on `client.listen(...)` and `Trigger.<kind>(...)` are
-the default and the shortest path. Reach for the builder when you want to
-construct a watch once and reuse it, build one from configuration, keep it in a
-registry, or branch a single base into several variants.
-
-This first example builds a trigger and a request without touching the network,
-so you can run it as written:
-
-```python
-"""Build a Trigger and a WatchRequest with the fluent API. No server needed."""
-
-import pyaviso
-
-trigger = pyaviso.Trigger.echo(label="demo").retries(2).required(False)
-
-request = (
-    pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
-    .with_triggers([trigger])
-)
-
-print(request.event_type, request.mode)  # test_polygon watch
-```
-
-Pass the finished `request` to a client with `client.listen(request=request)`.
-The [Listening](./listen.md#reusing-a-watch-request) page shows that call from
-end to end.
-
-## Build a trigger
-
-Every trigger starts at one of the six factories (`echo`, `log`, `command`,
-`webhook`, `teams`, `post`). The tunables a kind supports can be passed as
-keyword arguments to the factory, set with a chainable setter, or a mix of the
-two. Where a tunable is available both ways, the result is the same:
-
-```python
-import pyaviso
-
-# These two triggers behave identically; pick whichever reads better.
-from_kwargs = pyaviso.Trigger.echo(retries=3, required=False)
-from_setters = pyaviso.Trigger.echo().retries(3).required(False)
-```
-
-The setters are `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
-`.fail_fast(on)`, and `.label(name)`. Not every tunable applies to every kind:
-`retries` and `required` work everywhere, `timeout` and `fail_fast` affect only
-the command and HTTP-based triggers, and `label` only the echo trigger. The
-[Triggers](./triggers.md) guide has the per-kind detail and the factory
-arguments (URLs, headers, command strings); the
-[API reference](./api-reference.md#triggers) lists the signatures.
+These examples use the
+[quickstart's small `mars` schema](./quickstart.md#what-is-on-your-server):
+`class` is a required filter with choices `od` and `rd`; the whole-number `step`
+filter is optional. Providers supply both fields when publishing. The payload
+is optional. Check your server's schema if it differs.
 
 ## Build a watch request
 
-A `WatchRequest` starts at one of three factories, then takes a filter and a
-list of triggers:
+This runs without a server. Save it as `build_request.py` and run
+`python build_request.py`:
 
 ```python
 import pyaviso
 
-request = (
-    pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
-    .with_triggers([pyaviso.Trigger.echo()])
-)
+request = pyaviso.WatchRequest.watch("mars").with_filter({"class": "od"})
+print(request.event_type, request.mode)
 ```
 
-The other two factories fix the start position and the mode in one call:
+Output:
 
-```python
-import pyaviso
-
-# resume after a sequence; mode stays "watch"
-pyaviso.WatchRequest.watch_from("test_polygon", 1024)
-
-# replay a closed range, then stop; mode becomes "replay_only"
-pyaviso.WatchRequest.replay_only("test_polygon", 1024)
+```text
+mars watch
 ```
 
-See [State and resume](./state-and-resume.md) for what the start position means,
-and [Listening](./listen.md#replay-only) for how replay-only ends.
-
-Pass the request with the `request=` keyword. It is mutually exclusive with
-`event_type=`, `filter=`, `from_=`, `mode=`, and `triggers=`. Passing the
-request and any of those together raises `pyaviso.AvisoError`, so it stays clear
-which surface you meant.
+The request describes a listener; constructing it does not connect to a server.
+Pass it to `client.listen(request=request)`, as below.
 
 ## A complete example
 
-Run these two scripts against the same server. `client.notify(...)` takes
-keyword arguments and has no builder, so the publisher uses them directly; the
-builder pattern is for the watch side, where the listener builds both its
-`WatchRequest` and its `Trigger`.
-
-Save the publisher as `publish.py`. It publishes three notifications and exits:
-
-```python
-"""Publish three test_polygon notifications, then exit."""
-
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-for i in range(3):
-    response = client.notify(
-        event_type="test_polygon",
-        identifier={
-            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
-            "date": "20260601",
-            "time": f"120{i}",
-        },
-        payload={"location": f"s3://example/data/{i}.grib"},
-    )
-    print(f"published {i}: request_id={response.request_id}")
-```
-
-Save the listener as `listen_builder.py` and start it first, so it is listening
-when the publisher runs:
+Use the installation and
+[environment setup](./quickstart.md#set-the-environment)
+from the quickstart, including `AVISO_BASE_URL` and credentials for
+`pyaviso.Env()`. For an anonymous server, omit `auth=pyaviso.Env()` from the
+client initialization. Save this as `listen_builder.py` and run
+`python listen_builder.py`:
 
 ```python
-"""Listen with a WatchRequest and Trigger built through the fluent API."""
-
 import os
+
 import pyaviso
 
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-request = (
-    pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
-    .with_triggers([pyaviso.Trigger.echo(label="demo")])
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
 )
+request = pyaviso.WatchRequest.watch("mars").with_filter({"class": "od"})
 
-with client.listen(request=request) as iterator:
-    for notification in iterator:
-        print(f"seq={notification.sequence} payload={notification.payload}")
+try:
+    with client.listen(request=request) as notifications:
+        for notification in notifications:
+            print(notification)
+except KeyboardInterrupt:
+    print("Stopped listening")
 ```
 
-Each notification produces two lines: a compact-JSON line from the echo
-trigger, then a `seq=... payload=...` line from the loop body. The sequence
-numbers depend on the server's history, so yours will differ:
+It waits for new operational forecasts at any step and prints each original
+CloudEvent as indented JSON, as shown in
+[Listening](./listen.md#a-complete-listener).
+Press Ctrl+C to stop. You do not need publishing permission to listen. For a
+local trial with provider credentials, run the
+[publish script](./publish.md#a-complete-publish-script) in another terminal.
 
-```text
-{"event_type":"test_polygon","sequence":1,"identifier":{"date":"20260601","polygon":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]],"time":"1200"},"payload":{"location":"s3://example/data/0.grib"}}
-seq=1 payload={'location': 's3://example/data/0.grib'}
-```
-
-The same two-line pattern repeats for each notification. Stop the listener with
-Ctrl+C. The resume and async variants of the same listener are on the
-[Listening](./listen.md) page.
+`request=` cannot be combined with `event_type`, `filter`, `start_from`, `mode`
+or `triggers`. Put those settings on the request instead.
 
 ## Replay history and exit
 
-Swap the `watch` factory for `replay_only` and the same request replays
-history from a start position up to the live edge, then stops on its own at
-end-of-stream. It is the builder form of the `from_=` and `mode="replay_only"`
-keywords. This script publishes three notifications under a polygon unique to
-it, then replays them and exits:
+In `listen_builder.py`, replace the `request = ...` line with this block. Keep
+the imports, client initialization and loop:
 
 ```python
-"""Publish three notifications, then replay them with the builder and exit."""
+request = pyaviso.WatchRequest.replay_only("mars", 0).with_filter({"class": "od"})
+```
 
-import os
+Run the script again. It reads matching retained history, prints each
+notification and exits at the server's replay boundary. Empty history prints
+nothing. It does not publish anything or wait for new notifications.
+
+An integer start position is exclusive: `0` means everything retained after
+sequence zero, not every notification ever published. To read after sequence
+1024 and then keep listening, use `WatchRequest.watch_from("mars", 1024)`.
+Both start-position factories also accept a UTC timestamp string such as
+`"2026-06-01T00:00:00Z"`. See
+[start positions](./listen.md#start-from-a-specific-position)
+and [State and resume](./state-and-resume.md).
+
+## Build a trigger
+
+You can add triggers to run actions before a notification reaches your loop.
+Their factories accept keyword arguments. Chainable setters let you adjust an
+existing trigger. This standalone example needs no server:
+
+```python
 import pyaviso
 
-# A polygon unique to this script, so the replay sees only its own data.
-polygon = [[40, 10], [41, 10], [41, 11], [40, 10]]
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-for i in range(3):
-    client.notify(
-        event_type="test_polygon",
-        identifier={"polygon": polygon, "date": "20260101", "time": f"000{i}"},
-        payload={"location": f"s3://example/backfill-{i}.grib"},
-    )
-
-request = pyaviso.WatchRequest.replay_only("test_polygon", 0).with_filter(
-    {"polygon": polygon}
+trigger = pyaviso.Trigger.echo().retries(2).required(False)
+request = (
+    pyaviso.WatchRequest.watch("mars")
+    .with_filter({"class": "od"})
+    .with_triggers([trigger])
 )
-
-count = 0
-with client.listen(request=request) as iterator:
-    for notification in iterator:
-        print(f"seq={notification.sequence} {notification.payload}")
-        count += 1
-print(f"replayed {count} notifications; exiting")
+print(request.event_type, request.mode)
 ```
 
-Expected output on a fresh stream:
+It prints `mars watch`. Passing this request to a listener adds an optional
+echo action with up to two extra attempts. Echo prints a smaller notification
+view; `print(notification)` in your loop prints the original CloudEvent.
 
-```text
-seq=1 {'location': 's3://example/backfill-0.grib'}
-seq=2 {'location': 's3://example/backfill-1.grib'}
-seq=3 {'location': 's3://example/backfill-2.grib'}
-replayed 3 notifications; exiting
-```
-
-The time identifiers differ so all three notifications survive the default
-latest-per-subject retention. Later runs replace those subjects; schemas with
-longer history retention can replay more notifications.
-
-`replay_only(event_type, 0)` starts at the beginning of the stream; `0` means
-"everything after sequence 0". To resume from a checkpoint, pass the last
-sequence you saw instead. The iterator ends cleanly at end-of-stream, so the
-loop exits without Ctrl+C. See
-[Listening](./listen.md#replay-only) for the kwargs form.
+The setters are `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
+`.fail_fast(on)` and `.label(name)`. Timeout and fail-fast settings affect
+command and HTTP triggers; label affects only echo. See
+[Triggers](./triggers.md#tunables) for failure behavior and
+[the API reference](./api-reference.md#triggers) for factory defaults.
 
 ## Setters return a new value
 
-Both builders are immutable. A setter never changes the value you call it on; it
-returns a new value with the change applied. Two things follow from that.
-
-First, you have to keep the result. A setter call whose return value you discard
-does nothing:
+Keep the result of a setter: it returns a new value and does not change the
+original. This standalone example builds two independent filters:
 
 ```python
 import pyaviso
 
-request = pyaviso.WatchRequest.watch("test_polygon")
-request.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})  # discarded
-request = request.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})  # kept
+base = pyaviso.WatchRequest.watch("mars")
+operational = base.with_filter({"class": "od"})
+research = base.with_filter({"class": "rd"})
+print(operational.event_type, research.event_type)
 ```
 
-Second, a shared base is safe to branch. Build the base once, then derive
-variants that do not affect each other:
-
-```python
-import pyaviso
-
-base = pyaviso.WatchRequest.watch("test_polygon").with_triggers(
-    [pyaviso.Trigger.echo()]
-)
-
-north = base.with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
-south = base.with_filter({"polygon": [[0, 0], [-1, 0], [-1, -1], [0, 0]]})
-# base is untouched; north and south are independent requests
-```
+It prints `mars mars`. A call such as `base.with_filter({"class": "od"})` whose
+result you discard leaves `base` unchanged.
 
 ## When to use the builder
 
-| You want to | Use |
-|---|---|
-| Make a single listen call | kwargs on `client.listen(...)` |
-| Build one config and reuse it across calls | `WatchRequest` |
-| Construct a watch from operator config or a registry | `WatchRequest` |
-| Branch one base into several filtered variants | `WatchRequest` |
-| Tune a trigger inline | kwargs on `Trigger.<kind>(...)` |
-| Adjust a trigger handed to you from elsewhere | trigger setters |
-
-The same `Trigger` and `WatchRequest` values work with both `AvisoClient` and
-`AsyncAvisoClient`; they are plain values with no client of their own. For a
-side-by-side builder-versus-kwargs script, see
-[`advanced/01_builder_pattern.py`](https://github.com/ecmwf/aviso-client/tree/main/python/examples/advanced/01_builder_pattern.py).
+Use keywords for a single listen call. Use a request for settings you want to
+reuse or derive from a common base. `Trigger` and `WatchRequest` work with both
+clients; they do not belong to a particular client instance. See
+[Async](./async.md) if your application already uses `asyncio`.

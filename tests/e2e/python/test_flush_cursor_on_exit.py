@@ -45,7 +45,7 @@ def test_flush_cursor_on_exit_prevents_replay_after_clean_shutdown(
         first.listen(
             EVENT_TYPE,
             filter={"polygon": POLYGON, "date": DATE},
-            from_=0,
+            start_from=0,
         ) as iterator,
     ):
         _publish(first, 1)

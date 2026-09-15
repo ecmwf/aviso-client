@@ -73,9 +73,9 @@
 # Concepts
 
 - [Notifications](./concepts/notifications.md)
+- [Filters](./concepts/filters.md)
 - [Streams and reconnects](./concepts/streams.md)
 - [Resume and state](./concepts/resume-and-state.md)
-- [Filters](./concepts/filters.md)
 - [Authentication providers](./concepts/auth-providers.md)
 - [Glossary](./concepts/glossary.md)
 

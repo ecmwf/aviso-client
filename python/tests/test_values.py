@@ -23,11 +23,39 @@ server harness for those calls lands in a follow-up.
 
 from __future__ import annotations
 
+import json
 from types import MappingProxyType
 from typing import Any
 
 import pyaviso
 import pytest
+
+
+@pytest.mark.parametrize("payload", [None, False, 0, "", [], {}, {"é": [None, 2**63, [True]]}])
+def test_notification_str_without_cloudevent(payload: object) -> None:
+    notification = pyaviso.Notification("mars", 42, {"class": "od"}, payload)
+    assert json.loads(str(notification)) == notification.as_dict()
+    assert str(notification).startswith('{\n  "event_type": "mars",')
+    assert "cloudevent" not in json.loads(str(notification))
+
+
+@pytest.mark.parametrize("cloudevent", [False, 0, "", [], {}, {"é": [None, 2**63, [True]]}])
+def test_notification_str_preserves_supplied_cloudevent(cloudevent: Any) -> None:
+    # Any exercises runtime JSON scalars beyond the mapping-only constructor stub.
+    notification = pyaviso.Notification("mars", 42, {}, None, cloudevent)
+    assert json.loads(str(notification)) == cloudevent
+    assert notification.as_dict()["cloudevent"] == cloudevent
+    assert repr(notification).startswith("Notification(event_type=")
+
+
+def test_notification_str_explicit_none_uses_fields() -> None:
+    notification = pyaviso.Notification("mars", 0, {}, None, None)
+    assert json.loads(str(notification)) == {
+        "event_type": "mars",
+        "sequence": 0,
+        "identifier": {},
+        "payload": None,
+    }
 
 
 def test_notification_constructs_and_exposes_fields() -> None:

@@ -1,11 +1,18 @@
 # Streams and reconnects
 
-When you run `aviso listen`, aviso opens a long-lived HTTP connection to the
-server (server-sent events) and reads notifications off it as they arrive.
+<div class="reference-guide">
 
-You will see this work just fine on its own: aviso reconnects when needed,
-applies backoff, and resumes where it left off. The details below are useful
-when you are troubleshooting or building a long-running service.
+When you run `aviso listen`, aviso opens a long-lived HTTP connection to the
+server and receives notifications as they arrive. This connection is called a
+stream. The server sends messages over it using Server-Sent Events (SSE).
+
+The listener first reads any requested history that the server still stores,
+then waits for new matches. Without a starting position or saved state, it
+waits for new notifications. Replay-only requests stop after stored history.
+
+aviso reconnects automatically after routine interruptions. Backoff means
+waiting before another attempt, so it does not repeatedly contact a busy
+server. The details below help explain pauses and errors.
 
 ## The connection lives a while, then closes
 
@@ -21,15 +28,17 @@ listener just keeps running.
 
 | What happened | What aviso does |
 |---|---|
-| `connection-closing` with `max_duration_reached` | Reconnect immediately. The normal case. |
-| `connection-closing` with `server_shutdown` | Wait a few seconds, then reconnect. |
-| TCP connection drops without a polite close | Reconnect with exponential backoff (250 ms doubling, capped at 30 s). |
-| Server returns `429 Too Many Requests` or `503 Service Unavailable` | Honour the `Retry-After` header, then reconnect. Capped at five minutes. |
-| Server returns `401 Unauthorized` | Ask the auth provider to refresh, then retry. A second 401 in the same cycle surfaces as an error. |
-| Server returns any other 4xx (`403`, `404`, `410`) | Stop. This is a permanent error. |
+| Routine connection time limit | Reconnect immediately. |
+| Server shutdown | Wait, then reconnect. |
+| Connection drops | Retry with increasing delays. |
+| Busy server (429 or 503) | Use the server's retry delay. |
+| Rejected credentials (401) | Refresh credentials and retry once. |
+| Other client error (4xx) | Stop the listener. |
 
-The backoff uses full jitter so a fleet of listeners does not all reconnect in
-lockstep after a server outage.
+For a dropped connection, the delay limit starts at 250 milliseconds and doubles
+up to 30 seconds. The actual delay is random within that limit so listeners do
+not all reconnect together. A server's `Retry-After` delay is capped at five
+minutes. A second 401 in the same attempt cycle stops the listener.
 
 ## Heartbeats
 
@@ -38,25 +47,24 @@ default). If aviso does not see any event (heartbeat, notification, or control)
 for longer than `max(3 × heartbeat_interval, heartbeat_interval + 30 s)`, it
 declares the connection silently dead and reconnects.
 
-The watchdog catches problems that TCP keepalive does not, such as:
-
-- A NAT or firewall that has silently dropped your connection.
-- A reverse proxy whose upstream has hung but whose TCP socket is still alive.
-- A laptop that just woke up from sleep on a new WiFi network.
+This check can detect a stalled network connection even when no explicit error
+arrives, for example after a laptop wakes up on a different WiFi network.
 
 ## Reconnect-as-normal
 
-The cumulative effect is that a single `aviso listen` command can run for weeks
-across an arbitrary number of routine server-driven reconnects without ever
-surfacing a transient error to you. Failure surfaces only when the supervisor
-cannot recover.
+You normally leave the same listener running through routine reconnects. The
+background component managing the connection, called the supervisor, retries
+recoverable failures and reports errors it cannot recover from.
 
 ## Resume after a reconnect
 
-Every reconnect uses the cursor in the state file (or what aviso has in memory
-if you are running with `--no-state-store`). The supervisor asks the server for
-"everything from sequence `last_committed + 1` onwards", so no notification is
-lost.
+After progress has been recorded, reconnecting requests notifications after
+that sequence. The running listener keeps this position in memory even without
+a state file. Saved state lets a later run use it too.
+
+Recovery depends on history still being available on the server. A saved
+position does not prove your application finished processing every notification
+or guarantee that every queued notification reaches your code after a crash.
 
 For the full rules of how cursors advance, see
 [Resume and state](./resume-and-state.md).
@@ -66,7 +74,7 @@ For the full rules of how cursors advance, see
 Some errors are terminal. The supervisor closes the stream and stops the
 listener:
 
-- A 4xx other than 401 from the server (the request itself is wrong; retrying
+- A 4xx other than 401 or 429 from the server (the request is rejected; retrying
   will not help).
 - A second 401 in the same cycle after a refresh attempt (the credential really
   is rejected).
@@ -75,8 +83,9 @@ listener:
   pruned).
 - A malformed event from the server (a CloudEvents id that does not parse).
 
-In each case the CLI exits with code 1 and a final error line. Other listeners
-in the same `aviso listen` invocation keep running.
+The CLI reports the failed listener's error. Other listeners in the same
+`aviso listen` command keep running. After all listeners stop, the command exits
+with code 1 if any listener failed.
 
 ## What next
 
@@ -84,3 +93,5 @@ in the same `aviso listen` invocation keep running.
 - [Filters](./filters.md): what the server uses to decide which events to send
   you.
 - [Troubleshooting](../cli/troubleshooting.md): the common failure modes.
+
+</div>

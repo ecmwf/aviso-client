@@ -1,55 +1,87 @@
 # Authentication providers
 
-aviso supports three authentication modes with the server: anonymous (no
-`Authorization` header), HTTP Basic, and Bearer (an opaque or JWT token). Five
-built-in providers cover the common ways to supply credentials.
+<div class="reference-guide">
 
-You will rarely pick a provider by name. The CLI builds the right one from your
-flags, environment variables, and config file. The names below show up in logs
-and in the library API.
+Authentication tells the server who you are. Ask your service operator for the
+server address and the credentials to use: a token, or a username and password.
+Some servers allow you to receive public notifications without credentials.
 
-## The five providers at a glance
+Receiving notifications needs read permission. Publishing needs write
+permission. Managing schemas and deleting notifications are operator tasks.
+Valid credentials do not necessarily grant all of these permissions.
 
-| Provider | Sends | Where the credentials come from |
-|---|---|---|
-| `Bearer` | `Authorization: Bearer <token>` | Constructor argument |
-| `Basic` | `Authorization: Basic <base64>` | Constructor arguments |
-| `Env` | Bearer or Basic | `AVISO_TOKEN`, `AVISO_USERNAME`, `AVISO_PASSWORD` |
-| `ConfigFile` | Bearer or Basic | A YAML file with a `bearer:` or `basic:` block |
-| `Chain` | Whichever member wins first | Composition of any of the above |
-
-All five mark the `Authorization` header as sensitive, so downstream logging
-libraries (reqwest, hyper, tracing) redact the value automatically.
+An authentication provider supplies credentials to the client. This use of
+"provider" is different from a data provider, who publishes notifications.
+For setup, follow [CLI authentication](../cli/configuration.md#authentication)
+or [Python authentication](../python/auth.md).
 
 ## Which one the CLI picks for you
 
-For the CLI:
+The CLI checks credentials in this order:
 
-1. If you pass `--token` (or `AVISO_TOKEN` is set, or the config file has
-   `auth.bearer_token`), aviso uses Bearer.
-2. If you pass `--username`/`--password` (or `AVISO_USERNAME`/`AVISO_PASSWORD`
-   are set, or `auth.basic.{username,password}` is in the config file), aviso
-   uses Basic.
-3. If both kinds of credentials are present, the flag wins, then the env vars,
-   then the file.
-4. If no credentials are present, aviso runs anonymously (no `Authorization`
-   header). Some servers allow this for public streams.
+1. Command-line flags: `--token`, or `--username` with `--password`.
+2. Environment variables: `AVISO_TOKEN`, or `AVISO_USERNAME` with
+   `AVISO_PASSWORD`.
+3. The config file: `auth.bearer_token`, or `auth.basic` with both `username`
+   and `password`.
+4. If none are set, an anonymous connection with no credentials.
 
-The CLI never asks you which provider to use. You set the values; aviso picks
-the provider.
+Choose one authentication method at a time. Conflicting credential flags are
+rejected. Incomplete environment credentials cause an error rather than silently
+falling back to the file. When a token and a complete username/password pair
+are both in the environment, the token takes precedence. The file rejects a
+configuration containing both methods.
+
+Python clients are anonymous by default. They use environment credentials only
+when you explicitly supply `pyaviso.Env()` as their authentication provider.
+
+## What happens on a 401
+
+`401 Unauthorized` means the server rejected the credentials. aviso asks the
+selected authentication provider to refresh them, then retries once. A second
+401 in the same attempt cycle stops the request with an authentication error.
+
+- `Bearer` and `Basic` hold fixed credentials. Refresh does not change them.
+- `Env` reads the process's environment once, when the provider is created.
+  Refresh does not change those credentials. Create a new provider and client
+  after updating the environment, or restart the listener with the new values.
+- `ConfigFile` re-reads its credentials file, so a replaced credential can be
+  picked up on refresh.
+- `Chain` checks its members again in order and refreshes the first one that
+  can currently supply a header.
+
+The CLI turns credentials from its main config file into a fixed `Bearer` or
+`Basic` provider. Editing that file does not give it `ConfigFile` refresh
+behaviour. Restart the CLI to use the changed main configuration.
+
+`403 Forbidden` usually means the account is not allowed to perform the
+requested operation. Ask the service operator about the needed permission.
+
+## The five providers at a glance
+
+These program names appear in logs and library documentation. Bearer sends a
+token; Basic sends a username and password encoded in an HTTP header. Encoding
+is not encryption, so use your service's HTTPS address for credentials.
+
+| Provider | Credential source |
+|---|---|
+| `Bearer` | A token supplied in code. |
+| `Basic` | A username and password supplied in code. |
+| `Env` | The process's environment variables. |
+| `ConfigFile` | A separate credentials file. |
+| `Chain` | An ordered list of providers. |
+
+All five mark the `Authorization` request header as sensitive so the HTTP
+libraries can hide its value in logs.
 
 ## When you need `ConfigFile`
 
-You have multiple environments (staging, prod) with separate credentials, and
-you do not want them in the main config file. Store the credentials in a
-separate YAML and point at it programmatically (from a Rust caller) with
-`ConfigFile::from_path`.
+This is a library option for credentials kept separately from the main client
+configuration. A Rust caller uses `ConfigFile::from_path`. The CLI does not
+select this provider for its main config file.
 
-The CLI uses the layered config (file + env + flags), not `ConfigFile` directly.
-You will only call `ConfigFile::from_path` from a Rust program that does its own
-composition.
-
-The file shape:
+The separate credentials file contains one of these shapes, with your own
+credentials in place of the example values:
 
 ```yaml
 bearer:
@@ -64,98 +96,34 @@ basic:
   password: "wonderland"
 ```
 
-Only one of `bearer:` and `basic:` per file. The parser rejects both-or-neither
-and unknown keys, so a typo fails loudly.
+Use exactly one block. The parser rejects both, neither, or unknown keys.
+These are credentials-file examples, not main CLI configuration files.
 
 ## When you need `Chain`
 
-You want aviso to fall back from one credential source to another. For example,
-prefer a short-lived token from the environment, fall back to a long-lived
-service-account token in a config file.
+Library callers can use `Chain` to try several credential sources in order.
+The first member that successfully supplies a request header wins. This is a
+fallback between sources, not an attempt to log in with every credential until
+the server accepts one. On a 401, the chain checks its members again and
+refreshes the first one that can currently supply a header. If a custom
+provider's availability has changed, this can be a different member from the
+one that supplied the rejected header.
 
-In a Rust program:
-
-```rust,ignore
-use std::sync::Arc;
-use aviso::auth::{AuthProvider, Chain, ConfigFile, Env};
-
-let mut providers: Vec<Arc<dyn AuthProvider>> = Vec::new();
-if let Ok(env) = Env::from_process_env() {
-    providers.push(Arc::new(env));
-}
-if let Ok(file) = ConfigFile::from_path("/etc/aviso/fallback.yaml") {
-    providers.push(Arc::new(file));
-}
-let chain = Chain::new(providers);
-```
-
-`Chain` tries each member in order. The first one whose `authorization_header()`
-returns `Ok` wins. The CLI does not expose `Chain` directly because its own
-layered config already covers the common case.
-
-## What happens on a 401
-
-If the server returns `401 Unauthorized`, aviso asks the auth provider to
-refresh and retries the request once.
-
-- For `Bearer` and `Basic`, refresh is a no-op. A second 401 means the
-  credential really is wrong.
-- For `Env` and `ConfigFile`, refresh re-reads the source. If you rotated the
-  env var or the file between requests, the new value is picked up.
-- For `Chain`, refresh targets the member whose header went out on the failing
-  request, not all members.
-
-For custom providers (an OAuth client, an OIDC client, a signed-URL generator),
-you implement `refresh()` to rotate the cached credential. The next request
-picks up the new value.
-
-A second 401 in the same attempt cycle terminates the request with an
-authentication error.
+The CLI already checks flags, environment and configuration in order, so you do
+not need to construct a chain for ordinary command-line use. See the
+[library guide](../developers/lib-guide.md) for programmatic setup.
 
 ## Writing a custom provider
 
-If you need something the five built-in providers do not cover (OAuth, OIDC, AWS
-SigV4), implement the `AuthProvider` trait in your own code:
-
-```rust,ignore
-use async_trait::async_trait;
-use aviso::{auth::AuthProvider, ClientError};
-use reqwest::header::HeaderValue;
-use tokio::sync::RwLock;
-
-struct MyOauth {
-    cached_token: RwLock<String>,
-}
-
-#[async_trait]
-impl AuthProvider for MyOauth {
-    async fn authorization_header(&self) -> aviso::Result<HeaderValue> {
-        let token = self.cached_token.read().await;
-        let mut v = HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|e| ClientError::Auth(format!("invalid header: {e}")))?;
-        v.set_sensitive(true);
-        Ok(v)
-    }
-
-    async fn refresh(&self) -> aviso::Result<()> {
-        let new_token = fetch_from_idp().await?;
-        *self.cached_token.write().await = new_token;
-        Ok(())
-    }
-}
-# async fn fetch_from_idp() -> aviso::Result<String> { Ok("new".into()) }
-```
-
-Two things to remember:
-
-- Implement `Debug` by hand and redact the secret. The default derivation can
-  leak through the `RwLock`'s `Debug`.
-- Always call `HeaderValue::set_sensitive(true)` on the value you return. That
-  is what makes downstream loggers redact it.
+If your login service is not covered by the built-in providers, an application
+developer can add support for it. See the
+[Rust API reference](../reference/rust-api.md) for the developer interface.
 
 ## What next
 
 - [CLI configuration: authentication](../cli/configuration.md#authentication):
-  the layered flag-env-file resolution.
-- [Library guide](../developers/lib-guide.md): how to compose providers
-  programmatically.
+  set credentials for commands.
+- [Python authentication](../python/auth.md): choose credentials in Python.
+- [Library guide](../developers/lib-guide.md): configure Rust applications.
+
+</div>

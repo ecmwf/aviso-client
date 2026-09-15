@@ -1,192 +1,189 @@
 # Error handling
 
-Every exception the library raises subclasses `pyaviso.AvisoError`. Catch that
-to handle anything from the library; catch a specific class for fine-grained
-dispatch.
+Read the exception message first. A missing credential needs a setup change;
+a rejected filter needs a schema check. Repeating the same request will not
+necessarily fix either problem.
 
-The runnable examples on this page use `test_polygon` as the event type. If your
-server does not have it configured, replace the event type and identifier fields
-with one of your own; the call shape is the same. See
-[What is on your server](./quickstart.md#what-is-on-your-server) in the
-quickstart for how to discover what is configured.
-
-## Hierarchy
-
-```text
-AvisoError
-├── TransportError
-├── HttpError
-├── AuthError
-├── DecodeError
-├── MalformedEventError
-├── HistoryGapError
-├── StreamProtocolError
-├── ConfigError
-├── StateStoreError
-└── TriggerError
-```
+Client errors inherit from `pyaviso.AvisoError`. Python input errors can also
+raise `TypeError` or `ValueError`, and a missing environment variable accessed
+through `os.environ[...]` raises `KeyError`. `AvisoError` does not catch these
+or errors in your own analysis.
 
 ## Catching everything
 
-The simplest pattern catches `AvisoError` for any library-originated failure:
+Use the [quickstart setup](./quickstart.md#set-the-environment), including
+`AVISO_BASE_URL` and credentials for `pyaviso.Env()`. For an anonymous server,
+omit `auth=pyaviso.Env()` from the initialization.
+
+This listener uses the
+[small `mars` schema](./quickstart.md#what-is-on-your-server).
+It has a required `class` choice (`od` or `rd`) and optional whole-number `step`
+filter.
+Providers must supply both identifiers; the payload is optional. Listening
+requires receiving permission, not publishing permission.
+
+Save this as `listen_errors.py` and run `python listen_errors.py`:
 
 ```python
-"""Publish and log any library-side failure."""
-
-import logging
 import os
+
 import pyaviso
 
-logging.basicConfig(level=logging.WARNING)
-log = logging.getLogger("publish")
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
 try:
-    response = client.notify(
-        event_type="test_polygon",
-        identifier={
-            "polygon": [[0, 0], [1, 0], [1, 1], [0, 0]],
-            "date": "20260601",
-            "time": "1200",
-        },
-        payload={"location": "s3://example/data.grib"},
+    client = pyaviso.AvisoClient(
+        base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
     )
-    print(f"ok: {response.request_id}")
-except pyaviso.AvisoError as e:
-    log.warning("aviso publish failed: %s", e)
+    with client.listen("mars", filter={"class": "od"}) as notifications:
+        for notification in notifications:
+            print(notification)
+except pyaviso.AvisoError as error:
+    print("Listening failed:", error)
+    raise
+except KeyboardInterrupt:
+    print("Stopped listening")
 ```
+
+It prints matching notifications as indented CloudEvent JSON until you press
+Ctrl+C. Setup is inside `try` because `Env()` can fail before listening starts.
+The `with` block closes the iterator even if your loop raises an exception.
+The error branch reports the failure and reraises it, so a failed job does not
+look like a successful run.
 
 ## `HttpError` exposes the server's response
 
-`HttpError` carries `.status`, `.body`, and `.request_id`. The body is whatever
-the server sent; for aviso-server it is a JSON object with a `code`, a `details`
-message, and the same `request_id` for support correlation.
+`HttpError` carries the integer `status`, string `body` and optional
+`request_id`. Keep the request ID when asking your operator to find the request
+in server logs. The response body explains what the server rejected.
+
+For providers, here is an intentionally invalid publish. Save it as
+`bad_publish.py` and run `python bad_publish.py` with publishing credentials and
+the same environment setup:
 
 ```python
-"""Construct an invalid notify call on purpose; inspect the HttpError."""
-
+import json
 import os
+
 import pyaviso
 
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
+)
 try:
-    client.notify(
-        event_type="test_polygon",
-        identifier={"polygon": "not-a-polygon", "date": "20260601", "time": "1200"},
-        payload={"location": "s3://example/data.grib"},
-    )
-except pyaviso.HttpError as e:
-    print(f"status={e.status}")
-    print(f"request_id={e.request_id}")
-    print(f"body={e.body[:200]}")
+    client.notify(event_type="mars", identifier={"class": "od"})
+except pyaviso.HttpError as error:
+    print("status:", error.status)
+    print(json.dumps(json.loads(error.body), indent=2, sort_keys=True))
 ```
 
-Expected output (one block per run; the UUID changes every run, the rest is
-fixed for this specific bad input):
+Captured output with the small `mars` schema (your request ID will differ):
 
 ```text
-status=400
-request_id=3dc3a144-e33c-465f-bfb8-bfcf01044e2f
-body={"code":"INVALID_NOTIFICATION_REQUEST","details":"field 'polygon' must be a valid polygon: polygon coordinates must be in lat,lon pairs (got an odd number of values)",...}
+status: 400
+{
+  "code": "INVALID_NOTIFICATION_REQUEST",
+  "details": "Required field 'step' missing for notify operation",
+  "error": "Invalid Notification Request",
+  "message": "Required field 'step' missing for notify operation",
+  "request_id": "daf5f6d6-6f40-42db-a1e5-8b22df279b07"
+}
 ```
 
-The `request_id` is the value you would quote to operations or in a support
-ticket to find the request in server logs.
-
-## `HistoryGapError` carries a reason
-
-`HistoryGapError` is raised mid-stream when the supervisor detects a gap that
-would violate at-least-once. It carries a `.reason` discriminator plus
-reason-specific fields.
-
-<!-- not-runnable -->
-```python
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-try:
-    for n in client.listen(
-        "test_polygon", filter={"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]}
-    ):
-        ...
-except pyaviso.HistoryGapError as e:
-    if e.reason == "replay_limit_reached":
-        print(f"server cap hit; max replayable = {e.max_allowed}")
-    elif e.reason == "sequence_jump":
-        print(f"wire gap: expected {e.expected}, observed {e.observed}")
-```
-
-A gap is terminal: the iterator stops and the supervisor exits. Decide what the
-right recovery is for your case. Common moves are restart from the live edge
-with `from_=None`, or restart from a specific known-good sequence with
-`from_=<n>`.
-
-## `TriggerError` carries a kind and a sub-kind
-
-When a required trigger fails after all its retries, the watch terminates with
-`TriggerError`. The exception carries `.trigger_kind` (which trigger),
-`.error_kind` (what went wrong), and a set of per-kind fields:
-
-<!-- not-runnable -->
-```python
-import os
-import pyaviso
-
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env())
-
-request = (
-    pyaviso.WatchRequest.watch("test_polygon")
-    .with_filter({"polygon": [[0, 0], [1, 0], [1, 1], [0, 0]]})
-    .with_triggers([pyaviso.Trigger.command("./process.sh {{ notification.sequence }}")])
-)
-
-try:
-    for n in client.listen(request=request):
-        ...
-except pyaviso.TriggerError as e:
-    print(f"trigger={e.trigger_kind} kind={e.error_kind}")
-    if e.error_kind == "command":
-        print(f"  exit_code={e.exit_code} stderr_tail={e.stderr_tail!r}")
-    elif e.error_kind == "webhook":
-        print(f"  status={e.status} body_tail={e.body_tail!r}")
-    elif e.error_kind == "timeout":
-        print(f"  timeout_seconds={e.timeout_seconds}")
-    elif e.error_kind == "template":
-        print(f"  context={e.context!r} field={e.field!r} template_kind={e.template_kind!r}")
-```
-
-`trigger_kind` is one of `echo`, `log`, `command`, `webhook`, `teams`, `post`,
-or `unknown`. `error_kind` is one of `io`, `encode`, `command`, `timeout`,
-`webhook`, `webhook_build`, `template`, or `unknown`. Per-kind fields are
-populated only when relevant; the rest are `None`.
+The server rejects this with HTTP 400 because `step` is missing.
+It is optional in listener filters, but required when publishing. This example
+decodes the Aviso server's JSON error body; a proxy or another server can return
+plain text, so general error handlers should not assume every body is JSON.
 
 ## When errors propagate
 
-- `notify`, `schema`, `schema_for`, and the admin methods raise on error and
-  return on success. Errors are not auto-retried (except the auth-refresh-on-401
-  round trip, which retries the original request once with refreshed
-  credentials).
-- `listen` iteration raises errors mid-stream. The next `__next__` call yields
-  the exception; subsequent calls behave as if the iterator is exhausted. The
-  supervisor has already cancelled by that point.
-- A required trigger that fails after all retries terminates the watch with
-  `TriggerError`. The committed cursor stays where it was, so the next process
-  start re-delivers the notification whose trigger failed.
+- Setup can fail when constructing a provider, client, request or state store.
+- HTTP methods such as `notify` and `schema` raise when the request fails.
+  `notify_many` returns per-notification results; inspect every result. Invalid
+  batch input can raise before any request is sent.
+- Listening can fail when opening the iterator or during iteration. After a
+  terminal stream error is delivered, subsequent iteration is exhausted.
+- A required trigger failure stops the listener before that notification
+  reaches your loop. Earlier trigger effects are not undone.
+
+Connection losses and retryable server responses normally cause listeners to
+reconnect. One-shot publishes are not automatically retried after transport
+failure: the server may already have stored the notification. An auth provider
+is asked to refresh after HTTP 401, followed by one retry if refresh succeeds.
+If authentication is still rejected while opening a watch, the listener raises
+`AuthError`. A one-shot HTTP request instead exposes the final 401 as
+`HttpError`.
+See [Authentication](./auth.md#refresh-on-401).
+
+## `HistoryGapError` carries a reason
+
+A history gap ends the iterator. Inspect `error.reason`:
+
+| Reason | Meaning | Useful fields |
+|---|---|---|
+| `replay_limit_reached` | The server capped the requested replay | `max_allowed` |
+| `sequence_jump` | The protocol reported an unexpected sequence boundary | `expected`, `observed` |
+
+Do not treat a failed replay as complete. Check server retention and replay
+limits with the operator, then choose a starting point appropriate to your
+work. Starting live skips historical work. Also, `start_from=None` uses an
+existing saved cursor when one is configured; it does not override it. See
+[choosing a starting position](./state-and-resume.md#choose-a-starting-position).
+
+## `TriggerError` carries a kind and a sub-kind
+
+`trigger_kind` identifies the action: `echo`, `log`, `command`, `webhook`,
+`teams`, `post` or `unknown`. `error_kind` describes the failure:
+
+| Error kind | Useful fields |
+|---|---|
+| `command` | `exit_code`, `stderr_tail` |
+| `webhook` | `status`, `body_tail` |
+| `timeout` | `timeout_seconds` |
+| `template` | `context`, `field`, `template_kind` |
+| `io` | `path` for a log trigger; read the exception message |
+| `webhook_build` | `reason` |
+| `encode`, `unknown` | Read the exception message |
+
+Fields that do not apply are `None`. Required triggers stop the watch when their
+retry policy is exhausted or fail-fast applies. Optional triggers warn and let
+processing continue. Only make an action optional when continuing without it is
+acceptable. See [trigger retry settings](./triggers.md#tunables).
+
+The failing notification does not advance the pending cursor. An earlier
+notification may already have been checkpointed. Restarting does not guarantee
+recovery of unfinished work; see [State and resume](./state-and-resume.md).
 
 ## Catching is not the same as recovering
 
-Some errors are recoverable. An `HttpError` with a 5xx status is worth a retry.
-An `AuthError` after fixing the token is fine. Others are terminal: a
-`MalformedEventError` is fatal per the protocol because reconnecting would
-re-receive the same bad event. The library raises both classes through the same
-hierarchy; the caller decides whether to retry, alert, or stop.
+Before retrying a publish, determine whether it may already have succeeded.
+For a malformed stream event or protocol error, reconnecting to the same input
+may reproduce the failure. Preserve the error and ask the operator to
+investigate instead of silently moving past it.
+
+Closing a listener cancels and waits for its background task. It does not
+certify that your analysis finished. Ctrl+C handling while waiting for input
+does not set a deadline for interrupting Python work or waiting for cleanup.
+
+## Hierarchy
+
+All of these inherit directly from `AvisoError`:
+
+| Exception | What to check |
+|---|---|
+| `AuthError` | Credential source or watch authentication rejected after refresh |
+| `ConfigError` | Client settings, auth file or request options |
+| `HttpError` | Server status and response body |
+| `TransportError` | Connection or response-transfer failure |
+| `DecodeError` | Unexpected response format |
+| `MalformedEventError` | Invalid CloudEvent identity |
+| `HistoryGapError` | Replay limit or sequence boundary |
+| `StreamProtocolError` | Fatal streaming protocol condition |
+| `StateStoreError` | Local state path, permissions or contents |
+| `TriggerError` | Failed required action |
 
 ## With `AsyncAvisoClient`
 
-The async client raises the same exceptions through the same hierarchy. The
-difference is calling style: `await` on a method or `async for` over `listen`
-raises the same way `client.notify(...)` raises in the sync surface.
+The same exceptions can arise from an awaited method or `async for` iteration.
+Use `async with` on the iterator to await `aclose()` on exit. With
+`asyncio.run()`, catch `KeyboardInterrupt` outside the run call, as in the
+[async listener](./async.md#a-complete-async-listener). A `TaskGroup` can wrap
+task failures in an exception group.

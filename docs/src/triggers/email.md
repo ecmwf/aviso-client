@@ -1,5 +1,7 @@
 # Sending email
 
+<div class="trigger-guide">
+
 aviso has no built-in email trigger. Email is one more per-notification side
 effect, sent through the generic triggers: you point a trigger at your own SMTP
 relay or mail endpoint and supply the credentials, and aviso runs the generic
@@ -90,3 +92,5 @@ builders, not just the CLI YAML: `Trigger::command(...)` and
 `Trigger::webhook(...)` in Rust and the [C++ binding](../cpp/triggers.md), and
 the equivalent trigger arguments in the Python package. The CLI YAML above is
 just the declarative form of those builders.
+
+</div>
