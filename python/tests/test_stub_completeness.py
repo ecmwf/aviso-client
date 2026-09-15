@@ -21,6 +21,7 @@ stricter signature-shape comparison lives in a separate file once
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
 
@@ -45,6 +46,23 @@ def _stub_has_symbol(source: str, name: str) -> bool:
 
 def test_stub_file_exists() -> None:
     assert _STUB_PATH.is_file(), f"expected stub at {_STUB_PATH}"
+
+
+def test_notification_str_is_exposed_in_both_stubs() -> None:
+    assert "__str__" in pyaviso.Notification.__dict__
+    for path in (_STUB_PATH, _STUB_PATH.with_name("_native.pyi")):
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        notification = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.ClassDef) and node.name == "Notification"
+        )
+        method = next(
+            node
+            for node in notification.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__str__"
+        )
+        assert isinstance(method.returns, ast.Name) and method.returns.id == "str"
 
 
 def test_every_public_name_appears_in_the_stub() -> None:
