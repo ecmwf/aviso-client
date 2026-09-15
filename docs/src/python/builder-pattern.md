@@ -30,8 +30,7 @@ print(request.event_type, request.mode)  # test_polygon watch
 ```
 
 Pass the finished `request` to a client with `client.listen(request=request)`.
-The [Listening](./listen.md#reusing-a-watch-request) page shows that call from
-end to end.
+The [Listening](./listen.md) page introduces filters and the listener lifecycle.
 
 ## Build a trigger
 
@@ -153,8 +152,8 @@ seq=1 payload={'location': 's3://example/data/0.grib'}
 ```
 
 The same two-line pattern repeats for each notification. Stop the listener with
-Ctrl+C. The resume and async variants of the same listener are on the
-[Listening](./listen.md) page.
+Ctrl+C. See [Listening](./listen.md) for how resuming works, and
+[Async](./async.md) for asynchronous examples.
 
 ## Replay history and exit
 
