@@ -33,7 +33,7 @@ Methods:
 - `wipe_stream(stream_name) -> None`
 - `wipe_all() -> None`
 - `delete_notification(notification_id) -> None`
-- `listen(event_type=None, *, filter=None, from_=None, mode=None, triggers=None, request=None) -> NotificationIterator`
+- `listen(event_type=None, *, filter=None, start_from=None, mode=None, triggers=None, request=None) -> NotificationIterator`
   (mode defaults to `"watch"` when not specified; `triggers` is a
   `Sequence[Trigger]`; the returned iterator is also a context manager via
   `with` and supports `iterator.close()` for explicit teardown)
@@ -55,6 +55,12 @@ returns an `AsyncNotificationIterator`.
 
 Properties: `event_type`, `sequence`, `identifier`, `payload`, `cloudevent`.
 Method: `as_dict()`. Unhashable (the payload may be a dict).
+
+`str(notification)` formats the original `cloudevent` as indented JSON. For a
+manually constructed notification without `cloudevent`, it formats `event_type`,
+`sequence`, `identifier`, and `payload` instead. `as_dict()` returns the client
+convenience fields, including `cloudevent` when present. `repr(notification)`
+remains a compact debugging summary.
 Identifier values retain the JSON shape emitted by the server.
 
 `pyaviso.NotifyResponse(status, request_id, processed_at)`
@@ -83,8 +89,8 @@ metadata).
 Constructors:
 
 - `WatchRequest.watch(event_type)`
-- `WatchRequest.watch_from(event_type, from_)`
-- `WatchRequest.replay_only(event_type, from_)`
+- `WatchRequest.watch_from(event_type, start_from)`
+- `WatchRequest.replay_only(event_type, start_from)`
 
 Builders: `.with_filter(dict)`, `.with_triggers(list)`. Properties:
 `event_type`, `mode`.

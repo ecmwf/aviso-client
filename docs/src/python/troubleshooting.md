@@ -63,7 +63,7 @@ A gap was detected in the watch stream. Two reasons:
 
 A gap is terminal: continuing past it would silently violate at-least-once. The
 client raises and exits the iterator. Decide what the right recovery is (for
-example, restart from the live edge with `from_=None`).
+example, restart from the live edge with `start_from=None`).
 
 ## `pyaviso.TriggerError: command failed`
 

@@ -8,18 +8,18 @@
 
 """Replay history and exit at end-of-stream.
 
-``mode="replay_only"`` with ``from_=<sequence>`` opens a backfill stream
+``mode="replay_only"`` with ``start_from=<sequence>`` opens a backfill stream
 that terminates automatically once the server reaches end-of-stream.
 Use it for one-shot scripts that backfill historical notifications.
 
-``from_`` semantics: ``from_=N`` means "deliver everything strictly
-after sequence N". So ``from_=0`` is the sentinel for "from the very
+``start_from`` semantics: ``start_from=N`` means "deliver everything strictly
+after sequence N". So ``start_from=0`` is the sentinel for "from the very
 start". To resume from a checkpoint, pass the last sequence you saw.
 
 This example publishes three notifications under a polygon unique to
 the script, then replays everything matching that polygon. On a fresh
-stack the count is 3; running again leaves the previous run's data on
-the stream so the count grows by 3 each run.
+stack the count is 3. Later runs replace the same subjects with default
+latest-per-subject retention; longer retention can replay more records.
 
 Expected output (the count depends on how many prior runs the stream
 has accumulated; the polygon filter keeps it scoped to this example):
@@ -43,7 +43,7 @@ import pyaviso
 from _common import require_env
 
 # Polygon unique to this example so replay sees only what this script publishes.
-EXAMPLE_POLYGON = "40,10,41,10,41,11,40,10"
+EXAMPLE_POLYGON = [[40, 10], [41, 10], [41, 11], [40, 10]]
 
 
 def main() -> None:
@@ -56,7 +56,7 @@ def main() -> None:
             identifier={
                 "polygon": EXAMPLE_POLYGON,
                 "date": "20260101",
-                "time": "0000",
+                "time": f"000{i}",
             },
             payload={"location": f"s3://example/backfill-{i}.grib"},
         )
@@ -66,7 +66,7 @@ def main() -> None:
     with client.listen(
         "test_polygon",
         filter={"polygon": EXAMPLE_POLYGON},
-        from_=0,
+        start_from=0,
         mode="replay_only",
     ) as iterator:
         for n in iterator:
