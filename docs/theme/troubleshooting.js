@@ -1,5 +1,5 @@
 (() => {
-    if (!document.querySelector(".cli-troubleshooting")) return;
+    if (!document.querySelector(".troubleshooting")) return;
 
     function openHashTarget(hash = location.hash) {
         let id;
@@ -9,7 +9,7 @@
             return;
         }
         const target = document.getElementById(id);
-        const panel = target?.closest(".cli-troubleshooting details");
+        const panel = target?.closest(".troubleshooting details");
         if (panel) {
             panel.open = true;
             target.scrollIntoView();

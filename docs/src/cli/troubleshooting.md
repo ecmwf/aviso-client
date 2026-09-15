@@ -3,7 +3,7 @@
 Choose the symptom that matches what you see. Open a panel for checks and links
 to the relevant reference.
 
-<div class="cli-troubleshooting">
+<div class="troubleshooting">
 
 <details>
 <summary id="server-url-or-connection-errors">Server URL or connection errors</summary>
