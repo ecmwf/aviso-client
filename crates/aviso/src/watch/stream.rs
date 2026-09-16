@@ -70,10 +70,11 @@ pub struct NotificationStream {
     /// the [`crate::state::StateStore`]) call
     /// [`NotificationStream::close`] which awaits this receiver.
     done_signal: Option<oneshot::Receiver<()>>,
+    ready: tokio::sync::watch::Receiver<bool>,
 }
 
 impl NotificationStream {
-    /// Construct a `NotificationStream` from its three halves. Only the
+    /// Construct a `NotificationStream` with its lifecycle signals. Only the
     /// supervisor-setup path in [`crate::client::AvisoClient::watch`]
     /// builds streams; this constructor is `pub(crate)` and not part of
     /// the public surface.
@@ -81,11 +82,13 @@ impl NotificationStream {
         receiver: mpsc::Receiver<Result<Notification, ClientError>>,
         cancel: oneshot::Sender<()>,
         done_signal: oneshot::Receiver<()>,
+        ready: tokio::sync::watch::Receiver<bool>,
     ) -> Self {
         Self {
             receiver,
             cancel: Some(cancel),
             done_signal: Some(done_signal),
+            ready,
         }
     }
 
@@ -101,6 +104,15 @@ impl NotificationStream {
     /// plain `await`.
     pub async fn recv(&mut self) -> Option<Result<Notification, ClientError>> {
         self.receiver.recv().await
+    }
+
+    /// Subscribe to first-handshake confirmation, without waiting for data.
+    /// The value starts false and stays true after the first validated Aviso
+    /// opening event, including during reconnects. Channel closure while false
+    /// means startup ended; read the stream for the terminal error.
+    #[must_use]
+    pub fn subscribe_ready(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.ready.clone()
     }
 
     /// Cancel the supervisor cooperatively and wait for it to fully

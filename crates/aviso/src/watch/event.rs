@@ -48,8 +48,7 @@ pub enum ServerCloseReason {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchEvent {
-    /// Transport just connected (handshake completed, ready to read
-    /// frames).
+    /// The SSE response and expected Aviso opening control were validated.
     ConnectionEstablished,
 
     /// Transport dropped. The reducer moves to `Reconnecting` and asks

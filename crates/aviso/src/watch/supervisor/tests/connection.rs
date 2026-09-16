@@ -9,6 +9,63 @@
 use super::*;
 
 #[tokio::test]
+async fn eof_resets_backoff_only_after_a_validated_handshake() {
+    for (body, expected_retries, expected_ready) in [
+        ("", 4, false),
+        (
+            "event: live-notification\ndata: {\"type\":\"connection_established\"}\n\n",
+            0,
+            true,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
+            .mount(&server)
+            .await;
+        let base_url = url::Url::parse(&server.uri()).unwrap();
+        let resume_key = ResumeKey::new(&base_url, "mars", &json!({}), None).unwrap();
+        let request = WatchRequest::watch("mars");
+        let mut state = crate::watch::WatchState::watch(None);
+        let mut policy = None;
+        let mut cursor = None;
+        let mut pending = None;
+        let mut retries = 4;
+        let (tx, _rx) = mpsc::channel(1);
+        let (_cancel_tx, mut cancel) = oneshot::channel();
+        let (_parent_tx, mut parent) = tokio::sync::watch::channel(false);
+        let (ready, ready_rx) = tokio::sync::watch::channel(false);
+        let outcome = super::super::connection::run_one_connection(
+            &mut state,
+            &mut policy,
+            &request,
+            None,
+            &mut cursor,
+            &mut pending,
+            None,
+            &resume_key,
+            &reqwest::Client::new(),
+            &base_url,
+            None,
+            Duration::from_secs(30),
+            &mut retries,
+            &mut [],
+            &tx,
+            &mut cancel,
+            &mut parent,
+            &ready,
+        )
+        .await;
+        assert!(matches!(
+            outcome,
+            super::super::ConnectionOutcome::UnexpectedEof
+        ));
+        assert_eq!(retries, expected_retries);
+        assert_eq!(*ready_rx.borrow(), expected_ready);
+    }
+}
+
+#[tokio::test]
 async fn connection_closing_terminates_before_any_following_frames() {
     // Even if the server keeps writing notifications after a
     // `connection-closing` frame on the same wire (which it should not,
@@ -24,11 +81,10 @@ async fn connection_closing_terminates_before_any_following_frames() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &wiremock::Request| {
+            let value: serde_json::Value = request.body_json().unwrap();
+            opened_stream(&body, value.get("from_id").is_some())
+        })
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =
@@ -68,11 +124,10 @@ async fn unexpected_eof_without_close_frame_does_not_surface_fatal_error() {
     let body = sse_chunk("live-notification", cloud_event("mars", 1));
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &wiremock::Request| {
+            let value: serde_json::Value = request.body_json().unwrap();
+            opened_stream(&body, value.get("from_id").is_some())
+        })
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =

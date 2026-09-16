@@ -20,11 +20,7 @@ async fn drain_frames_mapping_covers_live_notification_with_cloudevent() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
 
@@ -63,11 +59,7 @@ async fn drain_frames_mapping_treats_connection_established_marker_as_control() 
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =
@@ -101,11 +93,7 @@ async fn drain_frames_mapping_does_not_confuse_payload_substring_with_marker() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =
@@ -131,11 +119,7 @@ async fn drain_frames_mapping_terminates_on_error_event_with_stream_protocol_err
     let body = sse_chunk("error", err);
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, _cancel_tx, handle, _parent_drop) =
@@ -164,11 +148,7 @@ async fn drain_frames_mapping_terminates_on_unknown_connection_closing_reason() 
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, _cancel_tx, handle, _parent_drop) =
@@ -194,11 +174,7 @@ async fn drain_frames_mapping_handles_heartbeat_as_observation_only() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =
@@ -223,11 +199,7 @@ async fn drain_frames_mapping_terminates_on_replay_limit_reached_with_history_ga
     let body = sse_chunk("replay-control", limit);
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, _cancel_tx, handle, _parent_drop) =
@@ -261,11 +233,7 @@ async fn replay_limit_reached_without_max_allowed_surfaces_stream_protocol_error
     let body = sse_chunk("replay-control", limit);
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, _cancel_tx, handle, _parent_drop) =
@@ -295,11 +263,7 @@ async fn drain_frames_mapping_silently_ignores_unknown_sse_event_types() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
     let (mut rx, cancel_tx, handle, _parent_drop) =

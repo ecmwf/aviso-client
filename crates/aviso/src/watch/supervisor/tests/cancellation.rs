@@ -29,11 +29,7 @@ async fn drop_cancel_oneshot_makes_supervisor_exit_within_bounded_time() {
     }
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
 

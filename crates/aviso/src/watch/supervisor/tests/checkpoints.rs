@@ -156,11 +156,10 @@ struct RejectWrites;
 async fn mount_stream(server: &MockServer, body: String) {
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &wiremock::Request| {
+            let value: serde_json::Value = request.body_json().unwrap();
+            opened_stream(&body, value.get("from_id").is_some())
+        })
         .up_to_n_times(1)
         .expect(1)
         .mount(server)

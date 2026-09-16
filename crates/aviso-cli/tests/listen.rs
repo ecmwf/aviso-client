@@ -56,11 +56,12 @@ async fn mount_listen_finite_stream(server: &MockServer) {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(
+                "event: live-notification\ndata: {{\"type\":\"connection_established\"}}\n\n{body}"
+            ),
+            "text/event-stream",
+        ))
         .up_to_n_times(1)
         .mount(server)
         .await;
