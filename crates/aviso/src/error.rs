@@ -68,7 +68,7 @@ pub enum ClientError {
         reason: GapReason,
     },
 
-    /// A wire-protocol-level fatal condition was observed on the watch stream.
+    /// Stream validation failed, startup timed out, or a fatal stream frame arrived.
     ///
     /// Surfaced when the server emits an `error` SSE event, when a `connection-closing`
     /// frame carries an unrecognised `reason`, or when any other recognised-shape frame is
@@ -76,12 +76,12 @@ pub enum ClientError {
     /// the server payload when one is provided. `request_id` carries the server-supplied
     /// correlation id when the payload includes one.
     ///
-    /// Distinct from [`ClientError::Http`], which describes a non-success HTTP status on the
-    /// initial response; `StreamProtocol` is for fatal frames that arrive over a stream that
-    /// initially returned 200.
+    /// Also covers invalid SSE response headers, invalid opening controls, and expired
+    /// opening or initial startup deadlines. A deadline can expire before any HTTP
+    /// response arrives. [`ClientError::Http`] instead describes an HTTP status failure.
     #[error("stream protocol error (request_id={request_id:?}): {message}")]
     StreamProtocol {
-        /// Human-readable description from the server-side payload.
+        /// Human-readable description from the client or server-side payload.
         message: String,
         /// Server-supplied `X-Request-ID`-equivalent value, when present.
         request_id: Option<String>,
