@@ -47,9 +47,10 @@ use crate::exit::usage_error;
 use crate::output;
 
 /// Runs the `aviso notify` subcommand.
-pub(crate) async fn run(resolved: &Resolved, parameters: &str) -> Result<()> {
+pub(crate) async fn run(resolved: &Resolved, parameters: &str, repeated: &[String]) -> Result<()> {
     let entries = split_parameters(parameters)?;
-    let (event_type, identifier, payload) = build_request_parts(&entries)?;
+    let (event_type, mut identifier, payload) = build_request_parts(&entries)?;
+    crate::identifiers::append(&mut identifier, repeated, true)?;
 
     let mut req = NotificationRequest::new(event_type.clone()).with_identifier(identifier);
     if let Some(p) = payload {
@@ -154,10 +155,10 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
     };
     let suffix = match subcommand {
         "listen" | "watch" => {
-            "For inline listen, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven listen, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` in the listener YAML (the value wrapped as a single string)."
+            "For inline listen, use `--identifier 'polygon=46,8,46,9,47,9,47,8,46,8'` or set polygon inside the `--identifiers` JSON object; for YAML-driven listen, set `polygon: \"46,8,46,9,47,9,47,8,46,8\"` in the listener YAML (the value wrapped as a single string)."
         }
         "replay" => {
-            "For ad-hoc replay, set polygon inside the `--identifiers` JSON object (e.g. `--identifiers '{\"polygon\":\"46,8,46,9,47,9,47,8,46,8\"}'`); for YAML-driven replay, use the same `polygon:` shape as listener YAML."
+            "For ad-hoc replay, use `--identifier 'polygon=46,8,46,9,47,9,47,8,46,8'` or set polygon inside the `--identifiers` JSON object; for YAML-driven replay, use the same `polygon:` shape as listener YAML."
         }
         _ => {
             "Example: `polygon=\"46,8,46,9,47,9,47,8,46,8\"` (4 vertices, closed polygon; the surrounding double quotes prevent the inner commas from being parsed as parameter separators)."
@@ -179,7 +180,7 @@ pub(crate) fn polygon_violation_hint(body: &str, subcommand: &str) -> Option<Str
 pub(crate) fn constraint_violation_hint(body: &str, subcommand: &str) -> Option<String> {
     let action_suffix = match subcommand {
         "listen" | "watch" => {
-            "Check the identifier value in your `--identifiers` JSON (inline mode) or in the listener YAML's `identifiers:` block (YAML mode); run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
+            "Check the identifier value in your repeated `--identifier` arguments or `--identifiers` JSON (inline mode), or in the listener YAML's `identifiers:` block (YAML mode); run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."
         }
         _ => {
             "Check the value you supplied for this identifier; run `aviso schema get <TYPE>` for the authoritative schema (handler type and constraints)."

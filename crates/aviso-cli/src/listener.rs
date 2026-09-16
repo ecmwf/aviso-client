@@ -99,14 +99,22 @@ pub(crate) fn build_inline_listener_spec(
                 "parse --identifiers as JSON object: {e}; expected something like '{{\"class\":\"od\"}}'"
             ))
         })?;
-    Ok(ListenerSpec {
+    Ok(inline_listener_spec(event, identifiers))
+}
+
+/// Builds the default echo listener from an already resolved identifier map.
+pub(crate) fn inline_listener_spec(
+    event: &str,
+    identifiers: BTreeMap<String, serde_json::Value>,
+) -> ListenerSpec {
+    ListenerSpec {
         name: Some("ad-hoc".into()),
         event: event.to_string(),
         identifiers,
         from_id: None,
         from_date: None,
         triggers: vec![TriggerConfig::Echo(EchoConfig::default())],
-    })
+    }
 }
 
 pub(crate) fn triggers_for_listener(spec: &ListenerSpec) -> Vec<aviso::watch::Trigger> {

@@ -16,7 +16,7 @@
 //! - No `--listener` and exactly one resolved entry: that one.
 //! - No `--listener` and zero or multiple resolved entries: exit 2
 //!   with usage naming the available names.
-//! - `--event` + `--identifiers <JSON>` together override the
+//! - `--event` with `--identifiers <JSON>` or repeated `--identifier` overrides the
 //!   listener spec entirely for an ad-hoc replay (both required or
 //!   neither, enforced by clap).
 //!
@@ -42,12 +42,11 @@ pub(crate) async fn run(
     resolved: &Resolved,
     listener_files: &[PathBuf],
     listener_name: Option<&str>,
-    event: Option<&str>,
-    identifiers: Option<&str>,
+    inline: Option<ListenerSpec>,
     from: &str,
 ) -> Result<()> {
     let cursor: ResumeStart = from_value::parse(from)?;
-    let spec = resolve_listener(resolved, listener_files, listener_name, event, identifiers)?;
+    let spec = resolve_listener(resolved, listener_files, listener_name, inline)?;
     let listener_label = spec.name.clone().unwrap_or_else(|| spec.event.clone());
 
     print_replay_banner(&spec, from);
@@ -178,7 +177,7 @@ fn hint_for_replay_error(err: &aviso::ClientError) -> Option<String> {
     if body.contains("missing for watch operation") || body.contains("missing for replay operation")
     {
         return Some(
-            "schema fields with `required: true` must be supplied in your replay identifiers (`--identifiers '{...}'` for ad-hoc replay, or the listener YAML's `identifiers:` block for YAML-driven replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+            "schema fields with `required: true` must be supplied in your replay identifiers (repeated `--identifier` or `--identifiers '{...}'` for ad-hoc replay, or the listener YAML's `identifiers:` block for YAML-driven replay); only `required: false` fields can be omitted (which makes them wildcards at replay time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
         );
     }
@@ -234,11 +233,10 @@ fn resolve_listener(
     resolved: &Resolved,
     listener_files: &[PathBuf],
     selector: Option<&str>,
-    event: Option<&str>,
-    identifiers: Option<&str>,
+    inline: Option<ListenerSpec>,
 ) -> Result<ListenerSpec> {
-    if let (Some(ev), Some(idents_json)) = (event, identifiers) {
-        return listener::build_inline_listener_spec(ev, idents_json);
+    if let Some(spec) = inline {
+        return Ok(spec);
     }
 
     let candidates = if listener_files.is_empty() {
@@ -260,7 +258,7 @@ fn resolve_listener(
 
     match candidates.len() {
         0 => Err(usage_error(
-            "no listeners to replay. Pass --listener <NAME> with a listener YAML, or use --event with --identifiers for an ad-hoc replay.",
+            "no listeners to replay. Pass --listener <NAME> with a listener YAML, or use --event with --identifiers or repeated --identifier for an ad-hoc replay.",
         )),
         1 => candidates
             .into_iter()
