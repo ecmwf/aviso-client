@@ -80,7 +80,6 @@ pub(super) async fn run_one_connection(
     parent_cancel: &mut watch::Receiver<bool>,
     ready: &watch::Sender<bool>,
 ) -> ConnectionOutcome {
-    let opening_deadline = tokio::time::Instant::now() + opening::OPENING_TIMEOUT;
     let budget = heartbeat_starvation_budget(heartbeat_interval);
     let endpoint = match request.mode() {
         WatchMode::Watch => "api/v1/watch",
@@ -106,7 +105,6 @@ pub(super) async fn run_one_connection(
                 biased;
                 _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
                 _ = &mut *cancel => return ConnectionOutcome::Cancelled,
-                () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)")),
                 v = provider.authorization_header() => v,
             };
             match result {
@@ -122,6 +120,7 @@ pub(super) async fn run_one_connection(
         builder = builder.header(AUTHORIZATION, value);
     }
 
+    let opening_deadline = tokio::time::Instant::now() + opening::OPENING_TIMEOUT;
     let send_result = tokio::select! {
         biased;
         _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
