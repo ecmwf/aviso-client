@@ -275,7 +275,7 @@ async fn retryable_statuses_share_one_startup_budget() -> TestResult {
         )?;
         let result = tokio::time::timeout(Duration::from_secs(2), stream.recv()).await?;
         assert!(
-            matches!(result, Some(Err(ClientError::StreamProtocol { message, .. })) if message.contains("startup timeout"))
+            matches!(result, Some(Err(ClientError::StreamProtocol { message, .. })) if message == "listener startup timeout exceeded")
         );
         assert!(!*stream.subscribe_ready().borrow());
         assert!(stream.recv().await.is_none());
