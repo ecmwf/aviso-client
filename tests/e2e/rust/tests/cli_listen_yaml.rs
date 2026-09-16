@@ -110,5 +110,7 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
         }
     }
     assert_eq!(stderr.matches("Listening for").count(), 1);
-    assert!(stderr.find("Connecting for") < stderr.find("Listening for"));
+    let connecting = stderr.find("Connecting for").expect("Connecting status");
+    let listening = stderr.find("Listening for").expect("Listening status");
+    assert!(connecting < listening);
 }
