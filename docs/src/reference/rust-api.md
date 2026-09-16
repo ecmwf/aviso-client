@@ -28,10 +28,11 @@ version you see there matches the version on crates.io.
 `AvisoClient::watch` returns a stream immediately. Creating the stream does not
 mean the server accepted the subscription. Call `subscribe_ready()` on the
 `NotificationStream` to observe first-handshake confirmation without consuming a
-notification. The returned Tokio watch receiver starts false and stays true
-after confirmation, even during later reconnects. If it closes while false,
-read the stream for a possible terminal error. Cancellation can end startup
-without an error.
+notification. Its current value may already be true when you subscribe.
+Inspect that value or use `wait_for(|ready| *ready)` to await confirmation.
+The value stays true after confirmation, even during later reconnects.
+If it closes while false, read the stream for a possible terminal error.
+Cancellation can end startup without an error.
 
 `WatchRequest::with_startup_timeout(Some(duration))` sets an optional initial
 budget across retries. `None` or zero disables that budget, which is the library
