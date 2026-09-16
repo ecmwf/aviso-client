@@ -9,7 +9,7 @@
 //! Shared helpers for the CLI integration test suite.
 //!
 //! Every test in `crates/aviso-cli/tests/*.rs` invokes the `aviso`
-//! binary via `assert_cmd::Command::cargo_bin("aviso")`. The
+//! binary via `assert_cmd` and its `cargo_bin!` macro. The
 //! helpers in this module wrap the common patterns: building a
 //! `Command` with deterministic env (no inherited `AVISO_*`
 //! variables, no `AVISO_LOG` filter), pointing the CLI at a
@@ -42,7 +42,7 @@ use assert_cmd::Command;
 /// happy path; tests that touch listen/replay opt into isolation
 /// via `--no-state-store` or `--state-file <path>` explicitly.
 pub fn aviso() -> Command {
-    let mut cmd = Command::cargo_bin("aviso").expect("aviso binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("aviso"));
     for (k, _) in std::env::vars() {
         if k.starts_with("AVISO_") {
             cmd.env_remove(k);

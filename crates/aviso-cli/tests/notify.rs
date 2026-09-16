@@ -94,7 +94,7 @@ async fn numeric_range_http_errors_have_contextual_hints() {
                 }
             }
             let action = if command == "listen" {
-                "Check the identifier value in your `--identifiers` JSON (inline mode) or in the listener YAML's `identifiers:` block (YAML mode)"
+                "Check the identifier value in your repeated `--identifier` arguments or `--identifiers` JSON (inline mode), or in the listener YAML's `identifiers:` block (YAML mode)"
             } else {
                 "Check the value you supplied for this identifier"
             };

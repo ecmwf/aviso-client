@@ -117,6 +117,7 @@ mod config;
 mod error;
 mod exit;
 mod from_value;
+mod identifiers;
 mod listener;
 mod listener_file;
 mod output;
@@ -252,6 +253,10 @@ enum Commands {
         /// Comma-separated parameters, for example
         /// `event=mars,count:=12,class=od,data={"x":1}`.
         parameters: String,
+        /// Supplement positional identifiers: key=value is an exact string;
+        /// key:=JSON is explicitly typed. Repeatable; duplicate keys are errors.
+        #[arg(long, value_name = "KEY=VALUE", action = clap::ArgAction::Append)]
+        identifier: Vec<String>,
     },
 
     /// Run one or more listeners against /api/v1/watch.
@@ -266,7 +271,7 @@ enum Commands {
         /// concatenated in argv order; positional files REPLACE
         /// (not merge with) the global config's `listeners:`
         /// section for this invocation. Ignored when `--event` and
-        /// `--identifiers` are both supplied (inline mode takes
+        /// an identifier source are supplied (inline mode takes
         /// precedence, matching `aviso replay`).
         listener_files: Vec<PathBuf>,
 
@@ -282,18 +287,8 @@ enum Commands {
         #[arg(long, value_name = "VALUE")]
         from: Option<String>,
 
-        /// Inline ad-hoc listener: event type to listen for, without
-        /// a YAML file. Requires `--identifiers`. The inline pair
-        /// takes precedence over any positional YAML files.
-        #[arg(long, value_name = "TYPE", requires = "identifiers")]
-        event: Option<String>,
-
-        /// Inline ad-hoc listener: identifiers filter as a JSON
-        /// object (e.g. `'{"class":"od"}'`). Requires `--event`.
-        /// The inline listener runs with a single default echo
-        /// trigger; for other triggers, use a YAML file instead.
-        #[arg(long, value_name = "JSON", requires = "event")]
-        identifiers: Option<String>,
+        #[command(flatten)]
+        inline: identifiers::InlineListenerArgs,
     },
 
     /// Replay historical notifications from a server-side cursor.
@@ -303,15 +298,8 @@ enum Commands {
         #[arg(long, value_name = "NAME")]
         listener: Option<String>,
 
-        /// Override the listener's `event:` for an ad-hoc replay.
-        /// Requires --identifiers.
-        #[arg(long, value_name = "TYPE", requires = "identifiers")]
-        event: Option<String>,
-
-        /// Override the listener's `identifiers:` for an ad-hoc
-        /// replay (JSON object). Requires --event.
-        #[arg(long, value_name = "JSON", requires = "event")]
-        identifiers: Option<String>,
+        #[command(flatten)]
+        inline: identifiers::InlineListenerArgs,
 
         /// Required cursor. Accepts a u64 sequence id OR one of
         /// six date forms; see the '`--from` value formats' section
@@ -494,28 +482,28 @@ async fn dispatch(cli: Cli) -> Result<()> {
     );
 
     match cli.command {
-        Commands::Notify { parameters } => commands::notify::run(&resolved, &parameters).await,
+        Commands::Notify {
+            parameters,
+            identifier,
+        } => commands::notify::run(&resolved, &parameters, &identifier).await,
         Commands::Listen {
             listener_files,
             no_state_store,
             from,
-            event,
-            identifiers,
+            inline,
         } => {
             commands::listen::run(
                 &resolved,
                 &listener_files,
                 no_state_store,
                 from.as_deref(),
-                event.as_deref(),
-                identifiers.as_deref(),
+                inline.resolve()?,
             )
             .await
         }
         Commands::Replay {
             listener,
-            event,
-            identifiers,
+            inline,
             from,
             listener_files,
         } => {
@@ -523,8 +511,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 &resolved,
                 &listener_files,
                 listener.as_deref(),
-                event.as_deref(),
-                identifiers.as_deref(),
+                inline.resolve()?,
                 &from,
             )
             .await

@@ -65,6 +65,90 @@ The `:=` form also accepts other JSON values, but the server's schema must
 allow the field and its value. If a string itself starts with `[` or `{`, wrap
 the value in double quotes inside the outer shell quotes to keep it as text.
 
+### Repeated identifiers for scripts {#repeated-identifiers}
+
+Use one `--identifier` argument per field to pass shell variables without
+building a comma-separated parameter list or interpolating JSON:
+
+```bash
+MARS_CLASS=od
+STEP=12
+aviso notify 'event=mars,data={"location":"s3://bucket/path"}' \
+  --identifier "class=$MARS_CLASS" --identifier "step:=$STEP"
+```
+
+`event=` and the optional `data=` stay in the required positional argument.
+Repeated identifiers supplement its identifier map. Duplicate keys, including
+keys already in that map, are errors. `--identifier event=...` and
+`--identifier data=...` are rejected; use the positional parameters for them.
+
+For all three commands (`notify`, `listen`, and `replay`):
+
+- `--identifier key=value` sends everything after the first `=` as an exact
+  string. Commas, whitespace, literal quotes, backslashes, and later `=` or
+  `:=` sequences are preserved. JSON-looking strings are still strings.
+- `--identifier key:=JSON` parses an explicit JSON value, including numbers,
+  booleans, null, arrays, objects, and JSON strings. `STEP` above must contain
+  valid JSON numeric text: `12` works, but `012` does not.
+- Keys are trimmed and must not be empty. A colon immediately before the first
+  `=` selects JSON syntax, so that form cannot express a string key ending in
+  a colon. Other key syntax and supported values are checked by the server.
+- Missing `=`, duplicate keys (even across the two forms), or invalid explicit
+  JSON cause exit code 2 before a request is sent.
+
+Double-quote the whole `"class=$MARS_CLASS"` argument. The shell expands the
+variable once; the CLI does not expand variables or evaluate shell code.
+Spaces, commas, quotes, literal dollar signs, and command-substitution text
+inside a variable stay data in that single argument. Do not use `eval`.
+The `mars` schema still restricts `class` to `od` or `rd`; arbitrary text needs
+a schema field that accepts it.
+
+For structured values, put complete valid JSON in a variable and pass it as
+one quoted argument. Do not build JSON by inserting arbitrary strings between
+JSON quotes. This filter uses the [weather schema](#weather-constraints):
+
+```bash
+SEVERITY_FILTER='{"gte":5}'
+aviso listen --event weather --identifier date=20260913 \
+  --identifier "severity:=$SEVERITY_FILTER" \
+  --identifier 'anomaly:={"between":[40,50]}' \
+  --identifier 'region:={"in":["north","south"]}' \
+  --from 0 --no-state-store
+```
+
+With the five weather records below, this selects B and C.
+
+### Free-form string schema
+
+For a literal-text example, the operator can install this synthetic server
+schema. The `mars` schema above does not have a `label` field.
+
+```yaml
+notification_schema:
+  text_example:
+    topic:
+      base: text_example
+      key_order: [label]
+    identifier:
+      label:
+        type: StringHandler
+        required: true
+    payload:
+      required: false
+```
+
+```bash
+LABEL='commas,"quotes",$HOME,$(false),back\slash=a:=b'
+aviso notify event=text_example --identifier "label=$LABEL"
+aviso replay --event text_example --identifier "label=$LABEL" --from 0
+```
+
+The quotes inside `LABEL` are literal characters. Neither `$HOME` nor
+`$(false)` inside its value is evaluated. The CLI sends the string as supplied;
+the server may canonicalise identifiers according to its handler rules. This
+example has no spaces because `label` forms part of the routing subject, and
+NATS subjects cannot contain whitespace.
+
 ### Spatial schema assumptions
 
 The `observations` examples assume the operator has installed the server's
@@ -137,7 +221,21 @@ aviso listen --event mars --identifiers '{"class":"od"}'
 
 This runs one listener with a single echo trigger. Press Ctrl+C to stop.
 
-`--event` and `--identifiers` come as a pair: pass both or pass neither.
+Alternatively, use repeated identifiers with the same `mars` schema:
+
+```bash
+MARS_CLASS=od
+STEP=12
+aviso listen --event mars \
+  --identifier "class=$MARS_CLASS" --identifier "step:=$STEP"
+```
+
+This selects `class=od`, `step=12` and keeps listening for live notifications.
+Choose either `--identifiers` or repeated `--identifier`; combining them is an
+error. Either source requires `--event`, and `--event` requires one source.
+Omit all inline flags to use YAML or configured listeners. Inline mode takes
+precedence over those listeners, with one default echo trigger.
+
 `--identifiers` takes a JSON object literal. Values may have any JSON shape:
 
 ```bash

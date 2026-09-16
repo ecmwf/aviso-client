@@ -49,27 +49,23 @@ use crate::paths;
 ///
 /// Two resolution paths:
 ///
-/// 1. **Inline mode**: when both `event` and `identifiers` are
-///    supplied, build a single ad-hoc [`ListenerSpec`] via
-///    [`listener::build_inline_listener_spec`] and skip YAML
+/// 1. **Inline mode**: use the supplied ad-hoc [`ListenerSpec`] and skip YAML
 ///    resolution entirely. Positional `listener_files` are silently
 ///    ignored on the inline path so the precedence rule matches
 ///    `aviso replay`'s existing behavior (inline wins; one mental
 ///    model for operators using either subcommand).
-/// 2. **YAML mode**: when either `event` or `identifiers` is
-///    absent (or both), resolve listeners via the Amendment C
-///    positional-replaces-config rule. An empty resolution exits
+/// 2. **YAML mode**: when the inline spec is absent, positional listener
+///    files replace configured listeners. An empty resolution exits
 ///    `2` with the helpful no-listeners error.
 pub(crate) async fn run(
     resolved: &Resolved,
     listener_files: &[PathBuf],
     no_state_store: bool,
     from: Option<&str>,
-    event: Option<&str>,
-    identifiers: Option<&str>,
+    inline: Option<ListenerSpec>,
 ) -> Result<()> {
-    let mut listeners = if let (Some(ev), Some(idents_json)) = (event, identifiers) {
-        vec![listener::build_inline_listener_spec(ev, idents_json)?]
+    let mut listeners = if let Some(spec) = inline {
+        vec![spec]
     } else {
         let resolved_list = resolve_listeners(resolved, listener_files)?;
         if resolved_list.is_empty() {
@@ -362,7 +358,7 @@ fn hint_for_listener_error(err: &aviso::ClientError) -> Option<String> {
     }
     if body.contains("missing for watch operation") {
         return Some(
-            "schema fields with `required: true` must appear in your `--identifiers` JSON or in the listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
+            "schema fields with `required: true` must appear in your repeated `--identifier` arguments, `--identifiers` JSON, or listener YAML's `identifiers:` block; only `required: false` fields can be omitted (which makes them wildcards at watch time). Run `aviso schema get <TYPE>` to see which identifiers are `required: true`."
                 .to_string(),
         );
     }

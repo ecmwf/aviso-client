@@ -38,6 +38,10 @@ Publish one notification to `/api/v1/notification`.
 | Argument | Description |
 |---|---|
 | `<PARAMETERS>` | Comma-separated parameter list. `event=<TYPE>` is required; `data=<JSON>` is the optional payload; every other pair enters the identifier map. Use `key:=JSON` for any JSON identifier value, including numbers, booleans, and null. The `key=value` form keeps bare scalars as strings but auto-parses arrays and objects. Double-quote strings containing commas. |
+| `--identifier <KEY=VALUE>` | Repeatable supplement to positional identifiers. `key=value` preserves exact strings without comma splitting, quote stripping, or JSON detection; `key:=JSON` parses any JSON value. Duplicate keys are errors. `event` and `data` must use positional parameters. |
+
+See [repeated identifiers for scripts](../cli/publish-and-listen.md#repeated-identifiers)
+for shell quoting, key trimming, and typed values.
 
 Returns exit code 0 on success, 1 on a server error or network failure, 2 on
 missing parameters.
@@ -51,8 +55,9 @@ Run one or more listeners against `/api/v1/watch`.
 | `[LISTENER_FILES]...` | Listener YAML files. Each file's `listeners:` list is concatenated in argv order. Positional files replace (do not merge with) the global config's `listeners:` block for this invocation. |
 | `--no-state-store` | Use an in-memory store for this invocation. Ignores any configured `state_file`. |
 | `--from <VALUE>` | Cursor override applied uniformly to every resolved listener. Overrides per-YAML `from_id`/`from_date`. See [Configuration: `--from` value formats](../cli/configuration.md#from-value-formats). |
-| `--event <TYPE>` | Inline ad-hoc listener: event type to listen for, without a YAML file. Requires `--identifiers`. Takes precedence over positional YAML files. |
+| `--event <TYPE>` | Inline ad-hoc listener: event type to listen for, without a YAML file. Requires an identifier source. Takes precedence over positional YAML files. |
 | `--identifiers <JSON>` | Inline ad-hoc listener: identifiers filter as a JSON object whose values may have any JSON shape. Requires `--event`. The inline listener runs with a single `echo` trigger. |
+| `--identifier <KEY=VALUE>` | Repeatable exact string (`key=value`) or typed JSON (`key:=JSON`). Requires `--event`; conflicts with `--identifiers`. |
 
 Returns 0 on a clean Ctrl+C, 1 if any listener task errored, 2 on no listeners
 resolved.
@@ -65,8 +70,9 @@ Replay historical notifications from a cursor.
 |---|---|
 | `[LISTENER_FILES]...` | Listener YAML files. Same resolution as `aviso listen`. |
 | `--listener <NAME>` | Pick one listener by name from the resolved set. Required when more than one listener resolves. |
-| `--event <TYPE>` | Inline ad-hoc replay: event type, without a YAML file. Requires `--identifiers`. |
+| `--event <TYPE>` | Inline ad-hoc replay: event type, without a YAML file. Requires an identifier source. |
 | `--identifiers <JSON>` | Inline ad-hoc replay: identifiers filter as a JSON object whose values may have any JSON shape. Requires `--event`. |
+| `--identifier <KEY=VALUE>` | Repeatable exact string (`key=value`) or typed JSON (`key:=JSON`). Requires `--event`; conflicts with `--identifiers`. |
 | `--from <VALUE>` | **Required.** Sequence id or date to start replay from. |
 
 Replay never touches the state file. Returns 0 on completion, 1 on error.

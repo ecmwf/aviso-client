@@ -223,8 +223,8 @@ When you run `aviso listen`:
 3. With no positional files, the global config's `listeners:` block is used.
 4. With no listeners anywhere, `aviso listen` exits with code 2.
 
-`--event` and `--identifiers` (the inline mode) take precedence over positional
-YAML files when both are present.
+`--event` with either `--identifiers` or repeated `--identifier` (inline mode)
+takes precedence over positional YAML files when both are present.
 
 ## What next
 
