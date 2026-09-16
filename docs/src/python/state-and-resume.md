@@ -108,6 +108,10 @@ all retained history after zero. A UTC timestamp such as
 `start_from="2026-06-01T00:00:00Z"` selects publication time, not identifier
 labels. Subsequent checkpoints use sequences.
 
+Keep sequence numbers unquoted. See
+[Start from a specific position](./listen.md#start-from-a-specific-position)
+for how Python distinguishes sequence numbers from times.
+
 With `start_from=None`, a matching saved cursor is used if available; otherwise
 listening starts live. To deliberately start fresh without affecting existing
 state, construct a client without that state store. Do not delete your state

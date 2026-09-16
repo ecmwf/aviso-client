@@ -41,6 +41,8 @@ class pyaviso.AvisoClient(
 `0` requests retained history after zero. A UTC string such as
 `"2026-06-01T00:00:00Z"` selects publication time. `None` uses saved state if
 available, otherwise the live edge. An explicit start overrides saved state.
+The value's type selects the meaning, so sequence numbers must be unquoted;
+see [Start from a specific position](./listen.md#start-from-a-specific-position).
 Use `mode="replay_only"` with a start position to end at the replay boundary.
 See [State and resume](./state-and-resume.md) for checkpoint limits.
 

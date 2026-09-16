@@ -169,6 +169,17 @@ history after sequence zero. A UTC date string such as
 in the notification's labels. To filter those labels, put `date` in `filter=` if
 the schema supports it.
 
+The choice depends on the Python value's type, not its size or appearance:
+
+- `start_from=20260915` is an integer: start after sequence 20260915, even
+  though the number looks like a date.
+- `start_from="2026-09-15T00:00:00Z"` is a string: start from that publication
+  time.
+
+**Do not quote sequence numbers.** `start_from="20260915"` is sent as a time
+string, not a sequence number. For time-based starts, use a full UTC timestamp
+like the one above so your intent is clear.
+
 ## Replay only
 
 `start_from=0` starts from the beginning of retained history.
