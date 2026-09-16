@@ -127,6 +127,14 @@ async fn handshake_must_match_resolved_watch_mode() -> TestResult {
             WatchRequest::watch("mars"),
             "event: live-notification\ndata: {\"id\":\"mars@1\",\"data\":{\"identifier\":{}}}\n\n",
         ),
+        (
+            WatchRequest::watch("mars"),
+            "event: error\ndata: not-json\n\n",
+        ),
+        (
+            WatchRequest::watch("mars"),
+            "event: error\ndata: {\"message\":42}\n\n",
+        ),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

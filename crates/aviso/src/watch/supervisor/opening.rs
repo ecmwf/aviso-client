@@ -70,7 +70,8 @@ pub(super) fn confirmed(
                 ));
             }
             "error" => {
-                let wire: crate::watch::wire::WireErrorEvent = serde_json::from_str(&message.data)?;
+                let wire: crate::watch::wire::WireErrorEvent = serde_json::from_str(&message.data)
+                    .map_err(|_| protocol("invalid Aviso opening error event"))?;
                 return Err(ClientError::StreamProtocol {
                     message: wire.message.or(wire.error).unwrap_or_else(|| {
                         "server rejected stream before opening confirmation".into()
