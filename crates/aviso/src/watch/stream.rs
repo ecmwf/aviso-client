@@ -107,9 +107,11 @@ impl NotificationStream {
     }
 
     /// Subscribe to first-handshake confirmation, without waiting for data.
-    /// The value starts false and stays true after the first validated Aviso
-    /// opening event, including during reconnects. Channel closure while false
-    /// means startup ended; read the stream for a possible terminal error.
+    /// The current value may already be true when subscribing. Inspect it or use
+    /// `wait_for(|ready| *ready)` to await confirmation. Once true, it stays true
+    /// after the first validated Aviso opening event, including during reconnects.
+    /// Channel closure while false means startup ended; read the stream for a
+    /// possible terminal error.
     /// Cancellation can end startup without an error.
     #[must_use]
     pub fn subscribe_ready(&self) -> tokio::sync::watch::Receiver<bool> {
