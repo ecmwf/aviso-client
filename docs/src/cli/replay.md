@@ -94,6 +94,25 @@ selected. If a file defines several listeners, select one by name:
 aviso replay --from 0 --listener mars-od my-listeners.yaml
 ```
 
+## Repeated identifiers
+
+For shell scripts, pass each identifier as a separate argument:
+
+```bash
+MARS_CLASS=od
+STEP=12
+aviso replay --event mars \
+  --identifier "class=$MARS_CLASS" --identifier "step:=$STEP" --from 0
+```
+
+This reads retained `mars` records with `class=od` and `step=12`. `key=value`
+preserves the exact string; `key:=JSON` parses a typed value. See
+[scripting rules](./publish-and-listen.md#repeated-identifiers) for quoting and
+validation. Choose repeated `--identifier` or one `--identifiers` JSON object;
+the two sources conflict. Either requires `--event`, which requires a source.
+Inline arguments take precedence over YAML and `--listener`, with a default
+echo trigger.
+
 ## Replay does not write the state file
 
 The state file (`~/.config/aviso/state.json`) is for `aviso listen` only. Replay
@@ -139,7 +158,17 @@ aviso replay --event weather \
   --from 0
 ```
 
-On the fresh test stream this prints `payload.id` values B and C, then exits.
+The same filter can be supplied as repeated arguments instead:
+
+```bash
+aviso replay --event weather --identifier date=20260913 \
+  --identifier 'severity:={"gte":5}' \
+  --identifier 'anomaly:={"between":[40,50]}' \
+  --identifier 'region:={"in":["north","south"]}' --from 0
+```
+
+On the fresh test stream either form prints `payload.id` values B and C, then
+exits. Do not combine the two identifier sources in one command.
 `--from 0` reads retained history after sequence zero; it cannot recover records
 that the backend no longer retains. The wire filter is the same object used by
 listen, with JSON numbers inside the constraint objects. The

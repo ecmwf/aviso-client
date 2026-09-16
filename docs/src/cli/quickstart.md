@@ -159,6 +159,10 @@ The location here is an example file reference. Publishing sends a notification,
 not the file, and does not grant consumers access to it. An active matching
 listener receives the notification, including this payload.
 
+For shell variables, use repeated `--identifier` arguments to keep each value
+in its own quoted argument. This works with notify, listen, and replay; see
+[repeated identifiers for scripts](./publish-and-listen.md#repeated-identifiers).
+
 For nested arrays and spatial identifiers, see
 [Publish and listen](./publish-and-listen.md#alternative-coordinate-format).
 
