@@ -272,6 +272,44 @@ fn streaming_response(body: &str) -> String {
 }
 
 #[tokio::test]
+async fn stalled_http_error_bodies_preserve_status_classification() -> TestResult {
+    for status in [403, 429, 500, 503] {
+        let response = format!(
+            "HTTP/1.1 {status} Error\r\nContent-Length: 100\r\nRetry-After: 60\r\nX-Request-ID: request-1\r\n\r\n"
+        );
+        let (url, sent, task) = held_connection(response).await?;
+        let client = AvisoClient::builder().base_url(url).build()?;
+        let mut stream = client.watch(WatchRequest::watch("mars"))?;
+        sent.await?;
+        // Let the response headers reach the client before advancing its clock.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), stream.recv())
+                .await
+                .is_err()
+        );
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::time::resume();
+        task.await??;
+        let result = tokio::time::timeout(Duration::from_millis(50), stream.recv()).await;
+        if status == 403 {
+            assert!(
+                matches!(result?, Some(Err(ClientError::Http { status: 403, body, request_id }))
+                if body.is_empty() && request_id.as_deref() == Some("request-1"))
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "retryable HTTP {status} must remain active"
+            );
+        }
+        assert!(!*stream.subscribe_ready().borrow());
+        stream.close().await;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn unconfirmed_openings_have_a_fixed_deadline() -> TestResult {
     for response in [
         String::new(),

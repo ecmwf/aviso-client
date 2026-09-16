@@ -152,14 +152,15 @@ pub(super) async fn run_one_connection(
             biased;
             _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
             _ = &mut *cancel => return ConnectionOutcome::Cancelled,
-            () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)")),
-            b = response.bytes() => b,
+            // The status is authoritative even if its diagnostic body stalls.
+            () = tokio::time::sleep_until(opening_deadline) => None,
+            b = response.bytes() => Some(b),
         };
-        let body_bytes = match body_result {
-            Ok(b) => b,
-            Err(e) => return ConnectionOutcome::TransportError(e),
+        let body = match body_result {
+            Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+            Some(Err(e)) => return ConnectionOutcome::TransportError(e),
+            None => String::new(),
         };
-        let body = String::from_utf8_lossy(&body_bytes).into_owned();
         return ConnectionOutcome::HttpStatus {
             status,
             body,
