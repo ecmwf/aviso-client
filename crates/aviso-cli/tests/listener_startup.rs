@@ -235,7 +235,13 @@ async fn transient_failure_then_opening_reports_ready_once_and_json_stdout() -> 
     let stderr = String::from_utf8(output.stderr)?;
     assert_eq!(stderr.matches("Listening for").count(), 1);
     assert!(stderr.contains("Retrying listener connection"));
-    assert!(stderr.find("Connecting for") < stderr.find("Listening for"));
+    let connecting = stderr
+        .find("Connecting for")
+        .ok_or("missing Connecting status")?;
+    let listening = stderr
+        .find("Listening for")
+        .ok_or("missing Listening status")?;
+    assert!(connecting < listening);
     let notification: serde_json::Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(notification["sequence"], 1);
     Ok(())
