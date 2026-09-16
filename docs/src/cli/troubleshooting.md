@@ -18,6 +18,27 @@ your machine. Confirm the hostname, port, and HTTP or HTTPS scheme with your
 server operator. For certificate errors, see
 [TLS errors](#tls-errors-when-connecting).
 
+If `Connecting` never becomes `Listening`, the server has not confirmed an Aviso
+stream. HTTP 200 alone is not enough. A missing or incorrect
+`Content-Type: text/event-stream`, an unexpected opening event, or no opening
+confirmation within ten seconds stops the listener with a protocol error.
+Check for a website URL, a login redirect, or a proxy routing the request to the
+wrong service. Rejected HTTP 200 bodies are not printed.
+
+For HTTP failures, `listen` omits unrecognized response bodies, including JSON
+objects from proxies. Recognized Aviso error codes with string messages or
+details retain only those fields, a request ID, and the configured event types
+when relevant. Other fields are omitted. URL-like whitespace-delimited tokens
+in retained text and listener hints are replaced with `[URL omitted]`, including
+their userinfo, path, query, and fragment. This does not detect arbitrary secrets
+in ordinary message text. Library callers can still inspect the raw error body.
+
+`Retrying listener connection` means a recoverable failure, such as a connection
+refusal, HTTP 429, or HTTP 5xx. The default initial budget is 30 seconds across
+retries. See [Listener startup timeout](./configuration.md#listener-startup-timeout)
+to change or disable that budget. Once `Listening` appears, startup has finished;
+an idle stream with heartbeats does not need to deliver data to stay healthy.
+
 </details>
 
 <details>
