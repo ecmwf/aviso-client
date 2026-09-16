@@ -129,6 +129,14 @@ async def test_start_from_wire(
         method="POST",
         json={"event_type": "mars", "identifier": {}, **wire},
     ).respond_with_data(event + _END, content_type="text/event-stream")
+    if mode == "watch":
+        # The finite response can reconnect before the consumer closes it.
+        # Resume must use the delivered sequence, including for a date start.
+        httpserver.expect_request(
+            "/api/v1/watch",
+            method="POST",
+            json={"event_type": "mars", "identifier": {}, "from_id": str(sequence + 1)},
+        ).respond_with_data("busy", status=503, headers={"Retry-After": "60"})
     for client_type in (pyaviso.AvisoClient, pyaviso.AsyncAvisoClient):
         client = client_type(base_url=httpserver.url_for("/"))
         if builder:
