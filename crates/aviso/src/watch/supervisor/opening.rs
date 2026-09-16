@@ -108,7 +108,10 @@ pub(super) async fn with_startup_budget(
         }
         () = tokio::time::sleep(timeout) => {
             // No data can precede confirmation, so this channel has room.
-            errors.send(Err(protocol("listener startup timeout exceeded"))).await.ok();
+            errors.send(Err(ClientError::StreamProtocol {
+                message: "listener startup timeout exceeded".into(),
+                request_id: None,
+            })).await.ok();
             return;
         }
     }
