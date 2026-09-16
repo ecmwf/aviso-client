@@ -17,14 +17,15 @@ A flag beats an env var beats a config file. Layering is per-field: passing
 
 To see what aviso actually resolved, run `aviso config dump --redact`.
 
-The base URL must use `http` or `https` and point to the Aviso service, including
-any reverse-proxy path prefix. A website or login page is not a stream endpoint.
+The base URL must use `http` or `https` and point to the Aviso service,
+including any reverse-proxy path prefix. A website or login page is not a
+stream endpoint.
 
 ## Listener startup timeout
 
-`aviso listen` prints `Connecting` first. It prints `Listening` for each listener
-only after the server confirms an Aviso stream. No matching notification is
-needed: a confirmed stream can be healthy and idle.
+`aviso listen` prints `Connecting` first. It prints `Listening` for each
+listener only after the server confirms an Aviso stream. No matching
+notification is needed: a confirmed stream can be healthy and idle.
 
 `--startup-timeout <DURATION>` limits the initial connection and retries to 30
 seconds by default. This gives transient failures time to recover while keeping

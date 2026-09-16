@@ -30,7 +30,8 @@ mean the server accepted the subscription. Call `subscribe_ready()` on the
 `NotificationStream` to observe first-handshake confirmation without consuming a
 notification. The returned Tokio watch receiver starts false and stays true
 after confirmation, even during later reconnects. If it closes while false,
-read the stream for its terminal error.
+read the stream for a possible terminal error. Cancellation can end startup
+without an error.
 
 `WatchRequest::with_startup_timeout(Some(duration))` sets an optional initial
 budget across retries. `None` or zero disables that budget, which is the library
