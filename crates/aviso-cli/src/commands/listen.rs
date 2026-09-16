@@ -54,9 +54,8 @@ use crate::paths;
 ///    ignored on the inline path so the precedence rule matches
 ///    `aviso replay`'s existing behavior (inline wins; one mental
 ///    model for operators using either subcommand).
-/// 2. **YAML mode**: when the inline spec is
-///    absent, resolve listeners via the Amendment C
-///    positional-replaces-config rule. An empty resolution exits
+/// 2. **YAML mode**: when the inline spec is absent, positional listener
+///    files replace configured listeners. An empty resolution exits
 ///    `2` with the helpful no-listeners error.
 pub(crate) async fn run(
     resolved: &Resolved,
