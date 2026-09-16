@@ -191,6 +191,7 @@ pub(crate) enum DrainOutcome {
 mod connection;
 mod drain;
 mod guards;
+mod opening;
 mod reconnect;
 
 pub(crate) use guards::{ActiveKeyGuard, GapGuard, send_or_cancel};

@@ -120,7 +120,10 @@ async def test_start_from_wire(
 ) -> None:
     sequence = start_from + 1 if isinstance(start_from, int) else 43
     data = {"id": f"mars@{sequence}", "data": {"identifier": {}, "payload": None}}
-    event = f"event: replay\ndata: {json.dumps(data)}\n\n"
+    event = (
+        'event: replay-control\ndata: {"type":"replay_started"}\n\n'
+        f"event: replay\ndata: {json.dumps(data)}\n\n"
+    )
     httpserver.expect_request(
         f"/api/v1/{'watch' if mode == 'watch' else 'replay'}",
         method="POST",

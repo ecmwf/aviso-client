@@ -26,6 +26,18 @@ fn sse_chunk(event_type: &str, data: serde_json::Value) -> String {
     format!("event: {event_type}\ndata: {data}\n\n")
 }
 
+fn opened_stream(body: &str, historical: bool) -> ResponseTemplate {
+    let opening = if historical {
+        sse_chunk("replay-control", json!({"type": "replay_started"}))
+    } else {
+        sse_chunk(
+            "live-notification",
+            json!({"type": "connection_established"}),
+        )
+    };
+    ResponseTemplate::new(200).set_body_raw(format!("{opening}{body}"), "text/event-stream")
+}
+
 fn cloud_event(event_type: &str, sequence: u64) -> serde_json::Value {
     json!({
         "id": format!("{event_type}@{sequence}"),
@@ -184,6 +196,7 @@ fn start_supervisor_full(
         active_resume_keys,
         flush_cursor_on_exit,
         done_tx,
+        tokio::sync::watch::channel(false).0,
     ));
     (rx, cancel_tx, handle, drop_sender)
 }

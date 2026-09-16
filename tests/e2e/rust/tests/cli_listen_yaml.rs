@@ -85,9 +85,30 @@ fn cli_listen_yaml_dispatches_echo_trigger() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stdout.contains("test_polygon") && stdout.contains(POLYGON),
-        "echo trigger should emit NDJSON matching the published notification; \
-         got stdout: {stdout:?}, stderr: {stderr:?}",
+    let notifications: Vec<serde_json::Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("stdout contains only notification JSON"))
+        .collect();
+    assert_eq!(
+        notifications.len(),
+        3,
+        "stdout: {stdout:?}, stderr: {stderr:?}"
     );
+    for (index, notification) in notifications.iter().enumerate() {
+        assert_eq!(notification["event_type"], "test_polygon");
+        assert_eq!(notification["payload"]["from"], "cli_listen_test");
+        assert_eq!(notification["payload"]["seq"], index);
+        let polygon = &notification["identifier"]["polygon"];
+        // Older servers send a comma-separated string; newer servers retain
+        // JSON coordinate pairs. Both must carry exactly the published shape.
+        if let Some(value) = polygon.as_str() {
+            assert_eq!(value, POLYGON);
+        } else {
+            let points: Vec<[f64; 2]> = serde_json::from_value(polygon.clone())
+                .expect("polygon must contain coordinate pairs");
+            assert_eq!(points, [[0.0, 40.0], [1.0, 40.0], [1.0, 41.0], [0.0, 40.0]]);
+        }
+    }
+    assert_eq!(stderr.matches("Listening for").count(), 1);
+    assert!(stderr.find("Connecting for") < stderr.find("Listening for"));
 }

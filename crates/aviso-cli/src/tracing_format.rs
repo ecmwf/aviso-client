@@ -86,7 +86,7 @@ where
 {
     fn format_event(
         &self,
-        _ctx: &FmtContext<'_, S, N>,
+        ctx: &FmtContext<'_, S, N>,
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> fmt::Result {
@@ -94,6 +94,18 @@ where
         let level = *metadata.level();
 
         let mut visitor = OtelFieldVisitor::default();
+        if let Some(scope) = ctx.event_scope() {
+            for span in scope.from_root() {
+                let extensions = span.extensions();
+                if let Some(fields) =
+                    extensions.get::<tracing_subscriber::fmt::FormattedFields<N>>()
+                {
+                    let attributes: Map<String, Value> =
+                        serde_json::from_str(fields.as_str()).map_err(|_| fmt::Error)?;
+                    visitor.attributes.extend(attributes);
+                }
+            }
+        }
         event.record(&mut visitor);
 
         let mut record = Map::new();

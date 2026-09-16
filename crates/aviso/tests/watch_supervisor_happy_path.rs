@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use tokio::time::timeout;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+mod common;
 
 fn sse_chunk(event_type: &str, data: &Value) -> String {
     format!("event: {event_type}\ndata: {data}\n\n")
@@ -75,11 +76,7 @@ fn end_of_stream() -> (&'static str, Value) {
 async fn mount_sse_body(server: &MockServer, body: String) {
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &wiremock::Request| common::opened_sse(request, &body))
         .mount(server)
         .await;
 }

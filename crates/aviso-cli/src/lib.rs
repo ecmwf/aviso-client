@@ -280,6 +280,11 @@ enum Commands {
         #[arg(long)]
         no_state_store: bool,
 
+        /// Budget until the first confirmed Aviso stream, across retries.
+        /// Use 0s to disable. Does not limit a healthy stream's lifetime.
+        #[arg(long, value_name = "DURATION", default_value = "30s", value_parser = humantime::parse_duration, allow_hyphen_values = true)]
+        startup_timeout: std::time::Duration,
+
         /// Listener-level cursor override applied uniformly to every
         /// resolved listener. Accepts the same seven forms as
         /// `aviso replay --from`. When set, the listener's per-YAML
@@ -444,6 +449,7 @@ fn init_tracing(verbose: u8, ansi: bool) -> Result<()> {
             .with_env_filter(filter)
             .with_writer(std::io::stderr)
             .event_format(tracing_format::OtelLogFormat::new())
+            .fmt_fields(tracing_subscriber::fmt::format::JsonFields::new())
             .try_init();
     }
 
@@ -489,6 +495,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Listen {
             listener_files,
             no_state_store,
+            startup_timeout,
             from,
             inline,
         } => {
@@ -498,6 +505,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 no_state_store,
                 from.as_deref(),
                 inline.resolve()?,
+                startup_timeout,
             )
             .await
         }

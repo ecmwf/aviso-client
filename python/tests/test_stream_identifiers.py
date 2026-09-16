@@ -24,7 +24,10 @@ def test_stream_preserves_point_cloud_identifier(httpserver: Any) -> None:
             "payload": None,
         },
     }
-    body = f"event: live-notification\ndata: {json.dumps(event)}\n\n"
+    body = (
+        'event: live-notification\ndata: {"type":"connection_established"}\n\n'
+        f"event: live-notification\ndata: {json.dumps(event)}\n\n"
+    )
     httpserver.expect_request("/api/v1/watch", method="POST").respond_with_data(
         body,
         content_type="text/event-stream",

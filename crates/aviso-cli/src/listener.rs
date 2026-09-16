@@ -140,6 +140,7 @@ pub(crate) fn triggers_for_listener(spec: &ListenerSpec) -> Vec<aviso::watch::Tr
 /// The function is `async`; the caller spawns it onto a
 /// [`tokio::task::JoinSet`] and supervises completion via
 /// `JoinSet::join_next_with_id`.
+#[tracing::instrument(skip(client, request, cancel), fields(listener = %listener_name))]
 pub(crate) async fn spawn_listener_drain(
     client: Arc<AvisoClient>,
     request: WatchRequest,
@@ -147,7 +148,12 @@ pub(crate) async fn spawn_listener_drain(
     listener_name: String,
     event_type: String,
 ) -> Result<(), ClientError> {
+    if *cancel.borrow() {
+        return Ok(());
+    }
     let mut stream = client.watch(request)?;
+    let mut ready = stream.subscribe_ready();
+    let mut waiting = true;
     let result = loop {
         tokio::select! {
             biased;
@@ -159,6 +165,13 @@ pub(crate) async fn spawn_listener_drain(
                     "listener received cancellation signal; draining and exiting"
                 );
                 break Ok(());
+            }
+            confirmed = async { ready.wait_for(|confirmed| *confirmed).await.is_ok() }, if waiting => {
+                waiting = false;
+                if confirmed {
+                    crate::output::write_stderr_line(&format!("Listening for {listener_name} [{event_type}]. Press Ctrl+C to stop."))
+                        .map_err(|error| ClientError::Config(format!("write listener status: {error}")))?;
+                }
             }
             item = stream.recv() => {
                 match item {
