@@ -168,9 +168,10 @@ pub(crate) async fn spawn_listener_drain(
             }
             confirmed = async { ready.wait_for(|confirmed| *confirmed).await.is_ok() }, if waiting => {
                 waiting = false;
-                if confirmed {
-                    crate::output::write_stderr_line(&format!("Listening for {listener_name} [{event_type}]. Press Ctrl+C to stop."))
-                        .map_err(|error| ClientError::Config(format!("write listener status: {error}")))?;
+                if confirmed
+                    && let Err(error) = crate::output::write_stderr_line(&format!("Listening for {listener_name} [{event_type}]. Press Ctrl+C to stop."))
+                {
+                    break Err(ClientError::Config(format!("write listener status: {error}")));
                 }
             }
             item = stream.recv() => {
