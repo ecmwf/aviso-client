@@ -24,6 +24,8 @@ also makes the request historical. Every reconnect validates its own opening.
 
 Headers and confirmation share a ten-second deadline per connection. Heartbeats
 and unknown SSE events cannot extend that deadline or mark the listener ready.
+For non-200 responses, a diagnostic body that exceeds the deadline is omitted;
+the HTTP status still determines whether to retry or stop.
 Retry backoff resets only after confirmation. Once confirmed, the normal
 heartbeat watchdog applies; time spent handling notifications or waiting for a
 slow consumer does not count as network silence.
