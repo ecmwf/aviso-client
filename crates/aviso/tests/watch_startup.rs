@@ -21,6 +21,56 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 const LIVE: &str = "event: live-notification\ndata: {\"type\":\"connection_established\"}\n\n";
 const REPLAY: &str = "event: replay-control\ndata: {\"type\":\"replay_started\"}\n\n";
 
+#[derive(Debug, Default)]
+struct SlowCredentials(tokio::sync::Notify);
+
+#[async_trait::async_trait]
+impl aviso::auth::AuthProvider for SlowCredentials {
+    async fn authorization_header(&self) -> aviso::Result<reqwest::header::HeaderValue> {
+        self.0.notify_one();
+        tokio::time::sleep(Duration::from_secs(11)).await;
+        let mut value = reqwest::header::HeaderValue::from_static("Bearer test-token");
+        value.set_sensitive(true);
+        Ok(value)
+    }
+}
+
+#[tokio::test]
+async fn credentials_use_the_initial_budget_not_the_http_opening_deadline() -> TestResult {
+    for budget in [None, Some(Duration::from_secs(5))] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(403))
+            .expect(u64::from(budget.is_none()))
+            .mount(&server)
+            .await;
+        let auth = std::sync::Arc::new(SlowCredentials::default());
+        let client = AvisoClient::builder()
+            .base_url(server.uri())
+            .auth(auth.clone())
+            .build()?;
+        let mut stream = client.watch(WatchRequest::watch("mars").with_startup_timeout(budget))?;
+        auth.0.notified().await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::time::resume();
+        let result = tokio::time::timeout(Duration::from_secs(2), stream.recv()).await?;
+        if budget.is_none() {
+            assert!(matches!(
+                result,
+                Some(Err(ClientError::Http { status: 403, .. }))
+            ));
+        } else {
+            assert!(
+                matches!(result, Some(Err(ClientError::StreamProtocol { message, .. }))
+                if message == "listener startup timeout exceeded")
+            );
+        }
+        assert!(!*stream.subscribe_ready().borrow());
+    }
+    Ok(())
+}
+
 #[test]
 fn invalid_urls_fail_without_exposing_credentials() {
     for url in [
