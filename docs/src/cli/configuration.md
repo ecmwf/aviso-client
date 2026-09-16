@@ -17,6 +17,35 @@ A flag beats an env var beats a config file. Layering is per-field: passing
 
 To see what aviso actually resolved, run `aviso config dump --redact`.
 
+The base URL must use `http` or `https` and point to the Aviso service, including
+any reverse-proxy path prefix. A website or login page is not a stream endpoint.
+
+## Listener startup timeout
+
+`aviso listen` prints `Connecting` first. It prints `Listening` for each listener
+only after the server confirms an Aviso stream. No matching notification is
+needed: a confirmed stream can be healthy and idle.
+
+`--startup-timeout <DURATION>` limits the initial connection and retries to 30
+seconds by default. This gives transient failures time to recover while keeping
+a failed startup bounded. To change that budget for configured listeners:
+
+```bash
+aviso listen --startup-timeout 60s
+```
+
+Use `--startup-timeout 0s` to disable the initial budget. This listen-only flag
+has no YAML key or environment variable. It stops applying after the first
+confirmed handshake and does not restart on reconnect. Each connection attempt
+still has a separate ten-second deadline for response headers and the Aviso
+opening event. Heartbeats and unrelated SSE events do not confirm startup.
+
+Retry status goes to stderr at INFO level, with a listener name, cause, and
+delay. Repeated retries are coalesced to at most one message every five seconds.
+Notifications keep their configured trigger output. Ctrl+C while connecting
+stops the listener normally. A failed listener makes the eventual command exit
+with status 1; other listeners keep running.
+
 ## The configuration file
 
 ```yaml
@@ -32,7 +61,6 @@ auth:
   #   password: "secret"
 
 # Optional, with sensible defaults if omitted:
-timeout: 30s
 heartbeat_interval: 30s
 state_file: "/path/to/state.json"
 
@@ -53,6 +81,10 @@ listeners:
 
 To point at a config file in another location, use `--config <PATH>` or set
 `AVISO_CLIENT_CONFIG_FILE`.
+
+The optional YAML `timeout` is the total HTTP request timeout, including a
+stream's body. It is unset by default. Leave it unset for long-lived listeners;
+use `--startup-timeout` to bound startup without limiting a healthy stream.
 
 ## Environment variables
 

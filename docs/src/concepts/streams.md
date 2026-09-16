@@ -14,6 +14,25 @@ aviso reconnects automatically after routine interruptions. Backoff means
 waiting before another attempt, so it does not repeatedly contact a busy
 server. The details below help explain pauses and errors.
 
+## Confirming a stream
+
+The client accepts only HTTP 200 with the `text/event-stream` media type. Media
+type matching ignores case and accepts parameters such as `charset=utf-8`.
+It then waits for an Aviso opening control: `connection_established` on a
+live-only watch, or `replay_started` when reading history. A saved resume cursor
+also makes the request historical. Every reconnect validates its own opening.
+
+Headers and confirmation share a ten-second deadline per connection. Heartbeats
+and unknown SSE events cannot extend that deadline or mark the listener ready.
+Retry backoff resets only after confirmation. Once confirmed, the normal
+heartbeat watchdog applies; time spent handling notifications or waiting for a
+slow consumer does not count as network silence.
+
+The CLI also applies an initial 30-second budget across retries, configurable
+with `aviso listen --startup-timeout`. Library consumers have no initial retry
+budget unless they explicitly set one. A healthy idle stream outlives either
+startup deadline.
+
 ## The connection lives a while, then closes
 
 aviso-server intentionally closes each watch connection after a configured

@@ -23,6 +23,22 @@ For an overview and worked examples, read the
 docs.rs builds the documentation from the source on every release, so the
 version you see there matches the version on crates.io.
 
+## Stream readiness and startup
+
+`AvisoClient::watch` returns a stream immediately. Creating the stream does not
+mean the server accepted the subscription. Call `subscribe_ready()` on the
+`NotificationStream` to observe first-handshake confirmation without consuming a
+notification. The returned Tokio watch receiver starts false and stays true
+after confirmation, even during later reconnects. If it closes while false,
+read the stream for its terminal error.
+
+`WatchRequest::with_startup_timeout(Some(duration))` sets an optional initial
+budget across retries. `None` or zero disables that budget, which is the library
+default. It does not limit stream lifetime. Independently, each connection must
+provide SSE headers and its Aviso opening event within ten seconds. Invalid
+responses and expired opening deadlines yield `ClientError::StreamProtocol`.
+Unsupported base URL schemes fail at build time with `ClientError::Config`.
+
 ## Building docs locally
 
 If you have a checkout of the repository:
