@@ -30,14 +30,17 @@ objects from proxies. Recognized Aviso error codes with string messages or
 details retain only those fields, a request ID, and the configured event types
 when relevant. Other fields are omitted. URL-like whitespace-delimited tokens
 in retained text and listener hints are replaced with `[URL omitted]`, including
-their userinfo, path, query, and fragment. This does not detect arbitrary secrets
-in ordinary message text. Library callers can still inspect the raw error body.
+their userinfo, path, query, and fragment. This does not detect arbitrary
+secrets in ordinary message text. Library callers can still inspect the raw
+error body.
 
 `Retrying listener connection` means a recoverable failure, such as a connection
 refusal, HTTP 429, or HTTP 5xx. The default initial budget is 30 seconds across
-retries. See [Listener startup timeout](./configuration.md#listener-startup-timeout)
-to change or disable that budget. Once `Listening` appears, startup has finished;
-an idle stream with heartbeats does not need to deliver data to stay healthy.
+retries. See
+[Listener startup timeout](./configuration.md#listener-startup-timeout)
+to change or disable that budget. Once `Listening` appears, startup has
+finished; an idle stream with heartbeats does not need to deliver data to stay
+healthy.
 
 </details>
 

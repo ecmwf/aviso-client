@@ -132,15 +132,16 @@ oneshot channel; the supervisor exits within one event-loop tick.
 
 The connection runner validates HTTP 200 and the SSE media type before decoding
 the body. An opening gate consumes frames until the expected Aviso control
-arrives: `connection_established` for live-only or `replay_started` for a resolved
-historical cursor. Headers and opening share a ten-second deadline. Only then
-does it transition to `Connected`, reset backoff, and publish readiness.
+arrives: `connection_established` for live-only or `replay_started` for a
+resolved historical cursor. Headers and opening share a ten-second deadline.
+Only then does it transition to `Connected`, reset backoff, and publish
+readiness.
 
 `NotificationStream::subscribe_ready()` exposes a watch receiver whose value
-stays true after the first handshake. The CLI uses it for its `Listening` status;
-it does not infer readiness from log text or wait for the first notification.
-Retry telemetry uses tracing in the listener span, with causes and delays
-coalesced over five seconds. Status stays on stderr.
+stays true after the first handshake. The CLI uses it for its `Listening`
+status; it does not infer readiness from log text or wait for the first
+notification. Retry telemetry uses tracing in the listener span, with causes
+and delays coalesced over five seconds. Status stays on stderr.
 
 `WatchRequest::with_startup_timeout` optionally bounds the supervisor until the
 first handshake, including cursor lookup, authentication, and retry sleeps.
