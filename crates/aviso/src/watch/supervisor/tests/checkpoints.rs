@@ -11,6 +11,48 @@ use crate::state::{Checkpoint, JsonFileStore, MemoryStore};
 use crate::watch::Trigger;
 use tokio::time::timeout;
 
+struct ObservedStore {
+    inner: Arc<dyn StateStore>,
+    activity: std::sync::Mutex<(String, std::time::Instant)>,
+}
+
+impl ObservedStore {
+    fn record(&self, activity: String) {
+        *self.activity.lock().unwrap() = (activity, std::time::Instant::now());
+    }
+
+    fn activity(&self) -> String {
+        let (activity, started) = &*self.activity.lock().unwrap();
+        format!("{activity}, {:.3}s ago", started.elapsed().as_secs_f64())
+    }
+}
+
+#[async_trait::async_trait]
+impl StateStore for ObservedStore {
+    async fn get(&self, key: &ResumeKey) -> Result<Option<Checkpoint>, crate::state::StoreError> {
+        self.record("get started".into());
+        let result = self.inner.get(key).await;
+        self.record("get finished".into());
+        result
+    }
+
+    async fn put(
+        &self,
+        key: &ResumeKey,
+        checkpoint: Checkpoint,
+    ) -> Result<(), crate::state::StoreError> {
+        let sequence = checkpoint.last_committed_sequence;
+        self.record(format!("put {sequence} started"));
+        let result = self.inner.put(key, checkpoint).await;
+        self.record(format!("put {sequence} finished"));
+        result
+    }
+
+    async fn delete(&self, key: &ResumeKey) -> Result<(), crate::state::StoreError> {
+        self.inner.delete(key).await
+    }
+}
+
 #[tokio::test]
 async fn backward_deliveries_keep_checkpoints_monotonic() {
     for backend in ["none", "memory", "json"] {
@@ -39,6 +81,15 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
         "json" => Some(Arc::new(JsonFileStore::open(&file).await.unwrap())),
         _ => None,
     };
+    let observed = store.map(|inner| {
+        Arc::new(ObservedStore {
+            inner,
+            activity: std::sync::Mutex::new(("opened".into(), std::time::Instant::now())),
+        })
+    });
+    let store = observed
+        .as_ref()
+        .map(|store| Arc::clone(store) as Arc<dyn StateStore>);
     let base_url = url::Url::parse(&format!("{}/", server.uri())).unwrap();
     let key = ResumeKey::new(&base_url, "mars", &json!({}), None).unwrap();
     if baseline == "stored" {
@@ -49,22 +100,7 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
             .await
             .unwrap();
     }
-    let mut body = String::new();
-    for (index, sequence) in sequences.iter().enumerate() {
-        body.push_str(&sse_chunk(
-            if index == 0 {
-                "replay"
-            } else {
-                "live-notification"
-            },
-            cloud_event("mars", *sequence),
-        ));
-    }
-    body.push_str(&sse_chunk(
-        "connection-closing",
-        closing("max_duration_reached"),
-    ));
-    mount_stream(&server, body).await;
+    mount_stream(&server, session_body(sequences)).await;
     let request = if baseline == "explicit" {
         WatchRequest::watch_from("mars", ResumeStart::AfterSequence(6))
     } else {
@@ -73,11 +109,23 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
     let (mut rx, _cancel, handle, _drop) =
         start_supervisor_full(&server, request, store.clone(), flush);
     for sequence in sequences {
-        let item = timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        let received = timeout(Duration::from_secs(5), rx.recv()).await;
+        assert!(
+            received.is_ok(),
+            "receive {sequence} timed out: {backend}/{baseline}/flush={flush}/{sequences:?}; storage: {}; requests: {:?}; supervisor finished: {}",
+            observed
+                .as_ref()
+                .map_or_else(|| "none".into(), |store| store.activity()),
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .map(|request| request.body_json::<serde_json::Value>().unwrap())
+                .collect::<Vec<_>>(),
+            handle.is_finished()
+        );
+        let item = received.unwrap().unwrap().unwrap();
         assert_eq!(
             item.sequence, *sequence,
             "backward items must still be delivered"
@@ -102,20 +150,7 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
     } else {
         committed
     };
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 2);
-    let initial: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    if baseline == "fresh" {
-        assert!(initial.get("from_id").is_none());
-    } else {
-        assert_eq!(initial["from_id"], "7");
-    }
-    let reconnect: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
-    assert_eq!(
-        reconnect["from_id"],
-        (committed + 1).to_string(),
-        "{backend}/{baseline}/flush={flush}/{sequences:?}"
-    );
+    check_requests(&server, baseline, committed).await;
     if let Some(store) = store {
         let expected = (!(baseline == "explicit" && expected == 6)).then_some(expected);
         check_stored_checkpoint(
@@ -126,6 +161,38 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
         )
         .await;
     }
+}
+
+async fn check_requests(server: &MockServer, baseline: &str, committed: u64) {
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    let initial: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    if baseline == "fresh" {
+        assert!(initial.get("from_id").is_none());
+    } else {
+        assert_eq!(initial["from_id"], "7");
+    }
+    let reconnect: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+    assert_eq!(reconnect["from_id"], (committed + 1).to_string());
+}
+
+fn session_body(sequences: &[u64]) -> String {
+    let mut body = String::new();
+    for (index, sequence) in sequences.iter().enumerate() {
+        body.push_str(&sse_chunk(
+            if index == 0 {
+                "replay"
+            } else {
+                "live-notification"
+            },
+            cloud_event("mars", *sequence),
+        ));
+    }
+    body.push_str(&sse_chunk(
+        "connection-closing",
+        closing("max_duration_reached"),
+    ));
+    body
 }
 
 async fn check_stored_checkpoint(
