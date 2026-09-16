@@ -196,8 +196,9 @@ impl AvisoClientBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`crate::ClientError::Config`] when `base_url` is missing or not a valid URL, or
-    /// when the underlying `reqwest::Client` cannot be built.
+    /// Returns [`crate::ClientError::Config`] when `base_url` is missing, is not a
+    /// valid URL, or uses a scheme other than HTTP or HTTPS. Also returned when
+    /// the underlying `reqwest::Client` cannot be built.
     pub fn build(self) -> crate::Result<AvisoClient> {
         let raw = self
             .base_url
