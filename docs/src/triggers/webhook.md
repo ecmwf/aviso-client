@@ -220,7 +220,7 @@ triggers:
 ```yaml
 triggers:
   - type: webhook
-    url: "https://alerts.internal/api/v1/incidents"
+    url: "https://alerts.example.org/api/v1/incidents"
     method: POST
     headers:
       Authorization: "Bearer {{ env.ALERT_TOKEN }}"

@@ -144,7 +144,7 @@ triggers:
 ```yaml
 triggers:
   - type: post
-    url: "https://events.internal/queue/aviso"
+    url: "https://events.example.org/queue/aviso"
     headers:
       Authorization: "Bearer {{ env.QUEUE_TOKEN }}"
       X-Routing-Key: "aviso.{{ notification.event_type }}"   # custom routing on the receiver side
