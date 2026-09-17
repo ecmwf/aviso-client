@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # Unit tests for package-ffi.sh.
 #
@@ -221,6 +225,17 @@ else
   [ -f "$pc" ] && cat "$pc"
   failed=$((failed + 1))
 fi
+
+# Legal files must survive staging and extraction without modification.
+for legal_file in LICENSE NOTICE; do
+  if cmp -s "$root/$legal_file" "$tmp/aviso-ffi-$ws_version-linux-test/$legal_file"; then
+    echo "ok   - the tarball preserves $legal_file"
+    passed=$((passed + 1))
+  else
+    echo "FAIL - the tarball preserves $legal_file"
+    failed=$((failed + 1))
+  fi
+done
 
 # A version that does not match the workspace must be refused before building.
 rc=0

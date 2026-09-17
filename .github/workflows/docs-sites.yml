@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 # Builds the mdBook docs and publishes them to ECMWF Sites:
 # - Same-repo PRs get a preview publish/unpublish under docs/aviso-client/pull-requests.
 # - Pushes to main and tags publish the canonical docs under docs/aviso-client.

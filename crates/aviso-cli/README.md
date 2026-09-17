@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # aviso-cli
 
 Command-line client for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows. Installs the `aviso` binary.
@@ -15,4 +20,4 @@ See the [workspace repository](https://github.com/ecmwf/aviso-client) for usage 
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE.txt). Copyright 2026 ECMWF and individual contributors.
+Apache-2.0. See [`LICENSE`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE). Copyright 2026 ECMWF and individual contributors.

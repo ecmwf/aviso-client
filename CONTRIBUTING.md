@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Contributing
 
 ## Process rules (load-bearing)
@@ -60,6 +65,13 @@ git push   --no-verify     # skip pre-push
 `AGENTS.md` requires this gate to be enabled (or the equivalent commands run by hand) before every push. See the [agent rulebook](AGENTS.md#commit-conventions) for the policy text.
 
 ## Continuous integration
+
+CI and Release Preflight require the repository Actions configuration variable
+`SCCACHE_ENDPOINT`, set to the cache service's full HTTPS URL. Maintainers configure
+it under Settings > Secrets and variables > Actions > Variables. Jobs fail before
+building if it is missing or empty. This variable is non-secret configuration;
+authentication still uses the `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` Actions
+secrets. Local checks do not require this variable.
 
 CI runs on ECMWF self-hosted Linux runners, inside the `eccr.ecmwf.int/aviso/cli-ci` container image, with Rust compilation cached through sccache. Branch protection requires one status check, `ci-pass`. It passes only when every gated job (Rust, cargo-deny, mdBook, the Python matrix, the e2e compose-config check, the real-stack `e2e` suite, the C++ binding, and the release-tooling lint/tests) succeeds. The `e2e` job runs the Python, Rust, and C++ suites against a real aviso-server + auth-o-tron + NATS stack; because it shares one stack on the self-hosted host, only one `e2e` job runs at a time repo-wide, so it can queue behind another PR's run.
 

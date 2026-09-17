@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Sending email
 
 <div class="trigger-guide">
@@ -64,7 +69,7 @@ endpoint and the auth header from the environment:
 ```yaml
 triggers:
   - type: webhook
-    url: "https://mail-gateway.internal/send"
+    url: "https://mail-gateway.example.org/send"
     headers:
       Authorization: "Bearer {{ env.MAIL_TOKEN }}"
       Content-Type: "application/json"

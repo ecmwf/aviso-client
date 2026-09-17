@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 name: CI
 
 on:
@@ -36,7 +39,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.example.org"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -46,6 +49,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       TMPDIR: ${{ github.workspace }}/.tmp
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
@@ -139,7 +144,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.example.org"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -151,6 +156,8 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
       UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
@@ -216,6 +223,8 @@ jobs:
         run: bash scripts/tests/publish-dry-run.test.sh
       - name: Publish-crates unit tests
         run: bash scripts/tests/publish-crates.test.sh
+      - name: Python publisher license tests
+        run: bash scripts/tests/publish-pypi.test.sh
       - name: Package-ffi unit tests
         run: bash scripts/tests/package-ffi.test.sh
 
@@ -243,7 +252,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.example.org"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -253,6 +262,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       TMPDIR: ${{ github.workspace }}/.tmp
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
@@ -319,7 +330,10 @@ jobs:
       # Looser readiness deadline than the 60s local default: a loaded
       # shared host can be slow to bring the stack up.
       AVISO_E2E_TIMEOUT_SECS: "120"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
@@ -371,7 +385,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e RUSTC_WRAPPER=sccache \
             -e SCCACHE_BUCKET=aviso-client-ci-cache \
-            -e SCCACHE_ENDPOINT=https://object-store.example.org \
+            -e SCCACHE_ENDPOINT \
             -e SCCACHE_REGION=us-east-1 \
             -e SCCACHE_S3_USE_SSL=true \
             -e SCCACHE_S3_KEY_PREFIX=aviso-client/ \
@@ -433,7 +447,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.example.org"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -443,6 +457,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       TMPDIR: ${{ github.workspace }}/.tmp
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 

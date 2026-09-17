@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Summary
 
 [Introduction](./index.md)
@@ -96,3 +101,5 @@
 - [Architecture](./developers/architecture.md)
 - [Library guide](./developers/lib-guide.md)
 - [Contributing](./developers/contributing.md)
+
+[Licences and attributions](licensing.md)

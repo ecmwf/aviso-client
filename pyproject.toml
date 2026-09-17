@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 [build-system]
 requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
@@ -9,6 +12,7 @@ description = "Python client for aviso-server, a notification service for data-d
 readme = "python/README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES", "LICENSES/*.txt"]
 authors = [
     { name = "Samet Demir", email = "samet.demir@ecmwf.int" },
     { name = "James Hawkes", email = "james.hawkes@ecmwf.int" },
@@ -55,10 +59,14 @@ manifest-path = "crates/aviso-py/Cargo.toml"
 python-source = "python"
 module-name = "pyaviso._native"
 features = ["extension-module"]
-# The wheel bundles the license automatically, but the workspace-layout sdist
-# does not; PyPI rejects an sdist whose metadata declares License-File without
-# carrying the file.
-include = [{ path = "LICENSE.txt", format = "sdist" }]
+# Keep the full legal material in the workspace-layout source distribution.
+# license-files also installs these files into the wheel's dist-info/licenses.
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "NOTICE", format = "sdist" },
+    { path = "THIRD_PARTY_NOTICES", format = "sdist" },
+    { path = "LICENSES/*.txt", format = "sdist" },
+]
 
 [tool.uv]
 package = false

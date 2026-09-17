@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # aviso-py
 
 PyO3 binding crate for [`aviso`](https://crates.io/crates/aviso), the core Rust client library for [`aviso-server`](https://github.com/ecmwf/aviso-server).
@@ -8,4 +13,4 @@ The crate exposes the full Python surface: synchronous and asynchronous clients,
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE.txt). Copyright 2026 ECMWF and individual contributors.
+Apache-2.0. See [`LICENSE`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE). Copyright 2026 ECMWF and individual contributors.

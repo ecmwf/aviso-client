@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Configuration
 
 How aviso decides what server to talk to, how to authenticate, what TLS settings
@@ -225,7 +230,7 @@ by an internal certificate authority (a corporate root, a self-hosted ACME, a
 private cluster), point aviso at the CA file:
 
 ```bash
-aviso --base-url https://aviso.internal --ca-bundle ~/.config/aviso/internal-ca.pem schema list
+aviso --base-url https://aviso.internal.example.org --ca-bundle ~/.config/aviso/internal-ca.pem schema list
 ```
 
 Or in the config file:
@@ -244,7 +249,7 @@ To fetch the CA's certificate from a running server (for inspection or for use
 here):
 
 ```bash
-openssl s_client -connect aviso.internal:443 -showcerts < /dev/null 2>/dev/null \
+openssl s_client -connect aviso.internal.example.org:443 -showcerts < /dev/null 2>/dev/null \
   | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
   > internal-ca.pem
 

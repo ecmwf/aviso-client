@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 ## Workspace overview
 - Public APIs: prefer changes via small, reviewed steps.
 - Do not consider backwards compatibility when changing the implementation, this is an unreleased package

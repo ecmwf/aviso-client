@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Architectural decisions
 
 This document is the project's ADR (Architecture Decision Record) log. Durable
@@ -523,7 +528,7 @@ fails loudly so a YAML typo is not silently accepted.
 
 ## D13. License Apache-2.0
 
-The project is licensed under Apache-2.0 (`LICENSE.txt`) matching
+The project is licensed under Apache-2.0 (`LICENSE`) matching
 `aviso-server`. Per-file ECMWF copyright headers are **not** required in v0.1;
 they may be added in a single pass later if ECMWF software-publication policy
 requires the boilerplate. Until then the LICENSE file plus the SPDX expression

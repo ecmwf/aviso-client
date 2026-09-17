@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Webhook trigger
 
 <div class="trigger-guide">
@@ -215,7 +220,7 @@ triggers:
 ```yaml
 triggers:
   - type: webhook
-    url: "https://alerts.internal/api/v1/incidents"
+    url: "https://alerts.example.org/api/v1/incidents"
     method: POST
     headers:
       Authorization: "Bearer {{ env.ALERT_TOKEN }}"

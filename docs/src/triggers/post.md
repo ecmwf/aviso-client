@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Post trigger
 
 <div class="trigger-guide">
@@ -139,7 +144,7 @@ triggers:
 ```yaml
 triggers:
   - type: post
-    url: "https://events.internal/queue/aviso"
+    url: "https://events.example.org/queue/aviso"
     headers:
       Authorization: "Bearer {{ env.QUEUE_TOKEN }}"
       X-Routing-Key: "aviso.{{ notification.event_type }}"   # custom routing on the receiver side

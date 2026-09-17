@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #pragma once
 
 // Header-only C++ facade over the stable C ABI in `aviso.h`. It adds RAII

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # aviso-ffi
 
 A stable C ABI for [`aviso`](https://crates.io/crates/aviso), the core Rust
@@ -57,5 +62,5 @@ header, so a surface change without a regenerate is caught.
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE.txt).
+Apache-2.0. See [`LICENSE`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE).
 Copyright 2026 ECMWF and individual contributors.

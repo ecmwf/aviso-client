@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Publishes several notifications in one concurrent call with notify_many, then
 // prints the per-item results. notify_many sends the whole batch at once and
 // returns a JSON array with one entry per input; a per-item failure shows up as

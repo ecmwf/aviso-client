@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // markdownlint config for the mdBook sources under docs/.
 // Prose is hard-wrapped to 80 columns; the few rules disabled below are
 // the ones that fight that style or the book's intentional content.

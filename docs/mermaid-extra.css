@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /* Center mermaid diagrams. mdbook-mermaid wraps each block in
    <pre class="mermaid">; mermaid.js replaces the inner contents with
    an SVG. Without these rules the SVG sits flush-left and inherits

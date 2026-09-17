@@ -1,0 +1,384 @@
+Third-party documentation assets
+===============================
+
+This file records the licences of the JavaScript and artwork distributed
+with the documentation. These grants apply to the respective components,
+not to unrelated aviso-client source. See NOTICE for the pinned asset origins
+and modifications. The full Apache and MPL texts are in LICENSES/.
+
+Mermaid 11.6.0 and its bundled MIT-licensed components
+---------------------------------------------------
+
+Mermaid (including its parser)
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+https://github.com/mermaid-js/mermaid/tree/mermaid%4011.6.0
+
+@braintree/sanitize-url 7.1.0
+Copyright (c) 2017 Braintree
+
+@iconify/utils 2.3.0
+Copyright (c) 2021-PRESENT Vjacheslav Trushkin
+
+chevrotain-allstar 0.3.1
+Copyright 2022 TypeFox GmbH
+
+cose-base 1.0.3 and 2.2.0
+Copyright (c) 2019 - present, iVis@Bilkent.
+
+cytoscape-cose-bilkent 4.1.0
+Copyright (c) 2016-2018, The Cytoscape Consortium.
+
+cytoscape-fcose 2.2.0
+Copyright (c) 2018 - present, iVis-at-Bilkent.
+
+cytoscape 3.31.0
+Copyright (c) 2016-2025, The Cytoscape Consortium.
+
+dagre-d3-es 7.0.11
+Original dagre-d3 copyright: Copyright (c) 2013 Chris Pettitt
+Original dagre copyright: Copyright (c) 2012-2014 Chris Pettitt
+Original graphlib copyright: Copyright (c) 2012-2014 Chris Pettitt
+Copyright (c) 2022-2024 Thibaut Lassalle, David Newell, Alois Klink, Sidharth Vinod and dagre-es contributors
+
+dayjs 1.11.13
+Copyright (c) 2018-present, iamkun
+
+debug 4.4.0
+Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
+Copyright (c) 2018-2021 Josh Junon
+
+js-yaml 4.1.0
+Copyright (C) 2011-2015 by Vitaly Puzrin
+
+katex 0.16.11
+Copyright (c) 2013-2020 Khan Academy and other contributors
+
+khroma 2.1.0
+Copyright (c) 2019-present Fabio Spampinato, Andrew Maney
+
+langium 3.3.1
+Copyright 2021 TypeFox GmbH
+Its bundled source files also carry:
+Copyright 2021-2022 TypeFox GmbH
+Copyright 2022 TypeFox GmbH
+Copyright 2023 TypeFox GmbH
+Copyright 2024 TypeFox GmbH
+
+layout-base 1.0.2 and 2.0.1
+Copyright (c) 2019 iVis@Bilkent
+Copyright: i-Vis Research Group, Bilkent University, 2007 - present
+
+ms 2.1.3
+Copyright (c) 2020 Vercel, Inc.
+
+roughjs 4.6.6 (as bundled by Mermaid)
+Copyright (c) 2019 Preet Shihn
+
+stylis 4.3.6
+Copyright (c) 2016-present Sultan Tarimo
+
+ts-dedent 2.2.0
+Copyright (c) 2018 Tamino Martinius
+
+vscode-jsonrpc 8.2.0, vscode-languageserver-textdocument 1.0.12,
+vscode-languageserver-types 3.17.5
+Copyright (c) Microsoft Corporation
+All rights reserved.
+
+VS Code URI platform, URI and path utilities bundled through Langium
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+path-browserify (Node.js v8.11.1 POSIX path implementation)
+Copyright Joyent, Inc. and other Node contributors.
+
+Webpack runtime
+Copyright JS Foundation and other contributors
+
+Additional credits retained in the Cytoscape bundle:
+Embeddable Minimum Strictly-Compliant Promises/A+ 1.1.1 Thenable
+Copyright (c) 2013-2014 Ralf S. Engelschall (http://engelschall.com)
+Licensed under The MIT License (http://opensource.org/licenses/MIT)
+
+Event object based on jQuery events, MIT license
+https://jquery.org/license/
+https://github.com/jquery/jquery/blob/master/src/event.js
+
+Bezier curve function generator. Copyright Gaetan Renaudeau. MIT License.
+Runge-Kutta spring physics function generator. Adapted from Framer.js,
+copyright Koen Bok. MIT License.
+
+The MIT permission notice below applies to each MIT component listed above:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Lodash / Underscore
+-------------------
+
+lodash-es 4.17.21
+Copyright OpenJS Foundation and other contributors <https://openjsf.org/>
+
+Based on Underscore.js, copyright Jeremy Ashkenas,
+DocumentCloud and Investigative Reporters & Editors <http://underscorejs.org/>
+
+This software consists of voluntary contributions made by many
+individuals. For exact contribution history, see the revision history
+available at https://github.com/lodash/lodash
+
+The following license applies to all parts of this software except as
+documented below:
+
+====
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+====
+
+Copyright and related rights for sample code are waived via CC0. Sample
+code is defined as all source code displayed within the prose of the
+documentation.
+
+CC0: http://creativecommons.org/publicdomain/zero/1.0/
+
+====
+
+Files located in the node_modules and vendor directories are externally
+maintained libraries used by this software which have their own
+licenses; we recommend you read them, as their terms may differ from the
+terms above.
+
+Marked 15.0.7
+-------------
+
+# License information
+
+## Contribution License Agreement
+
+If you contribute code to this project, you are implicitly allowing your code
+to be distributed under the MIT license. You are also implicitly verifying that
+all code is your original work. `</legalese>`
+
+## Marked
+
+Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
+Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+## Markdown
+
+Copyright © 2004, John Gruber
+http://daringfireball.net/
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+* Neither the name “Markdown” nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
+
+D3 components under the ISC licence
+-----------------------------------
+
+d3 7.9.0, d3-array 3.2.4: Copyright 2010-2023 Mike Bostock
+d3-axis 3.0.0, d3-brush 3.0.0, d3-chord 3.0.1, d3-dispatch 3.0.1,
+d3-drag 3.0.0, d3-force 3.0.0, d3-format 3.1.0, d3-hierarchy 3.1.2,
+d3-interpolate 3.0.1, d3-polygon 3.0.1, d3-quadtree 3.0.1,
+d3-random 3.0.1, d3-scale 4.0.2, d3-selection 3.0.0,
+d3-time-format 4.1.0, d3-timer 3.0.1, d3-transition 3.0.1,
+d3-zoom 3.0.0: Copyright 2010-2021 Mike Bostock
+d3-color 3.1.0, d3-shape 3.2.0, d3-time 3.1.0:
+Copyright 2010-2022 Mike Bostock
+d3-contour 4.0.2: Copyright 2012-2023 Mike Bostock
+d3-dsv 3.0.1: Copyright 2013-2021 Mike Bostock
+d3-fetch 3.0.1: Copyright 2016-2021 Mike Bostock
+d3-path 3.1.0: Copyright 2015-2022 Mike Bostock
+d3-scale-chromatic 3.1.0: Copyright 2010-2024 Mike Bostock
+internmap 2.0.3: Copyright 2021 Mike Bostock
+d3-delaunay 6.0.4:
+Copyright 2018-2021 Observable, Inc.
+Copyright 2021 Mapbox
+
+The following permission notice applies to each ISC component listed above:
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+d3-geo 3.1.1 (ISC and MIT)
+-------------------------
+
+Copyright 2010-2024 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+This license applies to GeographicLib, versions 1.12 and later.
+
+Copyright 2008-2012 Charles Karney
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+D3 components under the BSD 3-clause licence
+-------------------------------------------
+
+d3-array 2.12.1: Copyright 2010-2020 Mike Bostock
+d3-path 1.0.9: Copyright 2015-2016 Mike Bostock
+d3-sankey 0.12.3: Copyright 2015, Mike Bostock
+d3-shape 1.3.7: Copyright 2010-2015 Mike Bostock
+d3-ease 3.0.1:
+Copyright 2010-2021 Mike Bostock
+Copyright 2001 Robert Penner
+All rights reserved.
+
+The following permission notice applies to each BSD component listed above:
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Apache-licensed components
+-------------------------
+
+chevrotain, @chevrotain/cst-dts-gen, @chevrotain/gast,
+@chevrotain/regexp-to-ast and @chevrotain/utils, all version 11.0.3:
+Apache License 2.0, reproduced in LICENSES/Apache-2.0.txt.
+https://github.com/Chevrotain/chevrotain/tree/v11.0.3
+
+DOMPurify 3.2.4
+Copyright 2025 Dr.-Ing. Mario Heiderich, Cure53
+The bundle also credits Cure53 and other contributors.
+DOMPurify is free software; you can redistribute it and/or modify it under the
+terms of either:
+
+a) the Apache License Version 2.0, or
+b) the Mozilla Public License Version 2.0
+
+Both full texts are included in LICENSES/Apache-2.0.txt and LICENSES/MPL-2.0.txt.
+https://github.com/cure53/DOMPurify/blob/3.2.4/LICENSE
+
+layout-base 2.0.1 also embeds Apache-2.0 code and its full Apache notice.
+The full text is reproduced in LICENSES/Apache-2.0.txt.
+
+KaTeX SVG geometry
+------------------
+
+The KaTeX code bundled into Mermaid includes SVG geometry carrying this notice:
+Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>)
+Copyright (c) 2014-2017 Khan Academy (<www.khanacademy.org>)
+Licensed under the SIL Open Font License, Version 1.1.
+The full text is included in LICENSES/OFL-1.1.txt.
+Source: https://github.com/KaTeX/KaTeX/blob/v0.16.11/src/svgGeometry.js
+
+Initializer and artwork
+-----------------------
+
+docs/mermaid-init.js derives from mdbook-mermaid under MPL-2.0.
+The original header remains in the file. NOTICE describes the changes and
+where to obtain the modified source; LICENSES/MPL-2.0.txt contains the grant.
+
+The Aviso SVGs originate from ecmwf/logos under Apache-2.0. NOTICE and the
+adjacent .license files identify the exact upstream files and modifications.

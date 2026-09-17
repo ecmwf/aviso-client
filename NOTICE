@@ -1,0 +1,41 @@
+European Centre for Medium-Range Weather Forecasts (ECMWF)
+Copyright 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+
+This product includes software developed at ECMWF (https://www.ecmwf.int).
+
+In applying this licence, ECMWF does not waive the privileges and immunities
+granted to it by virtue of its status as an intergovernmental organisation
+nor does it submit to any jurisdiction.
+
+Documentation assets
+====================
+
+Mermaid 11.6.0 (docs/mermaid.min.js)
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+MIT licensed. The bundled libraries retain their own copyright and licence
+notices. Full permission texts and credits accompany the documentation in
+THIRD_PARTY_NOTICES and LICENSES/.
+Source: https://github.com/mermaid-js/mermaid/tree/mermaid%4011.6.0
+Distributed through mdbook-mermaid, revision
+bfc8839747e90d36a86908c609500e18442709fb:
+https://github.com/badboy/mdbook-mermaid/blob/bfc8839747e90d36a86908c609500e18442709fb/src/bin/assets/mermaid.min.js
+
+mdbook-mermaid initializer (docs/mermaid-init.js)
+Mozilla Public License 2.0; see LICENSES/MPL-2.0.txt.
+Derived from:
+https://github.com/badboy/mdbook-mermaid/blob/bfc8839747e90d36a86908c609500e18442709fb/src/bin/assets/mermaid-init.js
+Modified to guard missing theme-picker buttons and share the theme-change
+reload callback. The modified source is distributed as docs/mermaid-init.js
+in the source repository and as mermaid-init.js alongside the rendered book:
+https://github.com/ecmwf/aviso-client/blob/main/docs/mermaid-init.js
+
+Aviso artwork
+European Centre for Medium-Range Weather Forecasts (ECMWF)
+Apache License 2.0; see LICENSES/Apache-2.0.txt.
+Source: https://github.com/ecmwf/logos/tree/cde127b2c872e88474570a681e56b14cdecf4f03/logos/aviso
+docs/src/images/logo_dark.svg and logo_light.svg are unchanged copies of
+aviso_text_dark.svg and aviso_text_light.svg respectively.
+docs/theme/favicon.svg uses the paths from aviso_dark.svg with a modified
+SVG wrapper, viewport and white background.
+docs/theme/favicon.png is a reduced-size version of the Aviso logo,
+created by Samet Demir.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Consumer smoke for the cargo-c install layout: include the facade through
 // the installed `aviso_ffi` pkg-config package and call a no-server verb. It
 // proves a clean consumer compiles, links, and runs against the staged
