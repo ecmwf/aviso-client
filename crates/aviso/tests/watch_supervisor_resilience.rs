@@ -90,6 +90,8 @@ fn client_for(server: &MockServer) -> AvisoClient {
         .unwrap()
 }
 
+mod common;
+
 async fn next_item<S>(stream: &mut S) -> Option<S::Item>
 where
     S: Stream + Unpin,
@@ -112,11 +114,7 @@ async fn reconnect_after_max_duration_reached() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
         .mount(&server)
         .await;
 
@@ -185,7 +183,7 @@ async fn retry_after_honoured_on_503() {
     let post_times_clone = post_times.clone();
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(move |_: &Request| {
+        .respond_with(move |request: &Request| {
             post_times_clone.lock().unwrap().push(Instant::now());
             let mut a = attempt_clone.lock().unwrap();
             *a += 1;
@@ -194,9 +192,7 @@ async fn retry_after_honoured_on_503() {
                     .insert_header("retry-after", "1")
                     .set_body_string("busy")
             } else {
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(body_clone.clone())
+                common::opened_sse(request, &body_clone)
             }
         })
         .mount(&server)
@@ -292,11 +288,7 @@ async fn auth_refresh_on_401_uses_refreshed_credential() {
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
         .and(header("authorization", "Bearer new-token"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
         .mount(&server)
         .await;
 
@@ -322,6 +314,34 @@ async fn auth_refresh_on_401_uses_refreshed_credential() {
     );
 
     drop(stream);
+}
+
+#[tokio::test]
+async fn post_refresh_response_still_requires_sse_content_type() {
+    let server = MockServer::start().await;
+    Mock::given(header("authorization", "Bearer old-token"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(header("authorization", "Bearer new-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("private login page", "text/html"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let auth = Arc::new(SwappingAuth::new("old-token", "new-token"));
+    let client = AvisoClient::builder()
+        .base_url(server.uri())
+        .auth(auth.clone())
+        .build()
+        .unwrap();
+    let mut stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    assert!(matches!(
+        stream.recv().await,
+        Some(Err(ClientError::StreamProtocol { .. }))
+    ));
+    assert_eq!(*auth.refresh_count.lock().unwrap(), 1);
+    assert!(!*stream.subscribe_ready().borrow());
 }
 
 #[tokio::test]
@@ -390,40 +410,7 @@ async fn auth_refresh_followed_by_second_401_terminates() {
 /// accepted connection so the test can serve different bodies on the
 /// first vs second POST.
 async fn paced_sse_server(bodies: Vec<String>) -> (String, tokio::task::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let url = format!("http://{addr}");
-    let handle = tokio::spawn(async move {
-        let mut index = 0;
-        while let Ok((mut socket, _)) = listener.accept().await {
-            let body = bodies.get(index).cloned().unwrap_or_default();
-            index += 1;
-            tokio::spawn(async move {
-                let mut request_buf = [0u8; 4096];
-                let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut request_buf).await;
-                let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: \
-                     chunked\r\n\r\n";
-                let _ = socket.write_all(header.as_bytes()).await;
-                // Write the body as a single HTTP chunked frame, then hold
-                // the connection open without writing the terminating
-                // zero-length chunk so the consumer's `response.chunk()`
-                // blocks (as a real long-lived SSE stream would).
-                let chunk = format!("{:X}\r\n{}\r\n", body.len(), body);
-                let _ = socket.write_all(chunk.as_bytes()).await;
-                let _ = socket.flush().await;
-                // Hold the connection open. The supervisor's heartbeat
-                // watchdog or per-stream cancel breaks the loop.
-                let mut sink = [0u8; 256];
-                loop {
-                    match tokio::io::AsyncReadExt::read(&mut socket, &mut sink).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(_) => {}
-                    }
-                }
-            });
-        }
-    });
-    (url, handle)
+    paced_sse_server_with_capture(bodies, Arc::new(Mutex::new(None))).await
 }
 
 #[tokio::test]
@@ -654,6 +641,14 @@ async fn paced_sse_server_with_capture(
                     request_buf.extend_from_slice(&body_extra);
                 }
                 let body_str = String::from_utf8_lossy(&request_buf[header_end..]).into_owned();
+                let request: Value = serde_json::from_str(&body_str).unwrap();
+                let (event, tag) =
+                    if request.get("from_id").is_some() || request.get("from_date").is_some() {
+                        ("replay-control", "replay_started")
+                    } else {
+                        ("live-notification", "connection_established")
+                    };
+                let body = format!("{}{body}", sse_chunk(event, &json!({"type": tag})));
                 {
                     let mut g = captured_for_this.lock().unwrap();
                     if g.is_none() {
@@ -696,9 +691,7 @@ async fn user_supplied_from_wins_over_stored_checkpoint() {
         .respond_with(move |req: &Request| {
             let body_str = String::from_utf8_lossy(&req.body).into_owned();
             *captured_clone.lock().unwrap() = Some(body_str);
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body.clone())
+            common::opened_sse(req, &body)
         })
         .mount(&server)
         .await;
@@ -769,11 +762,7 @@ async fn parent_drop_cancels_supervisor_blocked_on_full_channel() {
     }
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
         .mount(&server)
         .await;
 
@@ -808,11 +797,7 @@ async fn parent_drop_cancels_children() {
     }
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
         .mount(&server)
         .await;
 
@@ -850,11 +835,7 @@ async fn unexpected_eof_triggers_reconnect() {
     let body = sse_chunk("live-notification", &cloud_event("mars", 1));
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
         .mount(&server)
         .await;
 

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{mpsc, oneshot};
+use tracing::Instrument;
 use url::Url;
 
 use super::AvisoClient;
@@ -69,6 +70,7 @@ impl AvisoClient {
         let (tx, rx) = mpsc::channel(capacity);
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let (done_tx, done_rx) = oneshot::channel();
+        let (ready_tx, ready_rx) = tokio::sync::watch::channel(false);
         let parent_cancel = self.parent_drop.subscribe();
         let http = self.http.clone();
         let base_url = self.base_url.clone();
@@ -85,22 +87,26 @@ impl AvisoClient {
         // watch warns once; if one of those exits while another remains
         // active, a third same-key watch must still warn.
         increment_active_key(&active_resume_keys, &resume_key, request.event_type());
-        handle.spawn(run_supervisor(
-            request,
-            http,
-            base_url,
-            auth,
-            heartbeat_interval,
-            state_store,
-            resume_key,
-            tx,
-            cancel_rx,
-            parent_cancel,
-            active_resume_keys,
-            flush_cursor_on_exit,
-            done_tx,
-        ));
-        Ok(NotificationStream::new(rx, cancel_tx, done_rx))
+        handle.spawn(
+            run_supervisor(
+                request,
+                http,
+                base_url,
+                auth,
+                heartbeat_interval,
+                state_store,
+                resume_key,
+                tx,
+                cancel_rx,
+                parent_cancel,
+                active_resume_keys,
+                flush_cursor_on_exit,
+                done_tx,
+                ready_tx,
+            )
+            .in_current_span(),
+        );
+        Ok(NotificationStream::new(rx, cancel_tx, done_rx, ready_rx))
     }
 
     /// Open a watch and drain it through a per-notification handler.
