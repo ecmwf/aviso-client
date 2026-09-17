@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 # Release automation for aviso-client.
 #
 # The justfile PREPARES and TAGS a release locally; CI does every actual publish

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Builder pattern
 
 Start with the keyword arguments on [Listening](./listen.md). Use a

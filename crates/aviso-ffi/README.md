@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # aviso-ffi
 
 A stable C ABI for [`aviso`](https://crates.io/crates/aviso), the core Rust

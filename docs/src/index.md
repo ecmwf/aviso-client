@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 <div align="center">
   <img class="logo-light" src="./images/logo_light.svg" alt="Aviso logo" width="320" />
   <img class="logo-dark"  src="./images/logo_dark.svg"  alt="Aviso logo" width="320" />

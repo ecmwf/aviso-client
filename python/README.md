@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # pyaviso
 
 Python client for [`aviso-server`](https://github.com/ecmwf/aviso-server), ECMWF's notification service for data-driven workflows. The repo this package ships from is [`aviso-client`](https://github.com/ecmwf/aviso-client); the installable distribution and the importable module are both named `pyaviso`.

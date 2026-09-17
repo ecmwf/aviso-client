@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 cmake_minimum_required(VERSION 3.16)
 project(aviso_ffi_install_smoke CXX)
 

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Install the CLI
 
 The fastest way to get `aviso` is pip. The Python package bundles the CLI, so

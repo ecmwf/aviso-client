@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 """Type stubs for the PyO3 extension module `pyaviso._native`.
 
 Hand-written. Users never import this module directly; the public Python

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Publishes one notification, then reads back the stream's schema. Connection
 // settings come from the environment (see aviso_env.hpp); against an
 // auth-required stream set AVISO_USERNAME and AVISO_PASSWORD to a producer

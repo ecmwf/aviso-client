@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 # Pre-push hook for aviso-client.
 #
 # Purpose: run the full CI gate locally BEFORE the push leaves the machine,

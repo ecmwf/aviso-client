@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "aviso"
 version.workspace = true
@@ -47,4 +50,3 @@ wiremock = { workspace = true }
 name = "state_store_kill_fuzz"
 path = "tests/state_store_kill_fuzz.rs"
 harness = false
-

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # Check that one target version is consistent across every workspace manifest.
 #

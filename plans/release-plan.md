@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Release plan — unified 2.0.0
 
 **COMPLETE: 2.0.0 shipped.** This plan is retained as the record of how the

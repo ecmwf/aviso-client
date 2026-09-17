@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # End-to-end tests
 
 E2E tests run against a real three-service stack: `aviso-server` + `auth-o-tron` + JetStream-backed NATS, all pulled from public registries and pinned by manifest-index digest for reproducibility:

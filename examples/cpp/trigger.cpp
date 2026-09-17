@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Watches a stream with a log trigger attached: the trigger appends each
 // notification as JSON to a file while the watch runs. The watch stops after a
 // fixed count, then the program prints what the trigger wrote. Connection
