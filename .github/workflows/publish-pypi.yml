@@ -189,11 +189,18 @@ jobs:
         with:
           command: sdist
           args: --out dist
-      - name: The sdist carries its declared license file
+      - name: The sdist carries its canonical license files
         # PyPI rejects an sdist whose metadata declares License-File without
         # the file present; pip install does not enforce this, so the smoke
         # below cannot catch it.
-        run: tar -tzf dist/pyaviso-*.tar.gz | grep -E '/LICENSE\.txt$'
+        run: |
+          for sdist in dist/pyaviso-*.tar.gz; do
+            root="$(basename "$sdist" .tar.gz)"
+            members="$(tar -tzf "$sdist")"
+            for legal in LICENSE NOTICE; do
+              printf '%s\n' "$members" | grep -Fx "$root/$legal"
+            done
+          done
 
       - name: Clean-environment source-build install test
         # The sdist is the fallback for platforms without a matching wheel;
