@@ -11,18 +11,28 @@ use crate::state::{Checkpoint, JsonFileStore, MemoryStore};
 use crate::watch::Trigger;
 use tokio::time::timeout;
 
+mod gated_store;
+
+const PROTOCOL_PROGRESS_TIMEOUT: Duration = Duration::from_secs(5);
+// A whole disk case includes setup, multiple durable writes, exit flush and
+// reopen. Durable filesystem I/O has no five-second latency contract.
+// This is a hang guard for the integration, not a storage latency assertion.
+const FILE_CASE_TIMEOUT: Duration = Duration::from_secs(60);
+
 struct ObservedStore {
     inner: Arc<dyn StateStore>,
-    activity: std::sync::Mutex<(String, std::time::Instant)>,
+    activity: Arc<StoreActivity>,
 }
 
-impl ObservedStore {
+struct StoreActivity(std::sync::Mutex<(String, std::time::Instant)>);
+
+impl StoreActivity {
     fn record(&self, activity: String) {
-        *self.activity.lock().unwrap() = (activity, std::time::Instant::now());
+        *self.0.lock().unwrap() = (activity, std::time::Instant::now());
     }
 
-    fn activity(&self) -> String {
-        let (activity, started) = &*self.activity.lock().unwrap();
+    fn describe(&self) -> String {
+        let (activity, started) = &*self.0.lock().unwrap();
         format!("{activity}, {:.3}s ago", started.elapsed().as_secs_f64())
     }
 }
@@ -30,9 +40,9 @@ impl ObservedStore {
 #[async_trait::async_trait]
 impl StateStore for ObservedStore {
     async fn get(&self, key: &ResumeKey) -> Result<Option<Checkpoint>, crate::state::StoreError> {
-        self.record("get started".into());
+        self.activity.record("get started".into());
         let result = self.inner.get(key).await;
-        self.record("get finished".into());
+        self.activity.record("get finished".into());
         result
     }
 
@@ -42,9 +52,9 @@ impl StateStore for ObservedStore {
         checkpoint: Checkpoint,
     ) -> Result<(), crate::state::StoreError> {
         let sequence = checkpoint.last_committed_sequence;
-        self.record(format!("put {sequence} started"));
+        self.activity.record(format!("put {sequence} started"));
         let result = self.inner.put(key, checkpoint).await;
-        self.record(format!("put {sequence} finished"));
+        self.activity.record(format!("put {sequence} finished"));
         result
     }
 
@@ -55,24 +65,65 @@ impl StateStore for ObservedStore {
 
 #[tokio::test]
 async fn backward_deliveries_keep_checkpoints_monotonic() {
-    for backend in ["none", "memory", "json"] {
-        for baseline in ["fresh", "explicit", "stored"] {
-            if backend == "none" && baseline == "stored" {
-                continue;
-            }
-            for flush in [false, true] {
-                for sequences in [&[6, 4, 5][..], &[6, 4, 5, 7, 5], &[6, 4, 5, 7], &[4, 5]] {
-                    if baseline == "fresh" && sequences == [4, 5] {
-                        continue;
-                    }
-                    check_session(backend, baseline, flush, sequences).await;
+    for backend in ["none", "memory"] {
+        check_matrix(backend).await;
+    }
+}
+
+#[tokio::test]
+async fn backward_deliveries_keep_file_checkpoints_monotonic_across_reopen() {
+    check_matrix("json").await;
+}
+
+async fn check_matrix(backend: &str) {
+    for baseline in ["fresh", "explicit", "stored"] {
+        if backend == "none" && baseline == "stored" {
+            continue;
+        }
+        for flush in [false, true] {
+            for sequences in [&[6, 4, 5][..], &[6, 4, 5, 7, 5], &[6, 4, 5, 7], &[4, 5]] {
+                if baseline == "fresh" && sequences == [4, 5] {
+                    continue;
+                }
+                let activity = Arc::new(StoreActivity(std::sync::Mutex::new((
+                    "setup started".into(),
+                    std::time::Instant::now(),
+                ))));
+                let session = check_session(backend, baseline, flush, sequences, &activity);
+                if backend == "json" {
+                    assert!(
+                        timeout(FILE_CASE_TIMEOUT, session).await.is_ok(),
+                        "disk case timed out: {backend}/{baseline}/flush={flush}/{sequences:?}; storage: {}",
+                        activity.describe()
+                    );
+                } else {
+                    session.await;
                 }
             }
         }
     }
 }
 
-async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[u64]) {
+// Disk progress is bounded by the single case watchdog, including setup and
+// reopen. Protocol cases retain their short, per-operation liveness guard.
+async fn progress<T>(
+    backend: &str,
+    future: impl std::future::Future<Output = T>,
+) -> Result<T, tokio::time::error::Elapsed> {
+    if backend == "json" {
+        Ok(future.await)
+    } else {
+        timeout(PROTOCOL_PROGRESS_TIMEOUT, future).await
+    }
+}
+
+async fn check_session(
+    backend: &str,
+    baseline: &str,
+    flush: bool,
+    sequences: &[u64],
+    activity: &Arc<StoreActivity>,
+) {
     let server = MockServer::start().await;
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("state.json");
@@ -84,7 +135,7 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
     let observed = store.map(|inner| {
         Arc::new(ObservedStore {
             inner,
-            activity: std::sync::Mutex::new(("opened".into(), std::time::Instant::now())),
+            activity: Arc::clone(activity),
         })
     });
     let store = observed
@@ -109,13 +160,13 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
     let (mut rx, _cancel, handle, _drop) =
         start_supervisor_full(&server, request, store.clone(), flush);
     for sequence in sequences {
-        let received = timeout(Duration::from_secs(5), rx.recv()).await;
+        let received = progress(backend, rx.recv()).await;
         assert!(
             received.is_ok(),
             "receive {sequence} timed out: {backend}/{baseline}/flush={flush}/{sequences:?}; storage: {}; requests: {:?}; supervisor finished: {}",
             observed
                 .as_ref()
-                .map_or_else(|| "none".into(), |store| store.activity()),
+                .map_or_else(|| "none".into(), |store| store.activity.describe()),
             server
                 .received_requests()
                 .await
@@ -132,13 +183,10 @@ async fn check_session(backend: &str, baseline: &str, flush: bool, sequences: &[
         );
     }
     assert!(matches!(
-        timeout(Duration::from_secs(5), rx.recv()).await.unwrap(),
+        progress(backend, rx.recv()).await.unwrap(),
         Some(Err(ClientError::Http { status: 404, .. }))
     ));
-    timeout(Duration::from_secs(5), handle)
-        .await
-        .unwrap()
-        .unwrap();
+    progress(backend, handle).await.unwrap().unwrap();
     let committed = sequences[..sequences.len() - 1]
         .iter()
         .copied()
