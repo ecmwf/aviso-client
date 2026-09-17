@@ -39,11 +39,11 @@ CloudEvent envelope aviso-server sent, including its server-side fields:
 {
   "specversion": "1.0",
   "type": "int.ecmwf.aviso.mars",
-  "source": "https://aviso-server.ecmwf.int",
+  "source": "https://aviso.example.org",
   "id": "mars@42",
   "time": "2026-05-23T22:28:52.384985528Z",
   "datacontenttype": "application/json",
-  "dataschema": "https://aviso-server.ecmwf.int/schema/mars",
+  "dataschema": "https://aviso.example.org/schema/mars",
   "data": {
     "identifier": {
       "class": "od",
@@ -144,7 +144,7 @@ triggers:
 ```yaml
 triggers:
   - type: post
-    url: "https://events.internal/queue/aviso"
+    url: "https://events.example.org/queue/aviso"
     headers:
       Authorization: "Bearer {{ env.QUEUE_TOKEN }}"
       X-Routing-Key: "aviso.{{ notification.event_type }}"   # custom routing on the receiver side

@@ -69,7 +69,7 @@ endpoint and the auth header from the environment:
 ```yaml
 triggers:
   - type: webhook
-    url: "https://mail-gateway.internal/send"
+    url: "https://mail-gateway.example.org/send"
     headers:
       Authorization: "Bearer {{ env.MAIL_TOKEN }}"
       Content-Type: "application/json"

@@ -68,7 +68,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -78,6 +78,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       TMPDIR: ${{ github.workspace }}/.tmp
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
@@ -135,7 +137,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       RUSTFLAGS: "-D warnings"
       SCCACHE_BUCKET: aviso-client-ci-cache
-      SCCACHE_ENDPOINT: "https://object-store.os-api.cci1.ecmwf.int"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
       SCCACHE_REGION: us-east-1
       SCCACHE_S3_USE_SSL: "true"
       SCCACHE_S3_KEY_PREFIX: aviso-client/
@@ -146,6 +148,8 @@ jobs:
       TMPDIR: ${{ github.workspace }}/.tmp
       UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
       - run: mkdir -p "$TMPDIR"
 
@@ -222,7 +226,10 @@ jobs:
       COMPOSE: docker compose -f tests/e2e/docker-compose.yml
       CI_IMAGE: eccr.ecmwf.int/aviso/cli-ci:0.4.0
       AVISO_E2E_TIMEOUT_SECS: "120"
+      SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
     steps:
+      - name: Validate cache configuration
+        run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
@@ -273,7 +280,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e RUSTC_WRAPPER=sccache \
             -e SCCACHE_BUCKET=aviso-client-ci-cache \
-            -e SCCACHE_ENDPOINT=https://object-store.os-api.cci1.ecmwf.int \
+            -e SCCACHE_ENDPOINT \
             -e SCCACHE_REGION=us-east-1 \
             -e SCCACHE_S3_USE_SSL=true \
             -e SCCACHE_S3_KEY_PREFIX=aviso-client/ \
