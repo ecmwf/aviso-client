@@ -65,6 +65,7 @@ pub struct WatchRequest {
     from: Option<ResumeStart>,
     mode: WatchMode,
     triggers: Vec<Trigger>,
+    startup_timeout: Option<std::time::Duration>,
 }
 
 impl WatchRequest {
@@ -81,6 +82,7 @@ impl WatchRequest {
             from: None,
             mode: WatchMode::Watch,
             triggers: Vec::new(),
+            startup_timeout: None,
         }
     }
 
@@ -99,6 +101,7 @@ impl WatchRequest {
             from: Some(from),
             mode: WatchMode::Watch,
             triggers: Vec::new(),
+            startup_timeout: None,
         }
     }
 
@@ -121,6 +124,7 @@ impl WatchRequest {
             from: Some(from),
             mode: WatchMode::ReplayOnly,
             triggers: Vec::new(),
+            startup_timeout: None,
         }
     }
 
@@ -188,6 +192,22 @@ impl WatchRequest {
     #[must_use]
     pub fn triggers(&self) -> &[Trigger] {
         &self.triggers
+    }
+
+    /// Limit startup across retries until the first validated Aviso handshake.
+    /// `None` or zero disables this budget (the library default). Every
+    /// connection still has a separate ten-second opening deadline. This is
+    /// not a timeout on a healthy stream or on later reconnect cycles.
+    #[must_use]
+    pub fn with_startup_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
+        self.startup_timeout = timeout.filter(|duration| !duration.is_zero());
+        self
+    }
+
+    /// Return the optional initial startup budget.
+    #[must_use]
+    pub fn startup_timeout(&self) -> Option<std::time::Duration> {
+        self.startup_timeout
     }
 }
 

@@ -22,11 +22,7 @@ async fn prev_notification_is_committed_before_current_triggers_run() {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .mount(&server)
         .await;
 
@@ -79,11 +75,7 @@ async fn flush_cursor_on_exit_persists_the_last_delivered_notification_when_no_n
     let body = sse_chunk("live-notification", cloud_event("mars", 1));
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .up_to_n_times(1)
         .mount(&server)
         .await;
@@ -130,11 +122,7 @@ async fn flush_cursor_on_exit_default_false_preserves_at_least_once_redelivery_i
     let body = sse_chunk("live-notification", cloud_event("mars", 1));
     Mock::given(method("POST"))
         .and(path("/api/v1/watch"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(opened_stream(&body, false))
         .up_to_n_times(1)
         .mount(&server)
         .await;

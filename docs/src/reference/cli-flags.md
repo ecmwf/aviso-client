@@ -54,6 +54,7 @@ Run one or more listeners against `/api/v1/watch`.
 |---|---|
 | `[LISTENER_FILES]...` | Listener YAML files. Each file's `listeners:` list is concatenated in argv order. Positional files replace (do not merge with) the global config's `listeners:` block for this invocation. |
 | `--no-state-store` | Use an in-memory store for this invocation. Ignores any configured `state_file`. |
+| `--startup-timeout <DURATION>` | Initial budget across retries until the first Aviso handshake. Default `30s`; `0s` disables it. Does not limit a confirmed stream or later reconnects. Each connection still has a ten-second opening deadline. |
 | `--from <VALUE>` | Cursor override applied uniformly to every resolved listener. Overrides per-YAML `from_id`/`from_date`. See [Configuration: `--from` value formats](../cli/configuration.md#from-value-formats). |
 | `--event <TYPE>` | Inline ad-hoc listener: event type to listen for, without a YAML file. Requires an identifier source. Takes precedence over positional YAML files. |
 | `--identifiers <JSON>` | Inline ad-hoc listener: identifiers filter as a JSON object whose values may have any JSON shape. Requires `--event`. The inline listener runs with a single `echo` trigger. |

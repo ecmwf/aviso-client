@@ -33,6 +33,7 @@ fn write_listener_file(yaml_body: &str) -> NamedTempFile {
 
 async fn mount_replay_finite_stream(server: &MockServer) {
     let body = concat!(
+        "event: replay-control\ndata: {\"type\":\"replay_started\"}\n\n",
         "event: replay-control\n",
         "data: {\"type\":\"replay_completed\",\"timestamp\":\"2026-05-17T13:00:00Z\",\"topic\":\"mars\",\"request_id\":\"req-rc\"}\n\n",
         "event: connection-closing\n",
@@ -40,11 +41,7 @@ async fn mount_replay_finite_stream(server: &MockServer) {
     );
     Mock::given(method("POST"))
         .and(path("/api/v1/replay"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
         .mount(server)
         .await;
 }

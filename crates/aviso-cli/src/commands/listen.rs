@@ -45,6 +45,8 @@ use crate::listener_file;
 use crate::output;
 use crate::paths;
 
+mod diagnostics;
+
 /// Runs the `aviso listen` subcommand.
 ///
 /// Two resolution paths:
@@ -63,6 +65,7 @@ pub(crate) async fn run(
     no_state_store: bool,
     from: Option<&str>,
     inline: Option<ListenerSpec>,
+    startup_timeout: std::time::Duration,
 ) -> Result<()> {
     let mut listeners = if let Some(spec) = inline {
         vec![spec]
@@ -86,14 +89,12 @@ pub(crate) async fn run(
     let state_store = client_builder::build_state_store(resolved, no_state_store).await?;
     let client = Arc::new(client_builder::build(resolved, Some(state_store), true)?);
     let cancel_rx = cancel::install();
-    drive(client, listeners, cancel_rx).await
+    drive(client, listeners, cancel_rx, startup_timeout).await
 }
 
-/// Emits a user-facing one-line summary of what each listener is
-/// subscribed to, BEFORE the supervisor starts connecting. Operators
-/// see this at default verbosity (no `-v`); it replaces what would
-/// otherwise be a series of structured `tracing` events the operator
-/// would have to parse to figure out which listeners are active.
+/// Summarises the requested subscriptions before connecting. This pending
+/// status is visible at default verbosity; each listener reports readiness
+/// separately after its Aviso opening handshake is validated.
 fn print_startup_banner(listeners: &[ListenerSpec]) {
     let mut summaries: Vec<String> = Vec::with_capacity(listeners.len());
     for spec in listeners {
@@ -112,7 +113,7 @@ fn print_startup_banner(listeners: &[ListenerSpec]) {
         summaries.push(format!("{name} [{}]{filters}", spec.event));
     }
     let _ = output::write_stderr_line(&format!(
-        "Listening for {}. Press Ctrl+C to stop.",
+        "Connecting for {}. Press Ctrl+C to stop.",
         summaries.join(", ")
     ));
 }
@@ -241,12 +242,13 @@ async fn drive(
     client: Arc<aviso::AvisoClient>,
     listeners: Vec<ListenerSpec>,
     cancel_rx: watch::Receiver<bool>,
+    startup_timeout: std::time::Duration,
 ) -> Result<()> {
     let mut join_set: JoinSet<Result<(), aviso::ClientError>> = JoinSet::new();
     let mut id_to_name: HashMap<Id, String> = HashMap::new();
 
     for spec in listeners {
-        let req = listener::build_watch_request(&spec)?;
+        let req = listener::build_watch_request(&spec)?.with_startup_timeout(Some(startup_timeout));
         let listener_name = spec.name.clone().unwrap_or_else(|| spec.event.clone());
         let event_type = spec.event.clone();
         let client_arc = Arc::clone(&client);
@@ -277,16 +279,19 @@ async fn drive(
                 // be a duplicate of the same lifecycle transition.
             }
             Ok(Err(client_err)) => {
-                let _ =
-                    output::write_stderr_line(&format!("Error in listener {name}: {client_err}"));
+                let display_error = diagnostics::summary(&client_err);
+                let _ = output::write_stderr_line(&format!(
+                    "Error in listener {name}: {display_error}"
+                ));
                 if let Some(hint) = hint_for_listener_error(&client_err) {
+                    let hint = diagnostics::redact_urls(&hint);
                     let _ = output::write_stderr_line(&format!("  Hint: {hint}"));
                 }
                 let _ = output::write_stderr_line("  Other listeners continue.");
                 tracing::debug!(
                     event.name = "cli.listener.failed",
                     listener_name = %name,
-                    error = %client_err,
+                    error = %display_error,
                     "listener errored; other listeners continue"
                 );
                 any_failed = true;

@@ -120,12 +120,23 @@ async def test_start_from_wire(
 ) -> None:
     sequence = start_from + 1 if isinstance(start_from, int) else 43
     data = {"id": f"mars@{sequence}", "data": {"identifier": {}, "payload": None}}
-    event = f"event: replay\ndata: {json.dumps(data)}\n\n"
+    event = (
+        'event: replay-control\ndata: {"type":"replay_started"}\n\n'
+        f"event: replay\ndata: {json.dumps(data)}\n\n"
+    )
     httpserver.expect_request(
         f"/api/v1/{'watch' if mode == 'watch' else 'replay'}",
         method="POST",
         json={"event_type": "mars", "identifier": {}, **wire},
     ).respond_with_data(event + _END, content_type="text/event-stream")
+    if mode == "watch":
+        # The finite response can reconnect before the consumer closes it.
+        # Resume must use the delivered sequence, including for a date start.
+        httpserver.expect_request(
+            "/api/v1/watch",
+            method="POST",
+            json={"event_type": "mars", "identifier": {}, "from_id": str(sequence + 1)},
+        ).respond_with_data("busy", status=503, headers={"Retry-After": "60"})
     for client_type in (pyaviso.AvisoClient, pyaviso.AsyncAvisoClient):
         client = client_type(base_url=httpserver.url_for("/"))
         if builder:

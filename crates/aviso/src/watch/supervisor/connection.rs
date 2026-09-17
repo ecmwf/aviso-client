@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use url::Url;
 
 use super::drain::drain_frames;
+use super::opening;
 use super::{
     ConnectionOutcome, DrainOutcome, GapGuard, PendingCommit, apply_outcome,
     heartbeat_starvation_budget,
@@ -77,6 +78,7 @@ pub(super) async fn run_one_connection(
     tx: &mpsc::Sender<Result<Notification, ClientError>>,
     cancel: &mut oneshot::Receiver<()>,
     parent_cancel: &mut watch::Receiver<bool>,
+    ready: &watch::Sender<bool>,
 ) -> ConnectionOutcome {
     let budget = heartbeat_starvation_budget(heartbeat_interval);
     let endpoint = match request.mode() {
@@ -87,7 +89,7 @@ pub(super) async fn run_one_connection(
         Ok(u) => u,
         Err(e) => {
             return ConnectionOutcome::Fatal(ClientError::Config(format!(
-                "build watch endpoint url from base {base_url} and path {endpoint:?}: {e}"
+                "build watch endpoint url for {endpoint:?}: {e}"
             )));
         }
     };
@@ -118,10 +120,12 @@ pub(super) async fn run_one_connection(
         builder = builder.header(AUTHORIZATION, value);
     }
 
+    let opening_deadline = tokio::time::Instant::now() + opening::OPENING_TIMEOUT;
     let send_result = tokio::select! {
         biased;
         _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
         _ = &mut *cancel => return ConnectionOutcome::Cancelled,
+        () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)")),
         r = builder.send() => r,
     };
     let mut response = match send_result {
@@ -148,13 +152,15 @@ pub(super) async fn run_one_connection(
             biased;
             _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
             _ = &mut *cancel => return ConnectionOutcome::Cancelled,
-            b = response.bytes() => b,
+            // The status is authoritative even if its diagnostic body stalls.
+            () = tokio::time::sleep_until(opening_deadline) => None,
+            b = response.bytes() => Some(b),
         };
-        let body_bytes = match body_result {
-            Ok(b) => b,
-            Err(e) => return ConnectionOutcome::TransportError(e),
+        let body = match body_result {
+            Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+            Some(Err(e)) => return ConnectionOutcome::TransportError(e),
+            None => String::new(),
         };
-        let body = String::from_utf8_lossy(&body_bytes).into_owned();
         return ConnectionOutcome::HttpStatus {
             status,
             body,
@@ -163,26 +169,10 @@ pub(super) async fn run_one_connection(
         };
     }
 
-    let session_request_id = response
-        .headers()
-        .get("x-request-id")
-        .and_then(|h| h.to_str().ok())
-        .map(String::from);
-    tracing::debug!(
-        event.name = "client.watch.subscribed",
-        request_id = session_request_id.as_deref().unwrap_or("<absent>"),
-        "watch session opened"
-    );
-    let connected = state.transition(WatchEvent::ConnectionEstablished);
-    apply_outcome(last_reconnect_policy, connected);
-    // Reset the retry counter as soon as the HTTP handshake succeeds.
-    // Subsequent mid-stream failures (UnexpectedEof, HeartbeatStarved,
-    // mid-stream TransportError) start a fresh failures-since-last-
-    // success streak rather than inflating onto whatever streak led to
-    // the just-completed connect. `ServerClosed` separately resets too,
-    // but that path only covers server-emitted close frames; this
-    // resets even when the session ends ungracefully later.
-    *retry_counter = 0;
+    if let Err(error) = opening::validate_content_type(response.headers()) {
+        return ConnectionOutcome::Fatal(error);
+    }
+    let mut confirmed = false;
 
     let mut parser = finesse::Parser::new();
     // Strict gap detection assumes consecutive sequence numbers and
@@ -219,6 +209,9 @@ pub(super) async fn run_one_connection(
                 apply_outcome(last_reconnect_policy, stop);
                 return ConnectionOutcome::Cancelled;
             }
+            () = tokio::time::sleep_until(opening_deadline), if !confirmed => {
+                return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)"));
+            }
             r = tokio::time::timeout(budget, response.chunk()) => r,
         };
         let chunk = match timed {
@@ -234,6 +227,26 @@ pub(super) async fn run_one_connection(
             Ok(Some(bytes)) => parser.feed(&bytes),
             Ok(None) => parser.end(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
+        }
+        if !confirmed {
+            match opening::confirmed(&mut parser, wire_from.is_some()) {
+                Ok(true) => {
+                    confirmed = true;
+                    *retry_counter = 0;
+                    apply_outcome(
+                        last_reconnect_policy,
+                        state.transition(WatchEvent::ConnectionEstablished),
+                    );
+                    ready.send_replace(true);
+                    tracing::debug!(
+                        event.name = "client.watch.subscribed",
+                        "Aviso stream confirmed"
+                    );
+                }
+                Ok(false) if !eof => continue,
+                Ok(false) => {}
+                Err(error) => return ConnectionOutcome::Fatal(error),
+            }
         }
         match drain_frames(
             &mut parser,

@@ -18,7 +18,7 @@ use std::time::Duration;
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionStatus {
-    /// Transport is open and the supervisor is reading frames.
+    /// The Aviso opening handshake is validated and the supervisor is reading frames.
     Connected,
 
     /// Transport is currently being re-established. The reducer enters
