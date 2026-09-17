@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 """Type stubs for the curated public surface of the pyaviso Python package.
 
 Hand-written. Kept in sync with the runtime ``__all__`` via

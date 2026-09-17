@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # Offline tests for stack.sh readiness polling. The helpers are sourced and
 # `curl` and `docker` are shadowed by shell functions, so no real stack or

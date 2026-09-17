@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Fires async verbs and waits on their futures. The async forms return a
 // std::future immediately and run on a background thread, so several calls can
 // be in flight at once; .get() blocks for the result and rethrows any

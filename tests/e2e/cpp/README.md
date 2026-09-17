@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # C++ end-to-end checks
 
 [`run_examples.sh`](./run_examples.sh) runs the already-built C++ examples

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+// SPDX-License-Identifier: Apache-2.0
+
 // Smoke test for the binding: print the version, connect, and call a blocking
 // verb. Connection settings come from the environment (see aviso_env.hpp).
 //

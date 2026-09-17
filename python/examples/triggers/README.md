@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # triggers
 
 The library exposes six trigger kinds (`echo`, `log`, `command`, `webhook`, `teams`, `post`); attach any of them to a watch via the `triggers=` kwarg on `client.listen()`. The supervisor dispatches every configured trigger per notification before the iterator yields it to your code; required triggers terminate the watch on failure, optional triggers log a warning and let it continue.
