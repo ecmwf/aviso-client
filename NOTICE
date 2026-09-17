@@ -29,7 +29,7 @@ reload callback. The modified source is distributed as docs/mermaid-init.js
 in the source repository and as mermaid-init.js alongside the rendered book:
 https://github.com/ecmwf/aviso-client/blob/main/docs/mermaid-init.js
 
-Aviso SVG artwork
+Aviso artwork
 European Centre for Medium-Range Weather Forecasts (ECMWF)
 Apache License 2.0; see LICENSES/Apache-2.0.txt.
 Source: https://github.com/ecmwf/logos/tree/cde127b2c872e88474570a681e56b14cdecf4f03/logos/aviso
@@ -37,3 +37,5 @@ docs/src/images/logo_dark.svg and logo_light.svg are unchanged copies of
 aviso_text_dark.svg and aviso_text_light.svg respectively.
 docs/theme/favicon.svg uses the paths from aviso_dark.svg with a modified
 SVG wrapper, viewport and white background.
+docs/theme/favicon.png is a reduced-size version of the Aviso logo,
+created by Samet Demir.
