@@ -101,3 +101,5 @@ SPDX-License-Identifier: Apache-2.0
 - [Architecture](./developers/architecture.md)
 - [Library guide](./developers/lib-guide.md)
 - [Contributing](./developers/contributing.md)
+
+[Licences and attributions](licensing.md)

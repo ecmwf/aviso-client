@@ -143,4 +143,5 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). The agent rulebook is [`AGENTS.md`](AG
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](LICENSE.txt). Copyright 2026 ECMWF and individual contributors.
+Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+Copyright 2026 ECMWF and individual contributors.

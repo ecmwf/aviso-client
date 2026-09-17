@@ -226,6 +226,17 @@ else
   failed=$((failed + 1))
 fi
 
+# Legal files must survive staging and extraction without modification.
+for legal_file in LICENSE NOTICE; do
+  if cmp -s "$root/$legal_file" "$tmp/aviso-ffi-$ws_version-linux-test/$legal_file"; then
+    echo "ok   - the tarball preserves $legal_file"
+    passed=$((passed + 1))
+  else
+    echo "FAIL - the tarball preserves $legal_file"
+    failed=$((failed + 1))
+  fi
+done
+
 # A version that does not match the workspace must be refused before building.
 rc=0
 PATH="$tmp/bin:$PATH" bash "$script" 9.9.9 linux-test "$tmp/out2" >/dev/null 2>&1 || rc=$?

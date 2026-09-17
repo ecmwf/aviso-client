@@ -528,7 +528,7 @@ fails loudly so a YAML typo is not silently accepted.
 
 ## D13. License Apache-2.0
 
-The project is licensed under Apache-2.0 (`LICENSE.txt`) matching
+The project is licensed under Apache-2.0 (`LICENSE`) matching
 `aviso-server`. Per-file ECMWF copyright headers are **not** required in v0.1;
 they may be added in a single pass later if ECMWF software-publication policy
 requires the boilerplate. Until then the LICENSE file plus the SPDX expression

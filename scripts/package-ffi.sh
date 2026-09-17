@@ -107,6 +107,7 @@ fi
 [ -z "$bad" ] || die "unexpected shared-library dependencies: $bad"
 
 # --- pack ----------------------------------------------------------------------
+cp LICENSE NOTICE "$staging/"
 tarball="$out_dir/$name.tar.gz"
 tar -C "$work/pack" -czf "$tarball" "$name"
 

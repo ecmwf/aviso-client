@@ -50,4 +50,4 @@ The example uses an event type called `test_polygon`. Substitute your own if you
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE.txt). Copyright 2026 ECMWF and individual contributors.
+Apache-2.0. See [`LICENSE`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE). Copyright 2026 ECMWF and individual contributors.

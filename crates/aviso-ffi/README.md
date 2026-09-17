@@ -62,5 +62,5 @@ header, so a surface change without a regenerate is caught.
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE.txt).
+Apache-2.0. See [`LICENSE`](https://github.com/ecmwf/aviso-client/blob/main/LICENSE).
 Copyright 2026 ECMWF and individual contributors.

@@ -1,0 +1,6 @@
+SPDX-License-Identifier: MPL-2.0
+
+Source:
+https://github.com/badboy/mdbook-mermaid/blob/bfc8839747e90d36a86908c609500e18442709fb/src/bin/assets/mermaid-init.js
+Modified to guard missing theme-picker buttons and share the theme-change
+reload callback. Distributed in source form alongside the rendered book.
