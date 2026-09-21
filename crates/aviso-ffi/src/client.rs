@@ -249,6 +249,39 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
     });
 }
 
+/// Looks for a credential and uses it if one is found.
+///
+/// The search order is the environment, then the `auth:` block of the config
+/// file, then the credentials file, which is the same order the `aviso` binary
+/// uses. Finding nothing leaves the client anonymous. Finding a source that
+/// cannot be used is remembered and reported at build time.
+///
+/// Call this instead of `aviso_client_builder_basic_auth` when the credential
+/// is supplied by the environment or by a file rather than by the caller.
+///
+/// # Safety
+///
+/// `builder` must be a live builder handle from `aviso_client_builder_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoClientBuilder) {
+    guard((), || {
+        let Some(builder) = (unsafe { builder.as_mut() }) else {
+            return;
+        };
+        if builder.error.is_some() {
+            return;
+        }
+        match aviso::auth::discover() {
+            Ok(Some(found)) => {
+                let provider = found.into_provider();
+                builder.apply(|b| b.auth(provider));
+            }
+            Ok(None) => {}
+            Err(err) => builder.error = Some(error::map_error(&err)),
+        }
+    });
+}
+
 /// Builds the client, consuming the builder. On entry the builder is taken and
 /// the caller's pointer is set to null (so a later free is a safe no-op), even
 /// when the build fails. Returns an outcome carrying the client (retrieve it
@@ -813,6 +846,34 @@ mod tests {
             assert_eq!(item["status"], "error");
             assert_eq!(item["error"]["kind"], "transport");
         }
+    }
+
+    #[test]
+    fn discover_auth_on_a_null_builder_is_a_no_op() {
+        unsafe { aviso_client_builder_discover_auth(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn discover_auth_leaves_the_builder_usable_when_nothing_is_found() {
+        // SAFETY: the credentials file is pointed at a path that does not
+        // exist, so discovery finds nothing and the builder stays valid.
+        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", "/nonexistent/aviso/c.yaml") };
+        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", "/nonexistent/aviso/config.yaml") };
+        let url = CString::new("http://127.0.0.1:1").expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+        assert!(!builder.is_null());
+
+        unsafe { aviso_client_builder_discover_auth(builder) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        assert!(!outcome.is_null());
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        assert!(
+            !client.is_null(),
+            "build should succeed without credentials"
+        );
+        unsafe { aviso_outcome_free(outcome) };
+        unsafe { aviso_client_free(client) };
     }
 
     #[test]

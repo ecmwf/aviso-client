@@ -501,6 +501,14 @@ class ClientBuilder {
     return *this;
   }
 
+  // Looks for a credential in the environment, then the config file, then
+  // the credentials file, and uses the first one found. Finding nothing
+  // leaves the client anonymous; an unusable source throws from `build()`.
+  ClientBuilder& discover_auth() {
+    aviso_client_builder_discover_auth(handle_.get());
+    return *this;
+  }
+
   // Builds the client, consuming this builder's handle, or throws
   // `aviso::Error`.
   [[nodiscard]] Client build() {

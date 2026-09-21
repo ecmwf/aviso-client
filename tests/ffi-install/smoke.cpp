@@ -14,7 +14,10 @@
 int main() {
   std::cout << "aviso version: " << aviso::version() << '\n';
 
-  aviso::Client client = aviso::ClientBuilder("http://127.0.0.1:1").build();
+  // Discovery finds nothing here, so the client stays anonymous and the
+  // builder remains usable.
+  aviso::Client client =
+      aviso::ClientBuilder("http://127.0.0.1:1").discover_auth().build();
   const std::string malformed_identifier = R"(["not-an-object"])";
 
   bool blocking_rejected = false;

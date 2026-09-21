@@ -329,6 +329,23 @@ void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
                                      const char *password);
 
 /**
+ * Looks for a credential and uses it if one is found.
+ *
+ * The search order is the environment, then the `auth:` block of the config
+ * file, then the credentials file, which is the same order the `aviso` binary
+ * uses. Finding nothing leaves the client anonymous. Finding a source that
+ * cannot be used is remembered and reported at build time.
+ *
+ * Call this instead of `aviso_client_builder_basic_auth` when the credential
+ * is supplied by the environment or by a file rather than by the caller.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
+ */
+void aviso_client_builder_discover_auth(AvisoClientBuilder *builder);
+
+/**
  * Builds the client, consuming the builder. On entry the builder is taken and
  * the caller's pointer is set to null (so a later free is a safe no-op), even
  * when the build fails. Returns an outcome carrying the client (retrieve it
