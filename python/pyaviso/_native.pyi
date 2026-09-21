@@ -152,6 +152,9 @@ class ConfigFile:
 class Chain:
     def __init__(self, *providers: Bearer | Basic | Env | ConfigFile | Chain) -> None: ...
 
+class Anonymous:
+    def __init__(self) -> None: ...
+
 class MemoryStore:
     def __init__(self) -> None: ...
 
@@ -201,7 +204,7 @@ class AvisoClient:
         self,
         *,
         base_url: str,
-        auth: Bearer | Basic | Env | ConfigFile | Chain | None = None,
+        auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: MemoryStore | JsonFileStore | None = None,
@@ -252,7 +255,7 @@ class AsyncAvisoClient:
         self,
         *,
         base_url: str,
-        auth: Bearer | Basic | Env | ConfigFile | Chain | None = None,
+        auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: MemoryStore | JsonFileStore | None = None,

@@ -17,13 +17,34 @@
 //! scheduled on the same shared runtime.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use aviso::auth::AuthProvider;
 use aviso::{AvisoClient, NotificationRequest};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::auth::extract_provider;
+use crate::auth::{extract_provider, is_anonymous};
+
+/// Resolves the `auth` argument of a client constructor.
+///
+/// `None` means "look for a credential": the environment, then the config
+/// file, then the credentials file. `Anonymous()` means "send nothing", which
+/// matters when a credential is present on the machine but must not be sent to
+/// this server. Anything else is used as given.
+fn resolve_auth(
+    py: Python<'_>,
+    auth: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<Arc<dyn AuthProvider>>> {
+    match auth {
+        Some(obj) if is_anonymous(obj) => Ok(None),
+        Some(obj) => Ok(Some(extract_provider(obj)?)),
+        None => Ok(aviso::auth::discover()
+            .map_err(|e| map_client_error(py, e))?
+            .map(aviso::auth::Discovered::into_provider)),
+    }
+}
 use crate::error::{duration_from_seconds, map_client_error};
 use crate::runtime::runtime;
 use crate::state_stores::extract_store;
@@ -140,8 +161,8 @@ impl PyAvisoClient {
         flush_cursor_on_exit: bool,
     ) -> PyResult<Self> {
         let mut builder = AvisoClient::builder().base_url(base_url);
-        if let Some(provider) = auth {
-            builder = builder.auth(extract_provider(provider)?);
+        if let Some(provider) = resolve_auth(py, auth)? {
+            builder = builder.auth(provider);
         }
         if let Some(secs) = timeout {
             builder = builder.timeout(duration_from_seconds("timeout", secs)?);
@@ -333,8 +354,8 @@ impl PyAsyncAvisoClient {
         flush_cursor_on_exit: bool,
     ) -> PyResult<Self> {
         let mut builder = AvisoClient::builder().base_url(base_url);
-        if let Some(provider) = auth {
-            builder = builder.auth(extract_provider(provider)?);
+        if let Some(provider) = resolve_auth(py, auth)? {
+            builder = builder.auth(provider);
         }
         if let Some(secs) = timeout {
             builder = builder.timeout(duration_from_seconds("timeout", secs)?);

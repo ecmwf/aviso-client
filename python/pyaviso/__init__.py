@@ -28,6 +28,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from pyaviso._native import (
     VERSION,
+    Anonymous,
     AsyncAvisoClient,
     AsyncNotificationIterator,
     AuthError,
@@ -88,6 +89,7 @@ except PackageNotFoundError:
 
 __all__ = [
     "VERSION",
+    "Anonymous",
     "AsyncAvisoClient",
     "AsyncNotificationIterator",
     "AuthError",

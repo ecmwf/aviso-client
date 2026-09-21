@@ -6,7 +6,9 @@
 // granted to it by virtue of its status as an intergovernmental organisation nor
 // does it submit to any jurisdiction.
 
-//! `PyO3` wrappers for the five shipped `AuthProvider` implementations.
+//! `PyO3` wrappers for the five shipped `AuthProvider` implementations, plus
+//! `Anonymous`, which is a marker rather than a provider: passing it to a
+//! client turns off credential discovery and sends no `Authorization` header.
 
 #![allow(
     clippy::unused_self,
@@ -169,6 +171,33 @@ impl PyChain {
     }
 }
 
+/// Marker that turns off credential discovery.
+///
+/// A client built with `auth=Anonymous()` sends no `Authorization` header even
+/// when a credential is sitting in the environment or in a file. It carries no
+/// credential of its own, so it is not an `AuthProvider` and cannot go into a
+/// `Chain`.
+#[pyclass(name = "Anonymous", module = "pyaviso._native", skip_from_py_object)]
+#[derive(Clone)]
+pub(crate) struct PyAnonymous;
+
+#[pymethods]
+impl PyAnonymous {
+    #[new]
+    const fn new() -> Self {
+        Self
+    }
+
+    fn __repr__(&self) -> &'static str {
+        "Anonymous()"
+    }
+}
+
+/// True when the object is the [`PyAnonymous`] marker.
+pub(crate) fn is_anonymous(obj: &Bound<'_, PyAny>) -> bool {
+    obj.extract::<PyRef<PyAnonymous>>().is_ok()
+}
+
 /// Extracts an `Arc<dyn AuthProvider>` from any of the five shipped Python
 /// wrapper classes. Used by `Chain.__init__` and `AvisoClient(auth=...)`.
 pub(crate) fn extract_provider(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn AuthProvider>> {
@@ -188,7 +217,7 @@ pub(crate) fn extract_provider(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn AuthP
         return Ok(b.provider());
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
-        "auth must be one of Bearer / Basic / Env / ConfigFile / Chain",
+        "auth must be one of Bearer / Basic / Env / ConfigFile / Chain / Anonymous",
     ))
 }
 
@@ -198,5 +227,6 @@ pub(crate) fn register_auth(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEnv>()?;
     m.add_class::<PyConfigFile>()?;
     m.add_class::<PyChain>()?;
+    m.add_class::<PyAnonymous>()?;
     Ok(())
 }
