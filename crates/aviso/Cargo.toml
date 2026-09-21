@@ -20,6 +20,7 @@ workspace = true
 [dependencies]
 async-trait = { workspace = true }
 atomicwrites = { workspace = true }
+directories = { workspace = true }
 base64 = { workspace = true }
 fd-lock = { workspace = true }
 finesse = { workspace = true }
