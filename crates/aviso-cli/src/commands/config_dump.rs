@@ -92,6 +92,11 @@ fn build_yaml(resolved: &Resolved, redact: bool) -> String {
         "<unset>"
     };
     let _ = writeln!(out, "  provider: {provider_label}");
+    let _ = writeln!(
+        out,
+        "  source: {}",
+        resolved.auth_source.unwrap_or("<unset>")
+    );
     let _ = writeln!(out, "listeners_count: {}", resolved.listeners.len());
     if !resolved.listeners.is_empty() {
         out.push_str("listeners:\n");
@@ -169,6 +174,7 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
         },
         "auth": {
             "provider_set": resolved.auth_provider.is_some(),
+            "source": resolved.auth_source,
             "redacted": redact,
         },
         "listeners_count": resolved.listeners.len(),
@@ -228,6 +234,7 @@ mod tests {
                 value: false,
                 source: Source::Default,
             },
+            auth_source: redacted_provider.then_some("flag"),
             auth_provider: redacted_provider.then(|| {
                 std::sync::Arc::new(aviso::auth::Bearer::new("test-token").unwrap())
                     as std::sync::Arc<dyn aviso::auth::AuthProvider>

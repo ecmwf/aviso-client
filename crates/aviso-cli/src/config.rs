@@ -160,6 +160,8 @@ pub(crate) struct Resolved {
     pub(crate) tls_ca_bundle_paths: Sourced<Vec<PathBuf>>,
     pub(crate) tls_danger_accept_invalid_certs: Sourced<bool>,
     pub(crate) auth_provider: Option<Arc<dyn AuthProvider>>,
+    /// Highest-priority tier that produced [`Self::auth_provider`].
+    pub(crate) auth_source: Option<&'static str>,
     pub(crate) listeners: Vec<ListenerSpec>,
     pub(crate) force_json: bool,
     pub(crate) verbose: u8,
@@ -276,7 +278,19 @@ pub(crate) fn resolve(
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
     let env_provider = cli_auth::provider_from_env()?;
     let file_provider = cli_auth::provider_from_file(file.auth.as_ref())?;
-    let auth_provider = cli_auth::build_chain(flag_provider, env_provider, file_provider);
+    let credentials_provider = cli_auth::provider_from_credentials()?;
+    let auth_source = cli_auth::winning_source(
+        flag_provider.as_ref(),
+        env_provider.as_ref(),
+        file_provider.as_ref(),
+        credentials_provider.as_ref(),
+    );
+    let auth_provider = cli_auth::build_chain(
+        flag_provider,
+        env_provider,
+        file_provider,
+        credentials_provider,
+    );
 
     Ok(Resolved {
         config_path,
@@ -287,6 +301,7 @@ pub(crate) fn resolve(
         tls_ca_bundle_paths,
         tls_danger_accept_invalid_certs,
         auth_provider,
+        auth_source,
         listeners: file.listeners,
         force_json: cli_force_json,
         verbose: cli_verbose,

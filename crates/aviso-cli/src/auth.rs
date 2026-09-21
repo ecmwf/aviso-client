@@ -8,7 +8,7 @@
 
 //! Auth-provider chain construction for the `aviso` binary.
 //!
-//! Three tiers in highest-priority-first order per Q8 + amendment A2:
+//! Four tiers in highest-priority-first order per Q8 + amendment A2:
 //!
 //! 1. **Flag tier**: `--token <T>` -> `Bearer::new(T)`; else
 //!    `--username <U>` + `--password <P>` -> `Basic::new(U, P)`;
@@ -26,12 +26,22 @@
 //! 3. **File tier**: the parsed `[auth]` block from `config.yaml`,
 //!    rendered through `Bearer::new` or `Basic::new`. Optional;
 //!    a file without `auth:` contributes nothing.
+//! 4. **Credentials tier**: `credentials.yaml` beside the config
+//!    file, read through `aviso::auth::ConfigFile`. Written by
+//!    tools rather than by hand, so it ranks below the config
+//!    file and never overrides a credential the operator typed.
+//!    It is the only tier that re-reads its source on a 401, so a
+//!    token rotated on disk reaches a running listener.
+//!
+//! The same order is available to library callers through
+//! `aviso::auth::discover`, minus the flag tier, which has no
+//! meaning outside the binary.
 //!
 //! Assembled into `aviso::auth::Chain::new(vec![...])` (skipping
 //! `None` tiers). The chain is passed to
 //! `AvisoClientBuilder::auth(Arc::new(chain))`.
 //!
-//! When all three tiers are empty, the client runs anonymous; the
+//! When all tiers are empty, the client runs anonymous; the
 //! schema and health endpoints work this way against any
 //! aviso-server.
 
@@ -144,7 +154,50 @@ pub(crate) fn provider_from_file(
     }
 }
 
-/// Composes the final auth provider from the three tiers.
+/// Reads the credentials file, if one exists.
+///
+/// The path is `credentials.yaml` in the aviso config directory,
+/// overridable with `AVISO_CREDENTIALS_FILE`. A missing file
+/// contributes nothing; a file that exists but cannot be parsed is
+/// an error, so a typo is reported rather than silently ignored.
+///
+/// # Errors
+///
+/// Propagates the parse and IO failures from
+/// `aviso::auth::credentials_file_provider`.
+pub(crate) fn provider_from_credentials() -> Result<Option<Arc<dyn AuthProvider>>> {
+    let Some(path) = aviso::auth::DiscoveryPaths::from_env().credentials_file else {
+        return Ok(None);
+    };
+    aviso::auth::credentials_file_provider(&path)
+        .with_context(|| format!("read credentials file {}", path.display()))
+}
+
+/// Names the highest-priority tier that produced a credential.
+///
+/// Reported by `aviso config dump` so an operator with credentials
+/// in more than one place can see which one is in use.
+#[must_use]
+pub(crate) fn winning_source(
+    flag: Option<&Arc<dyn AuthProvider>>,
+    env: Option<&Arc<dyn AuthProvider>>,
+    file: Option<&Arc<dyn AuthProvider>>,
+    credentials: Option<&Arc<dyn AuthProvider>>,
+) -> Option<&'static str> {
+    if flag.is_some() {
+        Some("flag")
+    } else if env.is_some() {
+        Some("environment")
+    } else if file.is_some() {
+        Some("config file")
+    } else if credentials.is_some() {
+        Some("credentials file")
+    } else {
+        None
+    }
+}
+
+/// Composes the final auth provider from the four tiers.
 ///
 /// Returns `None` (anonymous) when all tiers are empty. With a
 /// single tier the provider is returned directly (no `Chain` wrap
@@ -157,11 +210,17 @@ pub(crate) fn build_chain(
     flag_provider: Option<Arc<dyn AuthProvider>>,
     env_provider: Option<Arc<dyn AuthProvider>>,
     file_provider: Option<Arc<dyn AuthProvider>>,
+    credentials_provider: Option<Arc<dyn AuthProvider>>,
 ) -> Option<Arc<dyn AuthProvider>> {
-    let providers: Vec<Arc<dyn AuthProvider>> = [flag_provider, env_provider, file_provider]
-        .into_iter()
-        .flatten()
-        .collect();
+    let providers: Vec<Arc<dyn AuthProvider>> = [
+        flag_provider,
+        env_provider,
+        file_provider,
+        credentials_provider,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     match providers.len() {
         0 => None,
         1 => providers.into_iter().next(),
@@ -247,14 +306,14 @@ mod tests {
 
     #[test]
     fn chain_empty_returns_none() {
-        let chain = build_chain(None, None, None);
+        let chain = build_chain(None, None, None, None);
         assert!(chain.is_none());
     }
 
     #[test]
     fn chain_single_tier_returns_that_tier_unwrapped() {
         let token = provider_from_flags(Some("flag-token"), None, None).unwrap();
-        let chain = build_chain(token, None, None);
+        let chain = build_chain(token, None, None, None);
         assert!(chain.is_some());
     }
 
@@ -266,7 +325,7 @@ mod tests {
             basic: None,
         }))
         .unwrap();
-        let chain = build_chain(flag, None, file);
+        let chain = build_chain(flag, None, file, None);
         assert!(chain.is_some());
     }
 }
