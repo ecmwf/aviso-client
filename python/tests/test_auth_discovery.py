@@ -181,3 +181,32 @@ def test_async_client_discovers_the_same_credential(
     asyncio.run(run())
 
     assert seen == ["Bearer from-credentials-file"]
+
+
+def test_a_discovered_credential_is_refused_for_a_plaintext_address(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    credentials = tmp_path / "credentials.yaml"
+    credentials.write_text("bearer:\n  token: from-credentials-file\n")
+    monkeypatch.setenv("AVISO_CREDENTIALS_FILE", str(credentials))
+
+    with pytest.raises(pyaviso.AuthError) as excinfo:
+        pyaviso.AvisoClient(base_url="http://aviso.example.org")
+
+    assert "from-credentials-file" not in str(excinfo.value)
+
+
+def test_an_explicit_credential_may_go_to_a_plaintext_address(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("AVISO_TOKEN", "from-environment")
+
+    pyaviso.AvisoClient(base_url="http://aviso.example.org", auth=pyaviso.Bearer("chosen"))
+
+
+def test_a_discovered_credential_may_go_to_an_https_address(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("AVISO_TOKEN", "from-environment")
+
+    pyaviso.AvisoClient(base_url="https://aviso.example.org")
