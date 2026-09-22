@@ -414,3 +414,31 @@ fn a_missing_certificate_named_by_the_file_is_reported() -> TestResult {
     assert!(error.to_string().contains("absent.pem"), "got {error}");
     Ok(())
 }
+
+#[test]
+fn found_auth_is_the_marked_path_and_auth_is_the_named_one() -> TestResult {
+    // The distinction every discovery caller relies on: attaching through
+    // found_auth keeps the plaintext rule, attaching through auth lifts it.
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "auth:\n  bearer_token: from-file\n");
+    let _sources = Sources::in_dir(dir.path());
+    let mut paths = aviso::auth::DiscoveryPaths::from_env();
+    paths.config_file = Some(dir.path().join("config.yaml"));
+
+    let found = aviso::auth::discover_with(&paths)?.expect("credential");
+    let refused = AvisoClient::builder()
+        .base_url("http://public.example.org")
+        .found_auth(found)
+        .build();
+    assert!(
+        matches!(refused, Err(ClientError::Auth(_))),
+        "got {refused:?}"
+    );
+
+    let found = aviso::auth::discover_with(&paths)?.expect("credential");
+    AvisoClient::builder()
+        .base_url("http://public.example.org")
+        .auth(found.into_provider())
+        .build()?;
+    Ok(())
+}

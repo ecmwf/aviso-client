@@ -162,8 +162,7 @@ impl AvisoClientBuilder {
         // not applied here. Record that the credential was found; build
         // checks it against the address the client will actually use.
         if let Some(found) = crate::auth::discover_with(discovery)? {
-            builder.auth_was_found = Some(found.source().clone());
-            builder.auth = Some(found.into_provider());
+            builder = builder.found_auth(found);
         }
         Ok(builder)
     }
@@ -186,6 +185,20 @@ impl AvisoClientBuilder {
     pub fn auth(mut self, auth: Arc<dyn AuthProvider>) -> Self {
         self.auth = Some(auth);
         self.auth_was_found = None;
+        self
+    }
+
+    /// Attaches a credential that was found rather than named.
+    ///
+    /// This is how discovery hands its result to the builder. Unlike
+    /// [`Self::auth`], it keeps the record that the credential was found, so
+    /// [`Self::build`] refuses to send it to a plain http address that is not
+    /// loopback, whatever address the builder ends up with. Callers that
+    /// searched for a credential themselves use this rather than `auth`, or
+    /// the refusal silently stops applying.
+    pub fn found_auth(mut self, found: crate::auth::Discovered) -> Self {
+        self.auth_was_found = Some(found.source().clone());
+        self.auth = Some(found.into_provider());
         self
     }
 

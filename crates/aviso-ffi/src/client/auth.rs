@@ -132,12 +132,12 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
         if builder.error.is_some() {
             return;
         }
+        // The address check is not applied here: the caller may still change
+        // the address, and build checks the final one. Attaching through
+        // found_auth keeps the record that the credential was found.
         let paths = aviso::auth::DiscoveryPaths::from_env();
-        match aviso::auth::discover_for_url(&builder.base_url, &paths) {
-            Ok(Some(found)) => {
-                let provider = found.into_provider();
-                builder.apply(|b| b.auth(provider));
-            }
+        match aviso::auth::discover_with(&paths) {
+            Ok(Some(found)) => builder.apply(|b| b.found_auth(found)),
             Ok(None) => {}
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
@@ -426,6 +426,29 @@ mod tests {
             .expect("header");
         assert_eq!(header, "Bearer from-code");
         unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn a_discovered_credential_stays_refused_after_the_address_is_changed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let credentials = dir.path().join("credentials.yaml");
+        std::fs::write(&credentials, "bearer:\n  token: sekrit\n").expect("write");
+        let _env = CredentialEnv::pointing_at(dir.path(), Some(&credentials));
+        let safe = CString::new("https://safe.example.org").expect("cstring");
+        let public = CString::new("http://public.example.org").expect("cstring");
+
+        // Discover while the address is safe, then switch it. The credential
+        // was found, not named, so the switch must not launder it.
+        let mut builder = unsafe { aviso_client_builder_new(safe.as_ptr()) };
+        unsafe { aviso_client_builder_discover_auth(builder) };
+        unsafe { crate::client::aviso_client_builder_base_url(builder, public.as_ptr()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        assert!(
+            unsafe { aviso_outcome_take_client(outcome) }.is_null(),
+            "the credential was found; a later plaintext address must be refused"
+        );
+        unsafe { aviso_outcome_free(outcome) };
     }
 
     #[test]

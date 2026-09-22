@@ -179,6 +179,7 @@ impl ClientSettings {
 /// Settings together with the text they were parsed from and where it came
 /// from. Returned by [`ClientSettings::read`]; the text feeds credential
 /// discovery so both read one snapshot. No `Debug`: the text may hold a token.
+#[non_exhaustive]
 pub struct LoadedSettings {
     /// The parsed settings.
     pub settings: ClientSettings,

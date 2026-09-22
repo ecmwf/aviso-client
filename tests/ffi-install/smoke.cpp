@@ -40,6 +40,13 @@ int main() {
                                 .bearer_auth("smoke-token")
                                 .build();
   static_cast<void>(from_file);
+
+  // The path overload is inline, so its entry point is only linked when it
+  // is used. This smoke also runs against a stub library that cannot know
+  // whether a file exists, so only the link is checked here; the behaviour
+  // is covered by the tests that run against the real library.
+  static_cast<void>(
+      aviso::ClientBuilder::from_file("/nonexistent/aviso/config.yaml"));
   const std::string malformed_identifier = R"(["not-an-object"])";
 
   bool blocking_rejected = false;

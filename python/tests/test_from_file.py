@@ -197,3 +197,31 @@ def test_naming_or_dropping_the_credential_lifts_the_plaintext_rule(
     )
     pyaviso.AvisoClient.from_file(base_url="http://public.example.org", auth=pyaviso.Anonymous())
     pyaviso.AvisoClient.from_file(base_url="http://127.0.0.1:1")
+
+
+def test_a_tilde_in_the_path_means_the_home_directory(
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # Every path this package accepts goes through os.fspath and expanduser;
+    # from_file must not be the exception.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "aviso.yaml").write_text(
+        f"base_url: {httpserver.url_for('/')}\nauth:\n  bearer_token: from-home\n"
+    )
+    seen = capture_authorization(httpserver)
+
+    pyaviso.AvisoClient.from_file("~/aviso.yaml").schema()
+
+    assert seen == ["Bearer from-home"]
+
+
+def test_a_pathlike_object_is_accepted(
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    other = tmp_path / "other.yaml"
+    other.write_text(f"base_url: {httpserver.url_for('/')}\n")
+    seen = capture_authorization(httpserver)
+
+    pyaviso.AvisoClient.from_file(other).schema()
+
+    assert seen == [None]
