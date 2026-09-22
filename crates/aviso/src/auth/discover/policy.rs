@@ -90,6 +90,12 @@ pub fn url_keeps_credentials_private(base_url: &str) -> bool {
     if parsed.scheme().eq_ignore_ascii_case("https") {
         return true;
     }
+    // The loopback exception is for plain http only. Any other scheme is not
+    // something this client speaks, and saying "private" about it would let a
+    // caller approve an address the contract says to reject.
+    if !parsed.scheme().eq_ignore_ascii_case("http") {
+        return false;
+    }
     match parsed.host() {
         Some(url::Host::Domain(name)) => {
             name.eq_ignore_ascii_case("localhost")
@@ -197,6 +203,10 @@ mod tests {
             "http://10.0.0.5:8000",
             "http://192.168.1.10",
             "http://[::ffff:10.0.0.5]:8000",
+            // Loopback host, but not a scheme the exception covers.
+            "ftp://localhost",
+            "ftp://127.0.0.1",
+            "ws://localhost:8000",
             "not a url",
         ] {
             assert!(
