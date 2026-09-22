@@ -50,7 +50,8 @@ sent.
 A credential that was found rather than named is not sent to a plain `http://`
 address unless it is loopback. Supplying the credential yourself, with
 `--token` or an explicit provider, removes that restriction, because then the
-choice of address is deliberate.
+choice of address is deliberate. The client still logs one warning,
+`client.auth.plaintext`, when it builds, so the choice is visible in the logs.
 
 ## What happens on a 401
 

@@ -360,6 +360,17 @@ impl AvisoClientBuilder {
                 crate::auth::url_without_userinfo(&raw)
             )));
         }
+        if self.auth.is_some() && crate::auth::is_public_plaintext(&raw) {
+            // A named credential is the caller's decision, so it is sent.
+            // Say so once, the way the CLI does for disabled certificate
+            // checks, so a log scraper can flag it.
+            tracing::warn!(
+                event.name = "client.auth.plaintext",
+                base_url = %crate::auth::url_without_userinfo(&raw),
+                "sending the credential over plain http to a non-loopback address; \
+                 anyone on the path can read it. Use https."
+            );
+        }
         if !base_url.path().ends_with('/') {
             let normalized = format!("{}/", base_url.path());
             base_url.set_path(&normalized);

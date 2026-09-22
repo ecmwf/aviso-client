@@ -165,7 +165,10 @@ A credential from the environment or either file is not sent to a plain
 `http://` address unless it is loopback. Use an `https` address, or pass the
 credential on the command line with `--token`, or `--username` and
 `--password`, to say you mean it. This applies when a command makes a request;
-`config dump` still reports the source it would have refused.
+`config dump` still reports the source it would have refused. A credential
+you named that goes to a non-loopback `http://` address is sent, with one
+WARN line, `client.auth.plaintext`, the same way `--danger-accept-invalid-certs`
+is announced.
 
 To see which source is in use:
 
