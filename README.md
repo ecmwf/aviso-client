@@ -141,6 +141,8 @@ mdbook serve docs --open
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). The agent rulebook is [`AGENTS.md`](AGENTS.md). Durable planning lives in GitHub Issues + milestones.
 
+To report a security problem, follow [`SECURITY.md`](SECURITY.md) rather than opening an issue.
+
 ## License
 
 [Apache License 2.0](LICENSE)
