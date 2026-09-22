@@ -46,6 +46,7 @@ use crate::{ClientError, Notification, parse_cloudevent_id};
 )]
 pub(super) async fn drain_frames(
     parser: &mut finesse::Parser,
+    expected_event_type: &str,
     state: &mut WatchState,
     last_reconnect_policy: &mut Option<ReconnectPolicy>,
     gap_guard: &mut GapGuard,
@@ -78,7 +79,9 @@ pub(super) async fn drain_frames(
                 }
                 let raw_envelope = raw.clone();
                 let wire: WireCloudEvent = serde_json::from_value(raw)?;
-                let (event_type, sequence) = match parse_cloudevent_id(&wire.id) {
+                let (event_type, sequence) = match parse_cloudevent_id(&wire.id)
+                    .and_then(|parsed| check_event_type(parsed, expected_event_type))
+                {
                     Ok(v) => v,
                     Err(e) => {
                         apply_outcome(
@@ -325,4 +328,26 @@ pub(super) async fn drain_frames(
         }
     }
     Ok(DrainOutcome::Continue)
+}
+
+/// Refuses a notification whose event type is not the one this watch
+/// asked for.
+///
+/// The event type on the wire is read from the `CloudEvent` `id` the
+/// server wrote. A notification for another stream must not reach the
+/// triggers, which would otherwise run with data the operator never
+/// subscribed to. The mismatch is terminal like any other malformed
+/// event, so a stream that keeps sending the wrong type cannot cause a
+/// reconnect loop.
+fn check_event_type(
+    (event_type, sequence): (String, u64),
+    expected: &str,
+) -> crate::Result<(String, u64)> {
+    if event_type == expected {
+        Ok((event_type, sequence))
+    } else {
+        Err(ClientError::MalformedEvent(format!(
+            "event_type {event_type:?} does not match the requested {expected:?}"
+        )))
+    }
 }
