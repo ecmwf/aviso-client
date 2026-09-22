@@ -28,6 +28,7 @@ directories:
 cmake -S examples/cpp -B build/cpp \
   -DAVISO_FFI_INCLUDE_DIR=/path/to/drop/include \
   -DAVISO_FFI_LIB_DIR=/path/to/drop/lib
+cmake --build build/cpp
 ```
 
 Every example becomes an executable named after its file, so
