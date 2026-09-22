@@ -387,8 +387,8 @@ pub(crate) fn load_optional(path: &Path) -> Result<LoadedConfig> {
         .with_context(|| format!("read config file: {}", path.display()))?;
     let parsed: ConfigFile = yaml::from_str(&content)
         .with_context(|| format!("parse config file: {}", path.display()))?;
-    let settings = aviso::ClientSettings::parse(&content, path)
-        .with_context(|| format!("parse config file: {}", path.display()))?;
+    // The shared reader already names the file in its message.
+    let settings = aviso::ClientSettings::parse(&content, path)?;
     Ok(LoadedConfig {
         parsed,
         settings,

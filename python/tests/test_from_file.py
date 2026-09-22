@@ -170,3 +170,30 @@ def test_the_async_client_reads_the_same_file(
     asyncio.run(run())
 
     assert seen == ["Bearer from-file"]
+
+
+def test_a_found_credential_is_refused_when_code_supplies_a_plaintext_address(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    # The file has a credential but no address, or an https address; either
+    # way the address the client ends up with is what the rule must check.
+    for body in (
+        "auth:\n  bearer_token: from-file\n",
+        "base_url: https://aviso.example.org\nauth:\n  bearer_token: from-file\n",
+    ):
+        write_config(monkeypatch, tmp_path, body)
+        with pytest.raises(pyaviso.AuthError) as excinfo:
+            pyaviso.AvisoClient.from_file(base_url="http://public.example.org")
+        assert "from-file" not in str(excinfo.value)
+
+
+def test_naming_or_dropping_the_credential_lifts_the_plaintext_rule(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    write_config(monkeypatch, tmp_path, "auth:\n  bearer_token: from-file\n")
+
+    pyaviso.AvisoClient.from_file(
+        base_url="http://public.example.org", auth=pyaviso.Bearer("named")
+    )
+    pyaviso.AvisoClient.from_file(base_url="http://public.example.org", auth=pyaviso.Anonymous())
+    pyaviso.AvisoClient.from_file(base_url="http://127.0.0.1:1")

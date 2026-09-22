@@ -92,13 +92,13 @@ pub(crate) fn build(
     for path in &resolved.tls_ca_bundle_paths.value {
         let bytes = std::fs::read(path).map_err(|e| {
             usage_error(format!(
-                "could not read --ca-bundle PEM file `{}`: {e}",
+                "could not read CA bundle PEM file `{}` (from --ca-bundle or tls.ca_bundle): {e}",
                 path.display()
             ))
         })?;
         let cert = reqwest::Certificate::from_pem(&bytes).map_err(|e| {
             usage_error(format!(
-                "--ca-bundle PEM file `{}` did not parse as an X.509 certificate: {e}",
+                "CA bundle PEM file `{}` did not parse as an X.509 certificate: {e}",
                 path.display()
             ))
         })?;

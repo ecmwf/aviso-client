@@ -80,11 +80,52 @@ impl ClientSettings {
     /// Returns [`ClientError::Config`] when the file cannot be read or parsed,
     /// or when a section this module reads contains an unknown key.
     pub fn from_path(path: impl AsRef<Path>) -> crate::Result<Self> {
-        let path = path.as_ref();
+        Ok(Self::read(path.as_ref())?.settings)
+    }
+
+    /// Reads and parses a file, keeping the text it was parsed from.
+    ///
+    /// Callers that also need the `auth:` block hand that text to credential
+    /// discovery, so the credential and the settings come from one read of the
+    /// file rather than two that could straddle a replacement.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_path`].
+    pub fn read(path: &Path) -> crate::Result<LoadedSettings> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             ClientError::Config(format!("read config file {}: {e}", path.display()))
         })?;
-        Self::parse(&content, path)
+        let settings = Self::parse(&content, path)?;
+        Ok(LoadedSettings {
+            settings,
+            content,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Like [`Self::read`], for the default location; `Ok(None)` when there is
+    /// no file there.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_default_path`].
+    pub fn read_default(path_override: Option<&Path>) -> crate::Result<Option<LoadedSettings>> {
+        let path = match path_override {
+            Some(p) => p.to_path_buf(),
+            None => match crate::auth::DiscoveryPaths::from_env().config_file {
+                Some(p) => p,
+                None => return Ok(None),
+            },
+        };
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => Self::read(&path).map(Some),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(ClientError::Config(format!(
+                "read config file {}: {e}",
+                path.display()
+            ))),
+        }
     }
 
     /// Reads the settings from the default location, or returns defaults when
@@ -100,17 +141,9 @@ impl ClientSettings {
     ///
     /// As [`Self::from_path`], except that a missing file is not an error.
     pub fn from_default_path() -> crate::Result<Self> {
-        let Some(path) = crate::auth::DiscoveryPaths::from_env().config_file else {
-            return Ok(Self::default());
-        };
-        match std::fs::symlink_metadata(&path) {
-            Ok(_) => Self::from_path(&path),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(ClientError::Config(format!(
-                "read config file {}: {e}",
-                path.display()
-            ))),
-        }
+        Ok(Self::read_default(None)?
+            .map(|loaded| loaded.settings)
+            .unwrap_or_default())
     }
 
     /// Parses settings from text. `path` is used for messages and to resolve
@@ -143,9 +176,21 @@ impl ClientSettings {
     }
 }
 
-/// Only the keys a client needs are modelled. `auth:` is accepted here so its
-/// presence is not an error, and is read by credential discovery, which owns
-/// its shape; the value is discarded so a secret never sits in this struct.
+/// Settings together with the text they were parsed from and where it came
+/// from. Returned by [`ClientSettings::read`]; the text feeds credential
+/// discovery so both read one snapshot. No `Debug`: the text may hold a token.
+pub struct LoadedSettings {
+    /// The parsed settings.
+    pub settings: ClientSettings,
+    /// The exact file text.
+    pub content: String,
+    /// The file it was read from.
+    pub path: PathBuf,
+}
+
+/// Only the keys a client needs are modelled. Unknown top-level keys, `auth:`
+/// among them, are ignored; credential discovery reads `auth:` from the same
+/// text and owns its shape.
 #[derive(Deserialize)]
 struct Doc {
     #[serde(default)]
@@ -156,8 +201,6 @@ struct Doc {
     heartbeat_interval: Option<Duration>,
     #[serde(default)]
     tls: Option<TlsDoc>,
-    #[serde(default, rename = "auth")]
-    _auth: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Deserialize, Default)]

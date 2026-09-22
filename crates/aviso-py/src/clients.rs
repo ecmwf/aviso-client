@@ -141,8 +141,6 @@ fn build_results(
         .collect()
 }
 
-/// Synchronous `PyO3` client. Methods block the current Python thread
-/// while the underlying async future runs on the shared tokio runtime.
 /// Builds from the config file, then applies the constructor keyword
 /// arguments as overrides.
 ///
@@ -200,6 +198,8 @@ fn builder_from_file(
     Ok(builder)
 }
 
+/// Synchronous `PyO3` client. Methods block the current Python thread
+/// while the underlying async future runs on the shared tokio runtime.
 #[pyclass(name = "AvisoClient", module = "pyaviso._native", skip_from_py_object)]
 pub(crate) struct PyAvisoClient {
     inner: AvisoClient,

@@ -204,7 +204,9 @@ fn a_found_credential_is_refused_for_a_plaintext_address_from_the_file() -> Test
     );
     let _sources = Sources::in_dir(dir.path());
 
-    let error = AvisoClient::builder_from_file().unwrap_err();
+    // The refusal happens at build, against the address the client will use,
+    // so a caller can still override the address before then.
+    let error = AvisoClient::builder_from_file()?.build().unwrap_err();
 
     assert!(matches!(error, ClientError::Auth(_)), "got {error:?}");
     assert!(!error.to_string().contains("from-file"));
@@ -250,5 +252,165 @@ fn a_named_file_supplies_its_own_auth_block() -> TestResult {
         rendered.contains("Bearer"),
         "credential came from the named file: {rendered}"
     );
+    Ok(())
+}
+
+#[test]
+fn a_found_credential_is_refused_when_code_later_points_at_plaintext() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(
+        dir.path(),
+        "base_url: https://aviso.example.org\nauth:\n  bearer_token: from-file\n",
+    );
+    let _sources = Sources::in_dir(dir.path());
+
+    // The file's own address was fine; the override is not. The rule has to
+    // apply to the address the client will actually use.
+    let error = AvisoClient::builder_from_file()?
+        .base_url("http://public.example.org")
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(error, ClientError::Auth(_)), "got {error:?}");
+    assert!(!error.to_string().contains("from-file"));
+    Ok(())
+}
+
+#[test]
+fn a_found_credential_is_refused_when_only_code_supplies_a_plaintext_address() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "auth:\n  bearer_token: from-file\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    let error = AvisoClient::builder_from_file()?
+        .base_url("http://public.example.org")
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(error, ClientError::Auth(_)), "got {error:?}");
+    Ok(())
+}
+
+#[test]
+fn naming_the_credential_after_from_file_lifts_the_plaintext_rule() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "auth:\n  bearer_token: from-file\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    AvisoClient::builder_from_file()?
+        .base_url("http://public.example.org")
+        .auth(std::sync::Arc::new(aviso::auth::Bearer::new("named")?))
+        .build()?;
+    AvisoClient::builder_from_file()?
+        .base_url("http://public.example.org")
+        .anonymous()
+        .build()?;
+    Ok(())
+}
+
+#[test]
+fn a_found_credential_may_still_go_to_loopback_plaintext() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "auth:\n  bearer_token: from-file\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    AvisoClient::builder_from_file()?
+        .base_url("http://127.0.0.1:1")
+        .build()?;
+    Ok(())
+}
+
+#[test]
+fn the_credential_comes_from_the_same_read_as_the_settings() -> TestResult {
+    // Cannot stage a concurrent replace deterministically, so check the
+    // mechanism: discovery is handed the text that was parsed, not the path.
+    // If it reopened the path it would see the second file's token.
+    let dir = tempfile::tempdir()?;
+    write_config(
+        dir.path(),
+        "base_url: https://aviso.example.org\nauth:\n  bearer_token: first\n",
+    );
+    let _sources = Sources::in_dir(dir.path());
+    let loaded = aviso::ClientSettings::read(&dir.path().join("config.yaml"))?;
+    write_config(
+        dir.path(),
+        "base_url: https://aviso.example.org\nauth:\n  bearer_token: second\n",
+    );
+    let mut paths = aviso::auth::DiscoveryPaths::from_env();
+    paths.config_file = Some(loaded.path.clone());
+    paths.config_content = Some(loaded.content.clone());
+
+    let found = aviso::auth::discover_with(&paths)?.expect("credential");
+    let header =
+        tokio::runtime::Runtime::new()?.block_on(found.provider().authorization_header())?;
+
+    assert_eq!(header, "Bearer first", "the snapshot, not the current file");
+    Ok(())
+}
+
+/// A throwaway self-signed certificate, or `None` when `openssl` is not on
+/// the PATH. Enough to prove a PEM named by the file is read and parsed.
+fn self_signed_pem(dir: &Path) -> Option<std::path::PathBuf> {
+    let out = dir.join("ca.pem");
+    let status = std::process::Command::new("openssl")
+        .args([
+            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        ])
+        .args(["-subj", "/CN=aviso-test", "-keyout"])
+        .arg(dir.join("ca.key"))
+        .arg("-out")
+        .arg(&out)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .ok()?;
+    status.success().then_some(out)
+}
+
+#[test]
+fn timeouts_and_certificates_from_the_file_reach_the_builder() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    // Without openssl the certificate half is not exercised; the test still
+    // covers the durations rather than failing on a missing tool.
+    let has_pem = self_signed_pem(dir.path()).is_some();
+    let tls = if has_pem {
+        "tls:\n  ca_bundle: [ca.pem]\n"
+    } else {
+        ""
+    };
+    write_config(
+        dir.path(),
+        &format!(
+            "base_url: https://aviso.example.org\ntimeout: 7s\nheartbeat_interval: 11s\n{tls}"
+        ),
+    );
+    let _sources = Sources::in_dir(dir.path());
+
+    let builder = AvisoClient::builder_from_file()?;
+    let rendered = format!("{builder:?}");
+
+    assert!(rendered.contains("timeout: Some(7s)"), "got {rendered}");
+    assert!(
+        rendered.contains("heartbeat_interval: Some(11s)"),
+        "got {rendered}"
+    );
+    if has_pem {
+        assert!(
+            rendered.contains("extra_root_certs_count: 1"),
+            "got {rendered}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_missing_certificate_named_by_the_file_is_reported() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "tls:\n  ca_bundle: [absent.pem]\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    let error = AvisoClient::builder_from_file().unwrap_err();
+
+    assert!(error.to_string().contains("absent.pem"), "got {error}");
     Ok(())
 }
