@@ -100,6 +100,7 @@ use `--startup-timeout` to bound startup without limiting a healthy stream.
 | `AVISO_TOKEN` | A bearer token. |
 | `AVISO_USERNAME` / `AVISO_PASSWORD` | Basic auth credentials. |
 | `AVISO_CLIENT_CONFIG_FILE` | Path to the config file. |
+| `AVISO_CREDENTIALS_FILE` | Path to the credentials file. |
 | `AVISO_STATE_FILE` | Path to the state file. |
 | `AVISO_LOG` | Logging filter. When set, overrides `-v`/`-vv`. Format: a [`tracing_subscriber`](https://docs.rs/tracing-subscriber) `EnvFilter` directive. |
 | `NO_COLOR` | When set (any value), suppresses ANSI colors in the `--color auto` mode. Per the [no-color.org](https://no-color.org/) convention. |
@@ -120,6 +121,42 @@ Bearer. The five built-in providers are:
 aviso composes the layered settings into whichever provider fits. See
 [Authentication providers](../concepts/auth-providers.md) for when to use each
 one.
+
+### The credentials file
+
+When nothing else supplies a credential, aviso reads
+`~/.config/aviso/credentials.yaml`. Set `AVISO_CREDENTIALS_FILE` to use a
+different path. The file holds one credential and nothing else:
+
+```yaml
+# ~/.config/aviso/credentials.yaml
+bearer:
+  token: your-bearer-token
+```
+
+Or, for Basic authentication:
+
+```yaml
+basic:
+  username: your-username
+  password: your-password
+```
+
+This file is meant for tools that fetch a token and write it out. It is read
+last, so a credential you set with a flag, in the environment, or in the `auth:`
+block of the config file is used instead. A missing file is fine. A file that
+exists but cannot be read is an error, so a typo is reported rather than
+ignored.
+
+It is also the only source that is reread after a 401. A tool that refreshes
+the token in place therefore reaches a running `aviso listen` without a
+restart.
+
+To see which source is in use:
+
+```bash
+aviso config dump | grep -A2 '^auth:'
+```
 
 ### On a 401, aviso retries once
 

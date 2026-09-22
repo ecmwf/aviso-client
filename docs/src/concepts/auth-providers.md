@@ -29,7 +29,9 @@ The CLI checks credentials in this order:
    `AVISO_PASSWORD`.
 3. The config file: `auth.bearer_token`, or `auth.basic` with both `username`
    and `password`.
-4. If none are set, an anonymous connection with no credentials.
+4. The credentials file: `~/.config/aviso/credentials.yaml`, or the path in
+   `AVISO_CREDENTIALS_FILE`.
+5. If none are set, an anonymous connection with no credentials.
 
 Choose one authentication method at a time. Conflicting credential flags are
 rejected. Incomplete environment credentials cause an error rather than silently
@@ -37,8 +39,13 @@ falling back to the file. When a token and a complete username/password pair
 are both in the environment, the token takes precedence. The file rejects a
 configuration containing both methods.
 
-Python clients are anonymous by default. They use environment credentials only
-when you explicitly supply `pyaviso.Env()` as their authentication provider.
+Python clients check the same sources, minus the flags, when you create them
+without an `auth` argument. Pass a provider to choose one yourself, or
+`pyaviso.Anonymous()` to send no credentials at all.
+
+`aviso config dump` reports the source in use under `auth:`, which is the
+quickest way to find out why a credential you expected is not the one being
+sent.
 
 ## What happens on a 401
 
@@ -59,6 +66,10 @@ The CLI turns credentials from its main config file into a fixed `Bearer` or
 `Basic` provider. Editing that file does not give it `ConfigFile` refresh
 behaviour. Restart the CLI to use the changed main configuration.
 
+The credentials file is read through `ConfigFile`, so it is the one source
+that a running listener picks up again after a 401. A tool that rewrites the
+token in place does not need you to restart anything.
+
 `403 Forbidden` usually means the account is not allowed to perform the
 requested operation. Ask the service operator about the needed permission.
 
@@ -78,6 +89,10 @@ is not encryption, so use your service's HTTPS address for credentials.
 
 All five mark the `Authorization` request header as sensitive so the HTTP
 libraries can hide its value in logs.
+
+Python adds `Anonymous`, which is a marker rather than a provider. It carries
+no credential and cannot go into a `Chain`. Use it when credentials exist on
+the machine but must not be sent to the server you are addressing.
 
 ## When you need `ConfigFile`
 
