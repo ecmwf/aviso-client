@@ -501,6 +501,13 @@ class ClientBuilder {
     return *this;
   }
 
+  // Sends `token` as a Bearer credential. An empty token throws from
+  // `build()`.
+  ClientBuilder& bearer_auth(const std::string& token) {
+    aviso_client_builder_bearer_auth(handle_.get(), token.c_str());
+    return *this;
+  }
+
   // Looks for a credential in the environment, then the config file, then
   // the credentials file, and uses the first one found. Finding nothing
   // leaves the client anonymous; an unusable source throws from `build()`.

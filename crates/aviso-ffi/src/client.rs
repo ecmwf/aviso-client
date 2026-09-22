@@ -14,7 +14,7 @@ use std::ptr;
 use std::sync::Arc;
 
 use aviso::NotificationRequest;
-use aviso::auth::Basic;
+use aviso::auth::{Basic, Bearer};
 use serde_json::Value;
 
 use crate::error::{self, OutcomeError};
@@ -250,6 +250,47 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
         };
         match Basic::new(user, pass) {
             Ok(basic) => builder.apply(|b| b.auth(Arc::new(basic))),
+            Err(err) => builder.error = Some(error::map_error(&err)),
+        }
+    });
+}
+
+/// Sets a Bearer token on the builder. A null, non-UTF-8 or empty token is
+/// remembered and reported at build time.
+///
+/// This names the credential explicitly, so it is sent to whatever address
+/// the builder was given, plain http included. Use
+/// `aviso_client_builder_discover_auth` when the token is supplied by the
+/// environment or a file rather than by the caller.
+///
+/// # Safety
+///
+/// `builder` must be a live builder handle from `aviso_client_builder_new`.
+/// `token`, when non-null, must be a NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_client_builder_bearer_auth(
+    builder: *mut AvisoClientBuilder,
+    token: *const c_char,
+) {
+    guard((), || {
+        // SAFETY: the contract above requires `builder` to be a live handle
+        // from `aviso_client_builder_new`; `as_mut` yields `None` for null.
+        let Some(builder) = (unsafe { builder.as_mut() }) else {
+            return;
+        };
+        if builder.error.is_some() {
+            return;
+        }
+        // SAFETY: the contract above requires `token`, when non-null, to be a
+        // NUL-terminated C string.
+        let Some(token) = (unsafe { cstr_opt(token) }) else {
+            builder.error = Some(error::invalid_input(
+                "bearer_auth token must be non-null and valid UTF-8",
+            ));
+            return;
+        };
+        match Bearer::new(token) {
+            Ok(bearer) => builder.apply(|b| b.auth(Arc::new(bearer))),
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
     });
@@ -860,6 +901,59 @@ mod tests {
             assert_eq!(item["status"], "error");
             assert_eq!(item["error"]["kind"], "transport");
         }
+    }
+
+    #[test]
+    fn bearer_auth_sends_the_token_and_is_allowed_on_plain_http() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        let url = CString::new("http://aviso.example.org").expect("cstring");
+        let token = CString::new("explicit-token").expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+
+        unsafe { aviso_client_builder_bearer_auth(builder, token.as_ptr()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        unsafe { aviso_outcome_free(outcome) };
+
+        // Naming the credential is choosing where it goes, so plain http is
+        // not refused the way a discovered credential would be.
+        assert!(
+            !client.is_null(),
+            "an explicit bearer must build on plain http"
+        );
+        let inner = unsafe { &*client };
+        let header = runtime()
+            .block_on(inner.inner.auth().expect("auth set").authorization_header())
+            .expect("header");
+        assert_eq!(header, "Bearer explicit-token");
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn bearer_auth_with_an_empty_token_fails_at_build() {
+        let url = CString::new("https://aviso.example.org").expect("cstring");
+        let token = CString::new("").expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+
+        unsafe { aviso_client_builder_bearer_auth(builder, token.as_ptr()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        assert!(client.is_null(), "an empty token must be reported");
+        unsafe { aviso_outcome_free(outcome) };
+    }
+
+    #[test]
+    fn bearer_auth_with_a_null_token_fails_at_build() {
+        let url = CString::new("https://aviso.example.org").expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+
+        unsafe { aviso_client_builder_bearer_auth(builder, std::ptr::null()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        assert!(unsafe { aviso_outcome_take_client(outcome) }.is_null());
+        unsafe { aviso_outcome_free(outcome) };
     }
 
     #[test]

@@ -16,8 +16,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 
 ## What you can do today
 
-- Build a client from a base URL, with HTTP Basic credentials or with a
-  credential the client finds for itself.
+- Build a client from a base URL, with a Bearer token, HTTP Basic
+  credentials, or a credential the client finds for itself.
 - Publish notifications with `notify`; see [Publishing](./publish.md).
 - Listen to a stream with a callback handler, with filtering and replay; see
   [Listening](./watch.md).
@@ -34,8 +34,20 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 
 ## Credentials
 
-`basic_auth` sets a username and password you already have. When the
-credential is supplied by the environment or by a file instead, call
+When you hold the credential in your code, name it on the builder.
+`bearer_auth` sends a token and `basic_auth` sends a username and password:
+
+```cpp
+aviso::Client client = aviso::ClientBuilder("https://aviso.example.org")
+                           .bearer_auth(token)
+                           .build();
+```
+
+An empty token throws from `build()`. A credential named this way is sent to
+whatever address you gave, plain `http://` included; writing it into the call
+is choosing where it goes.
+
+When the credential is supplied by the environment or by a file instead, call
 `discover_auth` and let the client find it:
 
 ```cpp
@@ -53,7 +65,8 @@ client anonymous. A source that exists but cannot be read throws from
 A credential found this way is not sent to a plain `http://` address unless
 it is loopback, and `build()` throws instead. Nothing in the code named the
 credential, so a mistyped host would otherwise send it in the clear. Use an
-`https` address, or pass the credential yourself with `basic_auth`.
+`https` address, or pass the credential yourself with `bearer_auth` or
+`basic_auth`.
 
 ## A first call
 

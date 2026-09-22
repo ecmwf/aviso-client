@@ -329,6 +329,22 @@ void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
                                      const char *password);
 
 /**
+ * Sets a Bearer token on the builder. A null, non-UTF-8 or empty token is
+ * remembered and reported at build time.
+ *
+ * This names the credential explicitly, so it is sent to whatever address
+ * the builder was given, plain http included. Use
+ * `aviso_client_builder_discover_auth` when the token is supplied by the
+ * environment or a file rather than by the caller.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
+ * `token`, when non-null, must be a NUL-terminated C string.
+ */
+void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder, const char *token);
+
+/**
  * Looks for a credential and uses it if one is found.
  *
  * The search order is the environment, then the `auth:` block of the config
