@@ -367,11 +367,6 @@ pub(crate) fn load_optional(path: &Path) -> Result<ConfigFile> {
 
 #[cfg(test)]
 #[allow(
-    clippy::used_underscore_binding,
-    reason = "the parser keeps the auth block only to make the key known, and \
-              these tests check exactly that it is accepted and discarded"
-)]
-#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     reason = "test code: unwrap/expect on yaml round-trip is the expected diagnostic"

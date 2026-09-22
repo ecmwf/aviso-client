@@ -49,9 +49,10 @@ impl Env {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Config`] if any of the credential env vars is set but its value is
-    /// not valid UTF-8 (`VarError::NotUnicode`). Returns [`ClientError::Auth`] if no usable
-    /// combination of variables is set.
+    /// Returns [`ClientError::Config`] if a consulted variable is set but its value is not
+    /// valid UTF-8 (`VarError::NotUnicode`). Only `AVISO_TOKEN` is consulted when it is set and
+    /// non-empty; the Basic pair is read only after that. Returns [`ClientError::Auth`] if no
+    /// usable combination of variables is set.
     pub fn from_process_env() -> crate::Result<Self> {
         // The token wins when set, so it is read first and the Basic pair is
         // not touched at all in that case. Reading all three up front would

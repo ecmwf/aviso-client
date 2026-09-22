@@ -176,8 +176,10 @@ impl DiscoveryPaths {
 ///
 /// # Errors
 ///
-/// Returns [`ClientError::Auth`] when a source is present but unusable, and
-/// [`ClientError::Config`] when a file exists but cannot be read or parsed.
+/// Returns [`ClientError::Auth`] when the environment is half set, or a config
+/// file sets both credentials. Returns [`ClientError::Config`] when a file
+/// cannot be read or parsed, a variable is not valid UTF-8, or a credential is
+/// present but empty. A source that is simply absent is skipped.
 pub fn discover() -> crate::Result<Option<Discovered>> {
     discover_with(&DiscoveryPaths::from_env())
 }
