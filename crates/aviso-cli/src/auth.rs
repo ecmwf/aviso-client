@@ -101,10 +101,8 @@ pub(crate) fn resolve_provider(
     if let Some(provider) = flag_provider {
         return Ok((Some(provider), Some("flag")));
     }
-    let paths = aviso::auth::DiscoveryPaths {
-        config_file: Some(config_path.to_path_buf()),
-        credentials_file: aviso::auth::DiscoveryPaths::from_env().credentials_file,
-    };
+    let mut paths = aviso::auth::DiscoveryPaths::from_env();
+    paths.config_file = Some(config_path.to_path_buf());
     let found = match base_url {
         Some(url) => aviso::auth::discover_for_url(url, &paths),
         None => aviso::auth::discover_with(&paths),
@@ -115,11 +113,7 @@ pub(crate) fn resolve_provider(
     })?;
     Ok(match found {
         Some(found) => {
-            let label = match found.source() {
-                aviso::auth::CredentialSource::Environment => "environment",
-                aviso::auth::CredentialSource::ConfigFile(_) => "config file",
-                aviso::auth::CredentialSource::CredentialsFile(_) => "credentials file",
-            };
+            let label = found.source().label();
             (Some(found.into_provider()), Some(label))
         }
         None => (None, None),

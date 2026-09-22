@@ -865,28 +865,92 @@ mod tests {
         unsafe { aviso_client_builder_discover_auth(std::ptr::null_mut()) };
     }
 
+    /// Serialises the discovery tests: they set process-wide environment
+    /// variables, which the test harness runs in parallel by default.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Points every credential source at `dir` and restores the previous
+    /// values when dropped, so a variable set on the developer's machine does
+    /// not change what these tests exercise.
+    struct CredentialEnv {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl CredentialEnv {
+        fn pointing_at(dir: &std::path::Path, credentials: Option<&std::path::Path>) -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let names = [
+                "AVISO_TOKEN",
+                "AVISO_USERNAME",
+                "AVISO_PASSWORD",
+                "AVISO_CLIENT_CONFIG_FILE",
+                "AVISO_CREDENTIALS_FILE",
+            ];
+            let saved = names.iter().map(|k| (*k, std::env::var_os(k))).collect();
+            // SAFETY: ENV_LOCK is held, so no other test in this binary is
+            // reading or writing these variables while they are changed.
+            unsafe {
+                for name in ["AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"] {
+                    std::env::remove_var(name);
+                }
+                std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.join("absent-config.yaml"));
+                match credentials {
+                    Some(path) => std::env::set_var("AVISO_CREDENTIALS_FILE", path),
+                    None => {
+                        std::env::set_var(
+                            "AVISO_CREDENTIALS_FILE",
+                            dir.join("absent-credentials.yaml"),
+                        );
+                    }
+                }
+            }
+            Self {
+                _guard: guard,
+                saved,
+            }
+        }
+    }
+
+    impl Drop for CredentialEnv {
+        fn drop(&mut self) {
+            // SAFETY: the lock is still held for the lifetime of this value.
+            unsafe {
+                for (name, value) in &self.saved {
+                    match value {
+                        Some(v) => std::env::set_var(name, v),
+                        None => std::env::remove_var(name),
+                    }
+                }
+            }
+        }
+    }
+
+    fn build_with_discovery(url: &str) -> *mut AvisoClient {
+        let raw_url = CString::new(url).expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(raw_url.as_ptr()) };
+        unsafe { aviso_client_builder_discover_auth(builder) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        unsafe { aviso_outcome_free(outcome) };
+        client
+    }
+
     #[test]
     fn discover_auth_refuses_a_found_credential_for_a_plaintext_address() {
         let dir = tempfile::tempdir().expect("tempdir");
         let credentials = dir.path().join("credentials.yaml");
         std::fs::write(&credentials, "bearer:\n  token: sekrit\n").expect("write");
-        // SAFETY: the process is single-threaded at this point in the test
-        // binary for these two variables; no other test reads them.
-        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", &credentials) };
-        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("absent.yaml")) };
-        unsafe { std::env::remove_var("AVISO_TOKEN") };
-        let url = CString::new("http://aviso.example.org").expect("cstring");
-        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+        let _env = CredentialEnv::pointing_at(dir.path(), Some(&credentials));
 
-        unsafe { aviso_client_builder_discover_auth(builder) };
-        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = build_with_discovery("http://aviso.example.org");
 
-        let client = unsafe { aviso_outcome_take_client(outcome) };
         assert!(
             client.is_null(),
             "a discovered credential must not reach a plaintext address"
         );
-        unsafe { aviso_outcome_free(outcome) };
     }
 
     #[test]
@@ -894,19 +958,22 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let credentials = dir.path().join("credentials.yaml");
         std::fs::write(&credentials, "bearer:\n  token: sekrit\n").expect("write");
-        // SAFETY: as above.
-        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", &credentials) };
-        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("absent.yaml")) };
-        unsafe { std::env::remove_var("AVISO_TOKEN") };
-        let url = CString::new("http://127.0.0.1:8000").expect("cstring");
-        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+        let _env = CredentialEnv::pointing_at(dir.path(), Some(&credentials));
 
-        unsafe { aviso_client_builder_discover_auth(builder) };
-        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = build_with_discovery("http://127.0.0.1:8000");
 
-        let client = unsafe { aviso_outcome_take_client(outcome) };
         assert!(!client.is_null(), "loopback should accept the credential");
-        unsafe { aviso_outcome_free(outcome) };
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn discover_auth_with_no_credential_anywhere_still_builds() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+
+        let client = build_with_discovery("http://aviso.example.org");
+
+        assert!(!client.is_null(), "no credential means nothing to refuse");
         unsafe { aviso_client_free(client) };
     }
 

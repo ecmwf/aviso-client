@@ -217,7 +217,7 @@ pub(crate) fn extract_provider(obj: &Bound<'_, PyAny>) -> PyResult<Arc<dyn AuthP
         return Ok(b.provider());
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
-        "auth must be one of Bearer / Basic / Env / ConfigFile / Chain / Anonymous",
+        "expected one of Bearer / Basic / Env / ConfigFile / Chain",
     ))
 }
 

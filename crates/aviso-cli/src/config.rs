@@ -19,7 +19,7 @@
 //! The CLI never calls `aviso::auth::ConfigFile::from_path`: the
 //! library helper parses an auth-only YAML shape, not the locked
 //! Q3 nested-under-`auth:` block. The CLI parses the auth block
-//! itself (see [`AuthConfig`]) and constructs `aviso::auth::Bearer`
+//! itself and constructs `aviso::auth::Bearer`
 //! or `aviso::auth::Basic` from the parsed values.
 //!
 //! The `auth:` section is OPTIONAL. A config file with no `auth:`
@@ -50,11 +50,12 @@ use crate::paths;
 pub(crate) struct ConfigFile {
     #[serde(default)]
     pub(crate) base_url: Option<String>,
-    #[serde(default)]
-    /// Parsed so a mistyped key is rejected here; the credential is read
-    /// by `aviso::auth::discover_with`.
-    #[allow(dead_code, reason = "see AuthConfig")]
-    pub(crate) auth: Option<AuthConfig>,
+    /// Accepted so `auth:` is a known key under `deny_unknown_fields`. The
+    /// block is parsed by `aviso::auth::discover_with`, which reads it only
+    /// when no higher-priority source supplied a credential, so the value is
+    /// deliberately not kept here.
+    #[serde(default, rename = "auth")]
+    pub(crate) _auth: Option<serde_norway::Value>,
     #[serde(default, with = "humantime_serde::option")]
     pub(crate) timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde::option")]
@@ -65,34 +66,6 @@ pub(crate) struct ConfigFile {
     pub(crate) tls: Option<TlsConfig>,
     #[serde(default)]
     pub(crate) listeners: Vec<ListenerSpec>,
-}
-
-/// `auth:` block. The two flavours are mutually exclusive at the
-/// schema level: the operator picks either `bearer_token` OR `basic`,
-/// never both.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(
-    dead_code,
-    reason = "parsed, not read: the credential itself is read by \
-              aviso::auth::discover_with. Keeping the shape here rejects a \
-              mistyped auth key when the file is parsed, even when a \
-              higher-priority source supplies the credential"
-)]
-pub(crate) struct AuthConfig {
-    #[serde(default)]
-    pub(crate) bearer_token: Option<String>,
-    #[serde(default)]
-    pub(crate) basic: Option<BasicAuthConfig>,
-}
-
-/// `auth.basic:` block.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code, reason = "parsed for validation; see AuthConfig")]
-pub(crate) struct BasicAuthConfig {
-    pub(crate) username: String,
-    pub(crate) password: String,
 }
 
 /// `tls:` block.
@@ -410,7 +383,7 @@ mod tests {
     fn parse_empty_yaml_yields_defaults() {
         let cfg = parse("");
         assert!(cfg.base_url.is_none());
-        assert!(cfg.auth.is_none());
+        assert!(cfg.base_url.is_none());
         assert!(cfg.listeners.is_empty());
     }
 
@@ -436,10 +409,6 @@ listeners:
 "#;
         let cfg = parse(yaml_text);
         assert_eq!(cfg.base_url.as_deref(), Some("https://aviso.example.org"));
-        assert!(cfg.auth.is_some());
-        let auth = cfg.auth.unwrap();
-        assert_eq!(auth.bearer_token.as_deref(), Some("secret"));
-        assert!(auth.basic.is_none());
         assert_eq!(cfg.timeout, Some(Duration::from_secs(30)));
         assert_eq!(cfg.heartbeat_interval, Some(Duration::from_secs(30)));
         assert_eq!(
@@ -458,19 +427,12 @@ listeners:
     }
 
     #[test]
-    fn parse_nested_auth_basic() {
-        let yaml_text = r"
-auth:
-  basic:
-    username: alice
-    password: hunter2
-";
-        let cfg = parse(yaml_text);
-        let auth = cfg.auth.expect("auth present");
-        assert!(auth.bearer_token.is_none());
-        let basic = auth.basic.expect("basic present");
-        assert_eq!(basic.username, "alice");
-        assert_eq!(basic.password, "hunter2");
+    fn parse_accepts_a_nested_auth_block() {
+        // The block's shape is the shared search's concern; this file only
+        // has to accept the key. See aviso::auth::config_file_provider.
+        let cfg = parse("auth:\n  basic:\n    username: alice\n    password: hunter2\n");
+
+        assert!(cfg.listeners.is_empty());
     }
 
     #[test]
@@ -484,13 +446,13 @@ auth:
     }
 
     #[test]
-    fn parse_rejects_unknown_field_inside_auth() {
-        let err = yaml::from_str::<ConfigFile>("auth:\n  bogus_key: 1\n").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("bogus_key") || msg.contains("unknown field"),
-            "error should name the bad field: {msg}"
-        );
+    fn parse_accepts_an_auth_block_it_does_not_interpret() {
+        // A mistyped key inside auth: is reported by the shared search when
+        // the block is actually read, not here, so a command that gets its
+        // credential elsewhere is not failed by an unused block.
+        let cfg = parse("auth:\n  bogus_key: 1\n");
+
+        assert!(cfg.listeners.is_empty());
     }
 
     #[test]

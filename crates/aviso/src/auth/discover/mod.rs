@@ -36,13 +36,17 @@
 //! a caller who writes the credential into the call has already chosen where
 //! it goes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use crate::auth::AuthProvider;
+mod policy;
+mod sources;
 
-use crate::ClientError;
-use crate::auth::{AuthProvider, Basic, Bearer, ConfigFile, Env};
+pub use policy::url_keeps_credentials_private;
+pub use sources::{config_file_provider, credentials_file_provider, env_provider};
+
+use policy::refuse_public_plaintext;
 
 /// Environment variable that overrides the config-file path.
 pub const ENV_CONFIG_FILE: &str = "AVISO_CLIENT_CONFIG_FILE";
@@ -56,6 +60,7 @@ pub const ENV_CREDENTIALS_FILE: &str = "AVISO_CREDENTIALS_FILE";
 /// With three places to look, "I set a token but requests are still anonymous"
 /// is otherwise hard to diagnose.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CredentialSource {
     /// Read from the process environment.
     Environment,
@@ -65,12 +70,28 @@ pub enum CredentialSource {
     CredentialsFile(PathBuf),
 }
 
+impl CredentialSource {
+    /// Short, stable name of the source, for reports and dumps.
+    ///
+    /// Callers use this instead of matching, so adding a source later does
+    /// not break them.
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Environment => "environment",
+            Self::ConfigFile(_) => "config file",
+            Self::CredentialsFile(_) => "credentials file",
+        }
+    }
+}
+
 impl std::fmt::Display for CredentialSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Environment => write!(f, "environment"),
-            Self::ConfigFile(p) => write!(f, "config file {}", p.display()),
-            Self::CredentialsFile(p) => write!(f, "credentials file {}", p.display()),
+            Self::ConfigFile(p) | Self::CredentialsFile(p) => {
+                write!(f, "{} {}", self.label(), p.display())
+            }
         }
     }
 }
@@ -108,6 +129,7 @@ impl Discovered {
 /// their own paths (the `aviso` binary honours a `--config` flag) set the
 /// fields directly so discovery reads the same file the caller does.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct DiscoveryPaths {
     /// Config file whose `auth:` block is consulted. `None` skips that step.
     pub config_file: Option<PathBuf>,
@@ -161,55 +183,11 @@ pub fn discover_for_url(
     refuse_public_plaintext(discover_with(paths)?, base_url)
 }
 
-/// Applies the address rule to an already-completed search.
-///
-/// Separated so the rule can be tested without a process-wide environment.
-fn refuse_public_plaintext(
-    found: Option<Discovered>,
-    base_url: &str,
-) -> crate::Result<Option<Discovered>> {
-    let Some(found) = found else {
-        return Ok(None);
-    };
-    if url_keeps_credentials_private(base_url) {
-        return Ok(Some(found));
-    }
-    Err(ClientError::Auth(format!(
-        "refusing to send the credential from the {} to {base_url}, which is not \
-         https and not a loopback address. Use an https address, or pass the \
-         credential explicitly if you intend to send it in the clear.",
-        found.source()
-    )))
-}
-
-/// True when a credential may travel to this address.
-///
-/// `https` is protected in transit. A loopback address never leaves the
-/// machine, so plaintext is fine there and local development keeps working.
-/// Anything else, including `http://aviso.example.org`, is refused.
-#[must_use]
-pub fn url_keeps_credentials_private(base_url: &str) -> bool {
-    let Ok(parsed) = url::Url::parse(base_url) else {
-        return false;
-    };
-    if parsed.scheme().eq_ignore_ascii_case("https") {
-        return true;
-    }
-    match parsed.host() {
-        Some(url::Host::Domain(name)) => {
-            name.eq_ignore_ascii_case("localhost")
-                || name.to_ascii_lowercase().ends_with(".localhost")
-        }
-        Some(url::Host::Ipv4(addr)) => addr.is_loopback(),
-        Some(url::Host::Ipv6(addr)) => addr.is_loopback(),
-        None => false,
-    }
-}
-
 /// Finds credentials using explicit paths.
 ///
 /// This does not apply the address check in [`discover_for_url`]. Prefer that
-/// function when the address is known.
+/// function when the address is known, so a credential nobody named cannot
+/// travel in the clear.
 ///
 /// # Errors
 ///
@@ -251,108 +229,6 @@ fn resolve(
     Ok(None)
 }
 
-/// Reads the environment step.
-///
-/// Returns `Ok(None)` only when none of the credential variables is set, which
-/// is a genuine "nothing here, try the next place". A partial setting such as
-/// `AVISO_USERNAME` without `AVISO_PASSWORD` is an error: silently dropping to
-/// a file would hand the caller a credential they did not ask for.
-///
-/// # Errors
-///
-/// Returns the error from [`Env::from_process_env`] when a variable is set but
-/// the combination is unusable.
-pub fn env_provider() -> crate::Result<Option<Arc<dyn AuthProvider>>> {
-    match Env::from_process_env() {
-        Ok(env) => Ok(Some(Arc::new(env))),
-        Err(ClientError::Auth(_)) if !any_env_var_set() => Ok(None),
-        Err(other) => Err(other),
-    }
-}
-
-/// Reads the `auth:` block of a config file.
-///
-/// Returns `Ok(None)` when the file does not exist, or exists without an
-/// `auth:` block, or has an `auth:` block with neither credential set. Unknown
-/// keys outside `auth:` are ignored, because the config file belongs to the
-/// `aviso` binary and carries settings this crate does not model.
-///
-/// Valid:
-///
-/// ```yaml
-/// auth:
-///   bearer_token: "abc123"
-/// ```
-///
-/// Invalid, because the two are mutually exclusive:
-///
-/// ```yaml
-/// auth:
-///   bearer_token: "abc123"
-///   basic: { username: "alice", password: "s3cret" }
-/// ```
-///
-/// # Errors
-///
-/// Returns [`ClientError::Config`] when the file cannot be read or parsed, and
-/// [`ClientError::Auth`] when both credentials are set or a value is empty.
-pub fn config_file_provider(path: &Path) -> crate::Result<Option<Arc<dyn AuthProvider>>> {
-    let Some(content) = read_optional(path)? else {
-        return Ok(None);
-    };
-    let doc: ConfigDoc = serde_norway::from_str(&content)
-        .map_err(|e| ClientError::Config(format!("parse config file {}: {e}", path.display())))?;
-    let Some(auth) = doc.auth else {
-        return Ok(None);
-    };
-    match (auth.bearer_token, auth.basic) {
-        (Some(_), Some(_)) => Err(ClientError::Auth(format!(
-            "config file {} sets both auth.bearer_token and auth.basic; keep one",
-            path.display()
-        ))),
-        (Some(token), None) => Ok(Some(Arc::new(Bearer::new(token)?))),
-        (None, Some(basic)) => Ok(Some(Arc::new(Basic::new(basic.username, basic.password)?))),
-        (None, None) => Ok(None),
-    }
-}
-
-/// Reads a credentials file through [`ConfigFile`], so it re-reads on `401`.
-///
-/// Returns `Ok(None)` when the file does not exist. A file that exists must be
-/// usable: an empty or malformed one is an error rather than a silent skip.
-///
-/// # Errors
-///
-/// Returns the error from [`ConfigFile::from_path`].
-pub fn credentials_file_provider(path: &Path) -> crate::Result<Option<Arc<dyn AuthProvider>>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    Ok(Some(Arc::new(ConfigFile::from_path(path)?)))
-}
-
-/// Reads a file, mapping "not found" to `None` and other IO errors to an error.
-fn read_optional(path: &Path) -> crate::Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(ClientError::Config(format!(
-            "read config file {}: {e}",
-            path.display()
-        ))),
-    }
-}
-
-fn any_env_var_set() -> bool {
-    [
-        crate::auth::env::ENV_TOKEN,
-        crate::auth::env::ENV_USERNAME,
-        crate::auth::env::ENV_PASSWORD,
-    ]
-    .iter()
-    .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
-}
-
 fn env_path(key: &str) -> Option<PathBuf> {
     std::env::var_os(key)
         .filter(|value| !value.is_empty())
@@ -363,30 +239,6 @@ fn config_dir() -> Option<PathBuf> {
     directories::UserDirs::new().map(|dirs| dirs.home_dir().join(".config").join("aviso"))
 }
 
-/// Only `auth:` is modelled. The config file carries other settings that this
-/// crate does not read, so unknown keys at the top level are ignored.
-#[derive(Deserialize)]
-struct ConfigDoc {
-    #[serde(default)]
-    auth: Option<AuthBlock>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AuthBlock {
-    #[serde(default)]
-    bearer_token: Option<String>,
-    #[serde(default)]
-    basic: Option<BasicBlock>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BasicBlock {
-    username: String,
-    password: String,
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -395,133 +247,13 @@ struct BasicBlock {
 )]
 mod tests {
     use super::*;
+    use crate::ClientError;
     use tempfile::TempDir;
 
     fn write(dir: &TempDir, name: &str, body: &str) -> PathBuf {
         let path = dir.path().join(name);
         std::fs::write(&path, body).expect("write fixture");
         path
-    }
-
-    #[tokio::test]
-    async fn config_file_bearer_token_is_used() {
-        let dir = TempDir::new().unwrap();
-        let path = write(&dir, "config.yaml", "auth:\n  bearer_token: from-config\n");
-
-        let provider = config_file_provider(&path).unwrap().expect("provider");
-
-        assert_eq!(
-            provider.authorization_header().await.unwrap(),
-            "Bearer from-config"
-        );
-    }
-
-    #[tokio::test]
-    async fn config_file_basic_credentials_are_used() {
-        let dir = TempDir::new().unwrap();
-        let path = write(
-            &dir,
-            "config.yaml",
-            "auth:\n  basic:\n    username: alice\n    password: s3cret\n",
-        );
-
-        let provider = config_file_provider(&path).unwrap().expect("provider");
-
-        assert_eq!(
-            provider.authorization_header().await.unwrap(),
-            "Basic YWxpY2U6czNjcmV0"
-        );
-    }
-
-    #[test]
-    fn config_file_ignores_keys_this_crate_does_not_model() {
-        let dir = TempDir::new().unwrap();
-        let path = write(
-            &dir,
-            "config.yaml",
-            "base_url: https://aviso.example.org\nlisteners: []\nauth:\n  bearer_token: t\n",
-        );
-
-        assert!(config_file_provider(&path).unwrap().is_some());
-    }
-
-    #[test]
-    fn config_file_without_auth_block_is_skipped() {
-        let dir = TempDir::new().unwrap();
-        let path = write(&dir, "config.yaml", "base_url: https://aviso.example.org\n");
-
-        assert!(config_file_provider(&path).unwrap().is_none());
-    }
-
-    #[test]
-    fn missing_config_file_is_skipped() {
-        let dir = TempDir::new().unwrap();
-
-        assert!(
-            config_file_provider(&dir.path().join("absent.yaml"))
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn config_file_with_both_credentials_is_rejected() {
-        let dir = TempDir::new().unwrap();
-        let path = write(
-            &dir,
-            "config.yaml",
-            "auth:\n  bearer_token: t\n  basic:\n    username: alice\n    password: s3cret\n",
-        );
-
-        let error = config_file_provider(&path).unwrap_err();
-
-        assert!(matches!(error, ClientError::Auth(_)), "got {error:?}");
-    }
-
-    #[test]
-    fn config_file_with_unknown_auth_key_is_rejected() {
-        let dir = TempDir::new().unwrap();
-        let path = write(&dir, "config.yaml", "auth:\n  bearer_tokne: typo\n");
-
-        let error = config_file_provider(&path).unwrap_err();
-
-        assert!(matches!(error, ClientError::Config(_)), "got {error:?}");
-    }
-
-    #[tokio::test]
-    async fn credentials_file_is_used_when_present() {
-        let dir = TempDir::new().unwrap();
-        let path = write(
-            &dir,
-            "credentials.yaml",
-            "bearer:\n  token: from-credentials\n",
-        );
-
-        let provider = credentials_file_provider(&path).unwrap().expect("provider");
-
-        assert_eq!(
-            provider.authorization_header().await.unwrap(),
-            "Bearer from-credentials"
-        );
-    }
-
-    #[test]
-    fn missing_credentials_file_is_skipped() {
-        let dir = TempDir::new().unwrap();
-
-        assert!(
-            credentials_file_provider(&dir.path().join("absent.yaml"))
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn malformed_credentials_file_is_rejected_rather_than_skipped() {
-        let dir = TempDir::new().unwrap();
-        let path = write(&dir, "credentials.yaml", "bearer:\n  toke: typo\n");
-
-        assert!(credentials_file_provider(&path).is_err());
     }
 
     #[tokio::test]
@@ -582,38 +314,6 @@ mod tests {
         };
 
         assert!(resolve(None, &paths).unwrap().is_none());
-    }
-
-    #[test]
-    fn https_and_loopback_addresses_keep_a_credential_private() {
-        for url in [
-            "https://aviso.example.org",
-            "https://aviso.example.org:8443/path",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-            "http://[::1]:8000",
-            "http://aviso.localhost:8000",
-        ] {
-            assert!(
-                url_keeps_credentials_private(url),
-                "{url} should be allowed"
-            );
-        }
-    }
-
-    #[test]
-    fn plaintext_remote_addresses_do_not() {
-        for url in [
-            "http://aviso.example.org",
-            "http://10.0.0.5:8000",
-            "http://192.168.1.10",
-            "not a url",
-        ] {
-            assert!(
-                !url_keeps_credentials_private(url),
-                "{url} should be refused"
-            );
-        }
     }
 
     #[test]

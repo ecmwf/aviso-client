@@ -8,13 +8,23 @@
 
 #include "aviso.hpp"
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
 int main() {
   std::cout << "aviso version: " << aviso::version() << '\n';
 
-  // Discovery finds nothing here, so the client stays anonymous and the
+  // Point every credential source at somewhere that holds nothing, so the
+  // result does not depend on what the machine running this has on disk.
+  for (const char* name :
+       {"AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"}) {
+    unsetenv(name);
+  }
+  setenv("AVISO_CLIENT_CONFIG_FILE", "/nonexistent/aviso/config.yaml", 1);
+  setenv("AVISO_CREDENTIALS_FILE", "/nonexistent/aviso/credentials.yaml", 1);
+
+  // Discovery therefore finds nothing, the client stays anonymous, and the
   // builder remains usable.
   aviso::Client client =
       aviso::ClientBuilder("http://127.0.0.1:1").discover_auth().build();
