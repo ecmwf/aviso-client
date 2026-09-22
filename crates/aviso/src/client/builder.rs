@@ -67,7 +67,8 @@ impl AvisoClientBuilder {
     /// nothing; a file that exists but cannot be used is an error. Then the
     /// credential search runs: the environment, the file's `auth:` block, the
     /// credentials file. A credential found that way is not sent to a plain
-    /// http address unless it is loopback.
+    /// http address unless it is loopback; [`Self::build`] checks that
+    /// against the address the client ends up with, however it was set.
     ///
     /// Every setter still works on the result and replaces what the file
     /// said, so the precedence is code over file with nothing else to learn:
@@ -88,8 +89,9 @@ impl AvisoClientBuilder {
     ///
     /// Returns [`ClientError::Config`] when the file exists but cannot be read
     /// or parsed, or a certificate it names cannot be loaded, and
-    /// [`ClientError::Auth`] when a credential source is present but unusable
-    /// or a found credential may not travel to the configured address.
+    /// [`ClientError::Auth`] when a credential source is present but
+    /// unusable. The plaintext-address refusal is reported by
+    /// [`Self::build`], not here.
     pub fn from_file() -> crate::Result<Self> {
         let mut paths = crate::auth::DiscoveryPaths::from_env();
         let loaded = super::settings::ClientSettings::read_default(paths.config_file.as_deref())?;
@@ -329,6 +331,10 @@ impl AvisoClientBuilder {
     /// Returns [`crate::ClientError::Config`] when `base_url` is missing, is not a
     /// valid URL, or uses a scheme other than HTTP or HTTPS. Also returned when
     /// the underlying `reqwest::Client` cannot be built.
+    ///
+    /// Returns [`crate::ClientError::Auth`] when the credential was found by
+    /// [`Self::from_file`] rather than named with [`Self::auth`], and
+    /// `base_url` is plain http to an address other than loopback.
     pub fn build(self) -> crate::Result<AvisoClient> {
         let raw = self
             .base_url

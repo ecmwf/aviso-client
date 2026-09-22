@@ -97,6 +97,11 @@ read, or that has a mistyped key inside a section the client reads, raises
 `pyaviso.ConfigError`. Relative paths under `tls.ca_bundle` are resolved
 against the file's own directory, not the working directory.
 
+The plaintext rule above still applies: a credential the file supplied is
+refused for a plain `http://` address that is not loopback, whether that
+address came from the file or from a `base_url` argument here. Pass `auth`
+yourself to lift it.
+
 `AsyncAvisoClient.from_file` takes the same arguments.
 
 The rest of this page covers naming a source yourself, which is what you want

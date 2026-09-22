@@ -90,8 +90,11 @@ aviso::Client client = aviso::ClientBuilder::from_file()
 ```
 
 A missing default file sets nothing. `from_file(path)` reads a specific file,
-which must exist. Either way, a file that cannot be read, or a found
-credential that may not travel to the file's address, throws from `build()`.
+which must exist. Either way, a file that cannot be read throws from
+`build()`, and so does a found credential paired with a plain `http://`
+address that is not loopback, whether the address came from the file or from
+a later `base_url` call. Naming the credential with `bearer_auth` or
+`basic_auth` lifts that.
 
 ## A first call
 
