@@ -44,6 +44,10 @@ add_aviso_example(basics 03_listen)
 add_aviso_example(basics 04_publish_many)
 add_aviso_example(basics 05_filter)
 add_aviso_example(basics 06_publish_polygon)
+add_aviso_example(resilience 01_resume_from_sequence)
+add_aviso_example(resilience 02_replay_only)
+add_aviso_example(resilience 03_error_handling)
+add_aviso_example(resilience 04_stop_from_outside)
 
 # The flat examples that predate the groups; removed once the groups are in.
 add_aviso_example(. schema_smoke)
