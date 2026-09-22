@@ -108,7 +108,7 @@ the engine neutralises every `{{ notification.* }}` value for that place:
 
 | Rendered text is | Notification values are |
 |---|---|
-| a `command:` string | quoted for the shell context they land in: wrapped in single quotes when bare, `'` escaped inside single quotes, and backslash, `$`, backtick and `"` escaped inside double quotes. The shell reads the value as one literal argument. See [Command trigger](./command.md#notification-values-are-data-never-code). |
+| a `command:` string | quoted for the shell context they land in: wrapped in single quotes when bare, `'` escaped inside single quotes, and backslash, `$`, backtick and `"` escaped inside double quotes. The shell reads the value as one literal argument. This covers a placeholder that is part of a command word; the [Command trigger](./command.md#notification-values-are-data-never-code) page lists the places it does not cover. |
 | a webhook `url:` | percent-encoded (RFC 3986 unreserved characters kept). A value cannot add a path segment, a query parameter, or a host. |
 | a header value or a body | inserted as written. You supply the encoding around the value, for example the quotes of a JSON string. |
 

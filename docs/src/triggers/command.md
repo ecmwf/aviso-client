@@ -39,9 +39,8 @@ the shell command itself (`command: "DATA=$HOME/aviso ./run.sh"`).
 The command string is yours. The identifier and payload values that get
 substituted into it are not: they were written by whoever published the
 notification, and on a shared server that is often someone else. So the engine
-never lets a value change what the command does. Every
-`{{ notification.* }}` value is quoted for the place it lands in, and the shell
-reads it as one literal argument whatever it contains:
+quotes every `{{ notification.* }}` value for the place it lands in, and the
+shell reads it as one literal argument whatever it contains:
 
 | You write | The shell sees for value `a'b$(x)` |
 |---|---|
@@ -51,13 +50,22 @@ reads it as one literal argument whatever it contains:
 
 In each case `run` receives exactly `a'b$(x)`. A value cannot add a second
 command, redirect output, or run `$(...)`. Plain values look the way they always
-did: `{{ notification.sequence }}` gives `run '42'`, and `run` sees `42`.
+did: `{{ notification.sequence }}` gives `run '42'`, and `run` sees `42`. An
+empty value is one empty argument. A `#` comment is recognised, so an apostrophe
+in a comment does not count as an opening quote.
+
+This holds when the placeholder is part of a command word: bare, inside single
+quotes, or inside double quotes. It does not hold everywhere the shell can read
+text. Do not put a `{{ notification.* }}` placeholder inside backticks, inside
+`$( )` that is itself inside double quotes, in the body of a here-document, or
+in a string you pass to `eval`. In those places use the `AVISO_*` environment
+variables below instead, with the usual double quotes around them.
 
 `{{ env.* }}` values are yours, so they are inserted as written. If you want one
 to expand into several arguments, it still can.
 
-The `AVISO_*` environment variables (below) are the other safe route and often
-the simpler one: the shell does the quoting and the command string stays short.
+The `AVISO_*` environment variables are the other safe route and often the
+simpler one: the shell does the quoting and the command string stays short.
 
 ## Template rendering on the command string
 
@@ -109,11 +117,12 @@ This means you can write commands as either:
 command: "ingest {{ notification.event_type }} {{ notification.sequence }}"
 
 # Style B: env vars (often shorter and easier to escape)
-command: "ingest $AVISO_EVENT_TYPE $AVISO_SEQUENCE"
+command: "ingest \"$AVISO_EVENT_TYPE\" \"$AVISO_SEQUENCE\""
 ```
 
-Both produce the same result and both are safe against a hostile value. Style B
-keeps the command string shorter.
+Both pass each value as one argument, whatever it contains. Style B keeps the
+command string shorter. Quote the variables, as here; an unquoted `$AVISO_...`
+is split on spaces and expanded as a glob by the shell.
 
 ## Output capture
 

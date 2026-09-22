@@ -218,9 +218,11 @@ impl Trigger {
     /// `run '{{ notification.x }}'` and `run "{{ notification.x }}"` all
     /// pass the value to `run` as one literal argument, whatever it
     /// contains. A value cannot add a command, redirect output, or
-    /// expand `$(...)`. `{{ env.* }}` values are the operator's own and
-    /// are inserted as written. The `AVISO_*` environment variables are
-    /// the simplest way to reach the notification from a script.
+    /// expand `$(...)`. This covers a placeholder that is part of a
+    /// command word. It does not cover backticks, `$( )` inside double
+    /// quotes, here-document bodies, or text passed to `eval`; use the
+    /// `AVISO_*` environment variables there. `{{ env.* }}` values are
+    /// the operator's own and are inserted as written.
     ///
     /// # Environment variable injection
     ///
