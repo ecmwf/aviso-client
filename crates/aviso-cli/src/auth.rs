@@ -88,6 +88,10 @@ pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'stat
 /// is about to make a request: `config dump` must be able to report
 /// a refused source rather than fail on it.
 ///
+/// `config_content` is the text the config file was already parsed
+/// from, when it exists, so the `auth:` block is read from the same
+/// snapshot as `base_url` and is never a second read of the path.
+///
 /// # Errors
 ///
 /// Propagates a source that exists but cannot be used: a half-set
@@ -96,12 +100,16 @@ pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'stat
 pub(crate) fn resolve_provider(
     flag_provider: Option<Arc<dyn AuthProvider>>,
     config_path: &Path,
+    config_content: Option<String>,
 ) -> Result<SelectedProvider> {
     if let Some(provider) = flag_provider {
         return Ok((Some(provider), Some("flag")));
     }
     let mut paths = aviso::auth::DiscoveryPaths::from_env();
     paths.config_file = Some(config_path.to_path_buf());
+    // The bytes the rest of the configuration was parsed from, so the
+    // credential cannot come from a newer file than the server address.
+    paths.config_content = config_content;
     let found = aviso::auth::discover_with(&paths).map_err(|e| match e {
         ClientError::Auth(reason) => crate::exit::usage_error(reason),
         other => anyhow::Error::from(other),

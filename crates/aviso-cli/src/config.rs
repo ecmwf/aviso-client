@@ -205,8 +205,9 @@ pub(crate) fn resolve(
         };
         Sourced { value, source }
     };
-    let file = load_optional(&config_path.value)
+    let loaded = load_optional(&config_path.value)
         .with_context(|| format!("at: {}", config_path.value.display()))?;
+    let file = loaded.parsed;
 
     let state_path = if let Some(p) = cli_state_file {
         Sourced {
@@ -265,7 +266,7 @@ pub(crate) fn resolve(
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
     let (auth_provider, auth_source) =
-        cli_auth::resolve_provider(flag_provider, &config_path.value)?;
+        cli_auth::resolve_provider(flag_provider, &config_path.value, loaded.content)?;
 
     Ok(Resolved {
         config_path,
@@ -356,23 +357,42 @@ fn read_env(name: &str) -> Result<Option<String>> {
 /// (operating without a config file is supported; flag and env
 /// overrides cover the common case). All other I/O errors and any
 /// YAML parse error surface verbatim.
-pub(crate) fn load_optional(path: &Path) -> Result<ConfigFile> {
+/// A parsed config file together with the exact text it was parsed from.
+///
+/// The text is kept so the credential search can read the `auth:` block from
+/// the same bytes as every other setting. Reopening the path could see a
+/// replaced file and pair a fresh credential with a stale server address.
+pub(crate) struct LoadedConfig {
+    pub(crate) parsed: ConfigFile,
+    /// `None` when the file was absent.
+    pub(crate) content: Option<String>,
+}
+
+pub(crate) fn load_optional(path: &Path) -> Result<LoadedConfig> {
     // `Path::exists` reports false for a dangling symlink and for a path the
     // process may not inspect, so an operator's broken `--config` would look
     // like "no config" and be silently ignored. Ask for the directory entry
     // and treat only a genuinely missing one as absent.
     match std::fs::symlink_metadata(path) {
         Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ConfigFile::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LoadedConfig {
+                parsed: ConfigFile::default(),
+                content: None,
+            });
+        }
         Err(e) => {
             return Err(e).with_context(|| format!("read config file: {}", path.display()));
         }
     }
-    let bytes =
-        std::fs::read(path).with_context(|| format!("read config file: {}", path.display()))?;
-    let cfg: ConfigFile = yaml::from_slice(&bytes)
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("read config file: {}", path.display()))?;
+    let parsed: ConfigFile = yaml::from_str(&content)
         .with_context(|| format!("parse config file: {}", path.display()))?;
-    Ok(cfg)
+    Ok(LoadedConfig {
+        parsed,
+        content: Some(content),
+    })
 }
 
 #[cfg(test)]
@@ -479,7 +499,9 @@ listeners:
 
     #[test]
     fn load_optional_returns_default_when_file_absent() {
-        let cfg = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test")).unwrap();
+        let cfg = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test"))
+            .unwrap()
+            .parsed;
         assert!(cfg.base_url.is_none());
     }
 

@@ -73,7 +73,24 @@ pub fn config_file_provider(path: &Path) -> crate::Result<Option<Arc<dyn AuthPro
     let Some(content) = read_optional(path)? else {
         return Ok(None);
     };
-    let doc: ConfigDoc = serde_norway::from_str(&content)
+    config_content_provider(&content, path)
+}
+
+/// Reads the `auth:` block from config-file content that is already in hand.
+///
+/// A caller that has parsed the file for its other settings passes the same
+/// bytes here, so the credential and the rest of the configuration come from
+/// one read. Reopening the path could see a newer file and pair a fresh
+/// credential with a stale server address. `path` is only used in messages.
+///
+/// # Errors
+///
+/// As [`config_file_provider`], minus the read failures.
+pub fn config_content_provider(
+    content: &str,
+    path: &Path,
+) -> crate::Result<Option<Arc<dyn AuthProvider>>> {
+    let doc: ConfigDoc = serde_norway::from_str(content)
         .map_err(|e| ClientError::Config(format!("parse config file {}: {e}", path.display())))?;
     let Some(auth) = doc.auth else {
         return Ok(None);

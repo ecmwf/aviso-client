@@ -44,7 +44,9 @@ mod policy;
 mod sources;
 
 pub use policy::{is_public_plaintext, url_keeps_credentials_private, url_without_userinfo};
-pub use sources::{config_file_provider, credentials_file_provider, env_provider};
+pub use sources::{
+    config_content_provider, config_file_provider, credentials_file_provider, env_provider,
+};
 
 use policy::refuse_public_plaintext;
 
@@ -147,6 +149,11 @@ impl Discovered {
 pub struct DiscoveryPaths {
     /// Config file whose `auth:` block is consulted. `None` skips that step.
     pub config_file: Option<PathBuf>,
+    /// The config file's content, when the caller has already read it. Set
+    /// this so the credential comes from the same bytes as the caller's other
+    /// settings rather than from a second read of the path, which could see a
+    /// replaced file. `config_file` is still used for messages.
+    pub config_content: Option<String>,
     /// Credentials file. `None` skips that step.
     pub credentials_file: Option<PathBuf>,
 }
@@ -166,6 +173,7 @@ impl DiscoveryPaths {
         Self {
             config_file: env_path(ENV_CONFIG_FILE)
                 .or_else(|| dir.as_ref().map(|d| d.join("config.yaml"))),
+            config_content: None,
             credentials_file: env_path(ENV_CREDENTIALS_FILE)
                 .or_else(|| dir.as_ref().map(|d| d.join("credentials.yaml"))),
         }
@@ -250,7 +258,10 @@ fn resolve(
         }));
     }
     if let Some(path) = paths.config_file.as_deref()
-        && let Some(provider) = config_file_provider(path)?
+        && let Some(provider) = match paths.config_content.as_deref() {
+            Some(content) => config_content_provider(content, path)?,
+            None => config_file_provider(path)?,
+        }
     {
         return Ok(Some(Discovered {
             provider,
@@ -309,6 +320,7 @@ mod tests {
                 "credentials.yaml",
                 "bearer:\n  token: from-credentials\n",
             )),
+            ..DiscoveryPaths::default()
         };
 
         let found = resolve(None, &paths).unwrap().expect("credential");
@@ -330,6 +342,7 @@ mod tests {
                 "credentials.yaml",
                 "bearer:\n  token: from-credentials\n",
             )),
+            ..DiscoveryPaths::default()
         };
 
         let found = resolve(None, &paths).unwrap().expect("credential");
@@ -344,12 +357,34 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn supplied_content_is_used_instead_of_rereading_the_path() {
+        let dir = TempDir::new().unwrap();
+        // The file on disk now says one thing; the caller's snapshot says
+        // another. The snapshot must win, or a replaced file could pair a
+        // new credential with settings parsed from the old one.
+        let path = write(&dir, "config.yaml", "auth:\n  bearer_token: on-disk-now\n");
+        let paths = DiscoveryPaths {
+            config_file: Some(path),
+            config_content: Some("auth:\n  bearer_token: from-snapshot\n".to_string()),
+            ..DiscoveryPaths::default()
+        };
+
+        let found = resolve(None, &paths).unwrap().expect("credential");
+
+        assert_eq!(
+            found.provider().authorization_header().await.unwrap(),
+            "Bearer from-snapshot"
+        );
+    }
+
     #[test]
     fn nothing_anywhere_leaves_the_client_anonymous() {
         let dir = TempDir::new().unwrap();
         let paths = DiscoveryPaths {
             config_file: Some(dir.path().join("absent-config.yaml")),
             credentials_file: Some(dir.path().join("absent-credentials.yaml")),
+            ..DiscoveryPaths::default()
         };
 
         assert!(resolve(None, &paths).unwrap().is_none());
@@ -365,6 +400,7 @@ mod tests {
                 "credentials.yaml",
                 "bearer:\n  token: secret\n",
             )),
+            ..DiscoveryPaths::default()
         };
 
         let found = resolve(None, &paths).unwrap();
@@ -383,6 +419,7 @@ mod tests {
         let paths = DiscoveryPaths {
             config_file: None,
             credentials_file: Some(dir.path().join("absent.yaml")),
+            ..DiscoveryPaths::default()
         };
 
         let found = resolve(None, &paths).unwrap();
