@@ -24,10 +24,13 @@ int main() {
   setenv("AVISO_CLIENT_CONFIG_FILE", "/nonexistent/aviso/config.yaml", 1);
   setenv("AVISO_CREDENTIALS_FILE", "/nonexistent/aviso/credentials.yaml", 1);
 
-  // Discovery therefore finds nothing, the client stays anonymous, and the
-  // builder remains usable.
-  aviso::Client client =
-      aviso::ClientBuilder("http://127.0.0.1:1").discover_auth().build();
+  // Discovery therefore finds nothing, so the explicit token is what the
+  // client ends up with. Calling both also makes the linker check that the
+  // packaged library exports both entry points.
+  aviso::Client client = aviso::ClientBuilder("http://127.0.0.1:1")
+                             .bearer_auth("smoke-token")
+                             .discover_auth()
+                             .build();
   const std::string malformed_identifier = R"(["not-an-object"])";
 
   bool blocking_rejected = false;
