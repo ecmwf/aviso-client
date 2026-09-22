@@ -37,12 +37,16 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
     password: *const c_char,
 ) {
     guard((), || {
+        // SAFETY: the contract above requires `builder` to be a live handle
+        // from `aviso_client_builder_new`; `as_mut` yields `None` for null.
         let Some(builder) = (unsafe { builder.as_mut() }) else {
             return;
         };
         if builder.error.is_some() {
             return;
         }
+        // SAFETY: the contract above requires each of `username` and
+        // `password`, when non-null, to be a NUL-terminated C string.
         let (Some(user), Some(pass)) =
             (unsafe { cstr_opt(username) }, unsafe { cstr_opt(password) })
         else {

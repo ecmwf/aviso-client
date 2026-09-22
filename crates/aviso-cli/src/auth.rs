@@ -106,10 +106,18 @@ pub(crate) fn resolve_provider(
         return Ok((Some(provider), Some("flag")));
     }
     let mut paths = aviso::auth::DiscoveryPaths::from_env();
-    paths.config_file = Some(config_path.to_path_buf());
-    // The bytes the rest of the configuration was parsed from, so the
-    // credential cannot come from a newer file than the server address.
-    paths.config_content = config_content;
+    // The credential must come from the same snapshot as every other
+    // setting. When the file was read, hand over its text; when it was
+    // absent at that moment, skip the config tier rather than reopen the
+    // path, which could see a file created since and pair its credential
+    // with settings parsed from nothing.
+    match config_content {
+        Some(content) => {
+            paths.config_file = Some(config_path.to_path_buf());
+            paths.config_content = Some(content);
+        }
+        None => paths.config_file = None,
+    }
     let found = aviso::auth::discover_with(&paths).map_err(|e| match e {
         ClientError::Auth(reason) => crate::exit::usage_error(reason),
         other => anyhow::Error::from(other),
@@ -131,6 +139,89 @@ pub(crate) fn resolve_provider(
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_absent_snapshot_does_not_reopen_a_config_file_that_appeared_later() {
+        // The file was absent when the configuration was loaded, so the
+        // snapshot is None. A file written since must not supply the
+        // credential, because every other setting came from the absent one.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, "auth:\n  bearer_token: appeared-later\n").expect("write");
+        let _isolate = IsolatedSources::new(dir.path());
+
+        let (provider, source) = resolve_provider(None, &path, None).expect("resolve");
+
+        assert!(provider.is_none(), "the later file must not be read");
+        assert!(source.is_none());
+    }
+
+    #[test]
+    fn a_present_snapshot_is_used_even_if_the_file_changed_since() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, "auth:\n  bearer_token: on-disk-now\n").expect("write");
+        let _isolate = IsolatedSources::new(dir.path());
+        let snapshot = "auth:\n  bearer_token: from-snapshot\n".to_string();
+
+        let (provider, source) = resolve_provider(None, &path, Some(snapshot)).expect("resolve");
+
+        assert!(provider.is_some());
+        assert_eq!(source, Some("config file"));
+    }
+
+    /// Points the environment tiers at nothing for the duration of a test.
+    /// Serialised, because the process environment is shared.
+    struct IsolatedSources {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl IsolatedSources {
+        fn new(dir: &Path) -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let names = [
+                "AVISO_TOKEN",
+                "AVISO_USERNAME",
+                "AVISO_PASSWORD",
+                "AVISO_CREDENTIALS_FILE",
+            ];
+            let saved = names.iter().map(|k| (*k, std::env::var_os(k))).collect();
+            // SAFETY: ENV_LOCK is held, so no other test in this binary reads
+            // or writes these variables while they are changed.
+            unsafe {
+                for name in &names[..3] {
+                    std::env::remove_var(name);
+                }
+                std::env::set_var(
+                    "AVISO_CREDENTIALS_FILE",
+                    dir.join("absent-credentials.yaml"),
+                );
+            }
+            Self {
+                _guard: guard,
+                saved,
+            }
+        }
+    }
+
+    impl Drop for IsolatedSources {
+        fn drop(&mut self) {
+            // SAFETY: the lock is still held for the lifetime of this value.
+            unsafe {
+                for (name, value) in &self.saved {
+                    match value {
+                        Some(v) => std::env::set_var(name, v),
+                        None => std::env::remove_var(name),
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn flag_token_yields_bearer_provider() {
