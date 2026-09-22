@@ -10,12 +10,18 @@ SPDX-License-Identifier: Apache-2.0
 checks their results. The CI `e2e` job runs it inside the CI image on the
 compose network, after the Python and Rust suites.
 
-It runs `schema_smoke`, `publish`, and `async` directly, and drives the
-watch-only `watch` and `trigger` examples by publishing repeatedly until each
-collects enough notifications and exits on its own. Settings come from the
-environment: `AVISO_BASE_URL`, `AVISO_USERNAME`, `AVISO_PASSWORD` (defaults: the
-e2e stack's `aviso-server` and the producer account) and `BUILD_DIR` (default
-`build/cpp`).
+It runs the request-only examples (`01_schema`, `02_publish`,
+`04_publish_many`, `06_publish_polygon`, `03_error_handling`, the two `async/`
+ones, and `02_replay_only`) directly, and drives every listening example by
+publishing repeatedly until it exits on its own. The resume example runs
+twice, and the second run must report that it resumed after the position the
+first one saved. One listener runs with a rejected credential and must exit
+non-zero, which proves a failed watch is visible in the exit code and not
+only on stderr. Settings come from the environment:
+`AVISO_BASE_URL`, `AVISO_USERNAME`, `AVISO_PASSWORD` (defaults: the e2e stack's
+`aviso-server` and the producer account) and `BUILD_DIR` (default `build/cpp`).
+The aviso config and credentials files are pointed at nothing, so a run does
+not depend on what the host has in `~/.config/aviso`.
 
 Run it locally against the stack:
 

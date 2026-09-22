@@ -1,50 +1,51 @@
 #!/usr/bin/env bash
-
 # SPDX-FileCopyrightText: 2026 European Centre for Medium-Range Weather Forecasts (ECMWF)
 # SPDX-License-Identifier: Apache-2.0
 
-# Runs the C++ examples against a live aviso-server and checks their results.
+# Runs every C++ example against the real e2e stack.
 #
-# Expects the server reachable at AVISO_BASE_URL (default the e2e stack's
-# aviso-server) with the producer account, and the examples already built in
-# BUILD_DIR (default build/cpp). Used by the e2e CI job and runnable locally
-# against `tests/e2e/shared/stack.sh up`:
-#
-#   cargo build -p aviso-ffi
-#   cmake -S examples/cpp -B build/cpp -DAVISO_FFI_LIB_DIR="$PWD/target/debug"
-#   cmake --build build/cpp
-#   AVISO_BASE_URL=http://localhost:8000 bash tests/e2e/cpp/run_examples.sh
+# Examples that only make requests run directly. Examples that listen are
+# driven: started in the background, fed notifications with 02_publish until
+# they stop on their own, and failed if they have not stopped after a bounded
+# number of publishes. Each listener runs in its own scratch directory so the
+# files some of them write (logs, the resume position) do not leak between
+# runs or into the checkout.
+
 set -euo pipefail
 
 BUILD_DIR="$(cd "${BUILD_DIR:-build/cpp}" && pwd)"
 export AVISO_BASE_URL="${AVISO_BASE_URL:-http://aviso-server:8000}"
 export AVISO_USERNAME="${AVISO_USERNAME:-producer-user}"
 export AVISO_PASSWORD="${AVISO_PASSWORD:-producer-pass}"
+# The examples read the aviso config file first. Point it and the
+# credentials file at nothing so the run does not depend on the host.
+export AVISO_CLIENT_CONFIG_FILE="${AVISO_CLIENT_CONFIG_FILE:-/nonexistent/aviso-e2e/config.yaml}"
+export AVISO_CREDENTIALS_FILE="${AVISO_CREDENTIALS_FILE:-/nonexistent/aviso-e2e/credentials.yaml}"
 
-# Run from a scratch directory so example output (the trigger's log file) does
-# not land in the checkout; clean it up on exit.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 cd "$work"
 
-echo "== schema_smoke ==" && "$BUILD_DIR/schema_smoke"
-echo "== publish ==" && "$BUILD_DIR/publish"
-echo "== publish_many ==" && "$BUILD_DIR/publish_many"
-echo "== async ==" && "$BUILD_DIR/async"
+# Request-only examples: run, and the exit code is the verdict.
+for name in 01_schema 02_publish 04_publish_many 06_publish_polygon 03_error_handling 01_basic 02_fan_out; do
+  echo "== $name =="
+  "$BUILD_DIR/$name"
+done
 
-# Drives a watch-only example: start it, then publish repeatedly until it has
-# collected enough notifications and exits on its own (it stops after a fixed
-# count). Bounded so a missed connect cannot hang the job.
+# Replay-only reads history and ends by itself. Something must be there to
+# read, which the publishes above guarantee.
+echo "== 02_replay_only =="
+"$BUILD_DIR/02_replay_only"
+
 drive() {
   local name="$1"
-  # Keep the output file under $work so the EXIT trap cleans it up.
   local out="$work/$name.out"
   "$BUILD_DIR/$name" >"$out" 2>&1 &
   local pid=$!
   local i
   for i in $(seq 1 40); do
     kill -0 "$pid" 2>/dev/null || break
-    "$BUILD_DIR/publish" >/dev/null 2>&1 || true
+    "$BUILD_DIR/02_publish" >/dev/null 2>&1 || true
     sleep 0.5
   done
   if kill -0 "$pid" 2>/dev/null; then
@@ -69,7 +70,29 @@ drive() {
   fi
 }
 
-echo "== watch ==" && drive watch
-echo "== trigger ==" && drive trigger
+# 05_filter wants the date 02_publish sends, so driving it is enough.
+# 04_stop_from_outside ends on its own timer; the publishes give it something
+# to print meanwhile.
+for name in 03_listen 05_filter 04_stop_from_outside 01_echo 02_log 03_command 04_webhook 05_multiple; do
+  echo "== $name =="
+  drive "$name"
+done
+
+# A listener whose watch fails must say so through its exit code. Without
+# this check a handler that ignored on_end() would pass every run above.
+echo "== 03_listen with a rejected credential (must fail) =="
+if AVISO_PASSWORD=wrong timeout 30 "$BUILD_DIR/03_listen"; then
+  echo "FAIL: a rejected credential exited 0" >&2
+  exit 1
+fi
+
+# Resume is the one that needs two runs: the second must pick up after the
+# position the first saved, which is what the file in $work carries across.
+echo "== 01_resume_from_sequence (first run) =="
+drive 01_resume_from_sequence
+test -s resume.seq || { echo "FAIL: no position saved" >&2; exit 1; }
+echo "== 01_resume_from_sequence (second run, resuming) =="
+drive 01_resume_from_sequence | tee resume2.out
+grep -q '^resuming after #' resume2.out || { echo "FAIL: second run did not resume" >&2; exit 1; }
 
 echo "C++ examples e2e: OK"
