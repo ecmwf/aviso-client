@@ -151,6 +151,14 @@ Declare the loop complete only when ALL of the following hold, checked against a
 
    `unresolved` MUST be `0` and `more` MUST be `false`. A non-zero `unresolved` means you replied without resolving, or a new thread arrived: re-enter the loop. If `more` is `true` the PR has more than 100 threads; page through with `after: <cursor>` (the `endCursor` from the output) and sum before trusting the count.
 
+   **Replying does not resolve a thread, and the bot cannot resolve an outdated one.** The bot marks its own threads resolved when it sees the fix on the lines it anchored to. If your fix moved or deleted those lines, the thread becomes `isOutdated: true` and the bot re-reports it as open in every later review, forever, however many times you reply. After each fix commit, list unresolved threads with `isOutdated` included; for every one whose finding is genuinely addressed, post a short reply naming the fixing commit and then resolve it yourself:
+
+   ```bash
+   gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<PRRT_id>"}) { thread { isResolved } } }'
+   ```
+
+   The thread id is the `id` field on the `reviewThreads` node. Do this in the same step as the reply, not later: an unresolved outdated thread is the single most common way this loop fails to terminate.
+
 The loop terminates on these signals, not on a fixed count and not on "I already fixed the comments". A single post-fix round that meets all three conditions is enough; no extra confirmation pass beyond it.
 
 ### Rejection discipline
