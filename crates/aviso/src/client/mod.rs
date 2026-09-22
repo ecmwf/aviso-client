@@ -32,12 +32,14 @@ use crate::state::{ResumeKey, StateStore};
 
 mod builder;
 mod helpers;
+mod settings;
 mod watch_spawn;
 
 pub use builder::AvisoClientBuilder;
 pub(crate) use helpers::{
     parse_json_response, parse_json_response_optional, validate_path_segment,
 };
+pub use settings::ClientSettings;
 pub(crate) use watch_spawn::{compute_resume_key, decrement_active_key, increment_active_key};
 
 type ActiveResumeKeys = Arc<Mutex<HashMap<ResumeKey, usize>>>;
@@ -199,6 +201,16 @@ impl AvisoClient {
     /// [`AvisoClientBuilder::build`].
     pub fn builder() -> AvisoClientBuilder {
         AvisoClientBuilder::default()
+    }
+
+    /// Starts a builder from the default config file and a discovered
+    /// credential. See [`AvisoClientBuilder::from_file`].
+    ///
+    /// # Errors
+    ///
+    /// As [`AvisoClientBuilder::from_file`].
+    pub fn builder_from_file() -> crate::Result<AvisoClientBuilder> {
+        AvisoClientBuilder::from_file()
     }
 
     /// Returns the normalized base URL.

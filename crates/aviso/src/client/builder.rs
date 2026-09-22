@@ -53,6 +53,101 @@ impl std::fmt::Debug for AvisoClientBuilder {
 }
 
 impl AvisoClientBuilder {
+    /// Starts from the settings in the default config file, and finds a
+    /// credential the same way the `aviso` binary does.
+    ///
+    /// Reads `~/.config/aviso/config.yaml`, or the file named in
+    /// `AVISO_CLIENT_CONFIG_FILE`, for `base_url`, `timeout`,
+    /// `heartbeat_interval` and `tls`. A missing file is fine and sets
+    /// nothing; a file that exists but cannot be used is an error. Then the
+    /// credential search runs: the environment, the file's `auth:` block, the
+    /// credentials file. A credential found that way is not sent to a plain
+    /// http address unless it is loopback.
+    ///
+    /// Every setter still works on the result and replaces what the file
+    /// said, so the precedence is code over file with nothing else to learn:
+    ///
+    /// ```no_run
+    /// use aviso::AvisoClient;
+    ///
+    /// # fn main() -> aviso::Result<()> {
+    /// let client = AvisoClient::builder_from_file()?
+    ///     .timeout(std::time::Duration::from_secs(10))
+    ///     .build()?;
+    /// # let _ = client;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Config`] when the file exists but cannot be read
+    /// or parsed, or a certificate it names cannot be loaded, and
+    /// [`ClientError::Auth`] when a credential source is present but unusable
+    /// or a found credential may not travel to the configured address.
+    pub fn from_file() -> crate::Result<Self> {
+        let settings = super::settings::ClientSettings::from_default_path()?;
+        Self::from_settings(&settings, &crate::auth::DiscoveryPaths::from_env())
+    }
+
+    /// Like [`Self::from_file`], reading a specific file.
+    ///
+    /// The path must exist: naming a file that is not there is a mistake, not
+    /// an empty configuration. Its `auth:` block, rather than the default
+    /// file's, takes part in the credential search.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_file`], and [`ClientError::Config`] when the path does
+    /// not exist.
+    pub fn from_file_at(path: impl AsRef<std::path::Path>) -> crate::Result<Self> {
+        let path = path.as_ref();
+        let settings = super::settings::ClientSettings::from_path(path)?;
+        let mut paths = crate::auth::DiscoveryPaths::from_env();
+        paths.config_file = Some(path.to_path_buf());
+        Self::from_settings(&settings, &paths)
+    }
+
+    /// Applies parsed settings, then runs the credential search.
+    fn from_settings(
+        settings: &super::settings::ClientSettings,
+        discovery: &crate::auth::DiscoveryPaths,
+    ) -> crate::Result<Self> {
+        let mut builder = Self::default();
+        if let Some(url) = &settings.base_url {
+            builder = builder.base_url(url);
+        }
+        if let Some(t) = settings.timeout {
+            builder = builder.timeout(t);
+        }
+        if let Some(h) = settings.heartbeat_interval {
+            builder = builder.heartbeat_interval(h);
+        }
+        for path in &settings.ca_bundle {
+            let pem = std::fs::read(path).map_err(|e| {
+                ClientError::Config(format!("read ca_bundle file {}: {e}", path.display()))
+            })?;
+            let cert = reqwest::Certificate::from_pem(&pem).map_err(|e| {
+                ClientError::Config(format!(
+                    "ca_bundle file {} is not a PEM certificate: {e}",
+                    path.display()
+                ))
+            })?;
+            builder = builder.ca_bundle(cert);
+        }
+        builder = builder.danger_accept_invalid_certs(settings.danger_accept_invalid_certs);
+        let found = match &settings.base_url {
+            Some(url) => crate::auth::discover_for_url(url, discovery)?,
+            // Without an address the plaintext rule cannot be applied yet;
+            // build() rejects a builder with no base_url anyway.
+            None => crate::auth::discover_with(discovery)?,
+        };
+        if let Some(found) = found {
+            builder = builder.auth(found.into_provider());
+        }
+        Ok(builder)
+    }
+
     /// Sets the `aviso-server` base URL. Required.
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
