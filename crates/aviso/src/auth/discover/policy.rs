@@ -25,7 +25,7 @@ pub(super) fn refuse_public_plaintext(
     let Some(found) = found else {
         return Ok(None);
     };
-    if url_keeps_credentials_private(base_url) {
+    if !is_public_plaintext(base_url) {
         return Ok(Some(found));
     }
     Err(ClientError::Auth(format!(
@@ -53,16 +53,31 @@ pub fn url_without_userinfo(base_url: &str) -> String {
     if parsed.username().is_empty() && parsed.password().is_none() {
         return base_url.to_string();
     }
-    let _ = parsed.set_username("");
-    let _ = parsed.set_password(None);
+    if parsed.set_username("").is_err() || parsed.set_password(None).is_err() {
+        return "<unparseable url>".to_string();
+    }
     parsed.to_string()
+}
+
+/// True only for an address that parses, is not `https`, and is not loopback:
+/// the one case where a found credential is refused.
+///
+/// An address that does not parse is not a plaintext address; it is invalid
+/// input, and the client builder reports that as a Config error. Returning
+/// `false` for it keeps that error intact rather than replacing it with a
+/// refusal the caller cannot act on.
+#[must_use]
+pub fn is_public_plaintext(base_url: &str) -> bool {
+    url::Url::parse(base_url).is_ok() && !url_keeps_credentials_private(base_url)
 }
 
 /// True when a credential may travel to this address.
 ///
 /// `https` is protected in transit. A loopback address never leaves the
 /// machine, so plaintext is fine there and local development keeps working.
-/// Anything else, including `http://aviso.example.org`, is refused.
+/// Anything else, including `http://aviso.example.org`, is refused. An address
+/// that does not parse is also `false`; callers that need to tell the two
+/// apart parse first, as [`refuse_public_plaintext`] does.
 #[must_use]
 pub fn url_keeps_credentials_private(base_url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(base_url) else {
@@ -129,12 +144,21 @@ mod tests {
     }
 
     #[test]
-    fn an_unparseable_address_is_not_echoed() {
+    fn an_unparseable_address_is_left_for_the_builder_to_reject() {
         let found = Some(Discovered::for_test(CredentialSource::Environment));
 
-        let error = refuse_public_plaintext(found, "not a url").unwrap_err();
+        // Refusing here would turn the builder's "invalid base_url" Config
+        // error into an auth refusal, so the credential passes through.
+        assert!(
+            refuse_public_plaintext(found, "not a url")
+                .unwrap()
+                .is_some()
+        );
+    }
 
-        assert!(error.to_string().contains("<unparseable url>"));
+    #[test]
+    fn an_unparseable_address_is_not_echoed_in_messages() {
+        assert_eq!(url_without_userinfo("not a url"), "<unparseable url>");
     }
 
     #[test]
@@ -143,6 +167,14 @@ mod tests {
             url_without_userinfo("http://aviso.example.org"),
             "http://aviso.example.org"
         );
+    }
+
+    #[test]
+    fn only_a_parseable_remote_plaintext_address_is_public_plaintext() {
+        assert!(is_public_plaintext("http://aviso.example.org"));
+        assert!(!is_public_plaintext("https://aviso.example.org"));
+        assert!(!is_public_plaintext("http://127.0.0.1:8000"));
+        assert!(!is_public_plaintext("not a url"));
     }
 
     #[test]

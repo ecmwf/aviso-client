@@ -43,7 +43,7 @@ use crate::auth::AuthProvider;
 mod policy;
 mod sources;
 
-pub use policy::{url_keeps_credentials_private, url_without_userinfo};
+pub use policy::{is_public_plaintext, url_keeps_credentials_private, url_without_userinfo};
 pub use sources::{config_file_provider, credentials_file_provider, env_provider};
 
 use policy::refuse_public_plaintext;
