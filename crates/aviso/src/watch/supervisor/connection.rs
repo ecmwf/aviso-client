@@ -23,8 +23,8 @@ use crate::state::{ResumeKey, StateStore};
 use crate::watch::retry_after;
 use crate::watch::wire::WireWatchRequest;
 use crate::watch::{
-    ConnectionLossReason, ReconnectPolicy, ResumeStart, WatchEvent, WatchMode, WatchRequest,
-    WatchState,
+    ConnectionLossReason, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent, WatchMode,
+    WatchRequest, WatchState,
 };
 use crate::{ClientError, Notification};
 
@@ -224,7 +224,24 @@ pub(super) async fn run_one_connection(
         };
         let eof = matches!(chunk, Ok(None));
         match chunk {
-            Ok(Some(bytes)) => parser.feed(&bytes),
+            Ok(Some(bytes)) => {
+                if let Err(overflow) = parser.feed(&bytes) {
+                    // The server sent more for one line or one event than
+                    // the parser will hold. That is a protocol violation,
+                    // and reconnecting would only let it happen again.
+                    let message = overflow.to_string();
+                    apply_outcome(
+                        last_reconnect_policy,
+                        state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                            message.clone(),
+                        ))),
+                    );
+                    return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
+                        message,
+                        request_id: None,
+                    });
+                }
+            }
             Ok(None) => parser.end(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
         }

@@ -27,7 +27,7 @@ use proptest::prelude::*;
 
 fn parse_one_shot(bytes: &[u8]) -> Vec<Frame> {
     let mut parser = Parser::new();
-    parser.feed(bytes);
+    parser.feed(bytes).unwrap();
     parser.end();
     drain(&mut parser)
 }
@@ -44,10 +44,10 @@ fn parse_in_chunks(bytes: &[u8], boundaries: &[usize]) -> Vec<Frame> {
     let mut parser = Parser::new();
     let mut last = 0;
     for &b in &boundaries {
-        parser.feed(&bytes[last..b]);
+        parser.feed(&bytes[last..b]).unwrap();
         last = b;
     }
-    parser.feed(&bytes[last..]);
+    parser.feed(&bytes[last..]).unwrap();
     parser.end();
     drain(&mut parser)
 }

@@ -250,6 +250,36 @@ async fn watch_rejects_a_notification_for_another_event_type() {
 }
 
 #[tokio::test]
+async fn watch_ends_with_a_protocol_error_when_a_line_never_terminates() {
+    // A server that streams bytes with no line ending would otherwise be
+    // held in memory for as long as it kept sending. The parser stops at
+    // its bound and the watch reports it as a protocol violation rather
+    // than reconnecting into the same stream.
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 10)),
+        "x".repeat(2 * 1024 * 1024),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(10), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly");
+
+    assert_eq!(items.len(), 2, "got: {items:?}");
+    assert_eq!(items[0].as_ref().unwrap().sequence, 10);
+    match &items[1] {
+        Err(ClientError::StreamProtocol { message, .. }) => {
+            assert!(message.contains("without a terminator"), "got: {message}");
+        }
+        other => panic!("expected StreamProtocol, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn watch_gap_detection_on_sequence_jump_terminates_with_history_gap() {
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();
