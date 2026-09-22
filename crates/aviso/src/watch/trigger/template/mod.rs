@@ -319,6 +319,16 @@ impl CompiledTemplate {
         )
     }
 
+    /// Names of every `{{ env.NAME }}` the template reads, in order of
+    /// first appearance. The command trigger uses this to keep those
+    /// variables out of the child process it spawns.
+    pub(crate) fn env_names(&self) -> impl Iterator<Item = &str> {
+        self.segments.iter().filter_map(|segment| match segment {
+            Segment::EnvVar(name) => Some(name.as_str()),
+            Segment::Literal(_) | Segment::NotificationPath(_) => None,
+        })
+    }
+
     /// Renders the template with an injected env-var resolver.
     ///
     /// The resolver returns `Ok(value)` when the variable is set and

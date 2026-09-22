@@ -233,6 +233,11 @@ impl Trigger {
     /// AFTER the dispatcher-injected vars, so user keys override
     /// dispatcher keys when both are present.
     ///
+    /// The child does not inherit `AVISO_TOKEN`, `AVISO_USERNAME` or
+    /// `AVISO_PASSWORD`, nor any variable the command string reads
+    /// through `{{ env.NAME }}`. To hand one of these to the child on
+    /// purpose, set it through [`Self::env`].
+    ///
     /// # Output capture
     ///
     /// Stdout and stderr are captured concurrently into 4 KiB ring

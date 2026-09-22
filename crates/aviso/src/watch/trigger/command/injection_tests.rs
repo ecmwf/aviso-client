@@ -133,3 +133,52 @@ async fn env_values_are_the_operators_own_and_stay_verbatim() {
     let run = run("printf '%s' '{{ env.PATH }}'").await;
     assert_eq!(run.output, std::env::var("PATH").unwrap());
 }
+
+/// Runs `template` and returns what the child wrote, with no hostile
+/// values involved.
+async fn output_of(template: &str) -> String {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+    let cfg = build_command_config(format!("{template} > '{}'", out.display()));
+    let result = dispatch_command(&cfg, None, &hostile_notification(&dir.path().join("m"))).await;
+    assert!(result.is_ok(), "dispatch failed: {result:?}");
+    std::fs::read_to_string(&out).expect("read out")
+}
+
+#[tokio::test]
+async fn the_child_does_not_see_the_listeners_credentials() {
+    // The test process may or may not have these set. Either way the
+    // child must report every one of them as unset.
+    let out = output_of(
+        "printf '%s|%s|%s' \"${AVISO_TOKEN-unset}\" \"${AVISO_USERNAME-unset}\" \"${AVISO_PASSWORD-unset}\"",
+    )
+    .await;
+    assert_eq!(out, "unset|unset|unset");
+}
+
+#[tokio::test]
+async fn a_variable_the_template_read_is_not_passed_on_by_name() {
+    // HOME is the one variable a test process reliably has that the
+    // shell does not set for itself when missing (it defaults PATH).
+    if std::env::var_os("HOME").is_none() {
+        return;
+    }
+    let out = output_of("printf '%s|%s' '{{ env.HOME }}' \"${HOME-unset}\"").await;
+    let home = std::env::var("HOME").unwrap();
+    assert_eq!(out, format!("{home}|unset"));
+}
+
+#[tokio::test]
+async fn an_explicit_env_entry_still_reaches_the_child() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+    let mut cfg = build_command_config(format!(
+        "printf '%s' \"${{AVISO_TOKEN-unset}}\" > '{}'",
+        out.display()
+    ));
+    cfg.env
+        .insert("AVISO_TOKEN".to_string(), "given-on-purpose".to_string());
+    let result = dispatch_command(&cfg, None, &hostile_notification(&dir.path().join("m"))).await;
+    assert!(result.is_ok(), "dispatch failed: {result:?}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "given-on-purpose");
+}
