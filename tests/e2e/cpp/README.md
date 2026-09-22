@@ -20,8 +20,9 @@ non-zero, which proves a failed watch is visible in the exit code and not
 only on stderr. Settings come from the environment:
 `AVISO_BASE_URL`, `AVISO_USERNAME`, `AVISO_PASSWORD` (defaults: the e2e stack's
 `aviso-server` and the producer account) and `BUILD_DIR` (default `build/cpp`).
-The aviso config and credentials files are pointed at nothing, so a run does
-not depend on what the host has in `~/.config/aviso`.
+`AVISO_TOKEN` is cleared and the aviso config and credentials files are
+pointed at nothing, so a run does not depend on what the host has in its
+environment or in `~/.config/aviso`.
 
 Run it locally against the stack:
 

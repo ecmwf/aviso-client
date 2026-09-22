@@ -17,10 +17,13 @@ BUILD_DIR="$(cd "${BUILD_DIR:-build/cpp}" && pwd)"
 export AVISO_BASE_URL="${AVISO_BASE_URL:-http://aviso-server:8000}"
 export AVISO_USERNAME="${AVISO_USERNAME:-producer-user}"
 export AVISO_PASSWORD="${AVISO_PASSWORD:-producer-pass}"
+# A token in the environment would win over the pair above, so it goes.
+unset AVISO_TOKEN
 # The examples read the aviso config file first. Point it and the
-# credentials file at nothing so the run does not depend on the host.
-export AVISO_CLIENT_CONFIG_FILE="${AVISO_CLIENT_CONFIG_FILE:-/nonexistent/aviso-e2e/config.yaml}"
-export AVISO_CREDENTIALS_FILE="${AVISO_CREDENTIALS_FILE:-/nonexistent/aviso-e2e/credentials.yaml}"
+# credentials file at nothing, whatever the host has set, so the run does
+# not depend on anything in ~/.config/aviso.
+export AVISO_CLIENT_CONFIG_FILE=/nonexistent/aviso-e2e/config.yaml
+export AVISO_CREDENTIALS_FILE=/nonexistent/aviso-e2e/credentials.yaml
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -80,12 +83,11 @@ done
 
 # A listener whose watch fails must say so through its exit code. Without
 # this check a handler that ignored on_end() would pass every run above.
-# A token in the environment would win over the Basic pair, so the token is
-# cleared and both halves of the pair are set to something the server has
-# never heard of.
+# Both halves of the pair are set to something the server has never heard
+# of; the token was cleared at the top.
 echo "== 03_listen with a rejected credential (must fail) =="
 rc=0
-env -u AVISO_TOKEN AVISO_USERNAME=nobody AVISO_PASSWORD=wrong \
+AVISO_USERNAME=nobody AVISO_PASSWORD=wrong \
   timeout 30 "$BUILD_DIR/03_listen" || rc=$?
 # 124 is timeout's own status for a listener that never ended; 125 and up
 # are timeout's infrastructure failures. Only the listener's own non-zero
