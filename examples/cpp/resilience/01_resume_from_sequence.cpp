@@ -20,6 +20,7 @@
 #include "../common.hpp"
 
 #include <atomic>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -42,8 +43,13 @@ std::optional<std::uint64_t> load_sequence() {
     return std::nullopt;
   }
   std::ifstream in(kStateFile);
+  std::string token;
+  in >> token;
+  // The whole token must be digits: "42x" or "-1" is damage, not a position.
   std::uint64_t sequence = 0;
-  if (!(in >> sequence)) {
+  const char* end = token.data() + token.size();
+  const auto [parsed, ec] = std::from_chars(token.data(), end, sequence);
+  if (token.empty() || ec != std::errc() || parsed != end) {
     throw std::runtime_error(std::string("cannot read a sequence from ") + kStateFile);
   }
   return sequence;
