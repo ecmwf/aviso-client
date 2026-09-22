@@ -18,6 +18,17 @@
 //!
 //! Literal `{{` is escaped as `\{{`.
 //!
+//! # Where the text goes
+//!
+//! Notification values come from whoever published the notification,
+//! not from the operator who wrote the template. A render therefore
+//! names its [`Sink`], and every substituted notification value is
+//! neutralised for it: quoted for the shell context it lands in when
+//! the text is a command, percent-encoded when the text is a URL, and
+//! verbatim when the caller builds its own encoding around the value
+//! (JSON bodies, header values). `{{ env.* }}` values are the
+//! operator's own and are always inserted verbatim. See [`quote`].
+//!
 //! # Resolution rules
 //!
 //! - Scalar string: rendered UNQUOTED (the inner string only). Both
@@ -47,8 +58,25 @@
 
 use crate::Notification;
 
+mod quote;
 #[cfg(test)]
 mod tests;
+
+use quote::{ShellContext, percent_encode};
+
+/// What the rendered text is used for, which decides how substituted
+/// notification values are neutralised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Sink {
+    /// Values are inserted verbatim. For text whose caller supplies the
+    /// surrounding encoding, such as a JSON body or a header value.
+    Raw,
+    /// The text is handed to `/bin/sh -c`. Each value is quoted for the
+    /// shell context it lands in, so it is read as one literal word.
+    Shell,
+    /// The text is a URL. Each value is percent-encoded.
+    Url,
+}
 
 /// Categorises a template-engine failure. Public because it appears as
 /// the `kind` field of [`crate::watch::TriggerError::Template`].
@@ -270,17 +298,25 @@ impl CompiledTemplate {
     /// resolver via [`Self::render_with_env`] to avoid mutating the
     /// process environment (`std::env::set_var` is `unsafe` and the
     /// crate forbids unsafe).
-    pub(crate) fn render(&self, notification: &Notification) -> Result<String, TemplateError> {
+    pub(crate) fn render(
+        &self,
+        notification: &Notification,
+        sink: Sink,
+    ) -> Result<String, TemplateError> {
         // Match VarError variants explicitly so a present-but-not-UTF-8
         // env var surfaces as the distinct `EnvNotUnicode` error rather
         // than collapsing into `EnvNotSet` (which would mislead the
         // operator looking for a misconfigured deployment when the
         // actual bug is in the value).
-        self.render_with_env(notification, |name| match std::env::var(name) {
-            Ok(value) => Ok(value),
-            Err(std::env::VarError::NotPresent) => Err(TemplateErrorKind::EnvNotSet),
-            Err(std::env::VarError::NotUnicode(_)) => Err(TemplateErrorKind::EnvNotUnicode),
-        })
+        self.render_with_env(
+            notification,
+            |name| match std::env::var(name) {
+                Ok(value) => Ok(value),
+                Err(std::env::VarError::NotPresent) => Err(TemplateErrorKind::EnvNotSet),
+                Err(std::env::VarError::NotUnicode(_)) => Err(TemplateErrorKind::EnvNotUnicode),
+            },
+            sink,
+        )
     }
 
     /// Renders the template with an injected env-var resolver.
@@ -296,6 +332,7 @@ impl CompiledTemplate {
         &self,
         notification: &Notification,
         env_resolver: F,
+        sink: Sink,
     ) -> Result<String, TemplateError>
     where
         F: Fn(&str) -> Result<String, TemplateErrorKind>,
@@ -317,10 +354,20 @@ impl CompiledTemplate {
                 kind: TemplateErrorKind::NotificationEncode,
             })?;
 
+        // For the shell sink, follow the operator's literal text so each
+        // value is quoted for the context it lands in. Env values are
+        // the operator's own and do not move the context: the operator
+        // wrote both the template and the variable.
+        let mut shell = ShellContext::Bare;
         let mut out = String::new();
         for segment in &self.segments {
             match segment {
-                Segment::Literal(s) => out.push_str(s),
+                Segment::Literal(s) => {
+                    if sink == Sink::Shell {
+                        shell = shell.advance(s);
+                    }
+                    out.push_str(s);
+                }
                 Segment::NotificationPath(path) => {
                     let value =
                         walk_path(&notification_json, path).ok_or_else(|| TemplateError {
@@ -332,7 +379,12 @@ impl CompiledTemplate {
                             },
                             kind: TemplateErrorKind::Missing,
                         })?;
-                    out.push_str(&render_value(value));
+                    let rendered = render_value(value);
+                    match sink {
+                        Sink::Raw => out.push_str(&rendered),
+                        Sink::Shell => out.push_str(&shell.quote(&rendered)),
+                        Sink::Url => out.push_str(&percent_encode(&rendered)),
+                    }
                 }
                 Segment::EnvVar(name) => {
                     let value = env_resolver(name).map_err(|kind| TemplateError {

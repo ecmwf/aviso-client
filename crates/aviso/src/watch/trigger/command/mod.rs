@@ -55,8 +55,12 @@ use tokio::process::Command as TokioCommand;
 use crate::Notification;
 
 use super::TriggerError;
-use super::template::{CompiledTemplate, TemplateError, compile, template_error_to_trigger_error};
+use super::template::{
+    CompiledTemplate, Sink, TemplateError, compile, template_error_to_trigger_error,
+};
 
+#[cfg(test)]
+mod injection_tests;
 #[cfg(test)]
 mod tests;
 
@@ -135,7 +139,7 @@ pub(super) async fn dispatch_command(
         .as_ref()
         .map_err(|e| template_error_to_trigger_error(e.clone(), "command"))?;
     let rendered_command = template
-        .render(notification)
+        .render(notification, Sink::Shell)
         .map_err(|e| template_error_to_trigger_error(e, "command"))?;
 
     if let Some(path) = &cfg.working_dir {

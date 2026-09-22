@@ -210,6 +210,18 @@ impl Trigger {
     /// substitutes a notification field, `{{ env.<NAME> }}` reads from
     /// the process environment.
     ///
+    /// # Notification values are data, never code
+    ///
+    /// Identifier and payload values are written by whoever published
+    /// the notification. Each substituted notification value is quoted
+    /// for the shell context it lands in, so `run {{ notification.x }}`,
+    /// `run '{{ notification.x }}'` and `run "{{ notification.x }}"` all
+    /// pass the value to `run` as one literal argument, whatever it
+    /// contains. A value cannot add a command, redirect output, or
+    /// expand `$(...)`. `{{ env.* }}` values are the operator's own and
+    /// are inserted as written. The `AVISO_*` environment variables are
+    /// the simplest way to reach the notification from a script.
+    ///
     /// # Environment variable injection
     ///
     /// The dispatcher injects `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,

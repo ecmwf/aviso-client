@@ -57,7 +57,8 @@ use crate::Notification;
 use super::TriggerError;
 use super::http_method::HttpMethod;
 use super::template::{
-    CompiledTemplate, TemplateError, TemplateErrorKind, compile, template_error_to_trigger_error,
+    CompiledTemplate, Sink, TemplateError, TemplateErrorKind, compile,
+    template_error_to_trigger_error,
 };
 
 mod builders;
@@ -168,7 +169,7 @@ where
         .as_ref()
         .map_err(|e| template_error_to_trigger_error(e.clone(), "webhook url"))?;
     let url = url_template
-        .render_with_env(notification, &env_resolver)
+        .render_with_env(notification, &env_resolver, Sink::Url)
         .map_err(|e| template_error_to_trigger_error(e, "webhook url"))?;
 
     let mut headers: Vec<(String, String)> = Vec::with_capacity(cfg.headers.len());
@@ -177,7 +178,7 @@ where
             .as_ref()
             .map_err(|e| template_error_to_trigger_error(e.clone(), "webhook header"))?;
         let value = tmpl
-            .render_with_env(notification, &env_resolver)
+            .render_with_env(notification, &env_resolver, Sink::Raw)
             .map_err(|e| template_error_to_trigger_error(e, "webhook header"))?;
         headers.push((name.clone(), value));
     }
@@ -187,7 +188,7 @@ where
             let tmpl = template_result
                 .as_ref()
                 .map_err(|e| template_error_to_trigger_error(e.clone(), "webhook body"))?;
-            tmpl.render_with_env(notification, &env_resolver)
+            tmpl.render_with_env(notification, &env_resolver, Sink::Raw)
                 .map_err(|e| template_error_to_trigger_error(e, "webhook body"))?
         }
         None => serde_json::to_string(notification).map_err(TriggerError::Encode)?,

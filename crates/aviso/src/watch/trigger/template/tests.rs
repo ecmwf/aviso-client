@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use super::{
-    TemplateError, TemplateErrorKind, compile, render_value, template_error_to_trigger_error,
+    Sink, TemplateError, TemplateErrorKind, compile, render_value, template_error_to_trigger_error,
 };
 use crate::Notification;
 
@@ -44,49 +44,55 @@ fn make_notification() -> Notification {
 #[test]
 fn compile_empty_template_yields_no_segments() {
     let t = compile("").expect("empty template must compile");
-    let out = t.render(&make_notification()).expect("render empty");
+    let out = t
+        .render(&make_notification(), Sink::Raw)
+        .expect("render empty");
     assert_eq!(out, "");
 }
 
 #[test]
 fn compile_literal_only_returns_unchanged() {
     let t = compile("hello world").expect("compile literal");
-    let out = t.render(&make_notification()).expect("render literal");
+    let out = t
+        .render(&make_notification(), Sink::Raw)
+        .expect("render literal");
     assert_eq!(out, "hello world");
 }
 
 #[test]
 fn compile_notification_event_type_substitutes_unquoted() {
     let t = compile("event: {{ notification.event_type }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert_eq!(out, "event: mars");
 }
 
 #[test]
 fn compile_notification_sequence_substitutes_as_number() {
     let t = compile("seq={{ notification.sequence }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert_eq!(out, "seq=42");
 }
 
 #[test]
 fn compile_notification_nested_identifier_path() {
     let t = compile("country: {{ notification.identifier.country }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert_eq!(out, "country: uk");
 }
 
 #[test]
 fn compile_structured_identifier_renders_compact_json() {
     let template = compile("{{ notification.identifier.point_cloud }}").expect("compile");
-    let output = template.render(&make_notification()).expect("render");
+    let output = template
+        .render(&make_notification(), Sink::Raw)
+        .expect("render");
     assert_eq!(output, "[[46.0,8.0],[47.0,9.0]]");
 }
 
 #[test]
 fn compile_notification_payload_object_renders_as_compact_json() {
     let t = compile("body={{ notification.payload }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     // Object renders as compact JSON; key order follows serde_json
     // (insertion order; we control insertion via the make_notification
     // helper).
@@ -98,14 +104,14 @@ fn compile_notification_payload_object_renders_as_compact_json() {
 #[test]
 fn compile_notification_payload_string_field_renders_unquoted() {
     let t = compile("loc:{{ notification.payload.location }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert_eq!(out, "loc:south");
 }
 
 #[test]
 fn compile_whole_notification_renders_as_compact_json() {
     let t = compile("{{ notification }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert!(out.starts_with('{'), "got: {out}");
     assert!(out.contains("\"event_type\":\"mars\""), "got: {out}");
 }
@@ -145,7 +151,9 @@ fn compile_escape_inside_expression_returns_bad_syntax() {
 #[test]
 fn render_missing_path_returns_missing_with_path_field() {
     let t = compile("{{ notification.payload.nope }}").expect("compile");
-    let err = t.render(&make_notification()).expect_err("must miss");
+    let err = t
+        .render(&make_notification(), Sink::Raw)
+        .expect_err("must miss");
     assert_eq!(err.kind, TemplateErrorKind::Missing);
     assert_eq!(err.field, "notification.payload.nope");
 }
@@ -153,7 +161,7 @@ fn render_missing_path_returns_missing_with_path_field() {
 #[test]
 fn escape_double_brace_renders_as_literal() {
     let t = compile("literal: \\{{ inside }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert_eq!(out, "literal: {{ inside }}");
 }
 
@@ -163,11 +171,15 @@ fn render_env_variable_set_substitutes_value() {
     env.insert("MY_TOKEN", "hello");
     let t = compile("env=\"{{ env.MY_TOKEN }}\"").expect("compile");
     let out = t
-        .render_with_env(&make_notification(), |name| {
-            env.get(name)
-                .map(|v| (*v).to_string())
-                .ok_or(TemplateErrorKind::EnvNotSet)
-        })
+        .render_with_env(
+            &make_notification(),
+            |name| {
+                env.get(name)
+                    .map(|v| (*v).to_string())
+                    .ok_or(TemplateErrorKind::EnvNotSet)
+            },
+            Sink::Raw,
+        )
         .expect("render");
     assert_eq!(out, "env=\"hello\"");
 }
@@ -176,9 +188,11 @@ fn render_env_variable_set_substitutes_value() {
 fn render_env_variable_missing_returns_envnotset() {
     let t = compile("{{ env.NOT_SET_BY_TEST }}").expect("compile");
     let err = t
-        .render_with_env(&make_notification(), |_name| {
-            Err(TemplateErrorKind::EnvNotSet)
-        })
+        .render_with_env(
+            &make_notification(),
+            |_name| Err(TemplateErrorKind::EnvNotSet),
+            Sink::Raw,
+        )
         .expect_err("must miss");
     assert_eq!(err.kind, TemplateErrorKind::EnvNotSet);
     assert_eq!(err.field, "NOT_SET_BY_TEST");
@@ -213,9 +227,11 @@ fn render_env_variable_not_unicode_returns_envnotunicode() {
     // required to install a non-UTF-8 env var in the live process.
     let t = compile("{{ env.NOT_UTF8 }}").expect("compile");
     let err = t
-        .render_with_env(&make_notification(), |_name| {
-            Err(TemplateErrorKind::EnvNotUnicode)
-        })
+        .render_with_env(
+            &make_notification(),
+            |_name| Err(TemplateErrorKind::EnvNotUnicode),
+            Sink::Raw,
+        )
         .expect_err("must report not-unicode");
     assert_eq!(err.kind, TemplateErrorKind::EnvNotUnicode);
     assert_eq!(err.field, "NOT_UTF8");
@@ -224,7 +240,7 @@ fn render_env_variable_not_unicode_returns_envnotunicode() {
 #[test]
 fn render_falls_back_to_process_env_when_not_using_seam() {
     let t = compile("{{ env.PATH }}").expect("compile");
-    let out = t.render(&make_notification()).expect("render");
+    let out = t.render(&make_notification(), Sink::Raw).expect("render");
     assert!(
         !out.is_empty(),
         "PATH is virtually always set in test environments; if this assertion fires the CI host has no PATH which is suspicious"
@@ -267,7 +283,9 @@ fn compile_then_render_roundtrip_on_literal_only_templates() {
         "punctuation, semicolons; and {single braces}",
     ] {
         let t = compile(input).expect("literal compile");
-        let out = t.render(&make_notification()).expect("literal render");
+        let out = t
+            .render(&make_notification(), Sink::Raw)
+            .expect("literal render");
         assert_eq!(out, input);
     }
 }
@@ -298,4 +316,55 @@ fn template_error_to_trigger_error_omits_raw_template_from_public_variant() {
         !rendered.contains("SUPER_SECRET_TOKEN"),
         "raw template must not leak into public error: {rendered}"
     );
+}
+
+#[test]
+fn shell_sink_quotes_each_value_for_the_context_it_lands_in() {
+    let mut identifier = BTreeMap::new();
+    identifier.insert("country".to_string(), serde_json::json!("a'b$(x)"));
+    let n = Notification {
+        event_type: "mars".to_string(),
+        sequence: 1,
+        identifier,
+        payload: serde_json::json!({}),
+        cloudevent: None,
+    };
+    let render = |template: &str| compile(template).unwrap().render(&n, Sink::Shell).unwrap();
+    assert_eq!(
+        render("run {{ notification.identifier.country }}"),
+        "run 'a'\\''b$(x)'"
+    );
+    assert_eq!(
+        render("run '{{ notification.identifier.country }}'"),
+        "run 'a'\\''b$(x)'"
+    );
+    assert_eq!(
+        render("run \"{{ notification.identifier.country }}\""),
+        "run \"a'b\\$(x)\""
+    );
+    // Numbers and event types are quoted the same way; the shell sees
+    // one word either way.
+    assert_eq!(
+        render("run {{ notification.sequence }} {{ notification.event_type }}"),
+        "run '1' 'mars'"
+    );
+}
+
+#[test]
+fn url_sink_percent_encodes_values() {
+    let t =
+        compile("https://h/{{ notification.event_type }}?p={{ notification.payload }}").unwrap();
+    let mut n = make_notification();
+    n.event_type = "a/b".to_string();
+    let out = t.render(&n, Sink::Url).unwrap();
+    assert!(out.starts_with("https://h/a%2Fb?p=%7B"), "got: {out}");
+    assert!(!out.contains('"'), "got: {out}");
+}
+
+#[test]
+fn raw_sink_inserts_values_verbatim() {
+    let t = compile("{{ notification.event_type }}").unwrap();
+    let mut n = make_notification();
+    n.event_type = "a/b'c\"d".to_string();
+    assert_eq!(t.render(&n, Sink::Raw).unwrap(), "a/b'c\"d");
 }

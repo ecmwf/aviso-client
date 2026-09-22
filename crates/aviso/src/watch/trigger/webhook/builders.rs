@@ -40,6 +40,13 @@ impl Trigger {
     /// notification field; `{{ env.<NAME> }}` substitutes a process
     /// environment variable. Header NAMES are literal.
     ///
+    /// In the URL, each substituted notification value is
+    /// percent-encoded, so a value written by the publisher cannot
+    /// add a path segment, a query parameter, or a different host.
+    /// In header values and the body it is inserted as written, since
+    /// the operator supplies the encoding around it (a JSON body, for
+    /// example). `{{ env.* }}` values are inserted as written everywhere.
+    ///
     /// # HTTP-status retry semantics
     ///
     /// 5xx responses and transport errors (DNS, TCP, TLS,
