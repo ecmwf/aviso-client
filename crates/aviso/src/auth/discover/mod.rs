@@ -35,6 +35,12 @@
 //! server has no network exposure. Naming a provider explicitly bypasses this:
 //! a caller who writes the credential into the call has already chosen where
 //! it goes.
+//!
+//! The check covers the address the client is built with. A server could
+//! still redirect an `https` request to plain `http`; the HTTP layer drops
+//! the `Authorization` header whenever a redirect changes host, port or
+//! scheme, so the credential does not follow. The `redirect_credentials`
+//! integration tests pin that behaviour.
 
 use std::path::PathBuf;
 use std::sync::Arc;

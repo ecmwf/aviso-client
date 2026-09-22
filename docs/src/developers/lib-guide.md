@@ -82,9 +82,9 @@ if let Some(found) = discover_for_url(base_url, &DiscoveryPaths::from_env())? {
 let client = builder.build()?;
 ```
 
-This block is compiled as a doctest on `discover_for_url`, so a renamed method
-or a changed builder contract fails `cargo test --doc` rather than going stale
-here.
+The same code is a doctest on `discover_for_url`, compiled by
+`cargo test --doc`. Like every Rust block in this book, this copy itself is not
+compiled, so if the two ever differ, the doctest is the one to trust.
 
 `Ok(None)` means nothing was found and the client stays anonymous. A source
 that exists but cannot be used is an error, so a typo in a credentials file is
