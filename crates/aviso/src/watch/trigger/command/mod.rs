@@ -184,11 +184,15 @@ pub(super) async fn dispatch_command(
         .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .envs(injected_env);
+    // After the injected AVISO_* set, so a template that read one of
+    // those by name does not get it back; before the operator's map, so
+    // an explicit entry there still wins.
     for name in CREDENTIAL_VARS.iter().copied().chain(template.env_names()) {
         cmd.env_remove(name);
     }
-    cmd.envs(injected_env).envs(&cfg.env);
+    cmd.envs(&cfg.env);
     if let Some(path) = &cfg.working_dir {
         cmd.current_dir(path);
     }
