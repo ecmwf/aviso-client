@@ -17,19 +17,24 @@
 // This example provokes five errors on purpose against a working server.
 //
 // Expect: five labelled errors, none of them fatal to the program. If one of
-// the attempts succeeds instead, the example exits 1, because then the
-// server is not behaving the way this file describes.
+// the attempts succeeds, or fails with a different kind than this file
+// says, the example exits 1, because then the server is not behaving the
+// way this file describes.
 
 #include "../common.hpp"
 
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <string>
 
 namespace {
 
-// Runs one call that should fail. Returns true when it did.
-bool attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& client) {
+// Runs one call that should fail with a given kind (and HTTP status, when
+// there is one). Returns true when it failed exactly that way, so a server
+// that answers differently from what this file describes is noticed.
+bool attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& client,
+             AvisoErrorKind expected_kind, std::uint16_t expected_status = 0) {
   std::cout << "-- " << what << '\n';
   try {
     body(client);
@@ -63,7 +68,16 @@ bool attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& clie
       default:
         std::cout << "   -> something else; see kind_name() for the full list\n";
     }
-    return true;
+    const bool as_expected =
+        info.kind == expected_kind && (expected_status == 0 || info.http_status == expected_status);
+    if (!as_expected) {
+      std::cout << "   !! expected " << example::kind_name(expected_kind);
+      if (expected_status != 0) {
+        std::cout << " with HTTP " << expected_status;
+      }
+      std::cout << '\n';
+    }
+    return as_expected;
   }
 }
 
@@ -76,7 +90,7 @@ int main() {
 
     all_failed &= attempt("event type that does not exist",
             [](aviso::Client& c) { static_cast<void>(c.schema_for("no-such-stream")); },
-            client);
+            client, AvisoErrorKind_Http, 404);
 
     all_failed &= attempt("identifier the schema rejects",
             [](aviso::Client& c) {
@@ -84,13 +98,13 @@ int main() {
                                                              {"time", "0000"}};
               static_cast<void>(c.notify(example::kEventType, bad));
             },
-            client);
+            client, AvisoErrorKind_Http, 400);
 
     all_failed &= attempt("identifier JSON that is not an object",
             [](aviso::Client& c) {
               static_cast<void>(c.notify_json(example::kEventType, R"(["not","an","object"])"));
             },
-            client);
+            client, AvisoErrorKind_InvalidInput);
 
     // The same server, a credential it will not accept. Naming it after
     // from_file() replaces whatever the file or environment supplied.
@@ -106,13 +120,14 @@ int main() {
                                                             {"time", "0000"}};
               static_cast<void>(c.notify(example::kEventType, id));
             },
-            stranger);
+            stranger, AvisoErrorKind_Http, 401);
 
     // A server that is not there. Building succeeds; the failure comes on
     // the first request.
     aviso::Client nowhere = aviso::ClientBuilder("http://127.0.0.1:1").build();
     all_failed &= attempt("server that is not listening",
-            [](aviso::Client& c) { static_cast<void>(c.schema()); }, nowhere);
+            [](aviso::Client& c) { static_cast<void>(c.schema()); }, nowhere,
+            AvisoErrorKind_Transport);
     return all_failed ? 0 : 1;
   });
 }
