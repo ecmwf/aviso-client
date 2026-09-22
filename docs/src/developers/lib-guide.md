@@ -82,6 +82,10 @@ if let Some(found) = discover_for_url(base_url, &DiscoveryPaths::from_env())? {
 let client = builder.build()?;
 ```
 
+This block is compiled as a doctest on `discover_for_url`, so a renamed method
+or a changed builder contract fails `cargo test --doc` rather than going stale
+here.
+
 `Ok(None)` means nothing was found and the client stays anonymous. A source
 that exists but cannot be used is an error, so a typo in a credentials file is
 reported rather than skipped. `found.source()` says where the credential came

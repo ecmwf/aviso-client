@@ -190,6 +190,25 @@ pub fn discover() -> crate::Result<Option<Discovered>> {
 /// credential to an address that would send it in the clear. Use this wherever
 /// the credential is found rather than supplied.
 ///
+/// This is the same example the library guide shows, kept here so it is
+/// compiled by `cargo test --doc`:
+///
+/// ```no_run
+/// use aviso::AvisoClient;
+/// use aviso::auth::{DiscoveryPaths, discover_for_url};
+///
+/// # fn main() -> aviso::Result<()> {
+/// let base_url = "https://aviso.example";
+/// let mut builder = AvisoClient::builder().base_url(base_url);
+/// if let Some(found) = discover_for_url(base_url, &DiscoveryPaths::from_env())? {
+///     builder = builder.auth(found.into_provider());
+/// }
+/// let client = builder.build()?;
+/// # let _ = client;
+/// # Ok(())
+/// # }
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`ClientError::Auth`] when a credential was found and `base_url` is

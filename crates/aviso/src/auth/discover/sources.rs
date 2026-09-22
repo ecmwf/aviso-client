@@ -22,10 +22,12 @@ use crate::auth::{AuthProvider, Basic, Bearer, ConfigFile, Env};
 
 /// Reads the environment step.
 ///
-/// Returns `Ok(None)` only when none of the credential variables is set, which
-/// is a genuine "nothing here, try the next place". A partial setting such as
-/// `AVISO_USERNAME` without `AVISO_PASSWORD` is an error: silently dropping to
-/// a file would hand the caller a credential they did not ask for.
+/// Returns `Ok(None)` only when none of the credential variables has a
+/// non-empty value, which is a genuine "nothing here, try the next place". An
+/// empty value counts as absent, so `AVISO_TOKEN=` behaves like `unset
+/// AVISO_TOKEN`. A partial setting such as `AVISO_USERNAME` without
+/// `AVISO_PASSWORD` is an error: silently dropping to a file would hand the
+/// caller a credential they did not ask for.
 ///
 /// # Errors
 ///
