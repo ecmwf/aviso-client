@@ -107,7 +107,7 @@ cargo run --locked -p aviso-ffi --features gen-header --bin gen-header
 git diff --exit-code crates/aviso-ffi/include/aviso.h   # header is up to date
 cmake -S examples/cpp -B build/cpp -DAVISO_FFI_LIB_DIR="$PWD/target/debug"
 cmake --build build/cpp
-./build/cpp/schema_smoke                                # runs without a server
+./build/cpp/01_schema                                   # runs without a server
 ```
 
 Release tooling (the release-invariant check that gates every publisher, plus the preflight's version-consistency, ordered dry-run, and artifact-packaging checks; shell plus a C/C++ compiler and pkg-config for the packaging suite, no Rust toolchain):

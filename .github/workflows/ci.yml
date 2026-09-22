@@ -478,7 +478,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           cmake --build build/cpp
-          ./build/cpp/schema_smoke
+          ./build/cpp/01_schema
 
       - name: sccache stats
         if: always()
