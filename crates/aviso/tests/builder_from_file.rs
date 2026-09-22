@@ -348,41 +348,37 @@ fn the_credential_comes_from_the_same_read_as_the_settings() -> TestResult {
     Ok(())
 }
 
-/// A throwaway self-signed certificate, or `None` when `openssl` is not on
-/// the PATH. Enough to prove a PEM named by the file is read and parsed.
-fn self_signed_pem(dir: &Path) -> Option<std::path::PathBuf> {
-    let out = dir.join("ca.pem");
-    let status = std::process::Command::new("openssl")
-        .args([
-            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-        ])
-        .args(["-subj", "/CN=aviso-test", "-keyout"])
-        .arg(dir.join("ca.key"))
-        .arg("-out")
-        .arg(&out)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .ok()?;
-    status.success().then_some(out)
-}
+/// Self-signed X.509 CA certificate, the same one the builder's own TLS
+/// tests pin. Committed verbatim so this test is hermetic: no openssl at test
+/// time, no network. Expires in year 2126.
+const TEST_CA_PEM: &[u8] = b"-----BEGIN CERTIFICATE-----\n\
+MIIDDTCCAfWgAwIBAgIUOoEsjJSbNYUFzrZXLulyRChR/XEwDQYJKoZIhvcNAQEL\n\
+BQAwFTETMBEGA1UEAwwKYXZpc28tdGVzdDAgFw0yNjA1MjExMDU2MTJaGA8yMTI2\n\
+MDQyNzEwNTYxMlowFTETMBEGA1UEAwwKYXZpc28tdGVzdDCCASIwDQYJKoZIhvcN\n\
+AQEBBQADggEPADCCAQoCggEBAKvtdr6hpcYQ5R7uHt42S95WQqJn/mm6nJxNyM51\n\
+4ELO2MZ7X9Vgvy2aVPHsqDV5vHGzZF0F7F+FLA664HAsPnaaghjBnKSW7s4arUb8\n\
+4k0RHUi8sivBxYqr5uGbp8uCcas29icFyznaBWELdPmfUFOhhq/BceSmucCoNg0J\n\
+pUxsjqRKtfXpWFI4bpaEmKkNneSYneCqkyWBzy+1DxkYE/yY6vkQqmSgb9gjqq1o\n\
+WPPyJSw0yyC/jKTp9L0Nz6l7Tn2gdEHDZ9j1nsFy9DD2ZNQ9qlY8fg497gXoa1Mg\n\
+Unxhv9usMD6EWWA8yezRxVMcTOEWT9miGEt+Tj6iGLCtXfcCAwEAAaNTMFEwHQYD\n\
+VR0OBBYEFGJb4ns++TufwOE+Cbb0VqZMrO7xMB8GA1UdIwQYMBaAFGJb4ns++Tuf\n\
+wOE+Cbb0VqZMrO7xMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEB\n\
+AJIsFiiJtf425jlvJxXBsYl8AyiQopvs04K1JpfGpIOsKQxKnOZZzSfUrObQAvjr\n\
+IMZEksfPfwOJN4LtPjqzFEO3TqDbWq7bfbzd+pPRh36VceznesuDnBA+z1vNKKH+\n\
+8naFx24zL9itWLt9Is/6AFbRfbdYsDExpisLhr4XIQblGPFneq4Bkh9l7szKuMts\n\
+WH7j++yZ8PoisM0X0wPuCykZiIXTpdzd3tOkz2KYR7sgvoSugQCN+aYPns2DnXj7\n\
+++9qepJtLMoAvtOkutza7a0JuMTkKbnOCiyZELeQq6hHpJuoI2T5lugdanmWkUIF\n\
+62aTjKqXhHyepRlFSTwwEAk=\n\
+-----END CERTIFICATE-----\n";
 
 #[test]
 fn timeouts_and_certificates_from_the_file_reach_the_builder() -> TestResult {
     let dir = tempfile::tempdir()?;
-    // Without openssl the certificate half is not exercised; the test still
-    // covers the durations rather than failing on a missing tool.
-    let has_pem = self_signed_pem(dir.path()).is_some();
-    let tls = if has_pem {
-        "tls:\n  ca_bundle: [ca.pem]\n"
-    } else {
-        ""
-    };
+    std::fs::write(dir.path().join("ca.pem"), TEST_CA_PEM)?;
     write_config(
         dir.path(),
-        &format!(
-            "base_url: https://aviso.example.org\ntimeout: 7s\nheartbeat_interval: 11s\n{tls}"
-        ),
+        "base_url: https://aviso.example.org\ntimeout: 7s\nheartbeat_interval: 11s\n\
+         tls:\n  ca_bundle: [ca.pem]\n",
     );
     let _sources = Sources::in_dir(dir.path());
 
@@ -394,12 +390,24 @@ fn timeouts_and_certificates_from_the_file_reach_the_builder() -> TestResult {
         rendered.contains("heartbeat_interval: Some(11s)"),
         "got {rendered}"
     );
-    if has_pem {
-        assert!(
-            rendered.contains("extra_root_certs_count: 1"),
-            "got {rendered}"
-        );
-    }
+    assert!(
+        rendered.contains("extra_root_certs_count: 1"),
+        "got {rendered}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_file_that_is_not_a_certificate_is_reported() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("ca.pem"), "not a certificate")?;
+    write_config(dir.path(), "tls:\n  ca_bundle: [ca.pem]\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    let error = AvisoClient::builder_from_file().unwrap_err();
+
+    assert!(error.to_string().contains("ca.pem"), "got {error}");
+    assert!(matches!(error, ClientError::Config(_)), "got {error:?}");
     Ok(())
 }
 

@@ -90,18 +90,10 @@ pub(crate) fn build(
         builder = builder.auth(Arc::clone(provider));
     }
     for path in &resolved.tls_ca_bundle_paths.value {
-        let bytes = std::fs::read(path).map_err(|e| {
-            usage_error(format!(
-                "could not read CA bundle PEM file `{}` (from --ca-bundle or tls.ca_bundle): {e}",
-                path.display()
-            ))
-        })?;
-        let cert = reqwest::Certificate::from_pem(&bytes).map_err(|e| {
-            usage_error(format!(
-                "CA bundle PEM file `{}` did not parse as an X.509 certificate: {e}",
-                path.display()
-            ))
-        })?;
+        // The shared reader checks the file holds a certificate block;
+        // reqwest alone accepts any bytes and silently adds nothing.
+        let cert = aviso::read_ca_bundle(path)
+            .map_err(|e| usage_error(format!("{e} (from --ca-bundle or tls.ca_bundle)")))?;
         builder = builder.ca_bundle(cert);
     }
     if resolved.tls_danger_accept_invalid_certs.value {

@@ -144,16 +144,7 @@ impl AvisoClientBuilder {
             builder = builder.heartbeat_interval(h);
         }
         for path in &settings.ca_bundle {
-            let pem = std::fs::read(path).map_err(|e| {
-                ClientError::Config(format!("read ca_bundle file {}: {e}", path.display()))
-            })?;
-            let cert = reqwest::Certificate::from_pem(&pem).map_err(|e| {
-                ClientError::Config(format!(
-                    "ca_bundle file {} is not a PEM certificate: {e}",
-                    path.display()
-                ))
-            })?;
-            builder = builder.ca_bundle(cert);
+            builder = builder.ca_bundle(super::settings::read_ca_bundle(path)?);
         }
         if settings.danger_accept_invalid_certs {
             builder = builder.danger_accept_invalid_certs(true);

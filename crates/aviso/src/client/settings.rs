@@ -176,6 +176,39 @@ impl ClientSettings {
     }
 }
 
+/// Reads a PEM file and checks it holds at least one certificate.
+///
+/// `reqwest::Certificate::from_pem` accepts any bytes and simply yields no
+/// certificates for text that has no `BEGIN CERTIFICATE` block, so a mistyped
+/// or empty file would add nothing to the trust store and TLS would fail
+/// later with a message about the server instead of the file. Checking for a
+/// block here turns that into an error that names the file.
+///
+/// # Errors
+///
+/// Returns [`ClientError::Config`] when the file cannot be read, holds no
+/// certificate block, or does not parse.
+pub fn read_ca_bundle(path: &Path) -> crate::Result<reqwest::Certificate> {
+    let pem = std::fs::read(path)
+        .map_err(|e| ClientError::Config(format!("read ca_bundle file {}: {e}", path.display())))?;
+    if !pem
+        .windows(b"-----BEGIN CERTIFICATE-----".len())
+        .any(|w| w == b"-----BEGIN CERTIFICATE-----")
+    {
+        return Err(ClientError::Config(format!(
+            "ca_bundle file {} contains no certificate: expected at least one \
+             PEM block starting with -----BEGIN CERTIFICATE-----",
+            path.display()
+        )));
+    }
+    reqwest::Certificate::from_pem(&pem).map_err(|e| {
+        ClientError::Config(format!(
+            "ca_bundle file {} is not a PEM certificate: {e}",
+            path.display()
+        ))
+    })
+}
+
 /// Settings together with the text they were parsed from and where it came
 /// from. Returned by [`ClientSettings::read`]; the text feeds credential
 /// discovery so both read one snapshot. No `Debug`: the text may hold a token.
