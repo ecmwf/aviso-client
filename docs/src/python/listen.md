@@ -12,8 +12,8 @@ Start with [pyaviso installed](./install.md). Set `AVISO_BASE_URL` and
 credentials with permission to receive notifications, as in
 [Set the environment](./quickstart.md#set-the-environment). The examples use
 `pyaviso.Env()`: set `AVISO_TOKEN`, or unset it and set both `AVISO_USERNAME`
-and `AVISO_PASSWORD`. For an anonymous server, omit `auth=pyaviso.Env()`
-from each client initialization; `Env()` requires credentials.
+and `AVISO_PASSWORD`. For an anonymous server, pass
+`auth=pyaviso.Anonymous()` instead; `Env()` requires credentials.
 
 ## A complete listener
 

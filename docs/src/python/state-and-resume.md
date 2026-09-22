@@ -20,7 +20,7 @@ exactly-once execution.
 
 Use the [quickstart environment](./quickstart.md#set-the-environment), including
 `AVISO_BASE_URL` and credentials for `pyaviso.Env()`. For an anonymous server,
-omit `auth=pyaviso.Env()` from the client initialization.
+pass `auth=pyaviso.Anonymous()` instead.
 
 This uses the [small `mars` schema](./quickstart.md#what-is-on-your-server):
 `class` is a required choice of `od` or `rd`; `step` is a whole number optional

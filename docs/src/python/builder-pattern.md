@@ -42,8 +42,8 @@ Pass it to `client.listen(request=request)`, as below.
 Use the installation and
 [environment setup](./quickstart.md#set-the-environment)
 from the quickstart, including `AVISO_BASE_URL` and credentials for
-`pyaviso.Env()`. For an anonymous server, omit `auth=pyaviso.Env()` from the
-client initialization. Save this as `listen_builder.py` and run
+`pyaviso.Env()`. For an anonymous server, pass `auth=pyaviso.Anonymous()`
+instead. Save this as `listen_builder.py` and run
 `python listen_builder.py`:
 
 ```python

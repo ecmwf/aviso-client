@@ -44,8 +44,8 @@ See [Set the environment](./quickstart.md#set-the-environment).
 
 `Env()` requires credentials. Set `AVISO_TOKEN`, or unset it and set both
 `AVISO_USERNAME` and `AVISO_PASSWORD`. A non-empty token takes precedence. For
-an anonymous server, omit `auth=pyaviso.Env()` from the client initialization;
-there is no automatic anonymous fallback.
+an anonymous server, pass `auth=pyaviso.Anonymous()`. Omitting `auth`
+does not mean anonymous: the client then searches for a credential.
 
 A 401 means the server did not accept the request's credentials. A 403 can mean
 the credentials lack permission for the operation or event type. Ask your
