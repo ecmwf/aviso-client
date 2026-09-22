@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn plaintext_remote_addresses_do_not() {
+    fn plaintext_remote_addresses_are_not_private() {
         for url in [
             "http://aviso.example.org",
             "http://10.0.0.5:8000",
