@@ -130,9 +130,10 @@ pub(crate) struct Sourced<T> {
 /// The materialised configuration walked through every layer.
 ///
 /// `resolve` builds this once at CLI startup; subcommand handlers
-/// consume the resolved values. The `auth_provider` is already
-/// chain-composed per Q8 + amendment A2; the TLS knobs feed into
-/// the `AvisoClientBuilder` setters `.ca_bundle` and
+/// consume the resolved values. The `auth_provider` is the single
+/// provider from the first source that had a credential, per Q8 +
+/// amendment A2, and `auth_source` names that source; the TLS knobs
+/// feed into the `AvisoClientBuilder` setters `.ca_bundle` and
 /// `.danger_accept_invalid_certs`. Each path is rendered absolute
 /// per Error UX rule 3.
 #[derive(Debug, Clone)]

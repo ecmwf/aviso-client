@@ -108,19 +108,24 @@ use `--startup-timeout` to bound startup without limiting a healthy stream.
 ## Authentication
 
 aviso supports anonymous access (no `Authorization` header), HTTP Basic, and
-Bearer. The five built-in providers are:
+Bearer. It looks for a credential in four places and stops at the first one
+that has it:
 
-| Provider | Where credentials come from |
+| Order | Source |
 |---|---|
-| `Bearer` | The `--token` flag, the `AVISO_TOKEN` env var, or `auth.bearer_token` in the config file. |
-| `Basic` | The `--username`/`--password` flags, the `AVISO_USERNAME`/`AVISO_PASSWORD` env vars, or `auth.basic.{username,password}` in the config file. |
-| `Env` | Builds Bearer or Basic from the env vars above. Internal; you do not select it directly. |
-| `ConfigFile` | Reads from a separate YAML file with `bearer:` or `basic:` blocks. |
-| `Chain` | Tries multiple providers in order and uses the first one that produces a header. |
+| 1 | The `--token` flag, or `--username` with `--password`. |
+| 2 | The `AVISO_TOKEN` env var, or `AVISO_USERNAME` with `AVISO_PASSWORD`. |
+| 3 | `auth.bearer_token`, or `auth.basic.{username,password}`, in the config file. |
+| 4 | The credentials file described below. |
 
-aviso composes the layered settings into whichever provider fits. See
-[Authentication providers](../concepts/auth-providers.md) for when to use each
-one.
+A later source is not read at all once an earlier one supplies a credential,
+so a stale file cannot fail a command that was not going to use it. With
+nothing in any of them, aviso connects anonymously.
+
+Whichever source wins becomes a `Bearer` or a `Basic` provider. The names
+`Env`, `ConfigFile` and `Chain` also appear in logs and in the library API;
+see [Authentication providers](../concepts/auth-providers.md) for what each
+one does.
 
 ### The credentials file
 
