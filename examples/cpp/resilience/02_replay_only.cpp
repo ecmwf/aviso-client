@@ -49,9 +49,12 @@ class Counter : public example::Handler {
   std::optional<std::uint64_t> last_;
 };
 
-// True when the watch ended with a history gap after delivering something.
-// The cap is the usual cause. A jump in sequence numbers lands here too, and
-// asking again from the last sequence we saw is the right answer to both.
+// True when this batch delivered something and then ended with a history
+// gap. The cap is the usual cause, and asking again from the last sequence
+// we saw gets the rest. A jump in sequence numbers lands here too. Asking
+// again from the last sequence either gets past it or, if the gap is still
+// there, ends the next batch with nothing delivered, and that is reported as
+// a failure below. Each round therefore makes progress, so the loop ends.
 bool stopped_short(const Counter& counter) {
   return counter.failure() && counter.failure()->kind == AvisoErrorKind_HistoryGap &&
          counter.last().has_value();
@@ -85,7 +88,9 @@ int main() {
         continue;
       }
       if (counter.failure()) {
-        // Any other failure is a real one.
+        // Any other failure is a real one, including a gap that delivered
+        // nothing: the history is missing something and asking again will
+        // not bring it back.
         example::report(*counter.failure());
         return 1;
       }
