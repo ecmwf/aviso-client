@@ -395,7 +395,7 @@ impl PyAvisoClient {
     }
 
     fn __repr__(&self) -> String {
-        format!("AvisoClient(base_url={:?})", self.inner.base_url().as_str())
+        format!("AvisoClient(base_url={:?})", self.inner.display_base_url())
     }
 
     fn __enter__(slf: Py<Self>) -> Py<Self> {
@@ -644,7 +644,7 @@ impl PyAsyncAvisoClient {
     fn __repr__(&self) -> String {
         format!(
             "AsyncAvisoClient(base_url={:?})",
-            self.inner.base_url().as_str()
+            self.inner.display_base_url()
         )
     }
 }

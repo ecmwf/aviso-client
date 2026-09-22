@@ -133,6 +133,29 @@ fn redact_masks_token_when_provider_set() {
 }
 
 #[test]
+fn dump_does_not_show_credentials_embedded_in_the_base_url() {
+    let dir = tempdir().unwrap();
+    let cfg = write_config(
+        dir.path(),
+        "base_url: https://operator:hunter2@aviso.example.org/api/\n",
+    );
+    for extra in [&[][..], &["--json"][..]] {
+        let assertion = aviso_with_config(&cfg)
+            .args(["config", "dump"])
+            .args(extra)
+            .assert()
+            .success();
+        let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).into_owned();
+        assert!(
+            stdout.contains("https://aviso.example.org/api/"),
+            "got: {stdout}"
+        );
+        assert!(!stdout.contains("hunter2"), "got: {stdout}");
+        assert!(!stdout.contains("operator"), "got: {stdout}");
+    }
+}
+
+#[test]
 fn dump_without_auth_block_shows_unset_provider() {
     let dir = tempdir().unwrap();
     let cfg = write_config(dir.path(), "base_url: https://example\n");

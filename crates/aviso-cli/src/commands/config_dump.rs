@@ -55,7 +55,7 @@ fn build_yaml(resolved: &Resolved, redact: bool) -> String {
         p.display().to_string()
     }));
     if let Some(b) = &resolved.base_url {
-        out.push_str(&yaml_sourced("base_url", b, String::clone));
+        out.push_str(&yaml_sourced("base_url", b, |url| display_base_url(url)));
     } else {
         out.push_str(&yaml_line("base_url", "<unset>", Source::Default));
     }
@@ -149,7 +149,7 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
             "source": source_label(resolved.state_path.source),
         },
         "base_url": resolved.base_url.as_ref().map(|s| json!({
-            "value": s.value,
+            "value": display_base_url(&s.value),
             "source": source_label(s.source),
         })),
         "timeout": resolved.timeout.as_ref().map(|s| json!({
@@ -181,6 +181,13 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
         "verbose": resolved.verbose,
         "force_json": resolved.force_json,
     })
+}
+
+/// The base URL as typed, minus any `user:password@`. The value may be
+/// unparseable (the dump shows configuration, it does not validate it),
+/// in which case it is shown as is.
+fn display_base_url(url: &str) -> String {
+    url::Url::parse(url).map_or_else(|_| url.to_string(), |parsed| aviso::display_url(&parsed))
 }
 
 fn source_label(source: Source) -> &'static str {
