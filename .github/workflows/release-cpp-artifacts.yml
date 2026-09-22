@@ -50,8 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
           # The invariant peels the release tag locally, so the tag refs must
           # be present even on a manual dispatch.
@@ -73,8 +74,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
       - name: Build, relocate, pack, and verify inside manylinux_2_28
         run: |
@@ -94,7 +96,7 @@ jobs:
                 | tar xz -C "$CARGO_HOME/bin" cargo-cinstall
               bash scripts/package-ffi.sh "$VERSION" "$PLATFORM"
             '
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ffi-linux-x86_64
           path: dist-ffi
@@ -107,8 +109,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
       - name: Build, relocate, pack, and verify inside manylinux_2_28
         run: |
@@ -128,7 +131,7 @@ jobs:
                 | tar xz -C "$CARGO_HOME/bin" cargo-cinstall
               bash scripts/package-ffi.sh "$VERSION" "$PLATFORM"
             '
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ffi-linux-aarch64
           path: dist-ffi
@@ -143,8 +146,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
       - name: Materialize the pinned toolchain
         run: rustup show
@@ -156,7 +160,7 @@ jobs:
           cargo +stable install cargo-c --locked
       - name: Build, relocate, pack, and verify
         run: scripts/package-ffi.sh "$RELEASE_TAG" macos-arm64
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ffi-macos-arm64
           path: dist-ffi
@@ -169,8 +173,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
       - name: Materialize the pinned toolchain with the Intel target
         run: |
@@ -189,7 +194,7 @@ jobs:
           TARGET: x86_64-apple-darwin
           SMOKE_CXXFLAGS: -arch x86_64
         run: scripts/package-ffi.sh "$RELEASE_TAG" macos-x86_64
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ffi-macos-x86_64
           path: dist-ffi
@@ -204,7 +209,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: ffi-*
@@ -225,7 +230,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Create or update the GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: aviso-client ${{ env.RELEASE_TAG }}

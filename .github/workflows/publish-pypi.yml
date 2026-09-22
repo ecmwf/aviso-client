@@ -43,8 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
+
           # The invariant peels the release tag locally, so the tag refs must
           # be present even on a manual dispatch.
           fetch-depth: 0
@@ -67,7 +69,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Read the pinned Rust toolchain
         id: toolchain
         run: |
@@ -78,7 +82,7 @@ jobs:
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Build the wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           args: --release --locked --out dist
@@ -93,7 +97,7 @@ jobs:
           ws="$(scripts/ws-version.sh)"
           test -n "$ws"
           /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-linux-x86_64
           path: dist
@@ -106,7 +110,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Read the pinned Rust toolchain
         id: toolchain
         run: |
@@ -117,7 +123,7 @@ jobs:
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Build the wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           args: --release --locked --out dist
@@ -132,7 +138,7 @@ jobs:
           ws="$(scripts/ws-version.sh)"
           test -n "$ws"
           /tmp/wheel-venv/bin/aviso --version | grep -F "$ws"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-linux-aarch64
           path: dist
@@ -147,13 +153,15 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Materialize the pinned toolchain with both darwin targets
         run: |
           rustup show
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Build the wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
           args: --release --locked --out dist
@@ -170,7 +178,7 @@ jobs:
           lipo -info "$native"
           lipo -info "$native" | grep -q x86_64
           lipo -info "$native" | grep -q arm64
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-macos-universal2
           path: dist
@@ -183,9 +191,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Build the sdist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: sdist
           args: --out dist
@@ -213,7 +223,7 @@ jobs:
           ws="$(scripts/ws-version.sh)"
           test -n "$ws"
           /tmp/sdist-venv/bin/aviso --version | grep -F "$ws"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-sdist
           path: dist
@@ -234,9 +244,11 @@ jobs:
       # token path is active.
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: dist-*
@@ -297,6 +309,6 @@ jobs:
       # action's documented trusted-publishing switch). Configuring a trusted
       # publisher on PyPI makes the token removable with no workflow change.
       - name: Upload to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
