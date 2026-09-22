@@ -55,6 +55,24 @@ class Printer : public example::Handler {
   std::atomic<bool> ended{false};
 };
 
+// Joins a thread when it goes out of scope. Without this, an exception from
+// finish() would destroy a joinable std::thread, and that calls
+// std::terminate before example::run() can report anything.
+class Joiner {
+ public:
+  explicit Joiner(std::thread& thread) : thread_(thread) {}
+  ~Joiner() {
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+  Joiner(const Joiner&) = delete;
+  Joiner& operator=(const Joiner&) = delete;
+
+ private:
+  std::thread& thread_;
+};
+
 }  // namespace
 
 int main() {
@@ -82,11 +100,11 @@ int main() {
       std::cout << (g_interrupted.load() ? "stopped by Ctrl+C\n" : "stopped by timer\n");
       watch.stop();
     });
+    Joiner joined(stopper);
 
     // finish() returns once stop() has taken effect. The handler's on_end()
-    // has run by then, with no error.
-    const int rc = example::finish(watch, printer);
-    stopper.join();
-    return rc;
+    // has run by then, with no error. The stopper is joined on the way out,
+    // whether this returns or throws.
+    return example::finish(watch, printer);
   });
 }
