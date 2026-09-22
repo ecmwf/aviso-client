@@ -118,9 +118,11 @@ that has it:
 | 3 | `auth.bearer_token`, or `auth.basic.{username,password}`, in the config file. |
 | 4 | The credentials file described below. |
 
-A later source is not read at all once an earlier one supplies a credential,
-so a stale file cannot fail a command that was not going to use it. With
-nothing in any of them, aviso connects anonymously.
+Once an earlier source supplies a credential, the `auth:` block of the config
+file and the credentials file are not interpreted, so a stale entry in either
+cannot fail a command that was not going to use it. The config file itself is
+still parsed for its other settings, and a YAML error there is reported
+regardless. With nothing in any of the four, aviso connects anonymously.
 
 The winning source decides the provider: the environment builds an `Env`, the
 credentials file a `ConfigFile`, and a flag or the config-file `auth:` block a

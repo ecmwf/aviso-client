@@ -256,6 +256,7 @@ fn a_network_command_refuses_a_discovered_credential_for_a_plaintext_address() {
         .stderr(contains("sekrit").not());
 }
 
+#[cfg(unix)]
 #[test]
 fn a_dangling_config_symlink_is_an_error_rather_than_an_absent_file() {
     let dir = tempdir().unwrap();

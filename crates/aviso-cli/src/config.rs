@@ -388,7 +388,6 @@ mod tests {
         let cfg = parse("");
         assert!(cfg.base_url.is_none());
         assert!(cfg.base_url.is_none());
-        assert!(cfg._auth.is_none());
         assert!(cfg.listeners.is_empty());
     }
 
@@ -435,9 +434,11 @@ listeners:
     fn parse_accepts_a_nested_auth_block() {
         // The block's shape is the shared search's concern; this file only
         // has to accept the key. See aviso::auth::config_file_provider.
+        // `parse` unwraps, so reaching this line is the assertion: the key
+        // was accepted under deny_unknown_fields.
         let cfg = parse("auth:\n  basic:\n    username: alice\n    password: hunter2\n");
 
-        assert!(cfg._auth.is_some());
+        assert!(cfg.base_url.is_none());
     }
 
     #[test]
@@ -457,7 +458,7 @@ listeners:
         // credential elsewhere is not failed by an unused block.
         let cfg = parse("auth:\n  bogus_key: 1\n");
 
-        assert!(cfg._auth.is_some());
+        assert!(cfg.base_url.is_none());
     }
 
     #[test]
