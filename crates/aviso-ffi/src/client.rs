@@ -33,6 +33,8 @@ pub struct AvisoClient {
 pub struct AvisoClientBuilder {
     inner: Option<aviso::AvisoClientBuilder>,
     error: Option<OutcomeError>,
+    /// Kept so credential discovery can check where the credential would go.
+    base_url: String,
 }
 
 impl AvisoClientBuilder {
@@ -201,9 +203,13 @@ pub unsafe extern "C" fn aviso_client_builder_new(
         let mut builder = AvisoClientBuilder {
             inner: Some(aviso::AvisoClient::builder()),
             error: None,
+            base_url: String::new(),
         };
         match unsafe { cstr_opt(base_url) } {
-            Some(url) => builder.apply(|b| b.base_url(url)),
+            Some(url) => {
+                url.clone_into(&mut builder.base_url);
+                builder.apply(|b| b.base_url(url));
+            }
             None => {
                 builder.error = Some(error::invalid_input(
                     "base_url must be non-null and valid UTF-8",
@@ -256,6 +262,11 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
 /// uses. Finding nothing leaves the client anonymous. Finding a source that
 /// cannot be used is remembered and reported at build time.
 ///
+/// A credential found this way is not sent to a plaintext address unless it is
+/// loopback; that too is reported at build time. Use
+/// `aviso_client_builder_basic_auth` when the credential is supplied by the
+/// caller and the address is deliberate.
+///
 /// Call this instead of `aviso_client_builder_basic_auth` when the credential
 /// is supplied by the environment or by a file rather than by the caller.
 ///
@@ -271,7 +282,8 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
         if builder.error.is_some() {
             return;
         }
-        match aviso::auth::discover() {
+        let paths = aviso::auth::DiscoveryPaths::from_env();
+        match aviso::auth::discover_for_url(&builder.base_url, &paths) {
             Ok(Some(found)) => {
                 let provider = found.into_provider();
                 builder.apply(|b| b.auth(provider));
@@ -854,24 +866,46 @@ mod tests {
     }
 
     #[test]
-    fn discover_auth_leaves_the_builder_usable_when_nothing_is_found() {
-        // SAFETY: the credentials file is pointed at a path that does not
-        // exist, so discovery finds nothing and the builder stays valid.
-        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", "/nonexistent/aviso/c.yaml") };
-        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", "/nonexistent/aviso/config.yaml") };
-        let url = CString::new("http://127.0.0.1:1").expect("cstring");
+    fn discover_auth_refuses_a_found_credential_for_a_plaintext_address() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let credentials = dir.path().join("credentials.yaml");
+        std::fs::write(&credentials, "bearer:\n  token: sekrit\n").expect("write");
+        // SAFETY: the process is single-threaded at this point in the test
+        // binary for these two variables; no other test reads them.
+        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", &credentials) };
+        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("absent.yaml")) };
+        unsafe { std::env::remove_var("AVISO_TOKEN") };
+        let url = CString::new("http://aviso.example.org").expect("cstring");
         let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
-        assert!(!builder.is_null());
 
         unsafe { aviso_client_builder_discover_auth(builder) };
         let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
 
-        assert!(!outcome.is_null());
         let client = unsafe { aviso_outcome_take_client(outcome) };
         assert!(
-            !client.is_null(),
-            "build should succeed without credentials"
+            client.is_null(),
+            "a discovered credential must not reach a plaintext address"
         );
+        unsafe { aviso_outcome_free(outcome) };
+    }
+
+    #[test]
+    fn discover_auth_uses_a_found_credential_for_a_loopback_address() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let credentials = dir.path().join("credentials.yaml");
+        std::fs::write(&credentials, "bearer:\n  token: sekrit\n").expect("write");
+        // SAFETY: as above.
+        unsafe { std::env::set_var("AVISO_CREDENTIALS_FILE", &credentials) };
+        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("absent.yaml")) };
+        unsafe { std::env::remove_var("AVISO_TOKEN") };
+        let url = CString::new("http://127.0.0.1:8000").expect("cstring");
+        let mut builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+
+        unsafe { aviso_client_builder_discover_auth(builder) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        assert!(!client.is_null(), "loopback should accept the credential");
         unsafe { aviso_outcome_free(outcome) };
         unsafe { aviso_client_free(client) };
     }

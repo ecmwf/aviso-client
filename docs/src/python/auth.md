@@ -31,10 +31,25 @@ This suits a script or notebook whose credentials were set up beforehand by
 something else. Nothing in the code names a credential, so the same file runs
 for a colleague whose token lives somewhere different.
 
+The two file paths can be moved with `AVISO_CLIENT_CONFIG_FILE` and
+`AVISO_CREDENTIALS_FILE`.
+
 Finding nothing leaves the client anonymous. Finding a file that cannot be read
 raises `pyaviso.ConfigError`, and a half-set environment (a username with no
 password) raises `pyaviso.AuthError`, so a mistake is reported rather than
 quietly ignored.
+
+A credential found this way is not sent to a plain `http://` address unless it
+is loopback, and the client raises `pyaviso.AuthError` instead. You did not
+name the credential in the code, so a mistyped host would otherwise send it in
+the clear. Naming it yourself lifts the restriction:
+
+```python
+client = pyaviso.AvisoClient(
+    base_url="http://aviso.internal.example.org",
+    auth=pyaviso.Bearer(os.environ["AVISO_TOKEN"]),
+)
+```
 
 To send no credential even though one is present on the machine, pass the
 `Anonymous` marker:

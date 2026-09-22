@@ -139,7 +139,8 @@ fn a_credentials_file_that_cannot_be_parsed_is_reported() {
         .args(["config", "dump"])
         .assert()
         .failure()
-        .stderr(contains("credentials file"));
+        .stderr(contains("credentials.yaml"))
+        .stderr(contains("unknown field `toke`"));
 }
 
 #[test]
@@ -190,4 +191,32 @@ fn the_credentials_file_does_not_leak_its_token_into_the_dump() {
         .assert()
         .success()
         .stdout(contains("super-secret-value").not());
+}
+
+#[test]
+fn an_unusable_credentials_file_does_not_break_a_command_that_has_a_token() {
+    let dir = tempdir().unwrap();
+    let credentials = write(dir.path(), "credentials.yaml", "bearer:\n  toke: typo\n");
+
+    // The search stops at the flag, so the unusable file is never read.
+    aviso()
+        .env("AVISO_CREDENTIALS_FILE", &credentials)
+        .args(["--token", "from-flag", "config", "dump"])
+        .assert()
+        .success()
+        .stdout(contains("source: flag"));
+}
+
+#[test]
+fn an_unusable_credentials_file_does_not_break_a_command_that_has_env_credentials() {
+    let dir = tempdir().unwrap();
+    let credentials = write(dir.path(), "credentials.yaml", "bearer:\n  toke: typo\n");
+
+    aviso()
+        .env("AVISO_CREDENTIALS_FILE", &credentials)
+        .env("AVISO_TOKEN", "from-environment")
+        .args(["config", "dump"])
+        .assert()
+        .success()
+        .stdout(contains("source: environment"));
 }

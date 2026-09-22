@@ -28,6 +28,13 @@
 //! Discovery returns `Ok(None)` when it finds nothing, which leaves the client
 //! anonymous. It returns an error when a source exists but cannot be used, so
 //! a typo in a credentials file is reported rather than silently ignored.
+//!
+//! Because a discovered credential was never named by the caller, it is not
+//! sent to a plaintext address. [`discover_for_url`] refuses one unless the
+//! address is `https`, or points at the loopback interface where a local
+//! server has no network exposure. Naming a provider explicitly bypasses this:
+//! a caller who writes the credential into the call has already chosen where
+//! it goes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -137,13 +144,89 @@ pub fn discover() -> crate::Result<Option<Discovered>> {
     discover_with(&DiscoveryPaths::from_env())
 }
 
+/// Finds credentials for a specific server address.
+///
+/// Behaves like [`discover_with`], and additionally refuses to hand a
+/// credential to an address that would send it in the clear. Use this wherever
+/// the credential is found rather than supplied.
+///
+/// # Errors
+///
+/// Returns [`ClientError::Auth`] when a credential was found but `base_url` is
+/// neither `https` nor a loopback address. Otherwise as [`discover_with`].
+pub fn discover_for_url(
+    base_url: &str,
+    paths: &DiscoveryPaths,
+) -> crate::Result<Option<Discovered>> {
+    refuse_public_plaintext(discover_with(paths)?, base_url)
+}
+
+/// Applies the address rule to an already-completed search.
+///
+/// Separated so the rule can be tested without a process-wide environment.
+fn refuse_public_plaintext(
+    found: Option<Discovered>,
+    base_url: &str,
+) -> crate::Result<Option<Discovered>> {
+    let Some(found) = found else {
+        return Ok(None);
+    };
+    if url_keeps_credentials_private(base_url) {
+        return Ok(Some(found));
+    }
+    Err(ClientError::Auth(format!(
+        "refusing to send the credential from the {} to {base_url}, which is not \
+         https and not a loopback address. Use an https address, or pass the \
+         credential explicitly if you intend to send it in the clear.",
+        found.source()
+    )))
+}
+
+/// True when a credential may travel to this address.
+///
+/// `https` is protected in transit. A loopback address never leaves the
+/// machine, so plaintext is fine there and local development keeps working.
+/// Anything else, including `http://aviso.example.org`, is refused.
+#[must_use]
+pub fn url_keeps_credentials_private(base_url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(base_url) else {
+        return false;
+    };
+    if parsed.scheme().eq_ignore_ascii_case("https") {
+        return true;
+    }
+    match parsed.host() {
+        Some(url::Host::Domain(name)) => {
+            name.eq_ignore_ascii_case("localhost")
+                || name.to_ascii_lowercase().ends_with(".localhost")
+        }
+        Some(url::Host::Ipv4(addr)) => addr.is_loopback(),
+        Some(url::Host::Ipv6(addr)) => addr.is_loopback(),
+        None => false,
+    }
+}
+
 /// Finds credentials using explicit paths.
+///
+/// This does not apply the address check in [`discover_for_url`]. Prefer that
+/// function when the address is known.
 ///
 /// # Errors
 ///
 /// Same as [`discover`].
 pub fn discover_with(paths: &DiscoveryPaths) -> crate::Result<Option<Discovered>> {
-    if let Some(provider) = env_provider()? {
+    resolve(env_provider()?, paths)
+}
+
+/// The search itself, with the environment step already performed.
+///
+/// Taking the environment result as an argument keeps the file steps testable
+/// without a process-wide environment, which no test can hold exclusively.
+fn resolve(
+    from_env: Option<Arc<dyn AuthProvider>>,
+    paths: &DiscoveryPaths,
+) -> crate::Result<Option<Discovered>> {
+    if let Some(provider) = from_env {
         return Ok(Some(Discovered {
             provider,
             source: CredentialSource::Environment,
@@ -457,7 +540,7 @@ mod tests {
             )),
         };
 
-        let found = discover_with(&paths).unwrap().expect("credential");
+        let found = resolve(None, &paths).unwrap().expect("credential");
 
         assert_eq!(
             found.provider().authorization_header().await.unwrap(),
@@ -478,7 +561,7 @@ mod tests {
             )),
         };
 
-        let found = discover_with(&paths).unwrap().expect("credential");
+        let found = resolve(None, &paths).unwrap().expect("credential");
 
         assert_eq!(
             found.provider().authorization_header().await.unwrap(),
@@ -498,7 +581,78 @@ mod tests {
             credentials_file: Some(dir.path().join("absent-credentials.yaml")),
         };
 
-        assert!(discover_with(&paths).unwrap().is_none());
+        assert!(resolve(None, &paths).unwrap().is_none());
+    }
+
+    #[test]
+    fn https_and_loopback_addresses_keep_a_credential_private() {
+        for url in [
+            "https://aviso.example.org",
+            "https://aviso.example.org:8443/path",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://[::1]:8000",
+            "http://aviso.localhost:8000",
+        ] {
+            assert!(
+                url_keeps_credentials_private(url),
+                "{url} should be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn plaintext_remote_addresses_do_not() {
+        for url in [
+            "http://aviso.example.org",
+            "http://10.0.0.5:8000",
+            "http://192.168.1.10",
+            "not a url",
+        ] {
+            assert!(
+                !url_keeps_credentials_private(url),
+                "{url} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_discovered_credential_is_refused_for_a_plaintext_address() {
+        let dir = TempDir::new().unwrap();
+        let paths = DiscoveryPaths {
+            config_file: None,
+            credentials_file: Some(write(
+                &dir,
+                "credentials.yaml",
+                "bearer:\n  token: secret\n",
+            )),
+        };
+
+        let found = resolve(None, &paths).unwrap();
+        let error = refuse_public_plaintext(found, "http://aviso.example.org").unwrap_err();
+
+        assert!(matches!(error, ClientError::Auth(_)), "got {error:?}");
+        assert!(
+            !format!("{error}").contains("secret"),
+            "the error must not repeat the credential"
+        );
+    }
+
+    #[test]
+    fn nothing_found_is_not_refused_even_for_a_plaintext_address() {
+        let dir = TempDir::new().unwrap();
+        let paths = DiscoveryPaths {
+            config_file: None,
+            credentials_file: Some(dir.path().join("absent.yaml")),
+        };
+
+        let found = resolve(None, &paths).unwrap();
+
+        assert!(
+            refuse_public_plaintext(found, "http://aviso.example.org")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

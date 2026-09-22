@@ -51,6 +51,9 @@ pub(crate) struct ConfigFile {
     #[serde(default)]
     pub(crate) base_url: Option<String>,
     #[serde(default)]
+    /// Parsed so a mistyped key is rejected here; the credential is read
+    /// by `aviso::auth::discover_with`.
+    #[allow(dead_code, reason = "see AuthConfig")]
     pub(crate) auth: Option<AuthConfig>,
     #[serde(default, with = "humantime_serde::option")]
     pub(crate) timeout: Option<Duration>,
@@ -69,6 +72,13 @@ pub(crate) struct ConfigFile {
 /// never both.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    dead_code,
+    reason = "parsed, not read: the credential itself is read by \
+              aviso::auth::discover_with. Keeping the shape here rejects a \
+              mistyped auth key when the file is parsed, even when a \
+              higher-priority source supplies the credential"
+)]
 pub(crate) struct AuthConfig {
     #[serde(default)]
     pub(crate) bearer_token: Option<String>,
@@ -79,6 +89,7 @@ pub(crate) struct AuthConfig {
 /// `auth.basic:` block.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(dead_code, reason = "parsed for validation; see AuthConfig")]
 pub(crate) struct BasicAuthConfig {
     pub(crate) username: String,
     pub(crate) password: String,
@@ -276,21 +287,11 @@ pub(crate) fn resolve(
     )?;
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
-    let env_provider = cli_auth::provider_from_env()?;
-    let file_provider = cli_auth::provider_from_file(file.auth.as_ref())?;
-    let credentials_provider = cli_auth::provider_from_credentials()?;
-    let auth_source = cli_auth::winning_source(
-        flag_provider.as_ref(),
-        env_provider.as_ref(),
-        file_provider.as_ref(),
-        credentials_provider.as_ref(),
-    );
-    let auth_provider = cli_auth::build_chain(
+    let (auth_provider, auth_source) = cli_auth::resolve_provider(
         flag_provider,
-        env_provider,
-        file_provider,
-        credentials_provider,
-    );
+        &config_path.value,
+        base_url.as_ref().map(|b| b.value.as_str()),
+    )?;
 
     Ok(Resolved {
         config_path,

@@ -336,6 +336,11 @@ void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
  * uses. Finding nothing leaves the client anonymous. Finding a source that
  * cannot be used is remembered and reported at build time.
  *
+ * A credential found this way is not sent to a plaintext address unless it is
+ * loopback; that too is reported at build time. Use
+ * `aviso_client_builder_basic_auth` when the credential is supplied by the
+ * caller and the address is deliberate.
+ *
  * Call this instead of `aviso_client_builder_basic_auth` when the credential
  * is supplied by the environment or by a file rather than by the caller.
  *

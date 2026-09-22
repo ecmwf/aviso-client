@@ -30,7 +30,8 @@ pub use chain::Chain;
 pub use config_file::ConfigFile;
 pub use discover::{
     CredentialSource, Discovered, DiscoveryPaths, ENV_CONFIG_FILE, ENV_CREDENTIALS_FILE,
-    config_file_provider, credentials_file_provider, discover, discover_with, env_provider,
+    config_file_provider, credentials_file_provider, discover, discover_for_url, discover_with,
+    env_provider, url_keeps_credentials_private,
 };
 pub use env::Env;
 

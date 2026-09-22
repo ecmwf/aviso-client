@@ -47,6 +47,11 @@ without an `auth` argument. Pass a provider to choose one yourself, or
 quickest way to find out why a credential you expected is not the one being
 sent.
 
+A credential that was found rather than named is not sent to a plain `http://`
+address unless it is loopback. Supplying the credential yourself, with
+`--token` or an explicit provider, removes that restriction, because then the
+choice of address is deliberate.
+
 ## What happens on a 401
 
 `401 Unauthorized` means the server rejected the credentials. aviso asks the
