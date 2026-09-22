@@ -100,6 +100,35 @@ where
 }
 
 #[tokio::test]
+async fn a_server_that_closes_at_once_is_not_reconnected_to_in_a_hot_loop() {
+    // `max_duration_reached` is a routine close and reconnects with no
+    // delay. A server that sends it the moment the watch opens would be
+    // reconnected to as fast as the handshakes allow. After a session
+    // that short the reconnect backs off instead, and the backoff grows
+    // while the sessions stay short.
+    let server = MockServer::start().await;
+    let body = max_duration_chunk();
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(move |request: &Request| common::opened_sse(request, &body))
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    drop(stream);
+
+    let connections = server.received_requests().await.unwrap().len();
+    // Windows of 250 ms, 500 ms, 1 s, 2 s with full jitter: a handful of
+    // connections in two seconds. Without the backoff it is hundreds.
+    assert!(
+        (2..=12).contains(&connections),
+        "expected a few reconnects in two seconds, got {connections}"
+    );
+}
+
+#[tokio::test]
 async fn reconnect_after_max_duration_reached() {
     // Server returns a stream that ends with `max_duration_reached`. The
     // supervisor must reconnect and serve the next iteration's notifications

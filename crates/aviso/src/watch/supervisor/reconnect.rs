@@ -22,6 +22,11 @@ use crate::watch::{
 };
 use crate::{ClientError, Notification};
 
+/// A connection that ends sooner than this counts as a short session for
+/// the purpose of slowing down Immediate reconnects. A routine
+/// `max_duration_reached` close comes after minutes, not milliseconds.
+const MIN_HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Drive a watch session through any number of reconnect cycles. Owns its
 /// inputs by value; the spawn caller in
 /// [`crate::client::AvisoClient::watch`] passes cloned or `Arc`-shared
@@ -138,6 +143,13 @@ pub(crate) async fn run_supervisor(
         };
         let mut last_reconnect_policy: Option<ReconnectPolicy> = None;
         let mut retry_counter: u32 = 0;
+        // Consecutive connections that ended within MIN_HEALTHY_SESSION.
+        // A server that accepts the watch and closes it at once with a
+        // routine reason would otherwise be reconnected to with no delay,
+        // as fast as the handshakes allow, for as long as it keeps doing
+        // it. Short sessions turn an Immediate reconnect into a growing
+        // backoff; one session of ordinary length resets the count.
+        let mut short_sessions: u32 = 0;
         let mut retry_after_override: Option<std::time::Duration> = None;
         let mut commit_cursor: Option<u64> = initial_cursor.as_ref().and_then(|r| match r {
             ResumeStart::AfterSequence(n) => Some(*n),
@@ -175,7 +187,15 @@ pub(crate) async fn run_supervisor(
                 // `saturating_sub` makes the routine `ServerClosed` reset
                 // (`retry_counter = 0` + Immediate policy) also work since
                 // `compute_backoff(0, Immediate)` returns ZERO regardless.
-                let attempt = retry_counter.saturating_sub(1);
+                let (attempt, policy) =
+                    if policy == ReconnectPolicy::Immediate && short_sessions > 0 {
+                        (
+                            short_sessions.saturating_sub(1),
+                            ReconnectPolicy::ExponentialBackoff,
+                        )
+                    } else {
+                        (retry_counter.saturating_sub(1), policy)
+                    };
                 let delay = retry_after_override
                     .take()
                     .unwrap_or_else(|| backoff::compute_backoff(attempt, policy));
@@ -276,6 +296,7 @@ pub(crate) async fn run_supervisor(
                 (None, None) => initial_cursor.clone(),
             };
 
+            let session_started = tokio::time::Instant::now();
             let outcome = run_one_connection(
                 &mut state,
                 &mut last_reconnect_policy,
@@ -297,6 +318,11 @@ pub(crate) async fn run_supervisor(
                 &ready,
             )
             .await;
+            if session_started.elapsed() < MIN_HEALTHY_SESSION {
+                short_sessions = short_sessions.saturating_add(1);
+            } else {
+                short_sessions = 0;
+            }
 
             match outcome {
                 ConnectionOutcome::ServerClosed => {
