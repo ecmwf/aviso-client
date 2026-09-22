@@ -68,6 +68,34 @@ credential, so a mistyped host would otherwise send it in the clear. Use an
 `https` address, or pass the credential yourself with `bearer_auth` or
 `basic_auth`.
 
+## Starting from the config file
+
+If the machine already has `~/.config/aviso/config.yaml` set up for the
+`aviso` command, `from_file` starts the builder from it: server address,
+timeouts and TLS settings from the file, plus a credential found the same way
+`discover_auth` finds one.
+
+```cpp
+aviso::Client client = aviso::ClientBuilder::from_file().build();
+```
+
+Setters called afterwards replace what the file said, and `base_url` lets you
+supply an address the file did not have:
+
+```cpp
+aviso::Client client = aviso::ClientBuilder::from_file()
+                           .base_url("https://other.example.org")
+                           .bearer_auth(token)
+                           .build();
+```
+
+A missing default file sets nothing. `from_file(path)` reads a specific file,
+which must exist. Either way, a file that cannot be read throws from
+`build()`, and so does a found credential paired with a plain `http://`
+address that is not loopback, whether the address came from the file or from
+a later `base_url` call. Naming the credential with `bearer_auth` or
+`basic_auth` lifts that.
+
 ## A first call
 
 ```cpp

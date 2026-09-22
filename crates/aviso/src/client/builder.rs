@@ -31,6 +31,10 @@ pub struct AvisoClientBuilder {
     extra_root_certs: Vec<reqwest::Certificate>,
     danger_accept_invalid_certs: bool,
     flush_cursor_on_exit: bool,
+    /// Set when `auth` was found by the credential search rather than named
+    /// by the caller. `build` then refuses a plain http address that is not
+    /// loopback, whatever order the address and the credential arrived in.
+    auth_was_found: Option<crate::auth::CredentialSource>,
 }
 
 impl std::fmt::Debug for AvisoClientBuilder {
@@ -48,11 +52,119 @@ impl std::fmt::Debug for AvisoClientBuilder {
                 &self.danger_accept_invalid_certs,
             )
             .field("flush_cursor_on_exit", &self.flush_cursor_on_exit)
+            .field("auth_was_found", &self.auth_was_found)
             .finish()
     }
 }
 
 impl AvisoClientBuilder {
+    /// Starts from the settings in the default config file, and finds a
+    /// credential the same way the `aviso` binary does.
+    ///
+    /// Reads `~/.config/aviso/config.yaml`, or the file named in
+    /// `AVISO_CLIENT_CONFIG_FILE`, for `base_url`, `timeout`,
+    /// `heartbeat_interval` and `tls`. A missing file is fine and sets
+    /// nothing; a file that exists but cannot be used is an error. Then the
+    /// credential search runs: the environment, the file's `auth:` block, the
+    /// credentials file. A credential found that way is not sent to a plain
+    /// http address unless it is loopback; [`Self::build`] checks that
+    /// against the address the client ends up with, however it was set.
+    ///
+    /// Every setter still works on the result and replaces what the file
+    /// said, so the precedence is code over file with nothing else to learn:
+    ///
+    /// ```no_run
+    /// use aviso::AvisoClient;
+    ///
+    /// # fn main() -> aviso::Result<()> {
+    /// let client = AvisoClient::builder_from_file()?
+    ///     .timeout(std::time::Duration::from_secs(10))
+    ///     .build()?;
+    /// # let _ = client;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Config`] when the file exists but cannot be read
+    /// or parsed, or a certificate it names cannot be loaded, and
+    /// [`ClientError::Auth`] when a credential source is present but
+    /// unusable. The plaintext-address refusal is reported by
+    /// [`Self::build`], not here.
+    pub fn from_file() -> crate::Result<Self> {
+        let mut paths = crate::auth::DiscoveryPaths::from_env();
+        let loaded = super::settings::ClientSettings::read_default(paths.config_file.as_deref())?;
+        // The file is read once. Its text goes to the credential search, so
+        // the credential cannot come from a newer file than the settings.
+        // When there was no file, the search skips that tier rather than
+        // probe the path again and find something that appeared since.
+        let settings = if let Some(loaded) = loaded {
+            paths.config_file = Some(loaded.path);
+            paths.config_content = Some(loaded.content);
+            loaded.settings
+        } else {
+            paths.config_file = None;
+            super::settings::ClientSettings::default()
+        };
+        Self::from_settings(&settings, &paths)
+    }
+
+    /// Like [`Self::from_file`], reading a specific file.
+    ///
+    /// The path must exist: naming a file that is not there is a mistake, not
+    /// an empty configuration. Its `auth:` block, rather than the default
+    /// file's, takes part in the credential search.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_file`], and [`ClientError::Config`] when the path does
+    /// not exist.
+    pub fn from_file_at(path: impl AsRef<std::path::Path>) -> crate::Result<Self> {
+        let loaded = super::settings::ClientSettings::read(path.as_ref())?;
+        let mut paths = crate::auth::DiscoveryPaths::from_env();
+        paths.config_file = Some(loaded.path);
+        paths.config_content = Some(loaded.content);
+        Self::from_settings(&loaded.settings, &paths)
+    }
+
+    /// Applies parsed settings, then runs the credential search.
+    fn from_settings(
+        settings: &super::settings::ClientSettings,
+        discovery: &crate::auth::DiscoveryPaths,
+    ) -> crate::Result<Self> {
+        let mut builder = Self::default();
+        if let Some(url) = &settings.base_url {
+            builder = builder.base_url(url);
+        }
+        if let Some(t) = settings.timeout {
+            builder = builder.timeout(t);
+        }
+        if let Some(h) = settings.heartbeat_interval {
+            builder = builder.heartbeat_interval(h);
+        }
+        for path in &settings.ca_bundle {
+            builder = builder.ca_bundle(super::settings::read_ca_bundle(path)?);
+        }
+        if settings.danger_accept_invalid_certs {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        // The address may still change before build, so the plaintext rule is
+        // not applied here. Record that the credential was found; build
+        // checks it against the address the client will actually use.
+        if let Some(found) = crate::auth::discover_with(discovery)? {
+            builder = builder.found_auth(found);
+        }
+        Ok(builder)
+    }
+
+    /// The base URL set so far, if any. Useful after [`Self::from_file`],
+    /// where the value came from the file rather than from the caller.
+    #[must_use]
+    pub fn configured_base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
     /// Sets the `aviso-server` base URL. Required.
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
@@ -63,6 +175,30 @@ impl AvisoClientBuilder {
     /// which is the right configuration for anonymous-access streams on `aviso-server`.
     pub fn auth(mut self, auth: Arc<dyn AuthProvider>) -> Self {
         self.auth = Some(auth);
+        self.auth_was_found = None;
+        self
+    }
+
+    /// Attaches a credential that was found rather than named.
+    ///
+    /// This is how discovery hands its result to the builder. Unlike
+    /// [`Self::auth`], it keeps the record that the credential was found, so
+    /// [`Self::build`] refuses to send it to a plain http address that is not
+    /// loopback, whatever address the builder ends up with. Callers that
+    /// searched for a credential themselves use this rather than `auth`, or
+    /// the refusal silently stops applying.
+    pub fn found_auth(mut self, found: crate::auth::Discovered) -> Self {
+        self.auth_was_found = Some(found.source().clone());
+        self.auth = Some(found.into_provider());
+        self
+    }
+
+    /// Removes any auth provider, so the client sends no `Authorization`
+    /// header. This is how a builder from [`Self::from_file`] is made
+    /// anonymous after the credential search has attached something.
+    pub fn anonymous(mut self) -> Self {
+        self.auth = None;
+        self.auth_was_found = None;
         self
     }
 
@@ -199,6 +335,10 @@ impl AvisoClientBuilder {
     /// Returns [`crate::ClientError::Config`] when `base_url` is missing, is not a
     /// valid URL, or uses a scheme other than HTTP or HTTPS. Also returned when
     /// the underlying `reqwest::Client` cannot be built.
+    ///
+    /// Returns [`crate::ClientError::Auth`] when the credential was found by
+    /// [`Self::from_file`] rather than named with [`Self::auth`], and
+    /// `base_url` is plain http to an address other than loopback.
     pub fn build(self) -> crate::Result<AvisoClient> {
         let raw = self
             .base_url
@@ -209,6 +349,16 @@ impl AvisoClientBuilder {
             return Err(ClientError::Config(
                 "base_url must use http or https".into(),
             ));
+        }
+        if let Some(source) = &self.auth_was_found
+            && crate::auth::is_public_plaintext(&raw)
+        {
+            return Err(ClientError::Auth(format!(
+                "refusing to send the credential from the {source} to {}, which is not \
+                 https and not a loopback address. Use an https address, or name the \
+                 credential with .auth() if you intend to send it in the clear.",
+                crate::auth::url_without_userinfo(&raw)
+            )));
         }
         if !base_url.path().ends_with('/') {
             let normalized = format!("{}/", base_url.path());

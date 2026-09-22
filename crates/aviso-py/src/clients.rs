@@ -17,9 +17,7 @@
 //! scheduled on the same shared runtime.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
-use aviso::auth::AuthProvider;
 use aviso::{AvisoClient, NotificationRequest};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -28,31 +26,6 @@ use pyo3::types::PyDict;
 use crate::auth::{extract_provider, is_anonymous};
 
 use crate::error::{duration_from_seconds, map_client_error};
-
-/// Resolves the `auth` argument of a client constructor.
-///
-/// `None` means "look for a credential": the environment, then the config
-/// file, then the credentials file. A credential found that way is not sent to
-/// a plaintext address unless it is loopback, because the caller never named
-/// it. `Anonymous()` means "send nothing", which matters when a credential is
-/// present on the machine but must not be sent to this server. Anything else
-/// is used as given.
-fn resolve_auth(
-    py: Python<'_>,
-    auth: Option<&Bound<'_, PyAny>>,
-    base_url: &str,
-) -> PyResult<Option<Arc<dyn AuthProvider>>> {
-    match auth {
-        Some(obj) if is_anonymous(obj) => Ok(None),
-        Some(obj) => Ok(Some(extract_provider(obj)?)),
-        None => {
-            let paths = aviso::auth::DiscoveryPaths::from_env();
-            Ok(aviso::auth::discover_for_url(base_url, &paths)
-                .map_err(|e| map_client_error(py, e))?
-                .map(aviso::auth::Discovered::into_provider))
-        }
-    }
-}
 use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};
@@ -61,6 +34,31 @@ use crate::values::{
     PyNotifyResponse, PyNotifyResult, PySchemaCatalog, PySchemaResponse, validate_identifier,
 };
 use crate::watch::{PyWatchRequest, parse_resume_start};
+
+/// Applies the `auth` argument of a client constructor to a builder.
+///
+/// `None` means "look for a credential": the environment, then the config
+/// file, then the credentials file. A credential found that way is attached
+/// through `found_auth`, so build refuses a plain non-loopback http address
+/// for it. `Anonymous()` means "send nothing". Anything else is used as
+/// given, which is the caller choosing where it goes.
+fn resolve_auth(
+    py: Python<'_>,
+    auth: Option<&Bound<'_, PyAny>>,
+    builder: aviso::AvisoClientBuilder,
+) -> PyResult<aviso::AvisoClientBuilder> {
+    match auth {
+        Some(obj) if is_anonymous(obj) => Ok(builder.anonymous()),
+        Some(obj) => Ok(builder.auth(extract_provider(obj)?)),
+        None => {
+            let paths = aviso::auth::DiscoveryPaths::from_env();
+            match aviso::auth::discover_with(&paths).map_err(|e| map_client_error(py, e))? {
+                Some(found) => Ok(builder.found_auth(found)),
+                None => Ok(builder),
+            }
+        }
+    }
+}
 
 fn identifier_from_py(
     obj: &Bound<'_, PyAny>,
@@ -141,6 +139,65 @@ fn build_results(
         .collect()
 }
 
+/// Builds from the config file, then applies the constructor keyword
+/// arguments as overrides.
+///
+/// `None` for an argument means "keep what the file said". For `auth`, the
+/// file's contribution is whatever the credential search found; passing a
+/// provider replaces it and `Anonymous()` removes it. The two booleans are
+/// `Option` here, unlike in the constructor, because `False` must mean "not
+/// mentioned" rather than "turn it off".
+#[allow(clippy::too_many_arguments)]
+fn builder_from_file(
+    py: Python<'_>,
+    path: Option<&Bound<'_, PyAny>>,
+    base_url: Option<String>,
+    auth: Option<&Bound<'_, PyAny>>,
+    timeout: Option<f64>,
+    user_agent: Option<String>,
+    state_store: Option<&Bound<'_, PyAny>>,
+    heartbeat_interval: Option<f64>,
+    danger_accept_invalid_certs: Option<bool>,
+    flush_cursor_on_exit: Option<bool>,
+) -> PyResult<aviso::AvisoClientBuilder> {
+    // The same convention as every other path this binding accepts:
+    // os.fspath, then expanduser, so "~/aviso.yaml" means the home directory.
+    let mut builder = match path {
+        Some(p) => aviso::AvisoClientBuilder::from_file_at(crate::paths::normalize_path(py, p)?),
+        None => aviso::AvisoClientBuilder::from_file(),
+    }
+    .map_err(|e| map_client_error(py, e))?;
+    if let Some(url) = base_url {
+        builder = builder.base_url(url);
+    }
+    if let Some(obj) = auth {
+        builder = if is_anonymous(obj) {
+            builder.anonymous()
+        } else {
+            builder.auth(extract_provider(obj)?)
+        };
+    }
+    if let Some(secs) = timeout {
+        builder = builder.timeout(duration_from_seconds("timeout", secs)?);
+    }
+    if let Some(ua) = user_agent {
+        builder = builder.user_agent(ua);
+    }
+    if let Some(store) = state_store {
+        builder = builder.state_store(extract_store(store)?);
+    }
+    if let Some(secs) = heartbeat_interval {
+        builder = builder.heartbeat_interval(duration_from_seconds("heartbeat_interval", secs)?);
+    }
+    if let Some(v) = danger_accept_invalid_certs {
+        builder = builder.danger_accept_invalid_certs(v);
+    }
+    if let Some(v) = flush_cursor_on_exit {
+        builder = builder.flush_cursor_on_exit(v);
+    }
+    Ok(builder)
+}
+
 /// Synchronous `PyO3` client. Methods block the current Python thread
 /// while the underlying async future runs on the shared tokio runtime.
 #[pyclass(name = "AvisoClient", module = "pyaviso._native", skip_from_py_object)]
@@ -167,11 +224,8 @@ impl PyAvisoClient {
         danger_accept_invalid_certs: bool,
         flush_cursor_on_exit: bool,
     ) -> PyResult<Self> {
-        let discovered = resolve_auth(py, auth, &base_url)?;
         let mut builder = AvisoClient::builder().base_url(base_url);
-        if let Some(provider) = discovered {
-            builder = builder.auth(provider);
-        }
+        builder = resolve_auth(py, auth, builder)?;
         if let Some(secs) = timeout {
             builder = builder.timeout(duration_from_seconds("timeout", secs)?);
         }
@@ -191,6 +245,41 @@ impl PyAvisoClient {
         if flush_cursor_on_exit {
             builder = builder.flush_cursor_on_exit(true);
         }
+        let client = builder.build().map_err(|e| map_client_error(py, e))?;
+        Ok(Self { inner: client })
+    }
+
+    /// Builds a client from the aviso config file, then applies any keyword
+    /// arguments given here on top of it.
+    #[staticmethod]
+    #[pyo3(signature = (path = None, *, base_url = None, auth = None, timeout = None,
+                          user_agent = None, state_store = None, heartbeat_interval = None,
+                          danger_accept_invalid_certs = None, flush_cursor_on_exit = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_file(
+        py: Python<'_>,
+        path: Option<&Bound<'_, PyAny>>,
+        base_url: Option<String>,
+        auth: Option<&Bound<'_, PyAny>>,
+        timeout: Option<f64>,
+        user_agent: Option<String>,
+        state_store: Option<&Bound<'_, PyAny>>,
+        heartbeat_interval: Option<f64>,
+        danger_accept_invalid_certs: Option<bool>,
+        flush_cursor_on_exit: Option<bool>,
+    ) -> PyResult<Self> {
+        let builder = builder_from_file(
+            py,
+            path,
+            base_url,
+            auth,
+            timeout,
+            user_agent,
+            state_store,
+            heartbeat_interval,
+            danger_accept_invalid_certs,
+            flush_cursor_on_exit,
+        )?;
         let client = builder.build().map_err(|e| map_client_error(py, e))?;
         Ok(Self { inner: client })
     }
@@ -361,11 +450,8 @@ impl PyAsyncAvisoClient {
         danger_accept_invalid_certs: bool,
         flush_cursor_on_exit: bool,
     ) -> PyResult<Self> {
-        let discovered = resolve_auth(py, auth, &base_url)?;
         let mut builder = AvisoClient::builder().base_url(base_url);
-        if let Some(provider) = discovered {
-            builder = builder.auth(provider);
-        }
+        builder = resolve_auth(py, auth, builder)?;
         if let Some(secs) = timeout {
             builder = builder.timeout(duration_from_seconds("timeout", secs)?);
         }
@@ -385,6 +471,41 @@ impl PyAsyncAvisoClient {
         if flush_cursor_on_exit {
             builder = builder.flush_cursor_on_exit(true);
         }
+        let client = builder.build().map_err(|e| map_client_error(py, e))?;
+        Ok(Self { inner: client })
+    }
+
+    /// Builds a client from the aviso config file, then applies any keyword
+    /// arguments given here on top of it.
+    #[staticmethod]
+    #[pyo3(signature = (path = None, *, base_url = None, auth = None, timeout = None,
+                          user_agent = None, state_store = None, heartbeat_interval = None,
+                          danger_accept_invalid_certs = None, flush_cursor_on_exit = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_file(
+        py: Python<'_>,
+        path: Option<&Bound<'_, PyAny>>,
+        base_url: Option<String>,
+        auth: Option<&Bound<'_, PyAny>>,
+        timeout: Option<f64>,
+        user_agent: Option<String>,
+        state_store: Option<&Bound<'_, PyAny>>,
+        heartbeat_interval: Option<f64>,
+        danger_accept_invalid_certs: Option<bool>,
+        flush_cursor_on_exit: Option<bool>,
+    ) -> PyResult<Self> {
+        let builder = builder_from_file(
+            py,
+            path,
+            base_url,
+            auth,
+            timeout,
+            user_agent,
+            state_store,
+            heartbeat_interval,
+            danger_accept_invalid_certs,
+            flush_cursor_on_exit,
+        )?;
         let client = builder.build().map_err(|e| map_client_error(py, e))?;
         Ok(Self { inner: client })
     }

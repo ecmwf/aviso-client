@@ -221,6 +221,106 @@ pub unsafe extern "C" fn aviso_client_builder_new(
     })
 }
 
+/// Creates a client builder from the aviso config file, with a credential
+/// found the way the `aviso` binary finds one.
+///
+/// Reads `~/.config/aviso/config.yaml`, or the file named in
+/// `AVISO_CLIENT_CONFIG_FILE`, for the base URL, timeouts and TLS settings,
+/// then searches the environment, the file's `auth:` block and the
+/// credentials file for a credential. A missing file sets nothing; a file
+/// that exists but cannot be used, or a credential that may not travel to the
+/// configured address, is remembered and reported at build time. Setters
+/// called afterwards replace what the file said.
+///
+/// Returns a builder handle, or null only if an internal panic is trapped.
+#[unsafe(no_mangle)]
+pub extern "C" fn aviso_client_builder_from_file() -> *mut AvisoClientBuilder {
+    guard(ptr::null_mut(), || {
+        Box::into_raw(Box::new(builder_from(
+            aviso::AvisoClientBuilder::from_file(),
+        )))
+    })
+}
+
+/// Like `aviso_client_builder_from_file`, reading the file at `path`. The
+/// path must exist; a missing file is reported at build time.
+///
+/// # Safety
+///
+/// `path` must be a NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_client_builder_from_file_at(
+    path: *const c_char,
+) -> *mut AvisoClientBuilder {
+    guard(ptr::null_mut(), || {
+        // SAFETY: the contract above requires `path` to be a NUL-terminated C
+        // string; `cstr_opt` yields `None` for null or non-UTF-8.
+        let Some(path) = (unsafe { cstr_opt(path) }) else {
+            return Box::into_raw(Box::new(AvisoClientBuilder {
+                inner: None,
+                error: Some(error::invalid_input(
+                    "from_file_at path must be non-null and valid UTF-8",
+                )),
+                base_url: String::new(),
+            }));
+        };
+        Box::into_raw(Box::new(builder_from(
+            aviso::AvisoClientBuilder::from_file_at(path),
+        )))
+    })
+}
+
+/// Sets or replaces the base URL. After `aviso_client_builder_from_file` this
+/// overrides what the file said, or supplies an address the file lacked. A
+/// null or non-UTF-8 argument is remembered and reported at build time.
+///
+/// # Safety
+///
+/// `builder` must be a live builder handle. `base_url`, when non-null, must be
+/// a NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_client_builder_base_url(
+    builder: *mut AvisoClientBuilder,
+    base_url: *const c_char,
+) {
+    guard((), || {
+        // SAFETY: the contract above requires `builder` to be a live handle;
+        // `as_mut` yields `None` for null.
+        let Some(builder) = (unsafe { builder.as_mut() }) else {
+            return;
+        };
+        if builder.error.is_some() {
+            return;
+        }
+        // SAFETY: the contract above requires `base_url`, when non-null, to be
+        // a NUL-terminated C string.
+        let Some(url) = (unsafe { cstr_opt(base_url) }) else {
+            builder.error = Some(error::invalid_input(
+                "base_url must be non-null and valid UTF-8",
+            ));
+            return;
+        };
+        url.clone_into(&mut builder.base_url);
+        builder.apply(|b| b.base_url(url));
+    });
+}
+
+/// Wraps a builder result as a handle, carrying a failure to build time.
+fn builder_from(result: aviso::Result<aviso::AvisoClientBuilder>) -> AvisoClientBuilder {
+    match result {
+        Ok(inner) => AvisoClientBuilder {
+            base_url: inner.configured_base_url().unwrap_or_default().to_owned(),
+            inner: Some(inner),
+            error: None,
+        },
+        Err(err) => AvisoClientBuilder {
+            inner: None,
+            error: Some(error::map_error(&err)),
+            base_url: String::new(),
+        },
+    }
+}
+
 /// Builds the client, consuming the builder. On entry the builder is taken and
 /// the caller's pointer is set to null (so a later free is a safe no-op), even
 /// when the build fails. Returns an outcome carrying the client (retrieve it

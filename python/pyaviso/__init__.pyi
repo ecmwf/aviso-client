@@ -233,6 +233,31 @@ class AvisoClient:
         danger_accept_invalid_certs: bool = False,
         flush_cursor_on_exit: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_file(
+        path: str | os.PathLike[str] | None = None,
+        *,
+        base_url: str | None = None,
+        auth: AuthProvider | Anonymous | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+        state_store: StateStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> AvisoClient:
+        """Builds a client from the aviso config file.
+
+        Reads ``~/.config/aviso/config.yaml`` (or ``AVISO_CLIENT_CONFIG_FILE``),
+        or ``path`` when given, for ``base_url``, ``timeout``,
+        ``heartbeat_interval`` and ``tls``, and finds a credential the way the
+        ``aviso`` binary does. Keyword arguments given here replace what the
+        file said. ``auth=Anonymous()`` removes a found credential.
+
+        A missing default file sets nothing. A ``path`` that does not exist,
+        or a file that cannot be read, raises ``ConfigError``.
+        """
+        ...
     @property
     def base_url(self) -> str: ...
     def notify(
@@ -284,6 +309,31 @@ class AsyncAvisoClient:
         danger_accept_invalid_certs: bool = False,
         flush_cursor_on_exit: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_file(
+        path: str | os.PathLike[str] | None = None,
+        *,
+        base_url: str | None = None,
+        auth: AuthProvider | Anonymous | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+        state_store: StateStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> AsyncAvisoClient:
+        """Builds a client from the aviso config file.
+
+        Reads ``~/.config/aviso/config.yaml`` (or ``AVISO_CLIENT_CONFIG_FILE``),
+        or ``path`` when given, for ``base_url``, ``timeout``,
+        ``heartbeat_interval`` and ``tls``, and finds a credential the way the
+        ``aviso`` binary does. Keyword arguments given here replace what the
+        file said. ``auth=Anonymous()`` removes a found credential.
+
+        A missing default file sets nothing. A ``path`` that does not exist,
+        or a file that cannot be read, raises ``ConfigError``.
+        """
+        ...
     @property
     def base_url(self) -> str: ...
     def notify(

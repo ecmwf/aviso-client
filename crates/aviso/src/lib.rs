@@ -28,7 +28,7 @@ pub mod schema;
 pub mod state;
 pub mod watch;
 
-pub use client::{AvisoClient, AvisoClientBuilder};
+pub use client::{AvisoClient, AvisoClientBuilder, ClientSettings, LoadedSettings, read_ca_bundle};
 pub use error::{ClientError, Result};
 pub use notification::{Notification, NotificationRequest, NotifyResponse, parse_cloudevent_id};
 pub use notify::DEFAULT_NOTIFY_CONCURRENCY;

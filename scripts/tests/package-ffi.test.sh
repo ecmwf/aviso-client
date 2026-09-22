@@ -68,6 +68,21 @@ AvisoClientBuilder *aviso_client_builder_new(const char *base_url) {
   return calloc(1, sizeof(AvisoClientBuilder));
 }
 
+void aviso_client_builder_base_url(AvisoClientBuilder *builder,
+                                   const char *base_url) {
+  (void)builder;
+  (void)base_url;
+}
+
+AvisoClientBuilder *aviso_client_builder_from_file(void) {
+  return calloc(1, sizeof(AvisoClientBuilder));
+}
+
+AvisoClientBuilder *aviso_client_builder_from_file_at(const char *path) {
+  (void)path;
+  return calloc(1, sizeof(AvisoClientBuilder));
+}
+
 void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder,
                                       const char *token) {
   (void)builder;

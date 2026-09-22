@@ -99,6 +99,30 @@ when you apply your own rule about where a credential may go. Passing a
 provider to `.auth()` yourself, as in the first example, never goes through
 this check: writing the credential into the call is choosing where it goes.
 
+### Starting from the config file
+
+When the machine already has `~/.config/aviso/config.yaml` set up for the
+`aviso` command, start the builder from it. The file supplies `base_url`,
+`timeout`, `heartbeat_interval` and `tls`; the credential search described
+above supplies the credential:
+
+```rust,ignore
+use aviso::AvisoClient;
+
+let client = AvisoClient::builder_from_file()?
+    .timeout(std::time::Duration::from_secs(10))
+    .build()?;
+```
+
+Setters called afterwards replace what the file said. A missing default file
+sets nothing, so `build()` fails for want of a `base_url` exactly as it would
+for an empty builder. `AvisoClientBuilder::from_file_at(path)` reads a specific
+file, which must exist. `ClientSettings` exposes the parsed values on their own
+for callers that want to inspect them before building.
+
+The same code is the doctest on `AvisoClientBuilder::from_file`, compiled by
+`cargo test --doc`; this copy is not.
+
 For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider`
 trait. Always call `HeaderValue::set_sensitive(true)` on the value you return;
 that is what makes downstream loggers redact it.
