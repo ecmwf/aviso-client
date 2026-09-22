@@ -150,7 +150,7 @@ impl Discovered {
 /// [`Self::from_env`] applies the documented defaults. Callers that resolve
 /// their own paths (the `aviso` binary honours a `--config` flag) set the
 /// fields directly so discovery reads the same file the caller does.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct DiscoveryPaths {
     /// Config file whose `auth:` block is consulted. `None` skips that step.
@@ -162,6 +162,23 @@ pub struct DiscoveryPaths {
     pub config_content: Option<String>,
     /// Credentials file. `None` skips that step.
     pub credentials_file: Option<PathBuf>,
+}
+
+/// Hand-written so `config_content`, which may hold a token or password from
+/// the `auth:` block, is reported by presence only. The shipped providers
+/// redact their secrets in `Debug`; a value that carries the same secrets in
+/// plain text must not undo that.
+impl std::fmt::Debug for DiscoveryPaths {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiscoveryPaths")
+            .field("config_file", &self.config_file)
+            .field(
+                "config_content",
+                &self.config_content.as_ref().map(|_| "<redacted>"),
+            )
+            .field("credentials_file", &self.credentials_file)
+            .finish()
+    }
 }
 
 impl DiscoveryPaths {
@@ -361,6 +378,25 @@ mod tests {
             found.source(),
             CredentialSource::CredentialsFile(_)
         ));
+    }
+
+    #[test]
+    fn debug_output_does_not_repeat_supplied_config_content() {
+        let paths = DiscoveryPaths {
+            config_content: Some("auth:\n  bearer_token: super-secret-value\n".to_string()),
+            ..DiscoveryPaths::default()
+        };
+
+        let rendered = format!("{paths:?}");
+
+        assert!(
+            !rendered.contains("super-secret-value"),
+            "the config text may hold a credential: {rendered}"
+        );
+        assert!(
+            rendered.contains("<redacted>"),
+            "presence is still reported: {rendered}"
+        );
     }
 
     #[tokio::test]
