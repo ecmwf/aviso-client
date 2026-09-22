@@ -21,10 +21,12 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <system_error>
 
 namespace {
 
@@ -40,14 +42,24 @@ std::optional<std::uint64_t> load_sequence() {
   return std::nullopt;
 }
 
-// True only when the position is on disk. A checkpoint that did not land
-// would make the next run skip notifications, which is the one thing this
-// example promises not to do.
+// True only when the new position is on disk. The value is written to a
+// side file and then renamed over the old one, so a crash or a full disk
+// mid-write leaves the previous position intact rather than an empty file.
+// An empty file would make the next run start live and skip everything in
+// between, which is the one thing this example promises not to do.
 bool save_sequence(std::uint64_t sequence) {
-  std::ofstream out(kStateFile, std::ios::trunc);
-  out << sequence << '\n';
-  out.flush();
-  return out.good();
+  const std::string temp = std::string(kStateFile) + ".tmp";
+  {
+    std::ofstream out(temp, std::ios::trunc);
+    out << sequence << '\n';
+    out.flush();
+    if (!out.good()) {
+      return false;
+    }
+  }
+  std::error_code ec;
+  std::filesystem::rename(temp, kStateFile, ec);
+  return !ec;
 }
 
 class Resuming : public example::Handler {
