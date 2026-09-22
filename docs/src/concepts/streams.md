@@ -109,6 +109,8 @@ listener:
   pruned).
 - A malformed event from the server (a CloudEvents id that does not parse, or
   a notification for an event type other than the one the listener asked for).
+- A stream that exceeds what the parser will hold for one line or one event
+  (the bounds are far above anything a well-formed stream produces).
 
 The CLI reports the failed listener's error. Other listeners in the same
 `aviso listen` command keep running. After all listeners stop, the command exits

@@ -107,6 +107,13 @@ rest of the library. It owns no transport, no async runtime, and no aviso
 semantics: the caller drives the parser by feeding bytes in and draining typed
 frames out.
 
+The parser holds bytes until a line terminator or a blank line arrives, so it
+bounds how much it will hold: 1 MiB for one line and 8 MiB of `data:` for one
+event by default, far above anything a well-formed stream produces. A server
+that exceeds a bound ends the watch with a stream protocol error rather than
+being kept in memory. Each byte is examined once, so a long line costs time
+proportional to its length.
+
 ## Data flow at runtime
 
 When you call `client.watch(WatchRequest::watch("mars"))`:
