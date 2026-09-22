@@ -55,11 +55,3 @@ add_aviso_example(triggers 04_webhook)
 add_aviso_example(triggers 05_multiple)
 add_aviso_example(async 01_basic)
 add_aviso_example(async 02_fan_out)
-
-# The flat examples that predate the groups; removed once the groups are in.
-add_aviso_example(. schema_smoke)
-add_aviso_example(. publish)
-add_aviso_example(. publish_many)
-add_aviso_example(. watch)
-add_aviso_example(. trigger)
-add_aviso_example(. async)
