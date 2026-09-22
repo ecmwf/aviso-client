@@ -212,6 +212,19 @@ class AvisoClient:
         danger_accept_invalid_certs: bool = False,
         flush_cursor_on_exit: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_file(
+        path: str | os.PathLike[str] | None = None,
+        *,
+        base_url: str | None = None,
+        auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+        state_store: MemoryStore | JsonFileStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> AvisoClient: ...
     @property
     def base_url(self) -> str: ...
     def notify(
@@ -263,6 +276,19 @@ class AsyncAvisoClient:
         danger_accept_invalid_certs: bool = False,
         flush_cursor_on_exit: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_file(
+        path: str | os.PathLike[str] | None = None,
+        *,
+        base_url: str | None = None,
+        auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
+        timeout: float | None = None,
+        user_agent: str | None = None,
+        state_store: MemoryStore | JsonFileStore | None = None,
+        heartbeat_interval: float | None = None,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> AsyncAvisoClient: ...
     @property
     def base_url(self) -> str: ...
     def notify(

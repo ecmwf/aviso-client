@@ -161,6 +161,14 @@ impl AvisoClientBuilder {
         self
     }
 
+    /// Removes any auth provider, so the client sends no `Authorization`
+    /// header. This is how a builder from [`Self::from_file`] is made
+    /// anonymous after the credential search has attached something.
+    pub fn anonymous(mut self) -> Self {
+        self.auth = None;
+        self
+    }
+
     /// Sets the per-request HTTP timeout. Optional; defaults to whatever `reqwest::Client`
     /// itself defaults to (no timeout in current versions).
     pub fn timeout(mut self, timeout: Duration) -> Self {
