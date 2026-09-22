@@ -122,10 +122,12 @@ A later source is not read at all once an earlier one supplies a credential,
 so a stale file cannot fail a command that was not going to use it. With
 nothing in any of them, aviso connects anonymously.
 
-Whichever source wins becomes a `Bearer` or a `Basic` provider. The names
-`Env`, `ConfigFile` and `Chain` also appear in logs and in the library API;
-see [Authentication providers](../concepts/auth-providers.md) for what each
-one does.
+The winning source decides the provider: the environment builds an `Env`, the
+credentials file a `ConfigFile`, and a flag or the config-file `auth:` block a
+`Bearer` or a `Basic` depending on which credential you set. Those names
+appear in logs and in the library API; see
+[Authentication providers](../concepts/auth-providers.md) for what each one
+does.
 
 ### The credentials file
 

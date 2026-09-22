@@ -121,6 +121,20 @@ impl Discovered {
     pub fn into_provider(self) -> Arc<dyn AuthProvider> {
         self.provider
     }
+
+    /// Builds a value carrying a throwaway credential, for tests that only
+    /// care about the source.
+    #[cfg(test)]
+    #[allow(
+        clippy::expect_used,
+        reason = "test helper: the literal token is non-empty, so the constructor cannot fail"
+    )]
+    pub(crate) fn for_test(source: CredentialSource) -> Self {
+        Self {
+            provider: Arc::new(crate::auth::Bearer::new("test-token").expect("non-empty token")),
+            source,
+        }
+    }
 }
 
 /// The files discovery reads.

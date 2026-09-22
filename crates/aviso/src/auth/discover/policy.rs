@@ -29,11 +29,29 @@ pub(super) fn refuse_public_plaintext(
         return Ok(Some(found));
     }
     Err(ClientError::Auth(format!(
-        "refusing to send the credential from the {} to {base_url}, which is not \
+        "refusing to send the credential from the {} to {}, which is not \
          https and not a loopback address. Use an https address, or pass the \
          credential explicitly if you intend to send it in the clear.",
-        found.source()
+        found.source(),
+        without_userinfo(base_url)
     )))
+}
+
+/// The address with any `user:password@` stripped, for use in messages.
+///
+/// A base URL may carry userinfo, so repeating it verbatim in an error would
+/// publish the very kind of secret this module exists to protect. An address
+/// that does not parse is reported as a placeholder rather than echoed.
+fn without_userinfo(base_url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(base_url) else {
+        return "<unparseable url>".to_string();
+    };
+    if parsed.username().is_empty() && parsed.password().is_none() {
+        return base_url.to_string();
+    }
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
+    parsed.to_string()
 }
 
 /// True when a credential may travel to this address.
@@ -68,6 +86,7 @@ pub fn url_keeps_credentials_private(base_url: &str) -> bool {
 )]
 mod tests {
     use super::*;
+    use crate::auth::CredentialSource;
 
     #[test]
     fn https_and_loopback_addresses_keep_a_credential_private() {
@@ -84,6 +103,42 @@ mod tests {
                 "{url} should be allowed"
             );
         }
+    }
+
+    #[test]
+    fn the_refusal_does_not_repeat_url_userinfo() {
+        let found = Some(Discovered::for_test(CredentialSource::Environment));
+
+        let error =
+            refuse_public_plaintext(found, "http://alice:hunter2@aviso.example.org").unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            !message.contains("hunter2"),
+            "the password must not appear: {message}"
+        );
+        assert!(
+            !message.contains("alice"),
+            "the username must not appear: {message}"
+        );
+        assert!(message.contains("aviso.example.org"), "got {message}");
+    }
+
+    #[test]
+    fn an_unparseable_address_is_not_echoed() {
+        let found = Some(Discovered::for_test(CredentialSource::Environment));
+
+        let error = refuse_public_plaintext(found, "not a url").unwrap_err();
+
+        assert!(error.to_string().contains("<unparseable url>"));
+    }
+
+    #[test]
+    fn an_address_without_userinfo_is_reported_as_given() {
+        assert_eq!(
+            without_userinfo("http://aviso.example.org"),
+            "http://aviso.example.org"
+        );
     }
 
     #[test]

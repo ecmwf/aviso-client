@@ -153,6 +153,7 @@ Print a shell completion script to stdout.
 | `AVISO_BASE_URL` | Server URL. Lower priority than `--base-url`. |
 | `AVISO_TOKEN` | Bearer token. Lower priority than `--token`. |
 | `AVISO_USERNAME` / `AVISO_PASSWORD` | Basic auth credentials. Lower priority than the flags. |
+| `AVISO_CREDENTIALS_FILE` | Credentials file path. Default `~/.config/aviso/credentials.yaml`. Read only when no flag, environment variable, or config-file `auth:` block supplies a credential. |
 
 ## Exit codes
 
