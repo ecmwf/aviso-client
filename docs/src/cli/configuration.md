@@ -290,8 +290,13 @@ Or in the config file:
 ```yaml
 tls:
   ca_bundle:
-    - /home/you/.config/aviso/internal-ca.pem
+    - internal-ca.pem
 ```
+
+A relative path here is resolved against the config file's own directory, so
+this entry means `~/.config/aviso/internal-ca.pem` wherever you run `aviso`
+from. A relative `--ca-bundle` on the command line is resolved against the
+working directory, as you would expect of a flag.
 
 The `--ca-bundle` flag is repeatable, so you can pass intermediate and root
 certificates separately (or put them all in one PEM file). The system trust

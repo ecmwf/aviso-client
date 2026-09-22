@@ -60,6 +60,45 @@ client = pyaviso.AvisoClient(
 )
 ```
 
+## Read the whole connection from the config file
+
+The `aviso` command reads `~/.config/aviso/config.yaml` for its server address,
+timeouts and TLS settings. If that file is already set up on your machine,
+`from_file` uses it too, so a script needs no arguments at all:
+
+```python
+import pyaviso
+
+client = pyaviso.AvisoClient.from_file()
+print(client.schema().event_types)
+```
+
+It reads `base_url`, `timeout`, `heartbeat_interval` and `tls` from the file,
+then finds a credential in the order above. Sections that only the command
+uses, such as `listeners`, are ignored. Keyword arguments replace what the
+file said, and `auth=pyaviso.Anonymous()` drops a credential the search found:
+
+```python
+client = pyaviso.AvisoClient.from_file(
+    base_url="https://other.example.org", timeout=10
+)
+```
+
+A missing default file sets nothing, so this behaves like a plain
+`AvisoClient(...)` call and you must supply `base_url` yourself. Pass a path
+to read a different file; that path must exist:
+
+```python
+client = pyaviso.AvisoClient.from_file("/etc/aviso/production.yaml")
+```
+
+`AVISO_CLIENT_CONFIG_FILE` moves the default location. A file that cannot be
+read, or that has a mistyped key inside a section the client reads, raises
+`pyaviso.ConfigError`. Relative paths under `tls.ca_bundle` are resolved
+against the file's own directory, not the working directory.
+
+`AsyncAvisoClient.from_file` takes the same arguments.
+
 The rest of this page covers naming a source yourself, which is what you want
 when one script must use particular credentials.
 
