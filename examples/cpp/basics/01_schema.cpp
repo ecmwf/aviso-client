@@ -11,15 +11,42 @@
 //
 // With no server configured, or none reachable, it says so and still exits
 // 0. That makes it a build check that needs nothing running, which is how CI
-// uses it.
+// uses it. A config file that exists but is wrong is a real error, exit 1.
 
 #include "../common.hpp"
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 
+namespace {
+
+// True when nothing on this machine can supply a server address: no
+// AVISO_BASE_URL, and no config file where from_file() would look. The file
+// is ~/.config/aviso/config.yaml unless AVISO_CLIENT_CONFIG_FILE names one.
+bool nothing_configured() {
+  if (example::env("AVISO_BASE_URL")) {
+    return false;
+  }
+  if (const auto named = example::env("AVISO_CLIENT_CONFIG_FILE")) {
+    return !std::filesystem::exists(*named);
+  }
+  const auto home = example::env("HOME");
+  return !home || !std::filesystem::exists(*home + "/.config/aviso/config.yaml");
+}
+
+}  // namespace
+
 int main() {
   std::cout << "client version " << aviso::version() << '\n';
+  if (nothing_configured()) {
+    // Not a failure of this program, so exit 0. Everything below assumes an
+    // address exists somewhere, and then any config error is a real one,
+    // such as a file that will not parse.
+    std::cout << "no server configured: set AVISO_BASE_URL, or put base_url in "
+                 "~/.config/aviso/config.yaml\n";
+    return 0;
+  }
   try {
     aviso::Client client = example::connect();
 
@@ -34,17 +61,7 @@ int main() {
     return 0;
   } catch (const aviso::Error& error) {
     example::report(error);
-    switch (error.error().kind) {
-      case AvisoErrorKind_Config:
-        // No usable server address. Not a bug in this program.
-        std::cerr << "no usable server address: set AVISO_BASE_URL, or put "
-                     "base_url in ~/.config/aviso/config.yaml\n";
-        return 0;
-      case AvisoErrorKind_Transport:
-        // The server is not there. Also not a bug in this program.
-        return 0;
-      default:
-        return 1;
-    }
+    // A server that is not there is the one failure this example tolerates.
+    return error.error().kind == AvisoErrorKind_Transport ? 0 : 1;
   }
 }

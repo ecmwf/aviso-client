@@ -16,7 +16,9 @@
 //
 // This example provokes five errors on purpose against a working server.
 //
-// Expect: five labelled errors, none of them fatal to the program.
+// Expect: five labelled errors, none of them fatal to the program. If one of
+// the attempts succeeds instead, the example exits 1, because then the
+// server is not behaving the way this file describes.
 
 #include "../common.hpp"
 
@@ -26,11 +28,13 @@
 
 namespace {
 
-void attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& client) {
+// Runs one call that should fail. Returns true when it did.
+bool attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& client) {
   std::cout << "-- " << what << '\n';
   try {
     body(client);
     std::cout << "   unexpectedly succeeded\n";
+    return false;
   } catch (const aviso::Error& error) {
     example::report(error);
     // The kind is the thing to branch on. Everything else is for humans.
@@ -59,6 +63,7 @@ void attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& clie
       default:
         std::cout << "   -> something else; see kind_name() for the full list\n";
     }
+    return true;
   }
 }
 
@@ -67,12 +72,13 @@ void attempt(const char* what, void (*body)(aviso::Client&), aviso::Client& clie
 int main() {
   return example::run([] {
     aviso::Client client = example::connect();
+    bool all_failed = true;
 
-    attempt("event type that does not exist",
+    all_failed &= attempt("event type that does not exist",
             [](aviso::Client& c) { static_cast<void>(c.schema_for("no-such-stream")); },
             client);
 
-    attempt("identifier the schema rejects",
+    all_failed &= attempt("identifier the schema rejects",
             [](aviso::Client& c) {
               const std::map<std::string, std::string> bad = {{"date", "yesterday"},
                                                              {"time", "0000"}};
@@ -80,7 +86,7 @@ int main() {
             },
             client);
 
-    attempt("identifier JSON that is not an object",
+    all_failed &= attempt("identifier JSON that is not an object",
             [](aviso::Client& c) {
               static_cast<void>(c.notify_json(example::kEventType, R"(["not","an","object"])"));
             },
@@ -94,7 +100,7 @@ int main() {
     }
     rejected.basic_auth("nobody", "wrong");
     aviso::Client stranger = rejected.build();
-    attempt("credential the server rejects",
+    all_failed &= attempt("credential the server rejects",
             [](aviso::Client& c) {
               const std::map<std::string, std::string> id = {{"date", "20260101"},
                                                             {"time", "0000"}};
@@ -105,8 +111,8 @@ int main() {
     // A server that is not there. Building succeeds; the failure comes on
     // the first request.
     aviso::Client nowhere = aviso::ClientBuilder("http://127.0.0.1:1").build();
-    attempt("server that is not listening",
+    all_failed &= attempt("server that is not listening",
             [](aviso::Client& c) { static_cast<void>(c.schema()); }, nowhere);
-    return 0;
+    return all_failed ? 0 : 1;
   });
 }

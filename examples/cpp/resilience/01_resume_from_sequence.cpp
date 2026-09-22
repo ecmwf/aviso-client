@@ -40,9 +40,14 @@ std::optional<std::uint64_t> load_sequence() {
   return std::nullopt;
 }
 
-void save_sequence(std::uint64_t sequence) {
+// True only when the position is on disk. A checkpoint that did not land
+// would make the next run skip notifications, which is the one thing this
+// example promises not to do.
+bool save_sequence(std::uint64_t sequence) {
   std::ofstream out(kStateFile, std::ios::trunc);
   out << sequence << '\n';
+  out.flush();
+  return out.good();
 }
 
 class Resuming : public example::Handler {
@@ -51,12 +56,19 @@ class Resuming : public example::Handler {
     std::cout << "#" << n.sequence() << "  " << n.identifier_json() << '\n';
     // Record progress only after handling, so a crash mid-handler replays
     // this notification rather than skipping it. At-least-once, not at-most.
-    save_sequence(n.sequence());
+    if (!save_sequence(n.sequence())) {
+      std::cerr << "could not write " << kStateFile << "; stopping\n";
+      save_failed_ = true;
+      return false;
+    }
     return seen_.fetch_add(1) + 1 < kStopAfter;
   }
 
+  bool save_failed() const { return save_failed_; }
+
  private:
   std::atomic<int> seen_{0};
+  bool save_failed_ = false;
 };
 
 }  // namespace
@@ -76,8 +88,10 @@ int main() {
 
     Resuming handler;
     aviso::Watch watch = client.watch(request, handler);
-    const int rc = example::finish(watch, handler);
-    if (load_sequence()) {
+    int rc = example::finish(watch, handler);
+    if (handler.save_failed()) {
+      rc = 1;
+    } else if (load_sequence()) {
       std::cout << "position saved in " << kStateFile << "; run again to resume\n";
     }
     return rc;
