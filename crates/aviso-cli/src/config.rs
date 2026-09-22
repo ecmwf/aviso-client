@@ -23,9 +23,9 @@
 //! credentials file; see `crate::auth`.
 //!
 //! The `auth:` section is OPTIONAL. A config file with no `auth:`
-//! block is fine; the search falls back to the flag, the
-//! environment, the credentials file, or no auth at all (anonymous
-//! access to schema / health endpoints).
+//! block is fine; the credential then comes from the flag, the
+//! environment, the credentials file, or nowhere (anonymous access
+//! to schema / health endpoints).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -391,7 +391,6 @@ mod tests {
     #[test]
     fn parse_empty_yaml_yields_defaults() {
         let cfg = parse("");
-        assert!(cfg.base_url.is_none());
         assert!(cfg.base_url.is_none());
         assert!(cfg.listeners.is_empty());
     }

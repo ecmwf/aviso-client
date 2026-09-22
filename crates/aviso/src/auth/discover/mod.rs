@@ -176,8 +176,8 @@ impl DiscoveryPaths {
 ///
 /// # Errors
 ///
-/// Returns [`ClientError::Auth`] when the environment is half set, or a config
-/// file sets both credentials. Returns [`ClientError::Config`] when a file
+/// Returns [`crate::ClientError::Auth`] when the environment is half set, or a config
+/// file sets both credentials. Returns [`crate::ClientError::Config`] when a file
 /// cannot be read or parsed, a variable is not valid UTF-8, or a credential is
 /// present but empty. A source that is simply absent is skipped.
 pub fn discover() -> crate::Result<Option<Discovered>> {
@@ -211,7 +211,7 @@ pub fn discover() -> crate::Result<Option<Discovered>> {
 ///
 /// # Errors
 ///
-/// Returns [`ClientError::Auth`] when a credential was found and `base_url` is
+/// Returns [`crate::ClientError::Auth`] when a credential was found and `base_url` is
 /// a plain `http` address that is not loopback. An address that does not
 /// parse or uses another scheme passes through, so the client builder can
 /// report it as invalid input. Otherwise as [`discover_with`].

@@ -26,19 +26,6 @@ from werkzeug.wrappers import Request, Response
 CREDENTIAL_VARS = ("AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD")
 
 
-@pytest.fixture(autouse=True)
-def isolate_sources(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Points every source at a path that does not exist.
-
-    Without this the tests would read the developer's own credentials and
-    pass or fail depending on the machine.
-    """
-    for name in CREDENTIAL_VARS:
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("AVISO_CLIENT_CONFIG_FILE", str(tmp_path / "absent-config.yaml"))
-    monkeypatch.setenv("AVISO_CREDENTIALS_FILE", str(tmp_path / "absent-credentials.yaml"))
-
-
 def capture_authorization(httpserver: HTTPServer) -> list[str | None]:
     """Records the Authorization header of each schema request."""
     seen: list[str | None] = []

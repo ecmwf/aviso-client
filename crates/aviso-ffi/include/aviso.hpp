@@ -511,6 +511,9 @@ class ClientBuilder {
   // Looks for a credential in the environment, then the config file, then
   // the credentials file, and uses the first one found. Finding nothing
   // leaves the client anonymous; an unusable source throws from `build()`.
+  // A credential found this way is not sent to a plain http address unless
+  // it is loopback; `build()` throws instead. Name it with `bearer_auth` or
+  // `basic_auth` when you hold it and the address is deliberate.
   ClientBuilder& discover_auth() {
     aviso_client_builder_discover_auth(handle_.get());
     return *this;

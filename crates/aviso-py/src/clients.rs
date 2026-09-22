@@ -27,6 +27,8 @@ use pyo3::types::PyDict;
 
 use crate::auth::{extract_provider, is_anonymous};
 
+use crate::error::{duration_from_seconds, map_client_error};
+
 /// Resolves the `auth` argument of a client constructor.
 ///
 /// `None` means "look for a credential": the environment, then the config
@@ -51,7 +53,6 @@ fn resolve_auth(
         }
     }
 }
-use crate::error::{duration_from_seconds, map_client_error};
 use crate::runtime::runtime;
 use crate::state_stores::extract_store;
 use crate::streams::{PyAsyncNotificationIterator, PyNotificationIterator};

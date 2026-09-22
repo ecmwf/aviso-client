@@ -81,7 +81,7 @@ pub fn is_public_plaintext(base_url: &str) -> bool {
 /// machine, so plaintext is fine there and local development keeps working.
 /// Anything else, including `http://aviso.example.org`, is refused. An address
 /// that does not parse is also `false`; callers that need to tell the two
-/// apart parse first, as [`refuse_public_plaintext`] does.
+/// apart use [`is_public_plaintext`], which parses first.
 #[must_use]
 pub fn url_keeps_credentials_private(base_url: &str) -> bool {
     let Ok(parsed) = url::Url::parse(base_url) else {

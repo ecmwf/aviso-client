@@ -352,13 +352,11 @@ void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder, const char *t
  * uses. Finding nothing leaves the client anonymous. Finding a source that
  * cannot be used is remembered and reported at build time.
  *
- * A credential found this way is not sent to a plaintext address unless it is
- * loopback; that too is reported at build time. Use
- * `aviso_client_builder_basic_auth` when the credential is supplied by the
- * caller and the address is deliberate.
- *
- * Call this instead of `aviso_client_builder_basic_auth` when the credential
- * is supplied by the environment or by a file rather than by the caller.
+ * A credential found this way is not sent to a plain http address unless it
+ * is loopback; that too is reported at build time. When the caller holds the
+ * credential, `aviso_client_builder_bearer_auth` or
+ * `aviso_client_builder_basic_auth` name it instead, and a named credential
+ * goes to whatever address the builder was given.
  *
  * # Safety
  *

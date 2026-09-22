@@ -143,6 +143,7 @@ fn any_env_var_set() -> bool {
     .iter()
     .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
 }
+
 /// Only `auth:` is modelled. The config file carries other settings that this
 /// crate does not read, so unknown keys at the top level are ignored.
 #[derive(Deserialize)]

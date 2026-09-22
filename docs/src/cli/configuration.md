@@ -157,14 +157,15 @@ block of the config file is used instead. A missing file is fine. A file that
 exists but cannot be read is an error, so a typo is reported rather than
 ignored.
 
+The credentials file is also the only source that is reread after a 401. A
+tool that refreshes the token in place therefore reaches a running
+`aviso listen` without a restart.
+
 A credential from the environment or either file is not sent to a plain
 `http://` address unless it is loopback. Use an `https` address, or pass the
 credential on the command line with `--token`, or `--username` and
-`--password`, to say you mean it.
-
-It is also the only source that is reread after a 401. A tool that refreshes
-the token in place therefore reaches a running `aviso listen` without a
-restart.
+`--password`, to say you mean it. This applies when a command makes a request;
+`config dump` still reports the source it would have refused.
 
 To see which source is in use:
 
