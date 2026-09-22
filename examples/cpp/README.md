@@ -115,7 +115,9 @@ when you run it.
 ## Listening examples stop on their own
 
 Every listener stops after three notifications so you never have to Ctrl+C.
-Run it in one terminal and publish from another:
+The one exception is `resilience/04_stop_from_outside.cpp`, which is about
+stopping from outside and so ends on Ctrl+C or its own timer instead. Run a
+listener in one terminal and publish from another:
 
 ```bash
 ./build/cpp/03_listen              # waits
