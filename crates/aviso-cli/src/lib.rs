@@ -457,6 +457,17 @@ fn init_tracing(verbose: u8, ansi: bool) -> Result<()> {
 }
 
 async fn dispatch(cli: Cli) -> Result<()> {
+    // Completions need no configuration and make no request, so they run
+    // before anything is read from disk or the environment. A broken config
+    // or credentials file must not stop a shell from installing them.
+    if let Commands::Completions { shell } = cli.command {
+        return commands::completions::run(shell);
+    }
+    dispatch_configured(cli).await
+}
+
+/// Runs every command that needs the resolved configuration.
+async fn dispatch_configured(cli: Cli) -> Result<()> {
     let resolved = config::resolve(
         cli.config.as_ref(),
         cli.state_file.as_ref(),
@@ -556,7 +567,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Config(ConfigSubcommand::Dump { redact }) => {
             commands::config_dump::run(&resolved, redact)
         }
-        Commands::Completions { shell } => commands::completions::run(shell),
+        // Handled in `dispatch` before configuration is read.
+        Commands::Completions { .. } => Ok(()),
     }
 }
 

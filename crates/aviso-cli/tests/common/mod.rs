@@ -53,6 +53,13 @@ pub fn aviso() -> Command {
         "AVISO_CLIENT_CONFIG_FILE",
         "/nonexistent/aviso-test-isolated/config.yaml",
     );
+    // Without this the credentials tier falls back to the real home
+    // directory, so a developer with credentials on disk would get
+    // different results from CI.
+    cmd.env(
+        "AVISO_CREDENTIALS_FILE",
+        "/nonexistent/aviso-test-isolated/credentials.yaml",
+    );
     cmd
 }
 

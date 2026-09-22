@@ -20,7 +20,7 @@ iterator directly, without `await`.
 class pyaviso.AvisoClient(
     *,
     base_url: str,
-    auth: AuthProvider | None = None,
+    auth: AuthProvider | Anonymous | None = None,
     timeout: float | None = None,
     user_agent: str | None = None,
     state_store: StateStore | None = None,
@@ -81,10 +81,12 @@ response's request ID is not a notification ID.
 
 ### Constructor options and lifecycle
 
-`base_url` is required and includes the HTTP or HTTPS scheme. `auth=None` sends
-no credentials; it does not read environment variables. `state_store=None`
-does not persist checkpoints. `flush_cursor_on_exit=False` leaves the final
-pending cursor unflushed; enabling it does not acknowledge completed work.
+`base_url` is required and includes the HTTP or HTTPS scheme. `auth=None`
+searches the environment and the credential files; see
+[Authentication](./auth.md). Pass `auth=pyaviso.Anonymous()` to send no
+credentials. `state_store=None` does not persist checkpoints.
+`flush_cursor_on_exit=False` leaves the final pending cursor unflushed;
+enabling it does not acknowledge completed work.
 See [shutdown behavior](./state-and-resume.md#flush-on-exit).
 
 `timeout` and `heartbeat_interval` are seconds. `timeout=None` imposes no

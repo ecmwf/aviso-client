@@ -12,18 +12,28 @@
 //! `Authorization` header value. Five providers ship: [`Basic`], [`Bearer`], [`Env`],
 //! [`ConfigFile`], and [`Chain`] (composition).
 //!
+//! [`discover`] finds a credential without being told where it is, checking the environment,
+//! then the config file, then the credentials file.
+//!
 //! Shipped providers redact secrets in their `Debug` output.
 
 mod basic;
 mod bearer;
 mod chain;
 mod config_file;
-mod env;
+mod discover;
+pub(crate) mod env;
 
 pub use basic::Basic;
 pub use bearer::Bearer;
 pub use chain::Chain;
 pub use config_file::ConfigFile;
+pub use discover::{
+    CredentialSource, Discovered, DiscoveryPaths, ENV_CONFIG_FILE, ENV_CREDENTIALS_FILE,
+    config_content_provider, config_file_provider, credentials_file_provider, discover,
+    discover_for_url, discover_with, env_provider, is_public_plaintext,
+    url_keeps_credentials_private, url_without_userinfo,
+};
 pub use env::Env;
 
 use reqwest::header::HeaderValue;

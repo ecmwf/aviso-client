@@ -8,13 +8,29 @@
 
 #include "aviso.hpp"
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
 int main() {
   std::cout << "aviso version: " << aviso::version() << '\n';
 
-  aviso::Client client = aviso::ClientBuilder("http://127.0.0.1:1").build();
+  // Point every credential source at somewhere that holds nothing, so the
+  // result does not depend on what the machine running this has on disk.
+  for (const char* name :
+       {"AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"}) {
+    unsetenv(name);
+  }
+  setenv("AVISO_CLIENT_CONFIG_FILE", "/nonexistent/aviso/config.yaml", 1);
+  setenv("AVISO_CREDENTIALS_FILE", "/nonexistent/aviso/credentials.yaml", 1);
+
+  // Discovery therefore finds nothing, so the explicit token is what the
+  // client ends up with. Calling both also makes the linker check that the
+  // packaged library exports both entry points.
+  aviso::Client client = aviso::ClientBuilder("http://127.0.0.1:1")
+                             .bearer_auth("smoke-token")
+                             .discover_auth()
+                             .build();
   const std::string malformed_identifier = R"(["not-an-object"])";
 
   bool blocking_rejected = false;

@@ -16,15 +16,16 @@
 //!    layers per Q3's per-field precedence (`flag > env > file >
 //!    default`).
 //!
-//! The CLI never calls `aviso::auth::ConfigFile::from_path`: the
-//! library helper parses an auth-only YAML shape, not the locked
-//! Q3 nested-under-`auth:` block. The CLI parses the auth block
-//! itself (see [`AuthConfig`]) and constructs `aviso::auth::Bearer`
-//! or `aviso::auth::Basic` from the parsed values.
+//! The `auth:` block is accepted here so the key is known, but it is
+//! not interpreted here. `aviso::auth::discover_with` parses it and
+//! builds the provider, so the binary and the library read it the
+//! same way. That search also covers the environment and the
+//! credentials file; see `crate::auth`.
 //!
 //! The `auth:` section is OPTIONAL. A config file with no `auth:`
-//! block is fine; the resolved auth chain falls back to env, flag,
-//! or no auth at all (anonymous access to schema / health endpoints).
+//! block is fine; the credential then comes from the flag, the
+//! environment, the credentials file, or nowhere (anonymous access
+//! to schema / health endpoints).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,8 +51,13 @@ use crate::paths;
 pub(crate) struct ConfigFile {
     #[serde(default)]
     pub(crate) base_url: Option<String>,
-    #[serde(default)]
-    pub(crate) auth: Option<AuthConfig>,
+    /// Accepted so `auth:` is a known key under `deny_unknown_fields`, and
+    /// then discarded: `IgnoredAny` consumes the block without keeping it, so
+    /// a token or password in the file never sits in this struct or in its
+    /// `Debug` output. `aviso::auth::discover_with` reads the block itself
+    /// when no higher-priority source supplied a credential.
+    #[serde(default, rename = "auth")]
+    pub(crate) _auth: Option<serde::de::IgnoredAny>,
     #[serde(default, with = "humantime_serde::option")]
     pub(crate) timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde::option")]
@@ -62,26 +68,6 @@ pub(crate) struct ConfigFile {
     pub(crate) tls: Option<TlsConfig>,
     #[serde(default)]
     pub(crate) listeners: Vec<ListenerSpec>,
-}
-
-/// `auth:` block. The two flavours are mutually exclusive at the
-/// schema level: the operator picks either `bearer_token` OR `basic`,
-/// never both.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AuthConfig {
-    #[serde(default)]
-    pub(crate) bearer_token: Option<String>,
-    #[serde(default)]
-    pub(crate) basic: Option<BasicAuthConfig>,
-}
-
-/// `auth.basic:` block.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BasicAuthConfig {
-    pub(crate) username: String,
-    pub(crate) password: String,
 }
 
 /// `tls:` block.
@@ -145,9 +131,11 @@ pub(crate) struct Sourced<T> {
 /// The materialised configuration walked through every layer.
 ///
 /// `resolve` builds this once at CLI startup; subcommand handlers
-/// consume the resolved values. The `auth_provider` is already
-/// chain-composed per Q8 + amendment A2; the TLS knobs feed into
-/// the `AvisoClientBuilder` setters `.ca_bundle` and
+/// consume the resolved values. The `auth_provider` is the single
+/// provider from the first source that had a credential (flag, then
+/// environment, then config file, then credentials file), and
+/// `auth_source` names that source; the TLS knobs
+/// feed into the `AvisoClientBuilder` setters `.ca_bundle` and
 /// `.danger_accept_invalid_certs`. Each path is rendered absolute
 /// per Error UX rule 3.
 #[derive(Debug, Clone)]
@@ -160,6 +148,8 @@ pub(crate) struct Resolved {
     pub(crate) tls_ca_bundle_paths: Sourced<Vec<PathBuf>>,
     pub(crate) tls_danger_accept_invalid_certs: Sourced<bool>,
     pub(crate) auth_provider: Option<Arc<dyn AuthProvider>>,
+    /// Highest-priority tier that produced [`Self::auth_provider`].
+    pub(crate) auth_source: Option<&'static str>,
     pub(crate) listeners: Vec<ListenerSpec>,
     pub(crate) force_json: bool,
     pub(crate) verbose: u8,
@@ -215,8 +205,9 @@ pub(crate) fn resolve(
         };
         Sourced { value, source }
     };
-    let file = load_optional(&config_path.value)
+    let loaded = load_optional(&config_path.value)
         .with_context(|| format!("at: {}", config_path.value.display()))?;
+    let file = loaded.parsed;
 
     let state_path = if let Some(p) = cli_state_file {
         Sourced {
@@ -274,9 +265,8 @@ pub(crate) fn resolve(
     )?;
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
-    let env_provider = cli_auth::provider_from_env()?;
-    let file_provider = cli_auth::provider_from_file(file.auth.as_ref())?;
-    let auth_provider = cli_auth::build_chain(flag_provider, env_provider, file_provider);
+    let (auth_provider, auth_source) =
+        cli_auth::resolve_provider(flag_provider, &config_path.value, loaded.content)?;
 
     Ok(Resolved {
         config_path,
@@ -287,6 +277,7 @@ pub(crate) fn resolve(
         tls_ca_bundle_paths,
         tls_danger_accept_invalid_certs,
         auth_provider,
+        auth_source,
         listeners: file.listeners,
         force_json: cli_force_json,
         verbose: cli_verbose,
@@ -366,15 +357,42 @@ fn read_env(name: &str) -> Result<Option<String>> {
 /// (operating without a config file is supported; flag and env
 /// overrides cover the common case). All other I/O errors and any
 /// YAML parse error surface verbatim.
-pub(crate) fn load_optional(path: &Path) -> Result<ConfigFile> {
-    if !path.exists() {
-        return Ok(ConfigFile::default());
+/// A parsed config file together with the exact text it was parsed from.
+///
+/// The text is kept so the credential search can read the `auth:` block from
+/// the same bytes as every other setting. Reopening the path could see a
+/// replaced file and pair a fresh credential with a stale server address.
+pub(crate) struct LoadedConfig {
+    pub(crate) parsed: ConfigFile,
+    /// `None` when the file was absent.
+    pub(crate) content: Option<String>,
+}
+
+pub(crate) fn load_optional(path: &Path) -> Result<LoadedConfig> {
+    // `Path::exists` reports false for a dangling symlink and for a path the
+    // process may not inspect, so an operator's broken `--config` would look
+    // like "no config" and be silently ignored. Ask for the directory entry
+    // and treat only a genuinely missing one as absent.
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LoadedConfig {
+                parsed: ConfigFile::default(),
+                content: None,
+            });
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("read config file: {}", path.display()));
+        }
     }
-    let bytes =
-        std::fs::read(path).with_context(|| format!("read config file: {}", path.display()))?;
-    let cfg: ConfigFile = yaml::from_slice(&bytes)
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("read config file: {}", path.display()))?;
+    let parsed: ConfigFile = yaml::from_str(&content)
         .with_context(|| format!("parse config file: {}", path.display()))?;
-    Ok(cfg)
+    Ok(LoadedConfig {
+        parsed,
+        content: Some(content),
+    })
 }
 
 #[cfg(test)]
@@ -394,7 +412,6 @@ mod tests {
     fn parse_empty_yaml_yields_defaults() {
         let cfg = parse("");
         assert!(cfg.base_url.is_none());
-        assert!(cfg.auth.is_none());
         assert!(cfg.listeners.is_empty());
     }
 
@@ -420,10 +437,6 @@ listeners:
 "#;
         let cfg = parse(yaml_text);
         assert_eq!(cfg.base_url.as_deref(), Some("https://aviso.example.org"));
-        assert!(cfg.auth.is_some());
-        let auth = cfg.auth.unwrap();
-        assert_eq!(auth.bearer_token.as_deref(), Some("secret"));
-        assert!(auth.basic.is_none());
         assert_eq!(cfg.timeout, Some(Duration::from_secs(30)));
         assert_eq!(cfg.heartbeat_interval, Some(Duration::from_secs(30)));
         assert_eq!(
@@ -442,19 +455,14 @@ listeners:
     }
 
     #[test]
-    fn parse_nested_auth_basic() {
-        let yaml_text = r"
-auth:
-  basic:
-    username: alice
-    password: hunter2
-";
-        let cfg = parse(yaml_text);
-        let auth = cfg.auth.expect("auth present");
-        assert!(auth.bearer_token.is_none());
-        let basic = auth.basic.expect("basic present");
-        assert_eq!(basic.username, "alice");
-        assert_eq!(basic.password, "hunter2");
+    fn parse_accepts_a_nested_auth_block() {
+        // The block's shape is the shared search's concern; this file only
+        // has to accept the key. See aviso::auth::config_file_provider.
+        // `parse` unwraps, so reaching this line is the assertion: the key
+        // was accepted under deny_unknown_fields.
+        let cfg = parse("auth:\n  basic:\n    username: alice\n    password: hunter2\n");
+
+        assert!(cfg.base_url.is_none());
     }
 
     #[test]
@@ -468,18 +476,32 @@ auth:
     }
 
     #[test]
-    fn parse_rejects_unknown_field_inside_auth() {
-        let err = yaml::from_str::<ConfigFile>("auth:\n  bogus_key: 1\n").unwrap_err();
-        let msg = err.to_string();
+    fn debug_output_never_carries_the_auth_block() {
+        let cfg = parse("auth:\n  bearer_token: super-secret-value\n");
+
+        let rendered = format!("{cfg:?}");
+
         assert!(
-            msg.contains("bogus_key") || msg.contains("unknown field"),
-            "error should name the bad field: {msg}"
+            !rendered.contains("super-secret-value"),
+            "the parsed config must not retain credential material: {rendered}"
         );
     }
 
     #[test]
+    fn parse_accepts_an_auth_block_it_does_not_interpret() {
+        // A mistyped key inside auth: is reported by the shared search when
+        // the block is actually read, not here, so a command that gets its
+        // credential elsewhere is not failed by an unused block.
+        let cfg = parse("auth:\n  bogus_key: 1\n");
+
+        assert!(cfg.base_url.is_none());
+    }
+
+    #[test]
     fn load_optional_returns_default_when_file_absent() {
-        let cfg = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test")).unwrap();
+        let cfg = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test"))
+            .unwrap()
+            .parsed;
         assert!(cfg.base_url.is_none());
     }
 

@@ -20,8 +20,7 @@ Start with [pyaviso installed](./install.md) in your Python environment. Set
 `AVISO_BASE_URL` and either `AVISO_TOKEN` or `AVISO_USERNAME`/`AVISO_PASSWORD`,
 as in [Set the environment](./quickstart.md#set-the-environment).
 `pyaviso.Env()` requires credentials and prefers the token when both are set.
-For an anonymous server, omit `auth=pyaviso.Env()` from the client
-initialization.
+For an anonymous server, pass `auth=pyaviso.Anonymous()` instead.
 
 Save this as `discover.py` and run `python discover.py`. It lists event types
 and prints the complete schema response for `mars`. If `mars` is absent, use a

@@ -57,7 +57,7 @@ pub(crate) fn build(
     state_store: Option<Arc<dyn StateStore>>,
     flush_cursor_on_exit: bool,
 ) -> Result<AvisoClient> {
-    let base_url = resolved
+    let base_url: &str = &resolved
         .base_url
         .as_ref()
         .ok_or_else(|| {
@@ -65,8 +65,7 @@ pub(crate) fn build(
                 "base_url is required; set base_url in the config file, --base-url on the command line, or the AVISO_BASE_URL environment variable",
             )
         })?
-        .value
-        .clone();
+        .value;
 
     let mut builder: AvisoClientBuilder = AvisoClient::builder().base_url(base_url);
 
@@ -77,6 +76,17 @@ pub(crate) fn build(
         builder = builder.heartbeat_interval(h.value);
     }
     if let Some(provider) = resolved.auth_provider.as_ref() {
+        // A credential the operator did not name on the command line is
+        // not sent to a plaintext address unless it is loopback. This is
+        // checked here, not at config resolution, so `config dump` can
+        // still report which source would have been used.
+        if resolved.auth_source != Some("flag") && aviso::auth::is_public_plaintext(base_url) {
+            return Err(usage_error(format!(
+                "refusing to send the credential from the {} to {}, which is not https and not a loopback address. Use an https address, or pass the credential with --token or --username/--password to say you mean it.",
+                resolved.auth_source.unwrap_or("configured source"),
+                aviso::auth::url_without_userinfo(base_url),
+            )));
+        }
         builder = builder.auth(Arc::clone(provider));
     }
     for path in &resolved.tls_ca_bundle_paths.value {

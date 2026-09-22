@@ -68,6 +68,18 @@ AvisoClientBuilder *aviso_client_builder_new(const char *base_url) {
   return calloc(1, sizeof(AvisoClientBuilder));
 }
 
+void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder,
+                                      const char *token) {
+  (void)builder;
+  (void)token;
+}
+
+void aviso_client_builder_discover_auth(AvisoClientBuilder *builder) {
+  // The stub has no credential sources, so discovery is a no-op and the
+  // builder stays usable, which is what the consumer smoke relies on.
+  (void)builder;
+}
+
 AvisoOutcome *aviso_client_builder_build(AvisoClientBuilder **builder) {
   AvisoOutcome *outcome = calloc(1, sizeof(*outcome));
   if (outcome == NULL) {

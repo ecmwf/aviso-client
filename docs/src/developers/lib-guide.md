@@ -62,6 +62,43 @@ and `Chain`. The page on
 each one. The full API is at
 [`aviso::auth`](https://docs.rs/aviso/latest/aviso/auth/).
 
+### Letting the library find the credential
+
+When the credential is supplied by the environment or by a file rather than
+by your code, ask the library to find it. `discover_for_url` checks the
+environment, then the `auth:` block of `~/.config/aviso/config.yaml`, then
+`~/.config/aviso/credentials.yaml`, and stops at the first one that has a
+credential:
+
+```rust,ignore
+use aviso::AvisoClient;
+use aviso::auth::{DiscoveryPaths, discover_for_url};
+
+let base_url = "https://aviso.example";
+let mut builder = AvisoClient::builder().base_url(base_url);
+if let Some(found) = discover_for_url(base_url, &DiscoveryPaths::from_env())? {
+    builder = builder.auth(found.into_provider());
+}
+let client = builder.build()?;
+```
+
+The same code is a doctest on `discover_for_url`, compiled by
+`cargo test --doc`. Like every Rust block in this book, this copy itself is not
+compiled, so if the two ever differ, the doctest is the one to trust.
+
+`Ok(None)` means nothing was found and the client stays anonymous. A source
+that exists but cannot be used is an error, so a typo in a credentials file is
+reported rather than skipped. `found.source()` says where the credential came
+from, which is worth logging when more than one place could have supplied it.
+
+`discover_for_url` refuses a credential it found if `base_url` is plain
+`http://` and not loopback, because nothing in your code named that
+credential, and a mistyped host would otherwise send it in the clear. `discover`
+and `discover_with` perform the same search without that check; use them only
+when you apply your own rule about where a credential may go. Passing a
+provider to `.auth()` yourself, as in the first example, never goes through
+this check: writing the credential into the call is choosing where it goes.
+
 For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider`
 trait. Always call `HeaderValue::set_sensitive(true)` on the value you return;
 that is what makes downstream loggers redact it.

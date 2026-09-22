@@ -7,19 +7,20 @@
 // does it submit to any jurisdiction.
 
 //! Client and client-builder handles, and the blocking verbs over them.
+//! Credential setters live in [`auth`].
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, c_char};
 use std::ptr;
-use std::sync::Arc;
 
 use aviso::NotificationRequest;
-use aviso::auth::Basic;
 use serde_json::Value;
 
 use crate::error::{self, OutcomeError};
 use crate::outcome::AvisoOutcome;
 use crate::{guard, guard_outcome, reject_blocking_on_runtime, runtime};
+
+mod auth;
 
 /// Opaque client handle. Wraps the core client (cheap to clone, shares the
 /// connection pool and auth state).
@@ -33,6 +34,8 @@ pub struct AvisoClient {
 pub struct AvisoClientBuilder {
     inner: Option<aviso::AvisoClientBuilder>,
     error: Option<OutcomeError>,
+    /// Kept so credential discovery can check where the credential would go.
+    base_url: String,
 }
 
 impl AvisoClientBuilder {
@@ -201,9 +204,13 @@ pub unsafe extern "C" fn aviso_client_builder_new(
         let mut builder = AvisoClientBuilder {
             inner: Some(aviso::AvisoClient::builder()),
             error: None,
+            base_url: String::new(),
         };
         match unsafe { cstr_opt(base_url) } {
-            Some(url) => builder.apply(|b| b.base_url(url)),
+            Some(url) => {
+                url.clone_into(&mut builder.base_url);
+                builder.apply(|b| b.base_url(url));
+            }
             None => {
                 builder.error = Some(error::invalid_input(
                     "base_url must be non-null and valid UTF-8",
@@ -212,41 +219,6 @@ pub unsafe extern "C" fn aviso_client_builder_new(
         }
         Box::into_raw(Box::new(builder))
     })
-}
-
-/// Sets HTTP Basic credentials on the builder. A null or non-UTF-8 argument, or
-/// a credential-construction failure, is remembered and reported at build time.
-///
-/// # Safety
-///
-/// `builder` must be a live builder handle from `aviso_client_builder_new`.
-/// `username` and `password`, when non-null, must be NUL-terminated C strings.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn aviso_client_builder_basic_auth(
-    builder: *mut AvisoClientBuilder,
-    username: *const c_char,
-    password: *const c_char,
-) {
-    guard((), || {
-        let Some(builder) = (unsafe { builder.as_mut() }) else {
-            return;
-        };
-        if builder.error.is_some() {
-            return;
-        }
-        let (Some(user), Some(pass)) =
-            (unsafe { cstr_opt(username) }, unsafe { cstr_opt(password) })
-        else {
-            builder.error = Some(error::invalid_input(
-                "basic_auth username and password must be non-null and valid UTF-8",
-            ));
-            return;
-        };
-        match Basic::new(user, pass) {
-            Ok(basic) => builder.apply(|b| b.auth(Arc::new(basic))),
-            Err(err) => builder.error = Some(error::map_error(&err)),
-        }
-    });
 }
 
 /// Builds the client, consuming the builder. On entry the builder is taken and

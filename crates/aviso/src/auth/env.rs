@@ -49,14 +49,21 @@ impl Env {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Config`] if any of the credential env vars is set but its value is
-    /// not valid UTF-8 (`VarError::NotUnicode`). Returns [`ClientError::Auth`] if no usable
-    /// combination of variables is set.
+    /// Returns [`ClientError::Config`] if a consulted variable is set but its value is not
+    /// valid UTF-8 (`VarError::NotUnicode`). Only `AVISO_TOKEN` is consulted when it is set and
+    /// non-empty; the Basic pair is read only after that. Returns [`ClientError::Auth`] if no
+    /// usable combination of variables is set.
     pub fn from_process_env() -> crate::Result<Self> {
+        // The token wins when set, so it is read first and the Basic pair is
+        // not touched at all in that case. Reading all three up front would
+        // let an unusable, lower-priority variable reject a valid token.
         let bearer = read_env_var(ENV_TOKEN)?;
+        if bearer.as_deref().is_some_and(|t| !t.is_empty()) {
+            return Self::from_credentials(bearer.as_deref(), None, None);
+        }
         let user = read_env_var(ENV_USERNAME)?;
         let pass = read_env_var(ENV_PASSWORD)?;
-        Self::from_credentials(bearer.as_deref(), user.as_deref(), pass.as_deref())
+        Self::from_credentials(None, user.as_deref(), pass.as_deref())
     }
 
     /// Resolves credentials from explicit option triples. This is the testable kernel of

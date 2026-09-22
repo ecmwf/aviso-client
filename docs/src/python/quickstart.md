@@ -25,8 +25,9 @@ export AVISO_TOKEN=your-bearer-token
 The scripts use `pyaviso.Env()` to read credentials. If you have a username and
 password instead, unset `AVISO_TOKEN` and set `AVISO_USERNAME` and
 `AVISO_PASSWORD`. A token takes precedence when both are set. `Env()` requires
-credentials; for an anonymous server, omit `auth=pyaviso.Env()` from each client
-initialization. See [Authentication](./auth.md) for other options.
+credentials; for an anonymous server, pass `auth=pyaviso.Anonymous()` instead.
+See [Authentication](./auth.md) for other options, including letting the
+client find a credential for you.
 
 ## What is on your server
 

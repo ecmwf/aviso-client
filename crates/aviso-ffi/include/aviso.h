@@ -316,19 +316,6 @@ void aviso_client_delete_notification_async(const AvisoClient *client,
 AvisoClientBuilder *aviso_client_builder_new(const char *base_url);
 
 /**
- * Sets HTTP Basic credentials on the builder. A null or non-UTF-8 argument, or
- * a credential-construction failure, is remembered and reported at build time.
- *
- * # Safety
- *
- * `builder` must be a live builder handle from `aviso_client_builder_new`.
- * `username` and `password`, when non-null, must be NUL-terminated C strings.
- */
-void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
-                                     const char *username,
-                                     const char *password);
-
-/**
  * Builds the client, consuming the builder. On entry the builder is taken and
  * the caller's pointer is set to null (so a later free is a safe no-op), even
  * when the build fails. Returns an outcome carrying the client (retrieve it
@@ -494,6 +481,57 @@ AvisoOutcome *aviso_client_wipe_all(const AvisoClient *client);
  */
 AvisoOutcome *aviso_client_delete_notification(const AvisoClient *client,
                                                const char *notification_id);
+
+/**
+ * Sets HTTP Basic credentials on the builder. A null or non-UTF-8 argument, or
+ * a credential-construction failure, is remembered and reported at build time.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
+ * `username` and `password`, when non-null, must be NUL-terminated C strings.
+ */
+void aviso_client_builder_basic_auth(AvisoClientBuilder *builder,
+                                     const char *username,
+                                     const char *password);
+
+/**
+ * Sets a Bearer token on the builder. A null, non-UTF-8 or empty token is
+ * remembered and reported at build time.
+ *
+ * This names the credential explicitly, so it is sent to whatever address
+ * the builder was given, plain http included. Use
+ * `aviso_client_builder_discover_auth` when the token is supplied by the
+ * environment or a file rather than by the caller.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
+ * `token`, when non-null, must be a NUL-terminated C string.
+ */
+void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder, const char *token);
+
+/**
+ * Looks for a credential and uses it if one is found.
+ *
+ * The search order is the environment, then the `auth:` block of the config
+ * file, then the credentials file, which is the same order the `aviso` binary
+ * uses. Finding nothing changes nothing: a credential set earlier with
+ * `aviso_client_builder_bearer_auth` or `aviso_client_builder_basic_auth`
+ * stays, and a builder with none stays anonymous. Finding a source that
+ * cannot be used is remembered and reported at build time.
+ *
+ * A credential found this way is not sent to a plain http address unless it
+ * is loopback; that too is reported at build time. When the caller holds the
+ * credential, `aviso_client_builder_bearer_auth` or
+ * `aviso_client_builder_basic_auth` name it instead, and a named credential
+ * goes to whatever address the builder was given.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle from `aviso_client_builder_new`.
+ */
+void aviso_client_builder_discover_auth(AvisoClientBuilder *builder);
 
 /**
  * Returns `true` when the outcome carries no error.

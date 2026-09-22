@@ -163,6 +163,16 @@ class ConfigFile:
 class Chain:
     def __init__(self, *providers: AuthProvider) -> None: ...
 
+class Anonymous:
+    """Marker that turns off credential discovery.
+
+    A client built with ``auth=Anonymous()`` sends no ``Authorization``
+    header even when a credential is present in the environment or in a
+    file. It carries no credential, so it cannot go into a ``Chain``.
+    """
+
+    def __init__(self) -> None: ...
+
 class MemoryStore:
     def __init__(self) -> None: ...
 
@@ -215,7 +225,7 @@ class AvisoClient:
         self,
         *,
         base_url: str,
-        auth: AuthProvider | None = None,
+        auth: AuthProvider | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: StateStore | None = None,
@@ -266,7 +276,7 @@ class AsyncAvisoClient:
         self,
         *,
         base_url: str,
-        auth: AuthProvider | None = None,
+        auth: AuthProvider | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: StateStore | None = None,
@@ -365,6 +375,7 @@ class TriggerError(AvisoError):
 
 __all__ = [
     "VERSION",
+    "Anonymous",
     "AsyncAvisoClient",
     "AsyncNotificationIterator",
     "AuthError",

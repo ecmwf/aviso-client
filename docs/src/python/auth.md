@@ -9,6 +9,60 @@ Ask your server operator for its URL and credentials. Users need permission to
 receive notifications; providers need permission to publish. An auth provider
 tells the client where to get credentials. It does not grant permissions.
 
+## Let the client find your credentials
+
+If you create a client without an `auth` argument, it looks for a credential
+in three places and uses the first one it finds:
+
+1. The environment: `AVISO_TOKEN`, or `AVISO_USERNAME` with `AVISO_PASSWORD`.
+2. The `auth:` block of `~/.config/aviso/config.yaml`.
+3. `~/.config/aviso/credentials.yaml`.
+
+```python
+import os
+
+import pyaviso
+
+client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"])
+print(client.schema().event_types)
+```
+
+This suits a script or notebook whose credentials were set up beforehand by
+something else. Nothing in the code names a credential, so the same file runs
+for a colleague whose token lives somewhere different.
+
+The two file paths can be moved with `AVISO_CLIENT_CONFIG_FILE` and
+`AVISO_CREDENTIALS_FILE`.
+
+Finding nothing leaves the client anonymous. Finding a file that cannot be read
+raises `pyaviso.ConfigError`, and a half-set environment (a username with no
+password) raises `pyaviso.AuthError`, so a mistake is reported rather than
+quietly ignored.
+
+A credential found this way is not sent to a plain `http://` address unless it
+is loopback, and the client raises `pyaviso.AuthError` instead. You did not
+name the credential in the code, so a mistyped host would otherwise send it in
+the clear. Naming it yourself lifts the restriction:
+
+```python
+client = pyaviso.AvisoClient(
+    base_url="http://aviso.internal.example.org",
+    auth=pyaviso.Bearer(os.environ["AVISO_TOKEN"]),
+)
+```
+
+To send no credential even though one is present on the machine, pass the
+`Anonymous` marker:
+
+```python
+client = pyaviso.AvisoClient(
+    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Anonymous()
+)
+```
+
+The rest of this page covers naming a source yourself, which is what you want
+when one script must use particular credentials.
+
 ## Environment
 
 Start with [pyaviso installed](./install.md) and the
@@ -41,10 +95,10 @@ permission checks, and discovery may be public.
   The password may be an empty string if your service permits that.
 - Without either combination, construction raises `pyaviso.AuthError`.
 
-There is no anonymous fallback. For an anonymous server, omit
-`auth=pyaviso.Env()` from the client initialization. Updating environment
-variables does not change an existing `Env` provider; create it again or restart
-the script.
+`Env()` has no anonymous fallback of its own. For an anonymous server, pass
+`auth=pyaviso.Anonymous()`; omitting `auth` starts the search described above.
+Updating environment variables does not change an existing `Env` provider;
+create it again or restart the script.
 
 ## Bearer token
 
@@ -123,7 +177,9 @@ rejected.
 - `Bearer`, `Basic` and `Env` keep their original credentials; refresh does not
   change them.
 - `ConfigFile` rereads its source file. An invalid replacement file raises
-  `AuthError` during refresh.
+  `AuthError` during refresh. A credential found at
+  `~/.config/aviso/credentials.yaml` is read this way, so a token rewritten in
+  place is picked up without restarting the script.
 - `Chain` refreshes the first member currently able to produce a header.
 
 For static credentials, fix the source and construct a new provider/client or

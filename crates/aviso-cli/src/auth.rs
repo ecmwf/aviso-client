@@ -6,32 +6,32 @@
 // granted to it by virtue of its status as an intergovernmental organisation nor
 // does it submit to any jurisdiction.
 
-//! Auth-provider chain construction for the `aviso` binary.
+//! Auth-provider selection for the `aviso` binary.
 //!
-//! Three tiers in highest-priority-first order per Q8 + amendment A2:
+//! Four sources, tried in this order; the first that has a credential wins:
 //!
 //! 1. **Flag tier**: `--token <T>` -> `Bearer::new(T)`; else
 //!    `--username <U>` + `--password <P>` -> `Basic::new(U, P)`;
 //!    else no flag tier. Clap's `conflicts_with` rejects mixing
 //!    `--token` with `--username`/`--password` at parse time.
-//! 2. **Env tier**: `aviso::auth::Env::from_process_env()` (lib
-//!    helper that reads `AVISO_TOKEN`, falling back to
-//!    `AVISO_USERNAME` + `AVISO_PASSWORD`). The lib returns
-//!    `Err(ClientError::Auth)` when no env credentials are set;
-//!    this module treats that specific error as "no env tier
-//!    available" (anonymous fallback) rather than propagating the
-//!    error. Any OTHER env-tier error (e.g. non-UTF-8 env value
-//!    surfacing as `ClientError::Config`) DOES propagate so the
-//!    operator sees the misconfiguration.
-//! 3. **File tier**: the parsed `[auth]` block from `config.yaml`,
-//!    rendered through `Bearer::new` or `Basic::new`. Optional;
-//!    a file without `auth:` contributes nothing.
+//! 2. **Environment**: `AVISO_TOKEN`, or `AVISO_USERNAME` with
+//!    `AVISO_PASSWORD`.
+//! 3. **Config file**: the `auth:` block of the file the binary
+//!    resolved, so `--config` is honoured.
+//! 4. **Credentials file**: `credentials.yaml` in the aviso config
+//!    directory, or the path in `AVISO_CREDENTIALS_FILE`. It is
+//!    written by tools rather than by hand, so it ranks last and
+//!    never overrides a credential the operator typed. It is the
+//!    only source that re-reads on a 401, so a rotated token
+//!    reaches a running listener.
 //!
-//! Assembled into `aviso::auth::Chain::new(vec![...])` (skipping
-//! `None` tiers). The chain is passed to
-//! `AvisoClientBuilder::auth(Arc::new(chain))`.
+//! The last three are `aviso::auth::discover_with`, which is what
+//! the library and the Python package use, so every surface agrees
+//! on the order. The search stops at the first source that has a
+//! credential: a later one is not read at all, and cannot fail a
+//! command that was never going to use it.
 //!
-//! When all three tiers are empty, the client runs anonymous; the
+//! When no source has a credential the client runs anonymous; the
 //! schema and health endpoints work this way against any
 //! aviso-server.
 
@@ -39,9 +39,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use aviso::ClientError;
-use aviso::auth::{AuthProvider, Basic, Bearer, Chain, Env};
+use std::path::Path;
 
-use crate::config::AuthConfig;
+use aviso::auth::{AuthProvider, Basic, Bearer};
 
 /// Builds an auth provider from the flag tier.
 ///
@@ -73,110 +73,155 @@ pub(crate) fn provider_from_flags(
     Ok(None)
 }
 
-/// Reads credentials from the process environment.
-///
-/// Returns `Ok(None)` ONLY when none of `AVISO_TOKEN`,
-/// `AVISO_USERNAME`, `AVISO_PASSWORD` are set to non-empty values
-/// (true anonymous fallback). When at least one of those env vars
-/// is set but the combination is unusable (e.g. `AVISO_USERNAME`
-/// alone without `AVISO_PASSWORD`), the underlying
-/// `Env::from_process_env` returns `Err(ClientError::Auth)`; this
-/// wrapper converts that into a usage error (exit 2) naming the
-/// misconfiguration so the operator is NOT silently downgraded to
-/// the file or anonymous tier they did not ask for.
-///
-/// Propagates `ClientError::Config` (non-UTF-8 env values) verbatim.
-pub(crate) fn provider_from_env() -> Result<Option<Arc<dyn AuthProvider>>> {
-    let any_set = any_auth_env_var_set();
-    match Env::from_process_env() {
-        Ok(env) => Ok(Some(Arc::new(env))),
-        Err(ClientError::Auth(_)) if !any_set => Ok(None),
-        Err(ClientError::Auth(reason)) => Err(crate::exit::usage_error(format!(
-            "env auth is misconfigured: {reason}. Set AVISO_TOKEN, OR set BOTH AVISO_USERNAME and AVISO_PASSWORD, OR unset all three to fall back to the config-file auth block."
-        ))),
-        Err(other) => {
-            Err(anyhow::Error::from(other)).context("read auth credentials from environment")
-        }
-    }
-}
+/// A selected provider and the name of the source it came from.
+pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'static str>);
 
-/// Returns `true` when at least one of the auth env vars is set to
-/// a non-empty value. The set-but-empty case is treated as unset
-/// because shells routinely render `unset X` and `X=` identically
-/// in scripts and operators expect equivalent semantics.
-fn any_auth_env_var_set() -> bool {
-    ["AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"]
-        .iter()
-        .any(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()))
-}
-
-/// Builds an auth provider from the file tier (a parsed `[auth]`
-/// block).
+/// Selects the provider and names the source it came from.
 ///
-/// Returns `Ok(None)` when the block is absent OR neither
-/// `bearer_token` nor `basic` is set inside it.
+/// The flag tier is checked first because it is the most immediate
+/// expression of intent. Everything below it is the shared search
+/// in `aviso::auth::discover_with`, pointed at the config file this
+/// invocation resolved.
+///
+/// This only finds the credential. Whether it may be sent to the
+/// configured address is decided in `client_builder`, when a command
+/// is about to make a request: `config dump` must be able to report
+/// a refused source rather than fail on it.
+///
+/// `config_content` is the text the config file was already parsed
+/// from, when it exists, so the `auth:` block is read from the same
+/// snapshot as `base_url` and is never a second read of the path.
 ///
 /// # Errors
 ///
-/// Propagates `Bearer::new` / `Basic::new` failures (e.g. empty
-/// token in the config file) as `anyhow::Error`.
-pub(crate) fn provider_from_file(
-    cfg: Option<&AuthConfig>,
-) -> Result<Option<Arc<dyn AuthProvider>>> {
-    let Some(cfg) = cfg else {
-        return Ok(None);
-    };
-    match (cfg.bearer_token.as_deref(), cfg.basic.as_ref()) {
-        (Some(_), Some(_)) => Err(crate::exit::usage_error(
-            "config file auth: set EITHER `auth.bearer_token` OR `auth.basic.{username,password}`, not both",
-        )),
-        (Some(token), None) => {
-            let bearer = Bearer::new(token.to_string())
-                .context("build Bearer auth provider from config-file auth.bearer_token")?;
-            Ok(Some(Arc::new(bearer)))
-        }
-        (None, Some(basic)) => {
-            let basic = Basic::new(basic.username.clone(), basic.password.clone())
-                .context("build Basic auth provider from config-file auth.basic")?;
-            Ok(Some(Arc::new(basic)))
-        }
-        (None, None) => Ok(None),
-    }
-}
-
-/// Composes the final auth provider from the three tiers.
-///
-/// Returns `None` (anonymous) when all tiers are empty. With a
-/// single tier the provider is returned directly (no `Chain` wrap
-/// because that would add an indirection without behavioural
-/// difference). With multiple tiers a `Chain` wraps them; the
-/// `Chain` returns the first sub-provider's
-/// `authorization_header()` that succeeds, in highest-priority
-/// order.
-pub(crate) fn build_chain(
+/// Propagates a source that exists but cannot be used: a half-set
+/// environment, or a file that cannot be read or parsed. A source
+/// that is simply absent is skipped.
+pub(crate) fn resolve_provider(
     flag_provider: Option<Arc<dyn AuthProvider>>,
-    env_provider: Option<Arc<dyn AuthProvider>>,
-    file_provider: Option<Arc<dyn AuthProvider>>,
-) -> Option<Arc<dyn AuthProvider>> {
-    let providers: Vec<Arc<dyn AuthProvider>> = [flag_provider, env_provider, file_provider]
-        .into_iter()
-        .flatten()
-        .collect();
-    match providers.len() {
-        0 => None,
-        1 => providers.into_iter().next(),
-        _ => Some(Arc::new(Chain::new(providers))),
+    config_path: &Path,
+    config_content: Option<String>,
+) -> Result<SelectedProvider> {
+    if let Some(provider) = flag_provider {
+        return Ok((Some(provider), Some("flag")));
     }
+    let mut paths = aviso::auth::DiscoveryPaths::from_env();
+    // The credential must come from the same snapshot as every other
+    // setting. When the file was read, hand over its text; when it was
+    // absent at that moment, skip the config tier rather than reopen the
+    // path, which could see a file created since and pair its credential
+    // with settings parsed from nothing.
+    match config_content {
+        Some(content) => {
+            paths.config_file = Some(config_path.to_path_buf());
+            paths.config_content = Some(content);
+        }
+        None => paths.config_file = None,
+    }
+    let found = aviso::auth::discover_with(&paths).map_err(|e| match e {
+        ClientError::Auth(reason) => crate::exit::usage_error(reason),
+        other => anyhow::Error::from(other),
+    })?;
+    Ok(match found {
+        Some(found) => {
+            let label = found.source().label();
+            (Some(found.into_provider()), Some(label))
+        }
+        None => (None, None),
+    })
 }
 
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
     clippy::expect_used,
-    reason = "test code: unwrap/expect on chain construction is the expected diagnostic"
+    reason = "test code: unwrap/expect on provider construction is the expected diagnostic"
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_absent_snapshot_does_not_reopen_a_config_file_that_appeared_later() {
+        // The file was absent when the configuration was loaded, so the
+        // snapshot is None. A file written since must not supply the
+        // credential, because every other setting came from the absent one.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, "auth:\n  bearer_token: appeared-later\n").expect("write");
+        let _isolate = IsolatedSources::new(dir.path());
+
+        let (provider, source) = resolve_provider(None, &path, None).expect("resolve");
+
+        assert!(provider.is_none(), "the later file must not be read");
+        assert!(source.is_none());
+    }
+
+    #[test]
+    fn a_present_snapshot_is_used_even_if_the_file_changed_since() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, "auth:\n  bearer_token: on-disk-now\n").expect("write");
+        let _isolate = IsolatedSources::new(dir.path());
+        let snapshot = "auth:\n  bearer_token: from-snapshot\n".to_string();
+
+        let (provider, source) = resolve_provider(None, &path, Some(snapshot)).expect("resolve");
+
+        assert!(provider.is_some());
+        assert_eq!(source, Some("config file"));
+    }
+
+    /// Points the environment tiers at nothing for the duration of a test.
+    /// Serialised, because the process environment is shared.
+    struct IsolatedSources {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl IsolatedSources {
+        fn new(dir: &Path) -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let names = [
+                "AVISO_TOKEN",
+                "AVISO_USERNAME",
+                "AVISO_PASSWORD",
+                "AVISO_CREDENTIALS_FILE",
+            ];
+            let saved = names.iter().map(|k| (*k, std::env::var_os(k))).collect();
+            // SAFETY: ENV_LOCK is held, so no other test in this binary reads
+            // or writes these variables while they are changed.
+            unsafe {
+                for name in &names[..3] {
+                    std::env::remove_var(name);
+                }
+                std::env::set_var(
+                    "AVISO_CREDENTIALS_FILE",
+                    dir.join("absent-credentials.yaml"),
+                );
+            }
+            Self {
+                _guard: guard,
+                saved,
+            }
+        }
+    }
+
+    impl Drop for IsolatedSources {
+        fn drop(&mut self) {
+            // SAFETY: the lock is still held for the lifetime of this value.
+            unsafe {
+                for (name, value) in &self.saved {
+                    match value {
+                        Some(v) => std::env::set_var(name, v),
+                        None => std::env::remove_var(name),
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn flag_token_yields_bearer_provider() {
@@ -210,63 +255,5 @@ mod tests {
     fn empty_flag_yields_none() {
         let p = provider_from_flags(None, None, None).unwrap();
         assert!(p.is_none());
-    }
-
-    #[test]
-    fn file_provider_none_when_block_absent() {
-        let p = provider_from_file(None).unwrap();
-        assert!(p.is_none());
-    }
-
-    #[test]
-    fn file_provider_bearer_from_block() {
-        let cfg = AuthConfig {
-            bearer_token: Some("from-file".into()),
-            basic: None,
-        };
-        let p = provider_from_file(Some(&cfg)).unwrap();
-        assert!(p.is_some());
-    }
-
-    #[test]
-    fn file_provider_rejects_both_bearer_and_basic_set() {
-        let cfg = AuthConfig {
-            bearer_token: Some("token".into()),
-            basic: Some(crate::config::BasicAuthConfig {
-                username: "alice".into(),
-                password: "pw".into(),
-            }),
-        };
-        let err = provider_from_file(Some(&cfg)).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("EITHER") || msg.contains("not both") || msg.contains("auth.bearer_token"),
-            "{msg}"
-        );
-    }
-
-    #[test]
-    fn chain_empty_returns_none() {
-        let chain = build_chain(None, None, None);
-        assert!(chain.is_none());
-    }
-
-    #[test]
-    fn chain_single_tier_returns_that_tier_unwrapped() {
-        let token = provider_from_flags(Some("flag-token"), None, None).unwrap();
-        let chain = build_chain(token, None, None);
-        assert!(chain.is_some());
-    }
-
-    #[test]
-    fn chain_multiple_tiers_assembled_into_chain() {
-        let flag = provider_from_flags(Some("flag-token"), None, None).unwrap();
-        let file = provider_from_file(Some(&AuthConfig {
-            bearer_token: Some("file-token".into()),
-            basic: None,
-        }))
-        .unwrap();
-        let chain = build_chain(flag, None, file);
-        assert!(chain.is_some());
     }
 }

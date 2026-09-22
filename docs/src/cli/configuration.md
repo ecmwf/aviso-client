@@ -100,6 +100,7 @@ use `--startup-timeout` to bound startup without limiting a healthy stream.
 | `AVISO_TOKEN` | A bearer token. |
 | `AVISO_USERNAME` / `AVISO_PASSWORD` | Basic auth credentials. |
 | `AVISO_CLIENT_CONFIG_FILE` | Path to the config file. |
+| `AVISO_CREDENTIALS_FILE` | Path to the credentials file. |
 | `AVISO_STATE_FILE` | Path to the state file. |
 | `AVISO_LOG` | Logging filter. When set, overrides `-v`/`-vv`. Format: a [`tracing_subscriber`](https://docs.rs/tracing-subscriber) `EnvFilter` directive. |
 | `NO_COLOR` | When set (any value), suppresses ANSI colors in the `--color auto` mode. Per the [no-color.org](https://no-color.org/) convention. |
@@ -107,19 +108,70 @@ use `--startup-timeout` to bound startup without limiting a healthy stream.
 ## Authentication
 
 aviso supports anonymous access (no `Authorization` header), HTTP Basic, and
-Bearer. The five built-in providers are:
+Bearer. It looks for a credential in four places and stops at the first one
+that has it:
 
-| Provider | Where credentials come from |
+| Order | Source |
 |---|---|
-| `Bearer` | The `--token` flag, the `AVISO_TOKEN` env var, or `auth.bearer_token` in the config file. |
-| `Basic` | The `--username`/`--password` flags, the `AVISO_USERNAME`/`AVISO_PASSWORD` env vars, or `auth.basic.{username,password}` in the config file. |
-| `Env` | Builds Bearer or Basic from the env vars above. Internal; you do not select it directly. |
-| `ConfigFile` | Reads from a separate YAML file with `bearer:` or `basic:` blocks. |
-| `Chain` | Tries multiple providers in order and uses the first one that produces a header. |
+| 1 | The `--token` flag, or `--username` with `--password`. |
+| 2 | The `AVISO_TOKEN` env var, or `AVISO_USERNAME` with `AVISO_PASSWORD`. |
+| 3 | `auth.bearer_token`, or `auth.basic.{username,password}`, in the config file. |
+| 4 | The credentials file described below. |
 
-aviso composes the layered settings into whichever provider fits. See
-[Authentication providers](../concepts/auth-providers.md) for when to use each
-one.
+Once an earlier source supplies a credential, the `auth:` block of the config
+file and the credentials file are not interpreted, so a stale entry in either
+cannot fail a command that was not going to use it. The config file itself is
+still parsed for its other settings, and a YAML error there is reported
+regardless. With nothing in any of the four, aviso connects anonymously.
+
+The winning source decides the provider: the environment builds an `Env`, the
+credentials file a `ConfigFile`, and a flag or the config-file `auth:` block a
+`Bearer` or a `Basic` depending on which credential you set. Those names
+appear in logs and in the library API; see
+[Authentication providers](../concepts/auth-providers.md) for what each one
+does.
+
+### The credentials file
+
+When nothing else supplies a credential, aviso reads
+`~/.config/aviso/credentials.yaml`. Set `AVISO_CREDENTIALS_FILE` to use a
+different path. The file holds one credential and nothing else:
+
+```yaml
+# ~/.config/aviso/credentials.yaml
+bearer:
+  token: your-bearer-token
+```
+
+Or, for Basic authentication:
+
+```yaml
+basic:
+  username: your-username
+  password: your-password
+```
+
+This file is meant for tools that fetch a token and write it out. It is read
+last, so a credential you set with a flag, in the environment, or in the `auth:`
+block of the config file is used instead. A missing file is fine. A file that
+exists but cannot be read is an error, so a typo is reported rather than
+ignored.
+
+The credentials file is also the only source that is reread after a 401. A
+tool that refreshes the token in place therefore reaches a running
+`aviso listen` without a restart.
+
+A credential from the environment or either file is not sent to a plain
+`http://` address unless it is loopback. Use an `https` address, or pass the
+credential on the command line with `--token`, or `--username` and
+`--password`, to say you mean it. This applies when a command makes a request;
+`config dump` still reports the source it would have refused.
+
+To see which source is in use:
+
+```bash
+aviso config dump | grep -A2 '^auth:'
+```
 
 ### On a 401, aviso retries once
 

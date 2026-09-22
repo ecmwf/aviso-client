@@ -18,7 +18,7 @@ or errors in your own analysis.
 
 Use the [quickstart setup](./quickstart.md#set-the-environment), including
 `AVISO_BASE_URL` and credentials for `pyaviso.Env()`. For an anonymous server,
-omit `auth=pyaviso.Env()` from the initialization.
+pass `auth=pyaviso.Anonymous()` instead.
 
 This listener uses the
 [small `mars` schema](./quickstart.md#what-is-on-your-server).

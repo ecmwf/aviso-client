@@ -43,6 +43,7 @@ def test_native_version_matches_rust_crate() -> None:
 def test_public_surface_matches_documented_set() -> None:
     assert set(pyaviso.__all__) == {
         "VERSION",
+        "Anonymous",
         "AsyncAvisoClient",
         "AsyncNotificationIterator",
         "AuthError",

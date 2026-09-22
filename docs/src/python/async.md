@@ -20,7 +20,7 @@ or you need several listeners to wait concurrently in one thread.
 
 Use the [quickstart environment](./quickstart.md#set-the-environment): install
 pyaviso, set `AVISO_BASE_URL` and provide credentials for `pyaviso.Env()`.
-For an anonymous server, omit `auth=pyaviso.Env()` from the initialization.
+For an anonymous server, pass `auth=pyaviso.Anonymous()` instead.
 
 The examples use the
 [small `mars` schema](./quickstart.md#what-is-on-your-server).
