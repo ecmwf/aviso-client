@@ -182,3 +182,35 @@ async fn an_explicit_env_entry_still_reaches_the_child() {
     assert!(result.is_ok(), "dispatch failed: {result:?}");
     assert_eq!(std::fs::read_to_string(&out).unwrap(), "given-on-purpose");
 }
+
+#[tokio::test]
+async fn an_apostrophe_in_a_comment_does_not_open_a_quote() {
+    // A multi-line command with a comment is an ordinary YAML shape. The
+    // apostrophe in the comment must not make the next value look like
+    // it lands inside single quotes.
+    let run = run("# don't run this twice\nprintf '%s' {{ notification.payload.location }}").await;
+    assert!(
+        run.output.starts_with("south; touch "),
+        "got: {}",
+        run.output
+    );
+    assert!(
+        !run.marker_exists,
+        "the value after the comment ran as code"
+    );
+}
+
+#[tokio::test]
+async fn a_value_inside_a_comment_is_ignored() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("injected");
+    let out = dir.path().join("out");
+    let cfg = build_command_config(format!(
+        "printf '%s' ok > '{}' # {{{{ notification.payload.location }}}}",
+        out.display()
+    ));
+    let result = dispatch_command(&cfg, None, &hostile_notification(&marker)).await;
+    assert!(result.is_ok(), "dispatch failed: {result:?}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "ok");
+    assert!(!marker.exists());
+}

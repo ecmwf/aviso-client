@@ -62,7 +62,7 @@ mod quote;
 #[cfg(test)]
 mod tests;
 
-use quote::{ShellContext, percent_encode};
+use quote::{ShellTracker, percent_encode};
 
 /// What the rendered text is used for, which decides how substituted
 /// notification values are neutralised.
@@ -364,17 +364,17 @@ impl CompiledTemplate {
                 kind: TemplateErrorKind::NotificationEncode,
             })?;
 
-        // For the shell sink, follow the operator's literal text so each
-        // value is quoted for the context it lands in. Env values are
-        // the operator's own and do not move the context: the operator
-        // wrote both the template and the variable.
-        let mut shell = ShellContext::Bare;
+        // For the shell sink, follow everything the shell will read, the
+        // operator's text and the quoted values alike, so each value is
+        // quoted for the context it lands in. Env values are the
+        // operator's own and are read as written.
+        let mut shell = ShellTracker::new();
         let mut out = String::new();
         for segment in &self.segments {
             match segment {
                 Segment::Literal(s) => {
                     if sink == Sink::Shell {
-                        shell = shell.advance(s);
+                        shell.advance(s);
                     }
                     out.push_str(s);
                 }
@@ -392,7 +392,11 @@ impl CompiledTemplate {
                     let rendered = render_value(value);
                     match sink {
                         Sink::Raw => out.push_str(&rendered),
-                        Sink::Shell => out.push_str(&shell.quote(&rendered)),
+                        Sink::Shell => {
+                            let quoted = shell.quote(&rendered);
+                            shell.advance(&quoted);
+                            out.push_str(&quoted);
+                        }
                         Sink::Url => out.push_str(&percent_encode(&rendered)),
                     }
                 }
@@ -402,6 +406,9 @@ impl CompiledTemplate {
                         field: name.clone(),
                         kind,
                     })?;
+                    if sink == Sink::Shell {
+                        shell.advance(&value);
+                    }
                     out.push_str(&value);
                 }
             }
