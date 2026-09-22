@@ -210,3 +210,17 @@ def test_a_discovered_credential_may_go_to_an_https_address(
     monkeypatch.setenv("AVISO_TOKEN", "from-environment")
 
     pyaviso.AvisoClient(base_url="https://aviso.example.org")
+
+
+def test_an_invalid_address_is_reported_the_same_with_or_without_a_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The plaintext rule must not get in front of the builder's own check:
+    # the caller should see "invalid base_url", not an auth refusal.
+    with pytest.raises(pyaviso.ConfigError):
+        pyaviso.AvisoClient(base_url="ftp://aviso.example.org")
+    monkeypatch.setenv("AVISO_TOKEN", "from-environment")
+    with pytest.raises(pyaviso.ConfigError):
+        pyaviso.AvisoClient(base_url="ftp://aviso.example.org")
+    with pytest.raises(pyaviso.ConfigError):
+        pyaviso.AvisoClient(base_url="not a url")

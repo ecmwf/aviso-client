@@ -59,16 +59,20 @@ pub fn url_without_userinfo(base_url: &str) -> String {
     parsed.to_string()
 }
 
-/// True only for an address that parses, is not `https`, and is not loopback:
-/// the one case where a found credential is refused.
+/// True only for a plain `http` address that is not loopback: the one case
+/// where a found credential is refused.
 ///
-/// An address that does not parse is not a plaintext address; it is invalid
-/// input, and the client builder reports that as a Config error. Returning
-/// `false` for it keeps that error intact rather than replacing it with a
-/// refusal the caller cannot act on.
+/// Anything else is left to the client builder. An address that does not
+/// parse, or uses a scheme the client does not speak such as `ftp`, is
+/// invalid input, and the builder reports that as a Config error naming the
+/// real problem. Returning `false` here keeps that error intact rather than
+/// replacing it with a refusal the caller cannot act on.
 #[must_use]
 pub fn is_public_plaintext(base_url: &str) -> bool {
-    url::Url::parse(base_url).is_ok() && !url_keeps_credentials_private(base_url)
+    let Ok(parsed) = url::Url::parse(base_url) else {
+        return false;
+    };
+    parsed.scheme().eq_ignore_ascii_case("http") && !url_keeps_credentials_private(base_url)
 }
 
 /// True when a credential may travel to this address.
@@ -170,11 +174,15 @@ mod tests {
     }
 
     #[test]
-    fn only_a_parseable_remote_plaintext_address_is_public_plaintext() {
+    fn only_a_remote_plain_http_address_is_public_plaintext() {
         assert!(is_public_plaintext("http://aviso.example.org"));
+        assert!(is_public_plaintext("HTTP://aviso.example.org"));
         assert!(!is_public_plaintext("https://aviso.example.org"));
         assert!(!is_public_plaintext("http://127.0.0.1:8000"));
         assert!(!is_public_plaintext("not a url"));
+        // The builder rejects this scheme itself; the policy must not get
+        // there first with a message about plaintext.
+        assert!(!is_public_plaintext("ftp://aviso.example.org"));
     }
 
     #[test]

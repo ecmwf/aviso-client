@@ -192,8 +192,10 @@ pub fn discover() -> crate::Result<Option<Discovered>> {
 ///
 /// # Errors
 ///
-/// Returns [`ClientError::Auth`] when a credential was found but `base_url` is
-/// neither `https` nor a loopback address. Otherwise as [`discover_with`].
+/// Returns [`ClientError::Auth`] when a credential was found and `base_url` is
+/// a plain `http` address that is not loopback. An address that does not
+/// parse or uses another scheme passes through, so the client builder can
+/// report it as invalid input. Otherwise as [`discover_with`].
 pub fn discover_for_url(
     base_url: &str,
     paths: &DiscoveryPaths,

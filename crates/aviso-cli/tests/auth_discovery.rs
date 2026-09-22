@@ -289,3 +289,21 @@ fn a_dangling_config_symlink_is_reported_even_when_a_flag_supplies_the_credentia
         .failure()
         .stderr(contains("config.yaml"));
 }
+
+#[test]
+fn completions_work_even_when_every_configuration_source_is_broken() {
+    let dir = tempdir().unwrap();
+    let config = write(dir.path(), "config.yaml", "not: [valid yaml\n");
+    let credentials = write(dir.path(), "credentials.yaml", "bearer:\n  toke: typo\n");
+
+    // Completions read nothing and send nothing, so a shell must be able to
+    // install them regardless of what is on disk.
+    aviso()
+        .env("AVISO_CREDENTIALS_FILE", &credentials)
+        .arg("--config")
+        .arg(&config)
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(contains("_aviso"));
+}
