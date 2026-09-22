@@ -34,6 +34,31 @@ inside the command string (e.g.
 `command: "FOO={{ notification.event_type }} ./run.sh"`) or compute it inside
 the shell command itself (`command: "DATA=$HOME/aviso ./run.sh"`).
 
+## Notification values are data, never code
+
+The command string is yours. The identifier and payload values that get
+substituted into it are not: they were written by whoever published the
+notification, and on a shared server that is often someone else. So the engine
+never lets a value change what the command does. Every
+`{{ notification.* }}` value is quoted for the place it lands in, and the shell
+reads it as one literal argument whatever it contains:
+
+| You write | The shell sees for value `a'b$(x)` |
+|---|---|
+| `run {{ notification.payload.v }}` | `run 'a'\''b$(x)'` |
+| `run '{{ notification.payload.v }}'` | `run 'a'\''b$(x)'` |
+| `run "{{ notification.payload.v }}"` | `run "a'b\$(x)"` |
+
+In each case `run` receives exactly `a'b$(x)`. A value cannot add a second
+command, redirect output, or run `$(...)`. Plain values look the way they always
+did: `{{ notification.sequence }}` gives `run '42'`, and `run` sees `42`.
+
+`{{ env.* }}` values are yours, so they are inserted as written. If you want one
+to expand into several arguments, it still can.
+
+The `AVISO_*` environment variables (below) are the other safe route and often
+the simpler one: the shell does the quoting and the command string stays short.
+
 ## Template rendering on the command string
 
 The `command:` value runs through the [template engine](./template-engine.md).
@@ -47,6 +72,10 @@ Example:
 ```yaml
 command: "curl -X POST https://api.example/notify -d '{{ notification.payload }}' -H 'Authorization: Bearer {{ env.API_TOKEN }}'"
 ```
+
+The payload lands inside your single quotes, so a quote character in it is
+escaped and cannot end them. The token is your own environment variable and is
+inserted as written.
 
 ## Environment variables injected by the dispatcher
 
@@ -66,6 +95,13 @@ replaced by `_`. For example, `class` becomes `AVISO_IDENTIFIER_CLASS`.
 Operator-supplied `env:` keys are applied **after** the dispatcher-injected
 vars, so user keys override dispatcher keys when both are present.
 
+The child inherits the rest of the listener's environment, with two exceptions.
+`AVISO_TOKEN`, `AVISO_USERNAME` and `AVISO_PASSWORD` are removed: a trigger has
+no reason to hold the credential the listener uses to talk to the server. And
+any variable the command string already read through `{{ env.NAME }}` is
+removed too, since its value is already on the command line. To hand one of
+these to the child on purpose, set it in `env:`, which wins.
+
 This means you can write commands as either:
 
 ```yaml
@@ -76,8 +112,8 @@ command: "ingest {{ notification.event_type }} {{ notification.sequence }}"
 command: "ingest $AVISO_EVENT_TYPE $AVISO_SEQUENCE"
 ```
 
-Both produce the same result. Style B has the advantage that the command string
-is shorter and the shell handles quoting.
+Both produce the same result and both are safe against a hostile value. Style B
+keeps the command string shorter.
 
 ## Output capture
 

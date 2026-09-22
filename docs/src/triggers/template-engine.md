@@ -71,6 +71,10 @@ How each JSON value type renders into the template's output:
 | Object | Compact JSON, **including the surrounding braces** | `{"class":"od","date":"20260601"}` |
 | Array | Compact JSON | `["a","b","c"]` |
 
+These are the values as rendered for a JSON body or a header. When the text is
+a shell command or a URL, each notification value is also neutralised for that
+use; see [Where the text goes](#where-the-text-goes).
+
 The string-unquoted rule is the load-bearing one for safe embedding in JSON
 bodies. Compare:
 
@@ -95,6 +99,20 @@ For object/array values, embed them **outside** a JSON string field:
                 ↓ renders ↓
 "identifier": {"class":"od","date":"20260601"}   ← valid JSON; object is a JSON value, not a string
 ```
+
+## Where the text goes
+
+Notification values are written by the publisher, not by you. Each place a
+rendered template is used has its own idea of which characters are special, so
+the engine neutralises every `{{ notification.* }}` value for that place:
+
+| Rendered text is | Notification values are |
+|---|---|
+| a `command:` string | quoted for the shell context they land in: wrapped in single quotes when bare, `'` escaped inside single quotes, and backslash, `$`, backtick and `"` escaped inside double quotes. The shell reads the value as one literal argument. See [Command trigger](./command.md#notification-values-are-data-never-code). |
+| a webhook `url:` | percent-encoded (RFC 3986 unreserved characters kept). A value cannot add a path segment, a query parameter, or a host. |
+| a header value or a body | inserted as written. You supply the encoding around the value, for example the quotes of a JSON string. |
+
+`{{ env.* }}` values are your own and are inserted as written everywhere.
 
 ## Common patterns
 
@@ -184,7 +202,9 @@ carry secrets.
   iterate identifier fields at dispatch time via Rust code (not via the template
   engine).
 - **Filters / pipes** - no `{{ value | uppercase }}` or `{{ value | json }}`.
-  Operators wanting transformation should do it in the receiver.
+  Escaping for the shell and for URLs is applied by the engine according to
+  where the text goes, so no filter is needed for that. Operators wanting other
+  transformations should do them in the receiver.
 - **Macros / includes** - templates are flat strings; no recursion.
 
 This is intentional: a more featureful template engine adds attack surface and
