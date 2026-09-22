@@ -70,8 +70,11 @@ Each entry is `{"index", "status", "response"}` on success or
 
 ## A complete example
 
-[`examples/cpp/publish.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
-publishes a notification and then reads back the stream's schema, and
-[`examples/cpp/publish_many.cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp)
-publishes a batch with `notify_many`. CI compiles and runs both on every change,
-so they never drift from the binding.
+[`examples/cpp/basics/02_publish.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/basics/02_publish.cpp)
+publishes one notification with a string identifier.
+[`examples/cpp/basics/06_publish_polygon.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/basics/06_publish_polygon.cpp)
+sends a spatial identifier and a required payload with `notify_json`.
+[`examples/cpp/basics/04_publish_many.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/basics/04_publish_many.cpp)
+publishes a batch with `notify_many`, with one bad item so you can see a
+per-item failure next to two successes. CI compiles and runs all three on every
+change, so they never drift from the binding.

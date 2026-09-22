@@ -5,49 +5,41 @@ SPDX-License-Identifier: Apache-2.0
 
 # C++ examples
 
-Worked C++ consumers of the aviso C ABI and its header-only facade
-([`crates/aviso-ffi`](../../crates/aviso-ffi)). Each example links the prebuilt
-library and compiles the facade with the system C++ toolchain, the same way a
-real consumer would, so these double as the binding's tested reference.
+Runnable programs that show what the C++ binding does, one scenario per file.
+Each one links the prebuilt library and compiles `aviso.hpp` with your own
+toolchain, the way your program would. CI builds all of them with `-Werror` and
+runs them against a real server, so they are also the binding's tests.
 
-## Building
+## Build
 
-The library must exist first. For local development, build it from the
-workspace:
+The library must exist first. From a checkout:
 
 ```bash
 cargo build -p aviso-ffi
-```
-
-Then configure and build the examples, pointing CMake at the headers and the
-library:
-
-```bash
-cmake -S examples/cpp -B build/cpp \
-  -DAVISO_FFI_INCLUDE_DIR="$PWD/crates/aviso-ffi/include" \
-  -DAVISO_FFI_LIB_DIR="$PWD/target/debug"
+cmake -S examples/cpp -B build/cpp
 cmake --build build/cpp
 ```
 
-Both `-D` paths default to the in-tree locations above, so on a normal checkout
-`cmake -S examples/cpp -B build/cpp` is enough. Point them at a prebuilt drop
-(its `include/` and library directory) to build against shipped artifacts with
-no Rust toolchain.
+CMake defaults to the in-tree headers and `target/debug`. To build against a
+prebuilt drop instead, with no Rust toolchain, point it at the drop's
+directories:
 
-## Configuration
+```bash
+cmake -S examples/cpp -B build/cpp \
+  -DAVISO_FFI_INCLUDE_DIR=/path/to/drop/include \
+  -DAVISO_FFI_LIB_DIR=/path/to/drop/lib
+cmake --build build/cpp
+```
 
-Every example reads its connection settings from the environment
-([`aviso_env.hpp`](./aviso_env.hpp)), so credentials never appear on the command
-line:
+Every example becomes an executable named after its file, so
+`./build/cpp/02_publish` runs `basics/02_publish.cpp`.
 
-| Variable | Meaning | Default |
-|---|---|---|
-| `AVISO_BASE_URL` | Server base URL | `http://localhost:8000` |
-| `AVISO_USERNAME` | HTTP Basic username (optional) | unset |
-| `AVISO_PASSWORD` | HTTP Basic password (optional) | unset |
+## Connect
 
-Against the [`tests/e2e`](../../tests/e2e) stack, export the producer account
-once and run any example:
+Every example connects through [`common.hpp`](./common.hpp), which reads the
+aviso config file first and lets the environment override it. If you already
+use the `aviso` command on this machine, the examples work with no setup.
+Otherwise set:
 
 ```bash
 export AVISO_BASE_URL=http://localhost:8000
@@ -55,54 +47,94 @@ export AVISO_USERNAME=producer-user
 export AVISO_PASSWORD=producer-pass
 ```
 
-## Examples
+Those are the producer account of the local e2e stack, which is the easiest
+server to try against. It ships the `test_event` stream the examples use, with
+`date` and `time` identifiers:
 
-- `schema_smoke.cpp`: prints the version, connects, and calls `schema()`. With
-  no server reachable it catches the transport error and exits cleanly, so it
-  runs (and is exercised by CI) without a server.
+```bash
+bash tests/e2e/shared/stack.sh up      # auth-o-tron + aviso-server + NATS
+./build/cpp/01_schema                  # should print the catalog
+bash tests/e2e/shared/stack.sh down    # when done
+```
 
-  ```bash
-  ./build/cpp/schema_smoke
-  ```
+A bearer token works too: set `AVISO_TOKEN` instead of the username and
+password. Against your own server, change `kEventType` in `common.hpp` to a
+stream that exists there and adjust the identifier fields in the publishing
+examples to match; the shape of every call stays the same.
 
-- `publish.cpp`: publishes a notification with `notify()` and reads the stream's
-  schema with `schema_for()`. The stream and identifier are declared at the top
-  of the file. Against an auth-required stream, set the producer account above.
-  Use `notify_json()` for structured identifiers. Points use `[lat, lon]`;
-  polygons and point clouds use `[[lat, lon], ...]`.
+`common.hpp` also carries two small helpers the listeners share. `Handler`
+remembers the error `on_end()` receives, and `finish()` waits for the watch and
+turns that error into the exit code. Without them a failed watch would look like
+a clean exit, which is the one mistake every first listener makes.
 
-  ```bash
-  ./build/cpp/publish
-  ```
+## What is here
 
-- `publish_many.cpp`: publishes several notifications in one concurrent call
-  with `notify_many()` and prints the per-item results as a JSON array. A
-  per-item failure shows up as an `"error"` entry rather than throwing.
+The directories group by purpose, not by API surface. Read the comment at the
+top of each file first: it says what the example shows and what you should see
+when you run it.
 
-  ```bash
-  ./build/cpp/publish_many
-  ```
+### `basics/`: the calls everyone needs first
 
-- `watch.cpp`: listens to a stream (declared at the top of the file) and prints
-  each notification, stopping after a fixed count. It only listens; publish to
-  the stream from another terminal to see notifications:
+| File | Shows |
+|---|---|
+| `01_schema.cpp` | Ask the server what streams it has and what fields they take. Exits cleanly with no server configured or reachable, so it is also the build check. |
+| `02_publish.cpp` | Publish one notification with an identifier and a payload. |
+| `03_listen.cpp` | Listen to a stream with a handler; stop after three. |
+| `04_publish_many.cpp` | Publish a batch concurrently; see a per-item failure reported instead of thrown. |
+| `05_filter.cpp` | Receive only the notifications whose identifier matches a filter. |
+| `06_publish_polygon.cpp` | Publish a spatial identifier and a required payload with `notify_json()`. |
 
-  ```bash
-  ./build/cpp/watch      # in one terminal
-  ./build/cpp/publish    # in another, a few times
-  ```
+### `resilience/`: the patterns you need on top of listen
 
-- `trigger.cpp`: listens to a stream with a `log` trigger attached, so the trigger
-  appends each notification to a file as the listener runs, then prints the file.
-  Drive it by publishing from another terminal as with `watch`.
+| File | Shows |
+|---|---|
+| `01_resume_from_sequence.cpp` | Save the last sequence to a file, resume after it on the next run, and get the missed notifications first with no gap. Run it twice. |
+| `02_replay_only.cpp` | Read history since a date and stop, continuing past the server's replay cap until it has everything. |
+| `03_error_handling.cpp` | What each error kind looks like and which ones are worth a retry. |
+| `04_stop_from_outside.cpp` | End a listener from a signal handler or a timer with `Watch::stop()`, cleanly. |
 
-  ```bash
-  ./build/cpp/trigger
-  ```
+### `triggers/`: do something for every notification
 
-- `async.cpp`: fires two async verbs (`notify_async` and `schema_async`) at once
-  and waits on their `std::future`s, showing the future-based async form.
+| File | Shows |
+|---|---|
+| `01_echo.cpp` | Print each notification as JSON. The one to try first. |
+| `02_log.cpp` | Append each notification to a file. |
+| `03_command.cpp` | Run a shell command with the notification in `AVISO_*` environment variables. |
+| `04_webhook.cpp` | POST each notification to a URL with a templated body. Opens its own tiny receiver so it runs without one. |
+| `05_multiple.cpp` | Several triggers on one watch, and what `required` means when one fails. |
 
-  ```bash
-  ./build/cpp/async
-  ```
+`teams()` and `post()` have the same shape as `webhook()`; see the
+[trigger reference](../../docs/src/triggers/overview.md) for their details.
+
+### `async/`: the same verbs, returning `std::future`
+
+| File | Shows |
+|---|---|
+| `01_basic.cpp` | Two requests in flight at once. |
+| `02_fan_out.cpp` | Start ten requests, then collect them, in about one round trip. |
+
+## Listening examples stop on their own
+
+Every listener stops after three notifications so you never have to Ctrl+C.
+The one exception is `resilience/04_stop_from_outside.cpp`, which is about
+stopping from outside and so ends on Ctrl+C or its own timer instead. Run a
+listener in one terminal and publish from another:
+
+```bash
+./build/cpp/03_listen              # waits
+./build/cpp/02_publish             # in a second terminal, three times
+```
+
+The stop-after-three is for following along. In real code the handler returns
+`true` for as long as you want to keep listening, and something outside calls
+`Watch::stop()` when it is time to go. `resilience/04_stop_from_outside.cpp`
+shows that with Ctrl+C and a timer.
+
+## Testing
+
+[`tests/e2e/cpp/run_examples.sh`](../../tests/e2e/cpp/run_examples.sh) runs
+all seventeen against the e2e stack. The request-only ones run directly. The
+listeners are driven by publishes until they stop. The resume example runs
+twice to check that the second run picks up where the first stopped, and one
+listener runs with a bad credential to check that a failed watch exits 1. CI
+runs it on every change.

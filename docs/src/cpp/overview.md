@@ -26,8 +26,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
   calls `wipe_stream`, `wipe_all`, and `delete_notification`; see
   [Operations](./operations.md).
-- Call any verb asynchronously: each has a `*_async` form returning a
-  `std::future`; see [Async](./async.md).
+- Call verbs asynchronously: each except `notify_many` has a `*_async` form
+  returning a `std::future`; see [Async](./async.md).
 - Read structured errors: every failure throws an `aviso::Error` whose `what()`
   is a human-readable message and whose `error()` returns the kind, HTTP status,
   and request id.
@@ -127,28 +127,63 @@ These calls must not run inside a listener or async callback (a runtime thread);
 doing so throws an `aviso::Error` with kind `AvisoErrorKind_InvalidUsage` rather
 than deadlocking. See [Listening](./watch.md) for the callback surface.
 
+## Reading an error
+
+`error.what()` is a message for humans. `error.error()` is the part to branch
+on: an `ErrorInfo` with a `kind`, the `http_status` when the server answered,
+and the server's `request_id` to quote when asking for help.
+
+The kind tells you what to do next. `AvisoErrorKind_Transport` means the
+server or network was unreachable and a retry may work. `AvisoErrorKind_Http`
+means the server answered and said no; look at `http_status` and the message.
+A credential the server rejects on a request arrives this way, as a 401 or
+403. `AvisoErrorKind_Auth` covers the other credential problems: none was
+available, one would have travelled in the clear to a non-loopback `http`
+address, or a watch was refused even after refreshing the credential. None of
+these is worth a retry. `AvisoErrorKind_InvalidInput` means the calling
+code passed something the binding could see was wrong before any request went
+out, such as identifier JSON that is not an object.
+
+```cpp
+} catch (const aviso::Error& error) {
+  const aviso::ErrorInfo& info = error.error();
+  if (info.kind == AvisoErrorKind_Transport) {
+    // retry later
+  } else if (info.kind == AvisoErrorKind_Http && info.http_status == 401) {
+    // the server rejected the credential; do not retry
+  } else if (info.kind == AvisoErrorKind_Http && info.http_status == 404) {
+    // the event type is not on this server
+  }
+}
+```
+
+[`examples/cpp/resilience/03_error_handling.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/resilience/03_error_handling.cpp)
+provokes five different errors on purpose and shows a branch for each.
+
 ## Building against the library
 
-The worked, tested consumer lives in
-[`examples/cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp).
-It links the library and compiles the facade through CMake. For local
-development, build the library from the workspace first, then point CMake at the
-headers and the build directory:
+Seventeen worked, tested examples live in
+[`examples/cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp),
+grouped by purpose: `basics/`, `resilience/`, `triggers/` and `async/`. Each
+one links the library and compiles the facade through CMake, the way your own
+program would, and CI runs every one against a real server. For local
+development, build the library from the workspace first:
 
 ```bash
 cargo build -p aviso-ffi
 cmake -S examples/cpp -B build/cpp
 cmake --build build/cpp
-./build/cpp/schema_smoke                          # no server: catches the error
-AVISO_BASE_URL=http://localhost:8000 ./build/cpp/schema_smoke
+./build/cpp/01_schema                          # nothing configured: says so, exits 0
+AVISO_BASE_URL=http://localhost:8000 ./build/cpp/01_schema
 ```
 
-The examples read their connection settings (`AVISO_BASE_URL`, and the optional
-`AVISO_USERNAME` / `AVISO_PASSWORD`) from the environment, so credentials never
-appear on the command line. The two CMake cache variables
-`AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR` default to the in-tree
-locations; point them at a prebuilt drop to build against shipped artifacts with
-no Rust toolchain.
+The examples connect through `from_file()` first and the environment second,
+so on a machine that already uses the `aviso` command they need no setup. The
+two CMake cache variables `AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR`
+default to the in-tree locations; point them at a prebuilt drop to build
+against shipped artifacts with no Rust toolchain. The
+[examples README](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/README.md)
+lists every file with what it shows.
 
 ## Installing with cargo-c
 

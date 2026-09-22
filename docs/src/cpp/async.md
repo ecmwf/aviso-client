@@ -5,8 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Async
 
-Every blocking verb has an async form that returns a `std::future` and runs on
-a background thread, so several calls can be in flight at once. The async forms
+Every blocking verb except `notify_many` has an async form that returns a
+`std::future` and runs on a background thread, so several calls can be in
+flight at once. The async forms
 are also safe to call from inside a listener or async callback, where a blocking
 verb would throw `AvisoErrorKind_InvalidUsage`.
 
@@ -25,7 +26,24 @@ std::cout << published.get() << '\n';  // rethrows aviso::Error on failure
 std::cout << catalogue.get() << '\n';
 ```
 
-## A complete example
+## When to reach for them
 
-[`examples/cpp/async.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/async.cpp)
-fires two async verbs at once and waits on their futures.
+For publishing a batch, `notify_many` already sends concurrently and reports
+per-item failures without throwing; see [Publishing](./publish.md). It has no
+async form because it does not need one. The async verbs earn their keep when
+the requests are not all publishes, or when you have work to do between
+starting them and collecting. Inside a callback they are the only option,
+since a blocking verb throws there.
+
+The pattern for many requests is: start them all, keep the futures, then
+`get()` each one. A failed request throws from its own `get()` and the others
+are unaffected, so wrap each `get()` in a `try` if one failure should not stop
+you collecting the rest.
+
+## Complete examples
+
+[`examples/cpp/async/01_basic.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/async/01_basic.cpp)
+puts two requests in flight at once and times them.
+[`examples/cpp/async/02_fan_out.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/async/02_fan_out.cpp)
+starts ten publishes and a schema lookup, then collects them all in about one
+round trip.
