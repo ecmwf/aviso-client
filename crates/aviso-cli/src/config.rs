@@ -16,15 +16,16 @@
 //!    layers per Q3's per-field precedence (`flag > env > file >
 //!    default`).
 //!
-//! The CLI never calls `aviso::auth::ConfigFile::from_path`: the
-//! library helper parses an auth-only YAML shape, not the locked
-//! Q3 nested-under-`auth:` block. The CLI parses the auth block
-//! itself and constructs `aviso::auth::Bearer`
-//! or `aviso::auth::Basic` from the parsed values.
+//! The `auth:` block is accepted here so the key is known, but it is
+//! not interpreted here. `aviso::auth::discover_with` parses it and
+//! builds the provider, so the binary and the library read it the
+//! same way. That search also covers the environment and the
+//! credentials file; see `crate::auth`.
 //!
 //! The `auth:` section is OPTIONAL. A config file with no `auth:`
-//! block is fine; the resolved auth chain falls back to env, flag,
-//! or no auth at all (anonymous access to schema / health endpoints).
+//! block is fine; the search falls back to the flag, the
+//! environment, the credentials file, or no auth at all (anonymous
+//! access to schema / health endpoints).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

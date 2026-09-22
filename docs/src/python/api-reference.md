@@ -20,7 +20,7 @@ iterator directly, without `await`.
 class pyaviso.AvisoClient(
     *,
     base_url: str,
-    auth: AuthProvider | None = None,
+    auth: AuthProvider | Anonymous | None = None,
     timeout: float | None = None,
     user_agent: str | None = None,
     state_store: StateStore | None = None,

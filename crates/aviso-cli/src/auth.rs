@@ -73,6 +73,9 @@ pub(crate) fn provider_from_flags(
     Ok(None)
 }
 
+/// A selected provider and the name of the source it came from.
+pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'static str>);
+
 /// Selects the provider and names the source it came from.
 ///
 /// The flag tier is checked first because it is the most immediate
@@ -90,9 +93,6 @@ pub(crate) fn provider_from_flags(
 /// Propagates a source that exists but cannot be used: a half-set
 /// environment, or a file that cannot be read or parsed. A source
 /// that is simply absent is skipped.
-/// A selected provider and the name of the source it came from.
-pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'static str>);
-
 pub(crate) fn resolve_provider(
     flag_provider: Option<Arc<dyn AuthProvider>>,
     config_path: &Path,

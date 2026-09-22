@@ -60,13 +60,6 @@ pub fn url_keeps_credentials_private(base_url: &str) -> bool {
     }
 }
 
-/// Finds credentials using explicit paths.
-///
-/// This does not apply the address check in [`discover_for_url`]. Prefer that
-/// function when the address is known.
-///
-/// # Errors
-///
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

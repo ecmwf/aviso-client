@@ -63,8 +63,10 @@ pub fn env_provider() -> crate::Result<Option<Arc<dyn AuthProvider>>> {
 ///
 /// # Errors
 ///
-/// Returns [`ClientError::Config`] when the file cannot be read or parsed, and
-/// [`ClientError::Auth`] when both credentials are set or a value is empty.
+/// Returns [`ClientError::Auth`] when both credentials are set, and
+/// [`ClientError::Config`] when the file cannot be read or parsed, or when a
+/// credential is present but empty, which is what `Bearer::new` and
+/// `Basic::new` report.
 pub fn config_file_provider(path: &Path) -> crate::Result<Option<Arc<dyn AuthProvider>>> {
     let Some(content) = read_optional(path)? else {
         return Ok(None);
