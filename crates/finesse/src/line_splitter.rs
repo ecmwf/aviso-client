@@ -14,6 +14,10 @@
 //! per spec, holding a trailing `\r` for one byte of lookahead so a
 //! CR that turns out to be the first half of a CRLF does not falsely
 //! emit an empty line.
+//!
+//! Each byte is examined once. A scan that finds no terminator
+//! remembers where it stopped, so the next chunk does not make the
+//! splitter re-read everything it has already seen.
 
 const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
@@ -27,6 +31,9 @@ enum BomState {
 #[derive(Debug, Default)]
 pub(crate) struct LineSplitter {
     buf: Vec<u8>,
+    /// First byte of `buf` not yet examined for a terminator. Everything
+    /// before it was scanned by an earlier `next_line` that found none.
+    scan_from: usize,
     bom_state: BomState,
     closed: bool,
 }
@@ -49,7 +56,7 @@ impl LineSplitter {
     pub(crate) fn next_line(&mut self) -> Option<Vec<u8>> {
         self.resolve_bom();
 
-        let mut i = 0;
+        let mut i = self.scan_from;
         while i < self.buf.len() {
             match self.buf[i] {
                 b'\n' => return Some(self.take_line(i, i + 1)),
@@ -65,6 +72,9 @@ impl LineSplitter {
                     if self.closed {
                         return Some(self.take_line(i, i + 1));
                     }
+                    // Hold the CR: the next byte decides whether it is
+                    // half of a CRLF. Look at it again next time.
+                    self.scan_from = i;
                     return None;
                 }
                 _ => {
@@ -72,12 +82,14 @@ impl LineSplitter {
                 }
             }
         }
+        self.scan_from = self.buf.len();
         None
     }
 
     fn take_line(&mut self, line_end: usize, drain_through: usize) -> Vec<u8> {
         let line = self.buf[..line_end].to_vec();
         self.buf.drain(..drain_through);
+        self.scan_from = 0;
         line
     }
 
@@ -88,6 +100,7 @@ impl LineSplitter {
         if self.buf.len() >= BOM.len() {
             if self.buf.starts_with(BOM) {
                 self.buf.drain(..BOM.len());
+                self.scan_from = 0;
             }
             self.bom_state = BomState::Resolved;
             return;
