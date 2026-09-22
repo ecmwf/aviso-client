@@ -109,16 +109,27 @@ pub fn credentials_file_provider(path: &Path) -> crate::Result<Option<Arc<dyn Au
     }
 }
 
-/// Reads a file, mapping "not found" to `None` and other IO errors to an error.
+/// Reads a file, mapping a missing directory entry to `None` and every other
+/// failure to an error.
+///
+/// The existence check and the read are separate steps on purpose. A dangling
+/// symlink makes `read_to_string` report not-found even though the entry is
+/// there, and that must surface as an error: an operator who created the
+/// link meant for it to be read.
 fn read_optional(path: &Path) -> crate::Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(ClientError::Config(format!(
-            "read config file {}: {e}",
-            path.display()
-        ))),
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(ClientError::Config(format!(
+                "read config file {}: {e}",
+                path.display()
+            )));
+        }
     }
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|e| ClientError::Config(format!("read config file {}: {e}", path.display())))
 }
 
 fn any_env_var_set() -> bool {

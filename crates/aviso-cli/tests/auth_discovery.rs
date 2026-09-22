@@ -220,3 +220,53 @@ fn an_unusable_credentials_file_does_not_break_a_command_that_has_env_credential
         .success()
         .stdout(contains("source: environment"));
 }
+
+#[test]
+fn config_dump_reports_a_source_it_would_refuse_to_send() {
+    let dir = tempdir().unwrap();
+    let credentials = write(dir.path(), "credentials.yaml", "bearer:\n  token: sekrit\n");
+
+    // The address check belongs to commands that make a request, so the
+    // diagnostic command can still say where the credential came from.
+    aviso()
+        .env("AVISO_CREDENTIALS_FILE", &credentials)
+        .args(["--base-url", "http://remote.example.org", "config", "dump"])
+        .assert()
+        .success()
+        .stdout(contains("source: credentials file"));
+}
+
+#[test]
+fn a_network_command_refuses_a_discovered_credential_for_a_plaintext_address() {
+    let dir = tempdir().unwrap();
+    let credentials = write(dir.path(), "credentials.yaml", "bearer:\n  token: sekrit\n");
+
+    aviso()
+        .env("AVISO_CREDENTIALS_FILE", &credentials)
+        .args([
+            "--base-url",
+            "http://user:pw@remote.example.org",
+            "schema",
+            "list",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("not https and not a loopback address"))
+        .stderr(contains("pw@").not())
+        .stderr(contains("sekrit").not());
+}
+
+#[test]
+fn a_dangling_config_symlink_is_an_error_rather_than_an_absent_file() {
+    let dir = tempdir().unwrap();
+    let link = dir.path().join("config.yaml");
+    std::os::unix::fs::symlink(dir.path().join("target-does-not-exist.yaml"), &link).unwrap();
+
+    aviso()
+        .arg("--config")
+        .arg(&link)
+        .args(["config", "dump"])
+        .assert()
+        .failure()
+        .stderr(contains("config.yaml"));
+}

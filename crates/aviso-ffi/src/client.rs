@@ -968,6 +968,30 @@ mod tests {
         unsafe { aviso_client_free(client) };
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_valid_token_wins_before_the_basic_pair_is_read() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        // SAFETY: CredentialEnv holds ENV_LOCK, and restores these on drop.
+        unsafe {
+            std::env::set_var("AVISO_TOKEN", "valid-token");
+            std::env::set_var("AVISO_USERNAME", std::ffi::OsStr::from_bytes(&[0xff, 0xfe]));
+        }
+
+        let found = aviso::auth::env_provider()
+            .expect("a valid token must not be rejected by a lower-priority variable")
+            .expect("token present");
+
+        let header = runtime()
+            .block_on(found.authorization_header())
+            .expect("header");
+
+        assert_eq!(header, "Bearer valid-token");
+    }
+
     #[test]
     fn discover_auth_with_no_credential_anywhere_still_builds() {
         let dir = tempfile::tempdir().expect("tempdir");
