@@ -262,11 +262,8 @@ pub(crate) fn resolve(
     )?;
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
-    let (auth_provider, auth_source) = cli_auth::resolve_provider(
-        flag_provider,
-        &config_path.value,
-        base_url.as_ref().map(|b| b.value.as_str()),
-    )?;
+    let (auth_provider, auth_source) =
+        cli_auth::resolve_provider(flag_provider, &config_path.value)?;
 
     Ok(Resolved {
         config_path,

@@ -83,10 +83,10 @@ pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'stat
 /// in `aviso::auth::discover_with`, pointed at the config file this
 /// invocation resolved.
 ///
-/// A discovered credential is refused for a plaintext address that
-/// is not loopback, because the caller did not choose to send it
-/// there. The flag tier is exempt: writing `--token` on the command
-/// line is choosing.
+/// This only finds the credential. Whether it may be sent to the
+/// configured address is decided in `client_builder`, when a command
+/// is about to make a request: `config dump` must be able to report
+/// a refused source rather than fail on it.
 ///
 /// # Errors
 ///
@@ -96,18 +96,13 @@ pub(crate) type SelectedProvider = (Option<Arc<dyn AuthProvider>>, Option<&'stat
 pub(crate) fn resolve_provider(
     flag_provider: Option<Arc<dyn AuthProvider>>,
     config_path: &Path,
-    base_url: Option<&str>,
 ) -> Result<SelectedProvider> {
     if let Some(provider) = flag_provider {
         return Ok((Some(provider), Some("flag")));
     }
     let mut paths = aviso::auth::DiscoveryPaths::from_env();
     paths.config_file = Some(config_path.to_path_buf());
-    let found = match base_url {
-        Some(url) => aviso::auth::discover_for_url(url, &paths),
-        None => aviso::auth::discover_with(&paths),
-    }
-    .map_err(|e| match e {
+    let found = aviso::auth::discover_with(&paths).map_err(|e| match e {
         ClientError::Auth(reason) => crate::exit::usage_error(reason),
         other => anyhow::Error::from(other),
     })?;

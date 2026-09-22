@@ -33,16 +33,20 @@ pub(super) fn refuse_public_plaintext(
          https and not a loopback address. Use an https address, or pass the \
          credential explicitly if you intend to send it in the clear.",
         found.source(),
-        without_userinfo(base_url)
+        url_without_userinfo(base_url)
     )))
 }
 
 /// The address with any `user:password@` stripped, for use in messages.
 ///
+/// Public so callers that report a refused address can do so without
+/// repeating a secret that happened to be in the URL.
+///
 /// A base URL may carry userinfo, so repeating it verbatim in an error would
 /// publish the very kind of secret this module exists to protect. An address
 /// that does not parse is reported as a placeholder rather than echoed.
-fn without_userinfo(base_url: &str) -> String {
+#[must_use]
+pub fn url_without_userinfo(base_url: &str) -> String {
     let Ok(mut parsed) = url::Url::parse(base_url) else {
         return "<unparseable url>".to_string();
     };
@@ -136,7 +140,7 @@ mod tests {
     #[test]
     fn an_address_without_userinfo_is_reported_as_given() {
         assert_eq!(
-            without_userinfo("http://aviso.example.org"),
+            url_without_userinfo("http://aviso.example.org"),
             "http://aviso.example.org"
         );
     }
