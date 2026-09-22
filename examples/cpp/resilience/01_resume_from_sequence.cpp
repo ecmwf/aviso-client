@@ -25,6 +25,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 
@@ -33,13 +34,19 @@ namespace {
 constexpr const char* kStateFile = "resume.seq";
 constexpr int kStopAfter = 3;
 
+// Empty when there is no checkpoint yet. A file that exists but cannot be
+// read or holds something other than a number is not "no checkpoint": it is
+// a broken one, and starting live over it would skip history, so it throws.
 std::optional<std::uint64_t> load_sequence() {
+  if (!std::filesystem::exists(kStateFile)) {
+    return std::nullopt;
+  }
   std::ifstream in(kStateFile);
   std::uint64_t sequence = 0;
-  if (in >> sequence) {
-    return sequence;
+  if (!(in >> sequence)) {
+    throw std::runtime_error(std::string("cannot read a sequence from ") + kStateFile);
   }
-  return std::nullopt;
+  return sequence;
 }
 
 // True only when the new position is on disk. The value is written to a
@@ -103,7 +110,7 @@ int main() {
     int rc = example::finish(watch, handler);
     if (handler.save_failed()) {
       rc = 1;
-    } else if (load_sequence()) {
+    } else if (std::filesystem::exists(kStateFile)) {
       std::cout << "position saved in " << kStateFile << "; run again to resume\n";
     }
     return rc;
