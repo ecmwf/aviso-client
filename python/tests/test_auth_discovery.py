@@ -17,10 +17,10 @@ rather than the provider object, because the header is what matters.
 from __future__ import annotations
 
 import pathlib
-from typing import Any
 
 import pyaviso
 import pytest
+from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Request, Response
 
 CREDENTIAL_VARS = ("AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD")
@@ -39,7 +39,7 @@ def isolate_sources(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> 
     monkeypatch.setenv("AVISO_CREDENTIALS_FILE", str(tmp_path / "absent-credentials.yaml"))
 
 
-def capture_authorization(httpserver: Any) -> list[str | None]:
+def capture_authorization(httpserver: HTTPServer) -> list[str | None]:
     """Records the Authorization header of each schema request."""
     seen: list[str | None] = []
 
@@ -53,7 +53,7 @@ def capture_authorization(httpserver: Any) -> list[str | None]:
 
 
 def test_credentials_file_is_found_without_an_auth_argument(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     credentials = tmp_path / "credentials.yaml"
     credentials.write_text("bearer:\n  token: from-credentials-file\n")
@@ -66,7 +66,7 @@ def test_credentials_file_is_found_without_an_auth_argument(
 
 
 def test_config_file_auth_block_is_found(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     config = tmp_path / "config.yaml"
     config.write_text("auth:\n  bearer_token: from-config-file\n")
@@ -79,7 +79,7 @@ def test_config_file_auth_block_is_found(
 
 
 def test_config_file_wins_over_credentials_file(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     config = tmp_path / "config.yaml"
     config.write_text("auth:\n  bearer_token: from-config-file\n")
@@ -95,7 +95,7 @@ def test_config_file_wins_over_credentials_file(
 
 
 def test_environment_wins_over_both_files(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     config = tmp_path / "config.yaml"
     config.write_text("auth:\n  bearer_token: from-config-file\n")
@@ -112,7 +112,7 @@ def test_environment_wins_over_both_files(
 
 
 def test_explicit_auth_wins_over_every_source(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("AVISO_TOKEN", "from-environment")
     seen = capture_authorization(httpserver)
@@ -123,7 +123,7 @@ def test_explicit_auth_wins_over_every_source(
 
 
 def test_anonymous_sends_no_header_even_with_a_credential_present(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     credentials = tmp_path / "credentials.yaml"
     credentials.write_text("bearer:\n  token: from-credentials-file\n")
@@ -136,7 +136,7 @@ def test_anonymous_sends_no_header_even_with_a_credential_present(
     assert seen == [None]
 
 
-def test_no_credential_anywhere_sends_no_header(httpserver: Any) -> None:
+def test_no_credential_anywhere_sends_no_header(httpserver: HTTPServer) -> None:
     seen = capture_authorization(httpserver)
 
     pyaviso.AvisoClient(base_url=httpserver.url_for("/")).schema()
@@ -165,7 +165,7 @@ def test_partial_environment_credentials_are_reported(
 
 
 def test_async_client_discovers_the_same_credential(
-    httpserver: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     import asyncio
 

@@ -8,7 +8,7 @@
 
 //! Auth-provider selection for the `aviso` binary.
 //!
-//! Four sources in highest-priority-first order per Q8 + amendment A2:
+//! Four sources, tried in this order; the first that has a credential wins:
 //!
 //! 1. **Flag tier**: `--token <T>` -> `Bearer::new(T)`; else
 //!    `--username <U>` + `--password <P>` -> `Basic::new(U, P)`;
