@@ -42,8 +42,11 @@ impl Trigger {
     ///
     /// In the URL, each substituted notification value is
     /// percent-encoded, so a value written by the publisher cannot
-    /// add a path segment, a query parameter, or a different host.
-    /// In header values and the body it is inserted as written, since
+    /// add a path segment or a query parameter. A notification
+    /// placeholder in the scheme or authority, where the value would
+    /// be the host, is refused at render time with
+    /// `TemplateErrorKind::ValueInUrlAuthority`. In header values and
+    /// the body the value is inserted as written, since
     /// the operator supplies the encoding around it (a JSON body, for
     /// example). `{{ env.* }}` values are inserted as written everywhere.
     ///

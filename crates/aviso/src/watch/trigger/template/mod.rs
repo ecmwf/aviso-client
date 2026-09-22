@@ -62,7 +62,7 @@ mod quote;
 #[cfg(test)]
 mod tests;
 
-use quote::{ShellTracker, percent_encode};
+use quote::{ShellTracker, UrlTracker, percent_encode};
 
 /// What the rendered text is used for, which decides how substituted
 /// notification values are neutralised.
@@ -100,6 +100,11 @@ pub enum TemplateErrorKind {
     /// parse failure category, NOT a snippet of the raw template, so
     /// it is safe to surface even when the template contains secrets.
     BadSyntax,
+    /// A `{{ notification.<path> }}` expression sits in the scheme or
+    /// authority of a URL, where the value would choose the host the
+    /// request goes to. Notification values may only appear in the
+    /// path, query or fragment.
+    ValueInUrlAuthority,
     /// The notification could not be serialised to JSON. Practically
     /// unreachable given the well-typed [`crate::Notification`]
     /// shape (every field is a concrete scalar or `serde_json::Value`
@@ -369,12 +374,15 @@ impl CompiledTemplate {
         // quoted for the context it lands in. Env values are the
         // operator's own and are read as written.
         let mut shell = ShellTracker::new();
+        let mut url = UrlTracker::new();
         let mut out = String::new();
         for segment in &self.segments {
             match segment {
                 Segment::Literal(s) => {
-                    if sink == Sink::Shell {
-                        shell.advance(s);
+                    match sink {
+                        Sink::Shell => shell.advance(s),
+                        Sink::Url => url.advance(s),
+                        Sink::Raw => {}
                     }
                     out.push_str(s);
                 }
@@ -382,11 +390,7 @@ impl CompiledTemplate {
                     let value =
                         walk_path(&notification_json, path).ok_or_else(|| TemplateError {
                             raw_template: self.raw.clone(),
-                            field: if path.is_empty() {
-                                "notification".to_string()
-                            } else {
-                                format!("notification.{}", path.join("."))
-                            },
+                            field: field_name(path),
                             kind: TemplateErrorKind::Missing,
                         })?;
                     let rendered = render_value(value);
@@ -397,7 +401,18 @@ impl CompiledTemplate {
                             shell.advance(&quoted);
                             out.push_str(&quoted);
                         }
-                        Sink::Url => out.push_str(&percent_encode(&rendered)),
+                        Sink::Url => {
+                            if !url.in_path() {
+                                return Err(TemplateError {
+                                    raw_template: self.raw.clone(),
+                                    field: field_name(path),
+                                    kind: TemplateErrorKind::ValueInUrlAuthority,
+                                });
+                            }
+                            let encoded = percent_encode(&rendered);
+                            url.advance(&encoded);
+                            out.push_str(&encoded);
+                        }
                     }
                 }
                 Segment::EnvVar(name) => {
@@ -406,8 +421,10 @@ impl CompiledTemplate {
                         field: name.clone(),
                         kind,
                     })?;
-                    if sink == Sink::Shell {
-                        shell.advance(&value);
+                    match sink {
+                        Sink::Shell => shell.advance(&value),
+                        Sink::Url => url.advance(&value),
+                        Sink::Raw => {}
                     }
                     out.push_str(&value);
                 }
@@ -422,6 +439,16 @@ impl CompiledTemplate {
     #[cfg(test)]
     pub(crate) fn raw(&self) -> &str {
         &self.raw
+    }
+}
+
+/// The `field` label for a notification path: `notification` for the
+/// whole notification, `notification.a.b` otherwise.
+fn field_name(path: &[String]) -> String {
+    if path.is_empty() {
+        "notification".to_string()
+    } else {
+        format!("notification.{}", path.join("."))
     }
 }
 

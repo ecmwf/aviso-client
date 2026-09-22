@@ -46,7 +46,9 @@ triggers:
 - `url`: template-rendered at dispatch time. Operators commonly use
   `{{ env.WEBHOOK_URL }}` to keep the URL out of the YAML. A
   `{{ notification.* }}` value in the URL is percent-encoded, so it cannot add
-  a path segment, a query parameter, or a host.
+  a path segment or a query parameter, and it is refused in the scheme or
+  authority, where it would be the host. Notification values belong in the
+  path, query or fragment.
 - `headers`: header NAMES are taken literally; header VALUES are
   template-rendered. The YAML `headers` block is a map so each header name
   appears once; multi-value headers (e.g. multiple `Set-Cookie`) are not

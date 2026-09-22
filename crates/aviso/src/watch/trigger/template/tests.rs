@@ -362,6 +362,51 @@ fn url_sink_percent_encodes_values() {
 }
 
 #[test]
+fn url_sink_refuses_a_value_in_the_scheme_or_authority() {
+    let n = make_notification();
+    let refuse = |template: &str| {
+        let err = compile(template)
+            .unwrap()
+            .render(&n, Sink::Url)
+            .unwrap_err();
+        assert_eq!(
+            err.kind,
+            TemplateErrorKind::ValueInUrlAuthority,
+            "{template}"
+        );
+        err.field
+    };
+    assert_eq!(
+        refuse("https://{{ notification.event_type }}/hook"),
+        "notification.event_type"
+    );
+    assert_eq!(
+        refuse("https://h:{{ notification.sequence }}/hook"),
+        "notification.sequence"
+    );
+    assert_eq!(
+        refuse("{{ notification.identifier.country }}://h/hook"),
+        "notification.identifier.country"
+    );
+    assert_eq!(refuse("{{ notification }}"), "notification");
+    // Once the path has started, values are fine, including after an
+    // env value that supplied the host.
+    let t = compile("{{ env.BASE }}/{{ notification.event_type }}?s={{ notification.sequence }}")
+        .unwrap();
+    let out = t
+        .render_with_env(&n, |_| Ok("https://hooks.example".to_string()), Sink::Url)
+        .unwrap();
+    assert_eq!(out, "https://hooks.example/mars?s=42");
+    // A host that comes only from an env value, with the value in the
+    // query, is also fine.
+    let t = compile("{{ env.BASE }}?s={{ notification.sequence }}").unwrap();
+    let out = t
+        .render_with_env(&n, |_| Ok("https://hooks.example".to_string()), Sink::Url)
+        .unwrap();
+    assert_eq!(out, "https://hooks.example?s=42");
+}
+
+#[test]
 fn raw_sink_inserts_values_verbatim() {
     let t = compile("{{ notification.event_type }}").unwrap();
     let mut n = make_notification();
