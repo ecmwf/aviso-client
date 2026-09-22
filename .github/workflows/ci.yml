@@ -213,6 +213,23 @@ jobs:
       - name: Stack readiness unit tests
         run: bash tests/e2e/shared/stack.test.sh
 
+  # ── Workflow files: syntax, and no unpinned or over-privileged steps ─
+  # Runs on GitHub-hosted runners with no secrets. zizmor runs offline so
+  # it needs no token and its result does not depend on the network.
+  workflows:
+    name: workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install the linters
+        run: pip install --quiet actionlint-py zizmor
+      - name: actionlint
+        run: actionlint -color
+      - name: zizmor
+        run: zizmor --no-progress --offline --min-severity medium .github/workflows
+
   # ── Release tooling: lint and unit-test the release scripts ─────
   # GitHub-hosted with no image and no secrets; the suites mock `gh`, `cargo`,
   # and `curl`, with one exception: the packaging suite compiles a stub shared
@@ -508,7 +525,7 @@ jobs:
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config, e2e, cpp, release-tooling, ffi-cargo-c]
+    needs: [rust, deny, docs, python, e2e-config, workflows, e2e, cpp, release-tooling, ffi-cargo-c]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded
