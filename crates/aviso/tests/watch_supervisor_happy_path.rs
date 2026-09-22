@@ -280,6 +280,30 @@ async fn watch_ends_with_a_protocol_error_when_a_line_never_terminates() {
 }
 
 #[tokio::test]
+async fn a_notification_completed_before_the_overflow_is_still_delivered() {
+    // Whether the transport hands over the notification and the endless
+    // line together or apart, the notification was complete before the
+    // bound was hit and must reach the caller before the watch ends.
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 7)),
+        "y".repeat(2 * 1024 * 1024),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(10), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly");
+
+    assert_eq!(items.len(), 2, "got: {items:?}");
+    assert_eq!(items[0].as_ref().unwrap().sequence, 7);
+    assert!(matches!(items[1], Err(ClientError::StreamProtocol { .. })));
+}
+
+#[tokio::test]
 async fn watch_gap_detection_on_sequence_jump_terminates_with_history_gap() {
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();

@@ -223,25 +223,13 @@ pub(super) async fn run_one_connection(
             }
         };
         let eof = matches!(chunk, Ok(None));
+        // Set when the server sent more for one line or one event than the
+        // parser will hold. The frames the parser completed before that
+        // point are still delivered below; then the watch ends, since
+        // reconnecting would only let the same stream do it again.
+        let mut overflow = None;
         match chunk {
-            Ok(Some(bytes)) => {
-                if let Err(overflow) = parser.feed(&bytes) {
-                    // The server sent more for one line or one event than
-                    // the parser will hold. That is a protocol violation,
-                    // and reconnecting would only let it happen again.
-                    let message = overflow.to_string();
-                    apply_outcome(
-                        last_reconnect_policy,
-                        state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
-                            message.clone(),
-                        ))),
-                    );
-                    return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
-                        message,
-                        request_id: None,
-                    });
-                }
-            }
+            Ok(Some(bytes)) => overflow = parser.feed(&bytes).err(),
             Ok(None) => parser.end(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
         }
@@ -288,6 +276,19 @@ pub(super) async fn run_one_connection(
             Ok(DrainOutcome::ServerClosed) => return ConnectionOutcome::ServerClosed,
             Ok(DrainOutcome::StopRequested) => return ConnectionOutcome::Cancelled,
             Err(terminal_err) => return ConnectionOutcome::Fatal(terminal_err),
+        }
+        if let Some(overflow) = overflow {
+            let message = overflow.to_string();
+            apply_outcome(
+                last_reconnect_policy,
+                state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                    message.clone(),
+                ))),
+            );
+            return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
+                message,
+                request_id: None,
+            });
         }
         if state.is_terminal() {
             return ConnectionOutcome::ServerClosed;
