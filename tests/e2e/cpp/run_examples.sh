@@ -80,9 +80,13 @@ done
 
 # A listener whose watch fails must say so through its exit code. Without
 # this check a handler that ignored on_end() would pass every run above.
+# A token in the environment would win over the Basic pair, so the token is
+# cleared and both halves of the pair are set to something the server has
+# never heard of.
 echo "== 03_listen with a rejected credential (must fail) =="
 rc=0
-AVISO_PASSWORD=wrong timeout 30 "$BUILD_DIR/03_listen" || rc=$?
+env -u AVISO_TOKEN AVISO_USERNAME=nobody AVISO_PASSWORD=wrong \
+  timeout 30 "$BUILD_DIR/03_listen" || rc=$?
 # 124 is timeout's own status for a listener that never ended; 125 and up
 # are timeout's infrastructure failures. Only the listener's own non-zero
 # exit is the outcome this check wants.
@@ -91,13 +95,20 @@ if [ "$rc" -eq 0 ] || [ "$rc" -ge 124 ]; then
   exit 1
 fi
 
-# Resume is the one that needs two runs: the second must pick up after the
-# position the first saved, which is what the file in $work carries across.
+# Resume is the one that needs two runs. A notification is published while
+# the listener is stopped; the second run must report the saved position and
+# then deliver that notification, which has the next sequence number since
+# nothing else publishes to this stream during the run. That is the replay
+# working, not just the banner.
 echo "== 01_resume_from_sequence (first run) =="
 drive 01_resume_from_sequence
 test -s resume.seq || { echo "FAIL: no position saved" >&2; exit 1; }
+saved=$(cat resume.seq)
+echo "== publishing one notification while the listener is stopped =="
+"$BUILD_DIR/02_publish" >/dev/null
 echo "== 01_resume_from_sequence (second run, resuming) =="
 drive 01_resume_from_sequence | tee resume2.out
-grep -q '^resuming after #' resume2.out || { echo "FAIL: second run did not resume" >&2; exit 1; }
+grep -q "^resuming after #$saved\$" resume2.out || { echo "FAIL: second run did not resume after #$saved" >&2; exit 1; }
+grep -q "^#$((saved + 1)) " resume2.out || { echo "FAIL: the notification published while stopped (#$((saved + 1))) was not replayed" >&2; exit 1; }
 
 echo "C++ examples e2e: OK"
