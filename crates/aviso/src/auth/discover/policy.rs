@@ -96,7 +96,11 @@ pub fn url_keeps_credentials_private(base_url: &str) -> bool {
                 || name.to_ascii_lowercase().ends_with(".localhost")
         }
         Some(url::Host::Ipv4(addr)) => addr.is_loopback(),
-        Some(url::Host::Ipv6(addr)) => addr.is_loopback(),
+        // `is_loopback` covers only `::1`; an IPv4-mapped `::ffff:127.0.0.1`
+        // reaches the same interface.
+        Some(url::Host::Ipv6(addr)) => {
+            addr.is_loopback() || addr.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+        }
         None => false,
     }
 }
@@ -119,6 +123,7 @@ mod tests {
             "http://localhost:8000",
             "http://127.0.0.1:8000",
             "http://[::1]:8000",
+            "http://[::ffff:127.0.0.1]:8000",
             "http://aviso.localhost:8000",
         ] {
             assert!(
@@ -191,6 +196,7 @@ mod tests {
             "http://aviso.example.org",
             "http://10.0.0.5:8000",
             "http://192.168.1.10",
+            "http://[::ffff:10.0.0.5]:8000",
             "not a url",
         ] {
             assert!(
