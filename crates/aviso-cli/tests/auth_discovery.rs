@@ -271,3 +271,21 @@ fn a_dangling_config_symlink_is_an_error_rather_than_an_absent_file() {
         .failure()
         .stderr(contains("config.yaml"));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_config_symlink_is_reported_even_when_a_flag_supplies_the_credential() {
+    let dir = tempdir().unwrap();
+    let link = dir.path().join("config.yaml");
+    std::os::unix::fs::symlink(dir.path().join("target-does-not-exist.yaml"), &link).unwrap();
+
+    // The flag wins the credential search, so the auth block is never read;
+    // the file the operator pointed at must still be loadable.
+    aviso()
+        .arg("--config")
+        .arg(&link)
+        .args(["--token", "from-flag", "config", "dump"])
+        .assert()
+        .failure()
+        .stderr(contains("config.yaml"));
+}

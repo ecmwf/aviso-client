@@ -51,12 +51,13 @@ use crate::paths;
 pub(crate) struct ConfigFile {
     #[serde(default)]
     pub(crate) base_url: Option<String>,
-    /// Accepted so `auth:` is a known key under `deny_unknown_fields`. The
-    /// block is parsed by `aviso::auth::discover_with`, which reads it only
-    /// when no higher-priority source supplied a credential, so the value is
-    /// deliberately not kept here.
+    /// Accepted so `auth:` is a known key under `deny_unknown_fields`, and
+    /// then discarded: `IgnoredAny` consumes the block without keeping it, so
+    /// a token or password in the file never sits in this struct or in its
+    /// `Debug` output. `aviso::auth::discover_with` reads the block itself
+    /// when no higher-priority source supplied a credential.
     #[serde(default, rename = "auth")]
-    pub(crate) _auth: Option<serde_norway::Value>,
+    pub(crate) _auth: Option<serde::de::IgnoredAny>,
     #[serde(default, with = "humantime_serde::option")]
     pub(crate) timeout: Option<Duration>,
     #[serde(default, with = "humantime_serde::option")]
@@ -356,8 +357,16 @@ fn read_env(name: &str) -> Result<Option<String>> {
 /// overrides cover the common case). All other I/O errors and any
 /// YAML parse error surface verbatim.
 pub(crate) fn load_optional(path: &Path) -> Result<ConfigFile> {
-    if !path.exists() {
-        return Ok(ConfigFile::default());
+    // `Path::exists` reports false for a dangling symlink and for a path the
+    // process may not inspect, so an operator's broken `--config` would look
+    // like "no config" and be silently ignored. Ask for the directory entry
+    // and treat only a genuinely missing one as absent.
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ConfigFile::default()),
+        Err(e) => {
+            return Err(e).with_context(|| format!("read config file: {}", path.display()));
+        }
     }
     let bytes =
         std::fs::read(path).with_context(|| format!("read config file: {}", path.display()))?;
@@ -444,6 +453,18 @@ listeners:
         assert!(
             msg.contains("bogus_key") || msg.contains("unknown field"),
             "error should name the bad field: {msg}"
+        );
+    }
+
+    #[test]
+    fn debug_output_never_carries_the_auth_block() {
+        let cfg = parse("auth:\n  bearer_token: super-secret-value\n");
+
+        let rendered = format!("{cfg:?}");
+
+        assert!(
+            !rendered.contains("super-secret-value"),
+            "the parsed config must not retain credential material: {rendered}"
         );
     }
 
