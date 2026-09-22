@@ -58,6 +58,9 @@ use crate::line_splitter::LineSplitter;
 pub use crate::frame::{Frame, Message, Retry};
 pub use crate::limits::{Limits, Overflow};
 
+/// Most bytes copied into the buffer between two checks of the bounds.
+const FEED_PIECE_BYTES: usize = 64 * 1024;
+
 /// A WHATWG Server-Sent Events parser.
 ///
 /// Feed it bytes via [`feed`](Self::feed), drain ready frames via
@@ -106,8 +109,18 @@ impl Parser {
         if self.closed {
             return Ok(());
         }
-        self.line_splitter.feed(chunk);
-        self.drain_lines().inspect_err(|_| self.abandon())
+        // Copy the chunk in pieces and look for a bound after each one,
+        // so a single chunk larger than a bound is not held whole before
+        // the overflow is noticed. What the parser holds is therefore at
+        // most a bound plus one piece.
+        for piece in chunk.chunks(FEED_PIECE_BYTES) {
+            self.line_splitter.feed(piece);
+            if let Err(overflow) = self.drain_lines() {
+                self.abandon();
+                return Err(overflow);
+            }
+        }
+        Ok(())
     }
 
     /// Signal end-of-stream.

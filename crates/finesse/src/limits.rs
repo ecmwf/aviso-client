@@ -13,7 +13,9 @@
 //! bound, a server that never sends one makes the parser grow without
 //! limit. The bounds here are far above anything a well-formed stream
 //! produces, so a healthy server never meets them, and a stream that
-//! does is reported as an [`Overflow`] rather than kept.
+//! does is reported as an [`Overflow`] rather than kept. A bound is
+//! checked after every 64 KiB copied in, so the parser holds at most a
+//! bound plus 64 KiB before it reports.
 
 use core::fmt;
 

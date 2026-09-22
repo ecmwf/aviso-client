@@ -126,3 +126,17 @@ fn the_defaults_are_generous() {
         "SSE line exceeds 1048576 bytes without a terminator"
     );
 }
+
+#[test]
+fn one_chunk_larger_than_the_bound_is_not_held_whole() {
+    // The bound is checked as the chunk is copied in, so the parser stops
+    // soon after the bound rather than after the whole chunk.
+    let limits = Limits::default().with_max_line_bytes(KIB);
+    let mut parser = Parser::with_limits(limits);
+    let chunk = vec![b'x'; 8 * MIB];
+    let started = Instant::now();
+    assert_eq!(parser.feed(&chunk), Err(Overflow::Line { max: KIB }));
+    // Copying 8 MiB would take longer than this, and the error arrives
+    // after the first 64 KiB piece either way.
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
