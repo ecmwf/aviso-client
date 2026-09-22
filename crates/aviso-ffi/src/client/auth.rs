@@ -154,7 +154,8 @@ mod tests {
 
     use super::*;
     use crate::client::{
-        AvisoClient, aviso_client_builder_build, aviso_client_builder_new, aviso_client_free,
+        AvisoClient, aviso_client_builder_build, aviso_client_builder_from_file,
+        aviso_client_builder_from_file_at, aviso_client_builder_new, aviso_client_free,
     };
     use crate::outcome::{aviso_outcome_free, aviso_outcome_take_client};
     use crate::runtime;
@@ -340,6 +341,91 @@ mod tests {
             .expect("header");
 
         assert_eq!(header, "Bearer valid-token");
+    }
+
+    #[test]
+    fn from_file_reads_the_address_and_finds_the_credential() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("config.yaml"),
+            "base_url: https://aviso.example.org\nauth:\n  bearer_token: from-file\n",
+        )
+        .expect("write");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        // SAFETY: CredentialEnv holds ENV_LOCK and restores this on drop.
+        unsafe {
+            std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("config.yaml"));
+        }
+
+        let mut builder = aviso_client_builder_from_file();
+        assert!(!builder.is_null());
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        unsafe { aviso_outcome_free(outcome) };
+
+        assert!(!client.is_null(), "the file supplied everything needed");
+        let inner = unsafe { &*client };
+        assert_eq!(
+            inner.inner.base_url().as_str(),
+            "https://aviso.example.org/"
+        );
+        let header = runtime()
+            .block_on(inner.inner.auth().expect("auth set").authorization_header())
+            .expect("header");
+        assert_eq!(header, "Bearer from-file");
+        unsafe { aviso_client_free(client) };
+    }
+
+    #[test]
+    fn from_file_at_a_missing_path_fails_at_build() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        let path =
+            CString::new(dir.path().join("absent.yaml").to_str().expect("utf8")).expect("cstring");
+
+        let mut builder = unsafe { aviso_client_builder_from_file_at(path.as_ptr()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        assert!(unsafe { aviso_outcome_take_client(outcome) }.is_null());
+        unsafe { aviso_outcome_free(outcome) };
+    }
+
+    #[test]
+    fn from_file_at_a_null_path_fails_at_build() {
+        let mut builder = unsafe { aviso_client_builder_from_file_at(std::ptr::null()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+
+        assert!(unsafe { aviso_outcome_take_client(outcome) }.is_null());
+        unsafe { aviso_outcome_free(outcome) };
+    }
+
+    #[test]
+    fn a_setter_after_from_file_replaces_the_file_value() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("config.yaml"),
+            "base_url: https://aviso.example.org\nauth:\n  bearer_token: from-file\n",
+        )
+        .expect("write");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        // SAFETY: as above.
+        unsafe {
+            std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("config.yaml"));
+        }
+        let token = CString::new("from-code").expect("cstring");
+
+        let mut builder = aviso_client_builder_from_file();
+        unsafe { aviso_client_builder_bearer_auth(builder, token.as_ptr()) };
+        let outcome = unsafe { aviso_client_builder_build(&raw mut builder) };
+        let client = unsafe { aviso_outcome_take_client(outcome) };
+        unsafe { aviso_outcome_free(outcome) };
+
+        let inner = unsafe { &*client };
+        let header = runtime()
+            .block_on(inner.inner.auth().expect("auth set").authorization_header())
+            .expect("header");
+        assert_eq!(header, "Bearer from-code");
+        unsafe { aviso_client_free(client) };
     }
 
     #[test]

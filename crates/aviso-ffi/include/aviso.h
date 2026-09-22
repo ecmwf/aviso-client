@@ -316,6 +316,44 @@ void aviso_client_delete_notification_async(const AvisoClient *client,
 AvisoClientBuilder *aviso_client_builder_new(const char *base_url);
 
 /**
+ * Creates a client builder from the aviso config file, with a credential
+ * found the way the `aviso` binary finds one.
+ *
+ * Reads `~/.config/aviso/config.yaml`, or the file named in
+ * `AVISO_CLIENT_CONFIG_FILE`, for the base URL, timeouts and TLS settings,
+ * then searches the environment, the file's `auth:` block and the
+ * credentials file for a credential. A missing file sets nothing; a file
+ * that exists but cannot be used, or a credential that may not travel to the
+ * configured address, is remembered and reported at build time. Setters
+ * called afterwards replace what the file said.
+ *
+ * Returns a builder handle, or null only if an internal panic is trapped.
+ */
+AvisoClientBuilder *aviso_client_builder_from_file(void);
+
+/**
+ * Like `aviso_client_builder_from_file`, reading the file at `path`. The
+ * path must exist; a missing file is reported at build time.
+ *
+ * # Safety
+ *
+ * `path` must be a NUL-terminated C string.
+ */
+AvisoClientBuilder *aviso_client_builder_from_file_at(const char *path);
+
+/**
+ * Sets or replaces the base URL. After `aviso_client_builder_from_file` this
+ * overrides what the file said, or supplies an address the file lacked. A
+ * null or non-UTF-8 argument is remembered and reported at build time.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle. `base_url`, when non-null, must be
+ * a NUL-terminated C string.
+ */
+void aviso_client_builder_base_url(AvisoClientBuilder *builder, const char *base_url);
+
+/**
  * Builds the client, consuming the builder. On entry the builder is taken and
  * the caller's pointer is set to null (so a later free is a safe no-op), even
  * when the build fails. Returns an outcome carrying the client (retrieve it

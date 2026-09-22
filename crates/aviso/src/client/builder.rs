@@ -148,6 +148,13 @@ impl AvisoClientBuilder {
         Ok(builder)
     }
 
+    /// The base URL set so far, if any. Useful after [`Self::from_file`],
+    /// where the value came from the file rather than from the caller.
+    #[must_use]
+    pub fn configured_base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
     /// Sets the `aviso-server` base URL. Required.
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());

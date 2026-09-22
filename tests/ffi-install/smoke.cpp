@@ -31,6 +31,15 @@ int main() {
                              .bearer_auth("smoke-token")
                              .discover_auth()
                              .build();
+
+  // The config file was pointed at a missing path above, so from_file()
+  // sets nothing; the address supplied afterwards makes it buildable. This
+  // also links both from_file entry points.
+  aviso::Client from_file = aviso::ClientBuilder::from_file()
+                                .base_url("http://127.0.0.1:1")
+                                .bearer_auth("smoke-token")
+                                .build();
+  static_cast<void>(from_file);
   const std::string malformed_identifier = R"(["not-an-object"])";
 
   bool blocking_rejected = false;

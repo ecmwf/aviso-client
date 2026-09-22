@@ -488,10 +488,28 @@ class Client {
 class ClientBuilder {
  public:
   explicit ClientBuilder(const std::string& base_url)
-      : handle_(aviso_client_builder_new(base_url.c_str())) {
-    if (!handle_) {
-      detail::throw_internal("aviso: failed to allocate a client builder");
-    }
+      : ClientBuilder(aviso_client_builder_new(base_url.c_str())) {}
+
+  // Starts from the aviso config file (`~/.config/aviso/config.yaml`, or
+  // `AVISO_CLIENT_CONFIG_FILE`) and a credential found the way the `aviso`
+  // binary finds one. A missing file sets nothing. Setters called afterwards
+  // replace what the file said. A file that cannot be used, or a found
+  // credential that may not travel to the configured address, throws from
+  // `build()`.
+  static ClientBuilder from_file() {
+    return ClientBuilder(aviso_client_builder_from_file());
+  }
+
+  // As `from_file()`, reading a specific file. The path must exist.
+  static ClientBuilder from_file(const std::string& path) {
+    return ClientBuilder(aviso_client_builder_from_file_at(path.c_str()));
+  }
+
+  // Sets or replaces the server address. After `from_file()` this overrides
+  // the file, or supplies an address the file did not have.
+  ClientBuilder& base_url(const std::string& url) {
+    aviso_client_builder_base_url(handle_.get(), url.c_str());
+    return *this;
   }
 
   ClientBuilder& basic_auth(const std::string& username,
@@ -535,6 +553,12 @@ class ClientBuilder {
   }
 
  private:
+  explicit ClientBuilder(AvisoClientBuilder* raw) : handle_(raw) {
+    if (!handle_) {
+      detail::throw_internal("aviso: failed to allocate a client builder");
+    }
+  }
+
   detail::BuilderPtr handle_;
 };
 
