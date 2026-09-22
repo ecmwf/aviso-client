@@ -20,7 +20,8 @@
 //! `NotificationIterator` and `AsyncNotificationIterator` returned by
 //! `listen`, the `WatchRequest` builder, the `Trigger` builder with its six
 //! kind constructors, the five auth providers (`Bearer`, `Basic`, `Env`,
-//! `ConfigFile`, `Chain`), the two state stores (`MemoryStore`,
+//! `ConfigFile`, `Chain`) and the `Anonymous` marker that turns credential
+//! discovery off, the two state stores (`MemoryStore`,
 //! `JsonFileStore`), and the exception hierarchy rooted at `AvisoError`.
 //! The `_provoke_error` test helper is registered but kept off the
 //! documented surface (used only by the python test suite).

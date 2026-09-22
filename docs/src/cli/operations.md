@@ -98,9 +98,11 @@ For JSON output (so you can `jq` it):
 aviso config dump --redact --json
 ```
 
-The `auth` block is summarised as `provider: <set>` or `<unset>` rather than
-per-field; the listeners block is summarised by name, event, identifier count,
-and trigger count.
+The `auth` block is summarised rather than printed per-field: `provider` is
+`<set>` or `<unset>`, and `source` names where the credential came from
+(`flag`, `environment`, `config file`, `credentials file`, or `<unset>`). Use
+`source` when the credential in use is not the one you expected. The listeners
+block is summarised by name, event, identifier count, and trigger count.
 
 ## Shell completions {#shell-completions}
 

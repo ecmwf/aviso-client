@@ -112,6 +112,13 @@ pub fn isolated_aviso_command() -> Command {
         }
     }
     cmd.env("AVISO_LOG", "error");
+    // Without this the credential search falls back to the real home
+    // directory, so a developer with credentials on disk would exercise a
+    // different code path from CI.
+    cmd.env(
+        "AVISO_CREDENTIALS_FILE",
+        "/nonexistent/aviso-e2e-isolated/credentials.yaml",
+    );
     cmd.env(
         "AVISO_CLIENT_CONFIG_FILE",
         "/nonexistent/aviso-e2e-isolated/config.yaml",

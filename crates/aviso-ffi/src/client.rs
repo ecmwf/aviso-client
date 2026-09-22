@@ -276,6 +276,8 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoClientBuilder) {
     guard((), || {
+        // SAFETY: the contract above requires `builder` to be a live handle
+        // from `aviso_client_builder_new`; `as_mut` yields `None` for null.
         let Some(builder) = (unsafe { builder.as_mut() }) else {
             return;
         };

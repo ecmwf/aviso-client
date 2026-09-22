@@ -154,8 +154,9 @@ exists but cannot be read is an error, so a typo is reported rather than
 ignored.
 
 A credential from the environment or either file is not sent to a plain
-`http://` address unless it is loopback; use an `https` address, or pass
-`--token` to say you mean it.
+`http://` address unless it is loopback. Use an `https` address, or pass the
+credential on the command line with `--token`, or `--username` and
+`--password`, to say you mean it.
 
 It is also the only source that is reread after a 401. A tool that refreshes
 the token in place therefore reaches a running `aviso listen` without a

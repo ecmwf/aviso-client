@@ -370,6 +370,11 @@ pub(crate) fn load_optional(path: &Path) -> Result<ConfigFile> {
 
 #[cfg(test)]
 #[allow(
+    clippy::used_underscore_binding,
+    reason = "the parser keeps the auth block only to make the key known, and \
+              these tests check exactly that it is accepted and discarded"
+)]
+#[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     reason = "test code: unwrap/expect on yaml round-trip is the expected diagnostic"
@@ -386,6 +391,7 @@ mod tests {
         let cfg = parse("");
         assert!(cfg.base_url.is_none());
         assert!(cfg.base_url.is_none());
+        assert!(cfg._auth.is_none());
         assert!(cfg.listeners.is_empty());
     }
 
@@ -434,7 +440,7 @@ listeners:
         // has to accept the key. See aviso::auth::config_file_provider.
         let cfg = parse("auth:\n  basic:\n    username: alice\n    password: hunter2\n");
 
-        assert!(cfg.listeners.is_empty());
+        assert!(cfg._auth.is_some());
     }
 
     #[test]
@@ -454,7 +460,7 @@ listeners:
         // credential elsewhere is not failed by an unused block.
         let cfg = parse("auth:\n  bogus_key: 1\n");
 
-        assert!(cfg.listeners.is_empty());
+        assert!(cfg._auth.is_some());
     }
 
     #[test]

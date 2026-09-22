@@ -141,9 +141,11 @@ impl DiscoveryPaths {
     /// Default paths, with both entries overridable by environment variable.
     ///
     /// The defaults are `config.yaml` and `credentials.yaml` under
-    /// `$HOME/.config/aviso`. When the home directory cannot be resolved both
-    /// fields stay `None` and discovery falls back to the environment alone,
-    /// which keeps the client usable in containers that set no `HOME`.
+    /// `$HOME/.config/aviso`. When the home directory cannot be resolved only
+    /// the defaults are dropped: a path given in `AVISO_CLIENT_CONFIG_FILE` or
+    /// `AVISO_CREDENTIALS_FILE` is still used. With neither a home directory
+    /// nor an override, discovery falls back to the environment alone, which
+    /// keeps the client usable in containers that set no `HOME`.
     #[must_use]
     pub fn from_env() -> Self {
         let dir = config_dir();
