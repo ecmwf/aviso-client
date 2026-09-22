@@ -81,8 +81,13 @@ done
 # A listener whose watch fails must say so through its exit code. Without
 # this check a handler that ignored on_end() would pass every run above.
 echo "== 03_listen with a rejected credential (must fail) =="
-if AVISO_PASSWORD=wrong timeout 30 "$BUILD_DIR/03_listen"; then
-  echo "FAIL: a rejected credential exited 0" >&2
+rc=0
+AVISO_PASSWORD=wrong timeout 30 "$BUILD_DIR/03_listen" || rc=$?
+# 124 is timeout's own status for a listener that never ended; 125 and up
+# are timeout's infrastructure failures. Only the listener's own non-zero
+# exit is the outcome this check wants.
+if [ "$rc" -eq 0 ] || [ "$rc" -ge 124 ]; then
+  echo "FAIL: a rejected credential exited $rc" >&2
   exit 1
 fi
 
