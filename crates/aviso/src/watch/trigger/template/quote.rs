@@ -71,6 +71,9 @@ pub(super) struct ShellTracker {
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
+    /// How many `$(` are open. A `)` that closes one continues the
+    /// surrounding word; a `)` outside any ends a word.
+    substitution_depth: u32,
 }
 
 impl ShellTracker {
@@ -78,6 +81,7 @@ impl ShellTracker {
         Self {
             context: Context::Bare,
             word_start: true,
+            substitution_depth: 0,
         }
     }
 
@@ -101,6 +105,7 @@ impl ShellTracker {
                     }
                 }
                 Context::Bare => {
+                    let mut word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(');
                     match c {
                         '#' if self.word_start => self.context = Context::Comment,
                         '\'' => self.context = Context::SingleQuoted,
@@ -108,10 +113,21 @@ impl ShellTracker {
                         '\\' => {
                             chars.next();
                         }
+                        '$' if chars.clone().next() == Some('(') => {
+                            chars.next();
+                            self.substitution_depth = self.substitution_depth.saturating_add(1);
+                            word_start = true;
+                        }
+                        ')' => {
+                            if self.substitution_depth == 0 {
+                                word_start = true;
+                            } else {
+                                self.substitution_depth -= 1;
+                            }
+                        }
                         _ => {}
                     }
-                    self.word_start = self.context == Context::Bare
-                        && matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(' | ')');
+                    self.word_start = self.context == Context::Bare && word_start;
                 }
                 Context::SingleQuoted => {
                     if c == '\'' {
@@ -250,6 +266,12 @@ mod tests {
         assert_eq!(after("run a#b'"), Context::SingleQuoted);
         assert_eq!(after("run 'x'#it's"), Context::SingleQuoted);
         assert_eq!(after("echo '#' '"), Context::SingleQuoted);
+        // A `)` that closes a `$(` continues the word; one that closes a
+        // subshell ends it.
+        assert_eq!(after("$(printf x)# don't"), Context::SingleQuoted);
+        assert_eq!(after("$(a $(b))# don't"), Context::SingleQuoted);
+        assert_eq!(after("(printf x)# don't"), Context::Comment);
+        assert_eq!(after("$(# it's\nprintf x) '"), Context::SingleQuoted);
     }
 
     #[test]
