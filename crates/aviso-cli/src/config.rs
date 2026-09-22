@@ -49,35 +49,28 @@ use crate::paths;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConfigFile {
-    #[serde(default)]
-    pub(crate) base_url: Option<String>,
-    /// Accepted so `auth:` is a known key under `deny_unknown_fields`, and
-    /// then discarded: `IgnoredAny` consumes the block without keeping it, so
-    /// a token or password in the file never sits in this struct or in its
-    /// `Debug` output. `aviso::auth::discover_with` reads the block itself
-    /// when no higher-priority source supplied a credential.
+    /// The client settings (`base_url`, `timeout`, `heartbeat_interval`,
+    /// `tls`, `auth`) are listed here only so `deny_unknown_fields` knows
+    /// the keys. Their values are read by `aviso::ClientSettings` and by
+    /// credential discovery from the same text, so the binary and the
+    /// library interpret them identically and a secret from `auth:` never
+    /// sits in this struct or its `Debug` output.
+    #[serde(default, rename = "base_url")]
+    pub(crate) _base_url: Option<serde::de::IgnoredAny>,
     #[serde(default, rename = "auth")]
     pub(crate) _auth: Option<serde::de::IgnoredAny>,
-    #[serde(default, with = "humantime_serde::option")]
-    pub(crate) timeout: Option<Duration>,
-    #[serde(default, with = "humantime_serde::option")]
-    pub(crate) heartbeat_interval: Option<Duration>,
+    #[serde(default, rename = "timeout")]
+    pub(crate) _timeout: Option<serde::de::IgnoredAny>,
+    #[serde(default, rename = "heartbeat_interval")]
+    pub(crate) _heartbeat_interval: Option<serde::de::IgnoredAny>,
+    /// Kept as presence only: `config dump` attributes TLS settings to the
+    /// file when the block exists, even when it is empty.
+    #[serde(default, rename = "tls")]
+    pub(crate) tls: Option<serde::de::IgnoredAny>,
     #[serde(default)]
     pub(crate) state_file: Option<PathBuf>,
     #[serde(default)]
-    pub(crate) tls: Option<TlsConfig>,
-    #[serde(default)]
     pub(crate) listeners: Vec<ListenerSpec>,
-}
-
-/// `tls:` block.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TlsConfig {
-    #[serde(default)]
-    pub(crate) ca_bundle: Vec<PathBuf>,
-    #[serde(default)]
-    pub(crate) danger_accept_invalid_certs: bool,
 }
 
 /// A single listener entry under top-level `listeners:`.
@@ -208,6 +201,7 @@ pub(crate) fn resolve(
     let loaded = load_optional(&config_path.value)
         .with_context(|| format!("at: {}", config_path.value.display()))?;
     let file = loaded.parsed;
+    let settings = loaded.settings;
 
     let state_path = if let Some(p) = cli_state_file {
         Sourced {
@@ -243,17 +237,17 @@ pub(crate) fn resolve(
             })
         })
         .or_else(|| {
-            file.base_url.clone().map(|s| Sourced {
+            settings.base_url.clone().map(|s| Sourced {
                 value: s,
                 source: Source::File,
             })
         });
 
-    let timeout = file.timeout.map(|v| Sourced {
+    let timeout = settings.timeout.map(|v| Sourced {
         value: v,
         source: Source::File,
     });
-    let heartbeat_interval = file.heartbeat_interval.map(|v| Sourced {
+    let heartbeat_interval = settings.heartbeat_interval.map(|v| Sourced {
         value: v,
         source: Source::File,
     });
@@ -261,7 +255,7 @@ pub(crate) fn resolve(
     let (tls_ca_bundle_paths, tls_danger_accept_invalid_certs) = resolve_tls(
         cli_ca_bundle,
         cli_danger_accept_invalid_certs,
-        file.tls.as_ref(),
+        file.tls.is_some().then_some(&settings),
     )?;
 
     let flag_provider = cli_auth::provider_from_flags(cli_token, cli_username, cli_password)?;
@@ -287,22 +281,23 @@ pub(crate) fn resolve(
 fn resolve_tls(
     cli_ca_bundle: &[PathBuf],
     cli_danger: bool,
-    file_tls: Option<&TlsConfig>,
+    file_tls: Option<&aviso::ClientSettings>,
 ) -> Result<(Sourced<Vec<PathBuf>>, Sourced<bool>)> {
     let ca_bundle = if !cli_ca_bundle.is_empty() {
         Sourced {
             value: absolutize_all(cli_ca_bundle)?,
             source: Source::Flag,
         }
-    } else if let Some(tls) = file_tls {
+    } else if let Some(settings) = file_tls {
         // The presence of a `tls:` block in the config IS a
         // statement of intent from the operator; tag the bundle as
         // File regardless of whether the list is empty so
         // `config dump` source attribution reflects the layer that
         // actually supplied the value rather than the bundle's
-        // emptiness.
+        // emptiness. Relative paths were already resolved against the
+        // config file's directory when the settings were read.
         Sourced {
-            value: absolutize_all(&tls.ca_bundle)?,
+            value: settings.ca_bundle.clone(),
             source: Source::File,
         }
     } else {
@@ -317,9 +312,9 @@ fn resolve_tls(
             value: true,
             source: Source::Flag,
         }
-    } else if let Some(tls) = file_tls {
+    } else if let Some(settings) = file_tls {
         Sourced {
-            value: tls.danger_accept_invalid_certs,
+            value: settings.danger_accept_invalid_certs,
             source: Source::File,
         }
     } else {
@@ -364,6 +359,8 @@ fn read_env(name: &str) -> Result<Option<String>> {
 /// replaced file and pair a fresh credential with a stale server address.
 pub(crate) struct LoadedConfig {
     pub(crate) parsed: ConfigFile,
+    /// The client settings, read by the same code the library uses.
+    pub(crate) settings: aviso::ClientSettings,
     /// `None` when the file was absent.
     pub(crate) content: Option<String>,
 }
@@ -378,6 +375,7 @@ pub(crate) fn load_optional(path: &Path) -> Result<LoadedConfig> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Ok(LoadedConfig {
                 parsed: ConfigFile::default(),
+                settings: aviso::ClientSettings::default(),
                 content: None,
             });
         }
@@ -389,8 +387,11 @@ pub(crate) fn load_optional(path: &Path) -> Result<LoadedConfig> {
         .with_context(|| format!("read config file: {}", path.display()))?;
     let parsed: ConfigFile = yaml::from_str(&content)
         .with_context(|| format!("parse config file: {}", path.display()))?;
+    let settings = aviso::ClientSettings::parse(&content, path)
+        .with_context(|| format!("parse config file: {}", path.display()))?;
     Ok(LoadedConfig {
         parsed,
+        settings,
         content: Some(content),
     })
 }
@@ -408,11 +409,19 @@ mod tests {
         yaml::from_str(yaml_text).expect("test YAML should parse")
     }
 
+    /// The client settings the binary reads from the same text, through the
+    /// shared reader.
+    fn settings(yaml_text: &str) -> aviso::ClientSettings {
+        aviso::ClientSettings::parse(yaml_text, Path::new("/etc/aviso/config.yaml"))
+            .expect("test YAML should parse as client settings")
+    }
+
     #[test]
     fn parse_empty_yaml_yields_defaults() {
         let cfg = parse("");
-        assert!(cfg.base_url.is_none());
+        assert!(cfg.state_file.is_none());
         assert!(cfg.listeners.is_empty());
+        assert_eq!(settings(""), aviso::ClientSettings::default());
     }
 
     #[test]
@@ -436,16 +445,17 @@ listeners:
       - type: echo
 "#;
         let cfg = parse(yaml_text);
-        assert_eq!(cfg.base_url.as_deref(), Some("https://aviso.example.org"));
-        assert_eq!(cfg.timeout, Some(Duration::from_secs(30)));
-        assert_eq!(cfg.heartbeat_interval, Some(Duration::from_secs(30)));
+        let s = settings(yaml_text);
+        assert_eq!(s.base_url.as_deref(), Some("https://aviso.example.org"));
+        assert_eq!(s.timeout, Some(Duration::from_secs(30)));
+        assert_eq!(s.heartbeat_interval, Some(Duration::from_secs(30)));
         assert_eq!(
             cfg.state_file,
             Some(PathBuf::from("/var/lib/aviso/state.json"))
         );
-        let tls = cfg.tls.expect("tls block present");
-        assert!(!tls.danger_accept_invalid_certs);
-        assert!(tls.ca_bundle.is_empty());
+        assert!(cfg.tls.is_some(), "tls block present");
+        assert!(!s.danger_accept_invalid_certs);
+        assert!(s.ca_bundle.is_empty());
         assert_eq!(cfg.listeners.len(), 1);
         let listener = &cfg.listeners[0];
         assert_eq!(listener.name.as_deref(), Some("mars-od"));
@@ -462,7 +472,7 @@ listeners:
         // was accepted under deny_unknown_fields.
         let cfg = parse("auth:\n  basic:\n    username: alice\n    password: hunter2\n");
 
-        assert!(cfg.base_url.is_none());
+        assert!(cfg.listeners.is_empty());
     }
 
     #[test]
@@ -494,15 +504,15 @@ listeners:
         // credential elsewhere is not failed by an unused block.
         let cfg = parse("auth:\n  bogus_key: 1\n");
 
-        assert!(cfg.base_url.is_none());
+        assert!(cfg.listeners.is_empty());
     }
 
     #[test]
     fn load_optional_returns_default_when_file_absent() {
-        let cfg = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test"))
-            .unwrap()
-            .parsed;
-        assert!(cfg.base_url.is_none());
+        let loaded = load_optional(Path::new("/tmp/this-path-does-not-exist-aviso-test")).unwrap();
+        assert!(loaded.settings.base_url.is_none());
+        assert!(loaded.content.is_none());
+        assert!(loaded.parsed.listeners.is_empty());
     }
 
     #[test]
@@ -539,20 +549,26 @@ listeners:
     }
 
     #[test]
-    fn resolve_tls_absolutizes_relative_file_ca_bundle_paths() {
-        let rel = PathBuf::from("aviso-test-relative-file-ca.pem");
-        let tls = TlsConfig {
-            ca_bundle: vec![rel.clone()],
-            danger_accept_invalid_certs: false,
-        };
-        let (bundle, _) = resolve_tls(&[], false, Some(&tls)).unwrap();
+    fn resolve_tls_takes_file_ca_bundle_paths_resolved_against_the_file() {
+        // A relative path in the config file means "beside the config file",
+        // wherever the process was started from. The shared reader resolves
+        // it, so resolve_tls passes it through.
+        let s = settings("tls:\n  ca_bundle: [aviso-test-relative-file-ca.pem]\n");
+        let (bundle, _) = resolve_tls(&[], false, Some(&s)).unwrap();
         assert_eq!(bundle.source, Source::File);
-        assert_eq!(bundle.value.len(), 1);
-        assert!(
-            bundle.value[0].is_absolute(),
-            "CA bundle path supplied via file should be absolutized; got {}",
-            bundle.value[0].display()
+        assert_eq!(
+            bundle.value,
+            vec![PathBuf::from("/etc/aviso/aviso-test-relative-file-ca.pem")]
         );
+    }
+
+    #[test]
+    fn resolve_tls_attributes_an_empty_tls_block_to_the_file() {
+        let s = settings("tls: {}\n");
+        let (bundle, danger) = resolve_tls(&[], false, Some(&s)).unwrap();
+        assert_eq!(bundle.source, Source::File);
+        assert!(bundle.value.is_empty());
+        assert_eq!(danger.source, Source::File);
     }
 
     #[test]
