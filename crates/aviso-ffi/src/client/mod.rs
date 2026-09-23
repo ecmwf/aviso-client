@@ -51,11 +51,16 @@ impl AvisoClientBuilder {
 /// # Safety
 ///
 /// `ptr`, when non-null, must point to a NUL-terminated C string valid for the
-/// duration of the call.
+/// duration of the call. The lifetime `'a` is not tied to anything the
+/// compiler can see: it is whatever the call site infers. Use the result
+/// within the entry point that received `ptr`, while the caller's string is
+/// still live, and never store it in a handle that outlives the call.
 pub(crate) unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         return None;
     }
+    // SAFETY: `ptr` is non-null (checked above) and, per this function's #
+    // Safety, points to a NUL-terminated C string valid for the call.
     unsafe { CStr::from_ptr(ptr) }.to_str().ok()
 }
 
@@ -65,12 +70,15 @@ pub(crate) unsafe fn cstr_opt<'a>(ptr: *const c_char) -> Option<&'a str> {
 ///
 /// # Safety
 ///
-/// `ptr`, when non-null, must point to a NUL-terminated C string valid for the
-/// duration of the call.
+/// As [`cstr_opt`]: `ptr`, when non-null, must point to a NUL-terminated C
+/// string valid for the duration of the call, and the borrow must not outlive
+/// the entry point that received `ptr`.
 pub(crate) unsafe fn cstr_nullable<'a>(ptr: *const c_char) -> Result<Option<&'a str>, ()> {
     if ptr.is_null() {
         return Ok(None);
     }
+    // SAFETY: `ptr` is non-null (checked above) and, per this function's #
+    // Safety, points to a NUL-terminated C string valid for the call.
     unsafe { CStr::from_ptr(ptr) }
         .to_str()
         .map(Some)
@@ -206,6 +214,8 @@ pub unsafe extern "C" fn aviso_client_builder_new(
             error: None,
             base_url: String::new(),
         };
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(base_url) } {
             Some(url) => {
                 url.clone_into(&mut builder.base_url);
@@ -338,11 +348,18 @@ pub unsafe extern "C" fn aviso_client_builder_build(
         if builder.is_null() {
             return error::invalid_input("builder handle pointer must not be null").into_outcome();
         }
+        // SAFETY: `builder` is non-null (checked above) and, per this
+        // function's # Safety, points to a valid, aligned handle slot that
+        // nothing else touches during this call.
         let slot = unsafe { &mut *builder };
         if slot.is_null() {
             return error::invalid_input("builder is null or already consumed").into_outcome();
         }
         // Take ownership and null the caller's pointer before doing any work.
+        // SAFETY: the caller's slot holds a handle this library created and has
+        // not freed, and ownership passes back here once; the slot is nulled
+        // right after so a second call is a no-op, per this function's #
+        // Safety.
         let owned = unsafe { Box::from_raw(*slot) };
         *slot = ptr::null_mut();
 
@@ -372,6 +389,8 @@ pub unsafe extern "C" fn aviso_client_builder_free(builder: *mut AvisoClientBuil
     if builder.is_null() {
         return;
     }
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     drop(unsafe { Box::from_raw(builder) });
 }
 
@@ -385,6 +404,8 @@ pub unsafe extern "C" fn aviso_client_free(client: *mut AvisoClient) {
     if client.is_null() {
         return;
     }
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     drop(unsafe { Box::from_raw(client) });
 }
 
@@ -402,6 +423,9 @@ pub unsafe extern "C" fn aviso_client_free(client: *mut AvisoClient) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_schema(client: *const AvisoClient) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
@@ -442,17 +466,24 @@ pub unsafe extern "C" fn aviso_client_notify(
     payload_json: *const c_char,
 ) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(event_type) = (unsafe { cstr_opt(event_type) }) else {
             return error::invalid_input("event_type must be non-null and valid UTF-8")
                 .into_outcome();
         };
 
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let identifier = match unsafe { cstr_nullable(identifier_json) } {
             Ok(None) => BTreeMap::new(),
             Ok(Some(text)) => match parse_identifier(text) {
@@ -463,6 +494,8 @@ pub unsafe extern "C" fn aviso_client_notify(
                 return error::invalid_input("identifier_json must be valid UTF-8").into_outcome();
             }
         };
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let payload = match unsafe { cstr_nullable(payload_json) } {
             Ok(None) => None,
             Ok(Some(text)) => match serde_json::from_str::<Value>(text) {
@@ -519,12 +552,17 @@ pub unsafe extern "C" fn aviso_client_notify_many(
     max_concurrency: usize,
 ) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(notifications_json) = (unsafe { cstr_opt(notifications_json) }) else {
             return error::invalid_input("notifications_json must be non-null and valid UTF-8")
                 .into_outcome();
@@ -583,12 +621,17 @@ pub unsafe extern "C" fn aviso_client_schema_for(
     event_type: *const c_char,
 ) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(event_type) = (unsafe { cstr_opt(event_type) }) else {
             return error::invalid_input("event_type must be non-null and valid UTF-8")
                 .into_outcome();
@@ -618,12 +661,17 @@ pub unsafe extern "C" fn aviso_client_wipe_stream(
     stream_name: *const c_char,
 ) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(stream_name) = (unsafe { cstr_opt(stream_name) }) else {
             return error::invalid_input("stream_name must be non-null and valid UTF-8")
                 .into_outcome();
@@ -648,6 +696,9 @@ pub unsafe extern "C" fn aviso_client_wipe_stream(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_client_wipe_all(client: *const AvisoClient) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
@@ -679,12 +730,17 @@ pub unsafe extern "C" fn aviso_client_delete_notification(
     notification_id: *const c_char,
 ) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return error::invalid_input("client must not be null").into_outcome();
         };
         if let Some(err) = reject_blocking_on_runtime() {
             return err.into_outcome();
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(notification_id) = (unsafe { cstr_opt(notification_id) }) else {
             return error::invalid_input("notification_id must be non-null and valid UTF-8")
                 .into_outcome();
@@ -700,6 +756,10 @@ pub unsafe extern "C" fn aviso_client_delete_notification(
 #[allow(
     clippy::expect_used,
     reason = "test code: expect on known-valid inputs is the standard test diagnostic"
+)]
+#[allow(
+    clippy::undocumented_unsafe_blocks,
+    reason = "test code: every unsafe block here is a call into the crate's own C ABI from Rust, with the arguments constructed a few lines above"
 )]
 mod tests {
     use super::*;

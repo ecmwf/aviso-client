@@ -284,7 +284,7 @@ async fn drive(
                     "Error in listener {name}: {display_error}"
                 ));
                 if let Some(hint) = hint_for_listener_error(&client_err) {
-                    let hint = diagnostics::redact_urls(&hint);
+                    let hint = diagnostics::sanitize_server_text(&hint);
                     let _ = output::write_stderr_line(&format!("  Hint: {hint}"));
                 }
                 let _ = output::write_stderr_line("  Other listeners continue.");

@@ -156,7 +156,9 @@ pub(crate) struct Cli {
     base_url: Option<String>,
 
     /// Bearer auth token. Mutually exclusive with --username and
-    /// --password. Env override: AVISO_TOKEN.
+    /// --password. Env override: AVISO_TOKEN. Flags are visible to
+    /// other local users in the process list and end up in shell
+    /// history; prefer the env var or the credentials file.
     #[arg(
         long,
         value_name = "TOKEN",
@@ -171,7 +173,9 @@ pub(crate) struct Cli {
     username: Option<String>,
 
     /// Basic auth password. Requires --username. Mutually exclusive
-    /// with --token. Env override: AVISO_PASSWORD.
+    /// with --token. Env override: AVISO_PASSWORD. Flags are visible
+    /// to other local users in the process list and end up in shell
+    /// history; prefer the env var or the credentials file.
     #[arg(long, value_name = "PASSWORD", global = true, requires = "username")]
     password: Option<String>,
 

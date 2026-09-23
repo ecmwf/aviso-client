@@ -186,14 +186,27 @@ impl std::fmt::Debug for AvisoClient {
     /// in log output. The custom impl elides the HTTP client entirely and prints a sanitized
     /// base URL with any userinfo stripped.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut sanitized = self.base_url.clone();
-        let _ = sanitized.set_username("");
-        let _ = sanitized.set_password(None);
         f.debug_struct("AvisoClient")
-            .field("base_url", &sanitized.as_str())
+            .field("base_url", &self.display_base_url())
             .field("auth", &self.auth)
             .finish_non_exhaustive()
     }
+}
+
+/// Returns `url` with any `user:password@` removed, for output a person
+/// might read or a log might keep.
+///
+/// Valid: `https://alice:hunter2@aviso.example.org/api/` becomes
+/// `https://aviso.example.org/api/`; a URL with no userinfo is returned
+/// unchanged.
+#[must_use]
+pub fn display_url(url: &Url) -> String {
+    let mut sanitized = url.clone();
+    // Both setters fail only for URLs that cannot carry userinfo at all
+    // (`mailto:`, `data:`), which then have nothing to strip.
+    sanitized.set_username("").ok();
+    sanitized.set_password(None).ok();
+    sanitized.into()
 }
 
 impl AvisoClient {
@@ -217,6 +230,14 @@ impl AvisoClient {
     #[must_use]
     pub fn base_url(&self) -> &Url {
         &self.base_url
+    }
+
+    /// The base URL as text with any `user:password@` removed. Use this,
+    /// not [`Self::base_url`], for anything a person reads or a log
+    /// keeps.
+    #[must_use]
+    pub fn display_base_url(&self) -> String {
+        display_url(&self.base_url)
     }
 
     /// Returns the auth provider, if one was configured.
@@ -314,8 +335,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use super::AvisoClient;
+    use super::{AvisoClient, display_url};
     use crate::auth::Bearer;
+    use url::Url;
 
     #[test]
     fn auth_defaults_to_none() {
@@ -401,6 +423,20 @@ mod tests {
             !formatted.contains("operator"),
             "AvisoClient Debug must strip username from base_url: {formatted}"
         );
+    }
+
+    #[test]
+    fn display_base_url_strips_userinfo_and_leaves_the_rest() {
+        let client = AvisoClient::builder()
+            .base_url("https://operator:hunter2@aviso.example.org:8443/api/")
+            .build()
+            .unwrap();
+        assert_eq!(
+            client.display_base_url(),
+            "https://aviso.example.org:8443/api/"
+        );
+        let plain = Url::parse("https://aviso.example.org/api/").unwrap();
+        assert_eq!(display_url(&plain), "https://aviso.example.org/api/");
     }
 
     #[tokio::test]

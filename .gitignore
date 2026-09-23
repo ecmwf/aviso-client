@@ -26,3 +26,17 @@ tests/e2e/last-failure.log
 *.swp
 *~
 .sisyphus
+# Credentials and keys never belong in the repository
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.netrc
+.npmrc
+.pypirc
+credentials
+credentials.yaml

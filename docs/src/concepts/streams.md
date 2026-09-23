@@ -50,6 +50,11 @@ aviso does not treat this as an error. It reconnects immediately, with no
 backoff, and resumes from the next sequence. From your point of view, the
 listener just keeps running.
 
+The one exception is a connection that closes within a second of opening.
+Repeated short sessions turn the immediate reconnect into a growing backoff,
+so a server that keeps closing the watch the moment it opens is not hammered
+with connection attempts. A session of ordinary length resets this.
+
 ## When aviso reconnects, and what kind of backoff
 
 | What happened | What aviso does |

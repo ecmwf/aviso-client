@@ -29,10 +29,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url("https://aviso.example")
         .build()?;
 
-    println!("client base url = {}", client.base_url());
+    println!("client base url = {}", client.display_base_url());
     Ok(())
 }
 ```
+
+`base_url()` returns the URL exactly as configured, which may include a
+`user:password@` part. For anything a person reads or a log keeps, use
+`display_base_url()`, which strips that part; the client's `Debug` output does
+the same.
 
 The client is `Clone`. Cloned handles share the same HTTP connection pool and
 the same authentication provider, so you can hand copies to multiple tasks

@@ -53,6 +53,15 @@ def test_repr_shows_base_url() -> None:
     assert "127.0.0.1" in rendered
 
 
+def test_repr_does_not_show_credentials_embedded_in_the_url() -> None:
+    url = "https://operator:hunter2@aviso.example.org/"
+    for client in (pyaviso.AvisoClient(base_url=url), pyaviso.AsyncAvisoClient(base_url=url)):
+        rendered = repr(client)
+        assert "aviso.example.org" in rendered
+        assert "hunter2" not in rendered
+        assert "operator" not in rendered
+
+
 def test_context_manager_returns_self() -> None:
     with pyaviso.AvisoClient(base_url="http://127.0.0.1:1") as client:
         assert client.base_url == "http://127.0.0.1:1/"

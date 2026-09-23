@@ -87,6 +87,14 @@ pub(crate) fn build(
                 aviso::auth::url_without_userinfo(base_url),
             )));
         }
+        if resolved.auth_source == Some("flag") {
+            // Anything on the command line is readable by every local user
+            // through the process list and lands in the shell history.
+            tracing::warn!(
+                event.name = "cli.auth.on_command_line",
+                "credential passed as a command-line flag; prefer AVISO_TOKEN or the credentials file, which other local users cannot read from the process list"
+            );
+        }
         builder = builder.auth(Arc::clone(provider));
     }
     for path in &resolved.tls_ca_bundle_paths.value {

@@ -284,6 +284,9 @@ impl PyAvisoClient {
         Ok(Self { inner: client })
     }
 
+    /// The base URL exactly as configured, including any `user:password@`
+    /// it carries. This is the value the client uses; `repr()` shows the
+    /// same URL without the credentials, and is the one to log.
     #[getter]
     fn base_url(&self) -> String {
         self.inner.base_url().to_string()
@@ -395,7 +398,7 @@ impl PyAvisoClient {
     }
 
     fn __repr__(&self) -> String {
-        format!("AvisoClient(base_url={:?})", self.inner.base_url().as_str())
+        format!("AvisoClient(base_url={:?})", self.inner.display_base_url())
     }
 
     fn __enter__(slf: Py<Self>) -> Py<Self> {
@@ -510,6 +513,9 @@ impl PyAsyncAvisoClient {
         Ok(Self { inner: client })
     }
 
+    /// The base URL exactly as configured, including any `user:password@`
+    /// it carries. This is the value the client uses; `repr()` shows the
+    /// same URL without the credentials, and is the one to log.
     #[getter]
     fn base_url(&self) -> String {
         self.inner.base_url().to_string()
@@ -644,7 +650,7 @@ impl PyAsyncAvisoClient {
     fn __repr__(&self) -> String {
         format!(
             "AsyncAvisoClient(base_url={:?})",
-            self.inner.base_url().as_str()
+            self.inner.display_base_url()
         )
     }
 }

@@ -123,6 +123,8 @@ pub unsafe extern "C" fn aviso_watch_request_new(
             spec: None,
             error: None,
         };
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(event_type) } {
             Some(event_type) => {
                 request.spec = Some(RequestSpec {
@@ -156,12 +158,17 @@ pub unsafe extern "C" fn aviso_watch_request_set_filter_json(
     filter_json: *const c_char,
 ) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(request) = (unsafe { request.as_mut() }) else {
             return;
         };
         if request.error.is_some() {
             return;
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_nullable(filter_json) } {
             Ok(None) => request.with_spec(|spec| spec.filter = None),
             Ok(Some(text)) => match parse_filter(text) {
@@ -187,6 +194,9 @@ pub unsafe extern "C" fn aviso_watch_request_watch_from_sequence(
     sequence: u64,
 ) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(request) = unsafe { request.as_mut() } {
             request.with_spec(|spec| {
                 spec.mode = Mode::WatchFrom(ResumeStart::AfterSequence(sequence));
@@ -208,12 +218,17 @@ pub unsafe extern "C" fn aviso_watch_request_watch_from_date(
     date: *const c_char,
 ) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(request) = (unsafe { request.as_mut() }) else {
             return;
         };
         if request.error.is_some() {
             return;
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(date) } {
             Some(date) => request
                 .with_spec(|spec| spec.mode = Mode::WatchFrom(ResumeStart::Date(date.to_string()))),
@@ -238,6 +253,9 @@ pub unsafe extern "C" fn aviso_watch_request_replay_from_sequence(
     sequence: u64,
 ) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(request) = unsafe { request.as_mut() } {
             request.with_spec(|spec| {
                 spec.mode = Mode::ReplayOnly(ResumeStart::AfterSequence(sequence));
@@ -259,12 +277,17 @@ pub unsafe extern "C" fn aviso_watch_request_replay_from_date(
     date: *const c_char,
 ) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(request) = (unsafe { request.as_mut() }) else {
             return;
         };
         if request.error.is_some() {
             return;
         }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(date) } {
             Some(date) => request.with_spec(|spec| {
                 spec.mode = Mode::ReplayOnly(ResumeStart::Date(date.to_string()));
@@ -297,14 +320,24 @@ pub unsafe extern "C" fn aviso_watch_request_add_trigger(
         if trigger.is_null() {
             return;
         }
+        // SAFETY: `trigger` is non-null (checked above) and, per this
+        // function's # Safety, points to a valid, aligned handle slot that
+        // nothing else touches during this call.
         let slot = unsafe { &mut *trigger };
         if slot.is_null() {
             return;
         }
         // Take ownership and null the caller's pointer before any other work.
+        // SAFETY: the caller's slot holds a handle this library created and has
+        // not freed, and ownership passes back here once; the slot is nulled
+        // right after so a second call is a no-op, per this function's #
+        // Safety.
         let owned = unsafe { Box::from_raw(*slot) };
         *slot = ptr::null_mut();
 
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(request) = (unsafe { request.as_mut() }) else {
             return;
         };
@@ -332,6 +365,8 @@ pub unsafe extern "C" fn aviso_watch_request_free(request: *mut AvisoWatchReques
     if request.is_null() {
         return;
     }
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     drop(unsafe { Box::from_raw(request) });
 }
 
@@ -371,6 +406,9 @@ impl AvisoNotification {
 pub unsafe extern "C" fn aviso_notification_event_type(
     notification: *const AvisoNotification,
 ) -> *const c_char {
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     match unsafe { notification.as_ref() } {
         Some(notification) => notification.event_type.as_ptr(),
         None => ptr::null(),
@@ -387,6 +425,9 @@ pub unsafe extern "C" fn aviso_notification_event_type(
 pub unsafe extern "C" fn aviso_notification_sequence(
     notification: *const AvisoNotification,
 ) -> u64 {
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     match unsafe { notification.as_ref() } {
         Some(notification) => notification.sequence,
         None => 0,
@@ -404,6 +445,9 @@ pub unsafe extern "C" fn aviso_notification_sequence(
 pub unsafe extern "C" fn aviso_notification_identifier_json(
     notification: *const AvisoNotification,
 ) -> *const c_char {
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     match unsafe { notification.as_ref() } {
         Some(notification) => notification.identifier_json.as_ptr(),
         None => ptr::null(),
@@ -422,6 +466,9 @@ pub unsafe extern "C" fn aviso_notification_identifier_json(
 pub unsafe extern "C" fn aviso_notification_payload_json(
     notification: *const AvisoNotification,
 ) -> *const c_char {
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     match unsafe { notification.as_ref() } {
         Some(notification) => notification.payload_json.as_ptr(),
         None => ptr::null(),
@@ -539,18 +586,28 @@ pub unsafe extern "C" fn aviso_client_watch(
         if request.is_null() {
             return ptr::null_mut();
         }
+        // SAFETY: `request` is non-null (checked above) and, per this
+        // function's # Safety, points to a valid, aligned handle slot that
+        // nothing else touches during this call.
         let slot = unsafe { &mut *request };
         if slot.is_null() {
             return ptr::null_mut();
         }
         // Take ownership and null the caller's pointer before any validation,
         // so a later free is a safe no-op even when the start is rejected.
+        // SAFETY: the caller's slot holds a handle this library created and has
+        // not freed, and ownership passes back here once; the slot is nulled
+        // right after so a second call is a no-op, per this function's #
+        // Safety.
         let owned = unsafe { Box::from_raw(*slot) };
         *slot = ptr::null_mut();
 
         let (Some(on_notification), Some(on_end)) = (on_notification, on_end) else {
             return ptr::null_mut();
         };
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             return ptr::null_mut();
         };
@@ -606,6 +663,9 @@ pub unsafe extern "C" fn aviso_client_watch(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_watch_stop(watch: *const AvisoWatch) {
     guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(watch) = unsafe { watch.as_ref() } {
             watch.stop.flag.store(true, Ordering::Release);
             watch.stop.notify.notify_one();
@@ -624,6 +684,9 @@ pub unsafe extern "C" fn aviso_watch_stop(watch: *const AvisoWatch) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_watch_wait(watch: *const AvisoWatch) -> *mut AvisoOutcome {
     guard_outcome(|| {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(watch) = (unsafe { watch.as_ref() }) else {
             return error::invalid_input("watch must not be null").into_outcome();
         };
@@ -669,6 +732,8 @@ pub unsafe extern "C" fn aviso_watch_free(watch: *mut AvisoWatch) {
     if watch.is_null() {
         return;
     }
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     let watch = unsafe { Box::from_raw(watch) };
     watch.stop.flag.store(true, Ordering::Release);
     watch.stop.notify.notify_one();
@@ -679,6 +744,10 @@ pub unsafe extern "C" fn aviso_watch_free(watch: *mut AvisoWatch) {
 #[allow(
     clippy::expect_used,
     reason = "test code: expect on known-valid inputs is the standard test diagnostic"
+)]
+#[allow(
+    clippy::undocumented_unsafe_blocks,
+    reason = "test code: every unsafe block here is a call into the crate's own C ABI from Rust, with the arguments constructed a few lines above"
 )]
 mod tests {
     use super::*;

@@ -40,7 +40,13 @@ pub struct AvisoClientBuilder {
 impl std::fmt::Debug for AvisoClientBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AvisoClientBuilder")
-            .field("base_url", &self.base_url)
+            .field(
+                "base_url",
+                &self
+                    .base_url
+                    .as_deref()
+                    .map(crate::auth::url_without_userinfo),
+            )
             .field("auth", &self.auth)
             .field("timeout", &self.timeout)
             .field("user_agent", &self.user_agent)
@@ -360,6 +366,17 @@ impl AvisoClientBuilder {
                 crate::auth::url_without_userinfo(&raw)
             )));
         }
+        if self.auth.is_some() && crate::auth::is_public_plaintext(&raw) {
+            // A named credential is the caller's decision, so it is sent.
+            // Say so once, the way the CLI does for disabled certificate
+            // checks, so a log scraper can flag it.
+            tracing::warn!(
+                event.name = "client.auth.plaintext",
+                base_url = %crate::auth::url_without_userinfo(&raw),
+                "sending the credential over plain http to a non-loopback address; \
+                 anyone on the path can read it. Use https."
+            );
+        }
         if !base_url.path().ends_with('/') {
             let normalized = format!("{}/", base_url.path());
             base_url.set_path(&normalized);
@@ -412,6 +429,19 @@ const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 )]
 mod tests {
     use super::AvisoClient;
+
+    #[test]
+    fn builder_debug_strips_userinfo_from_base_url() {
+        let builder = AvisoClient::builder().base_url("https://operator:hunter2@aviso.example.org");
+        let formatted = format!("{builder:?}");
+        assert!(formatted.contains("aviso.example.org"), "got: {formatted}");
+        assert!(!formatted.contains("hunter2"), "got: {formatted}");
+        assert!(!formatted.contains("operator"), "got: {formatted}");
+        // A value that does not parse is not echoed either.
+        let builder = AvisoClient::builder().base_url("https://operator:hunter2@");
+        let formatted = format!("{builder:?}");
+        assert!(!formatted.contains("hunter2"), "got: {formatted}");
+    }
 
     #[test]
     fn builder_requires_base_url() {

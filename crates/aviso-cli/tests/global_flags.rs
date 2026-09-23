@@ -137,6 +137,54 @@ async fn danger_accept_invalid_certs_emits_session_warn() {
 }
 
 #[tokio::test]
+async fn a_credential_on_the_command_line_is_announced_and_one_from_the_env_is_not() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/schema"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "success",
+            "schema": {},
+            "event_types": [],
+            "total_schemas": 0
+        })))
+        .mount(&server)
+        .await;
+    let dir = empty_config_dir();
+    let config = dir.path().join("config.yaml");
+
+    aviso()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--base-url",
+            &server.uri(),
+        ])
+        .args(["--token", "flag-token", "schema", "list"])
+        .env_remove("AVISO_LOG")
+        .assert()
+        .success()
+        .stderr(contains("cli.auth.on_command_line"));
+
+    let assertion = aviso()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--base-url",
+            &server.uri(),
+        ])
+        .args(["schema", "list"])
+        .env("AVISO_TOKEN", "env-token")
+        .env_remove("AVISO_LOG")
+        .assert()
+        .success();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr);
+    assert!(
+        !stderr.contains("cli.auth.on_command_line"),
+        "got: {stderr}"
+    );
+}
+
+#[tokio::test]
 async fn otel_log_format_emits_required_fields_per_data_model() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
