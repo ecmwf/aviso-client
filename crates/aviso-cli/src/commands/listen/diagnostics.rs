@@ -92,9 +92,10 @@ fn recognized_fields(body: &str, header_request_id: Option<&str>) -> Option<Map<
 /// which query keys contain credentials. It is not a detector for
 /// arbitrary secrets in prose.
 ///
-/// Control characters other than newline and tab are shown escaped, so a
-/// message cannot carry an ANSI sequence that recolours the terminal,
-/// moves the cursor over earlier output, or plants an OSC hyperlink.
+/// Control characters other than newline and tab are shown escaped, the
+/// same way [`crate::error::escape_control_chars`] does for every error
+/// the binary prints; this text reaches stderr without going through that
+/// seam.
 ///
 /// Valid: `see https://h/p?t=x now` becomes `see [URL omitted] now`;
 /// `ok\u{1b}[31m` becomes `ok\u{1b}[31m` spelled out as text.
@@ -110,24 +111,12 @@ pub(super) fn sanitize_server_text(text: &str) -> String {
                 .starts_with("//")
         {
             result.push_str("[URL omitted]");
-            push_visible(&mut result, &part[token.len()..]);
+            result.push_str(&part[token.len()..]);
         } else {
-            push_visible(&mut result, part);
+            result.push_str(part);
         }
     }
-    result
-}
-
-/// Appends `text` with every control character except newline and tab
-/// replaced by its `\u{..}` escape.
-fn push_visible(out: &mut String, text: &str) {
-    for c in text.chars() {
-        if c.is_control() && c != '\n' && c != '\t' {
-            out.extend(c.escape_default());
-        } else {
-            out.push(c);
-        }
-    }
+    crate::error::escape_control_chars(&result)
 }
 
 #[cfg(test)]

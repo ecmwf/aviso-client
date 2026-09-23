@@ -30,12 +30,36 @@
 //! 7. anyhow "Caused by:" chain printed unconditionally.
 //! 8. never leaks paths the user did not provide, env values, or
 //!    secrets; the lib's redaction-at-Display discipline (trigger
-//!    surface, Bearer/Basic Debug) handles this at the source.
+//!    surface, Bearer/Basic Debug) handles this at the source. Control
+//!    characters in any message are shown as escapes, so server text
+//!    cannot drive the terminal.
 //! 9. every subcommand routes through this single seam.
 
 use std::io::{self, Write};
 
 use anyhow::Error;
+
+/// Returns `text` with every control character except newline and tab
+/// spelled out as its `\u{..}` escape.
+///
+/// Error text can carry words a server chose, and a server that is not
+/// friendly can put an ANSI sequence in them that recolours the
+/// terminal, moves the cursor over earlier output, or plants an OSC
+/// hyperlink. Every error the binary prints passes through here.
+///
+/// Valid: `ok\u{1b}[31m` becomes the visible characters
+/// `ok\u{1b}[31m`; `a\n\tb` is returned unchanged.
+pub(crate) fn escape_control_chars(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() && c != '\n' && c != '\t' {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
 
 /// Formats an anyhow error chain to stderr in the project's
 /// Error UX layout.
@@ -70,7 +94,7 @@ pub(crate) fn format_chain(err: &Error) {
     let entries: Vec<String> = err
         .chain()
         .filter(|e| !e.is::<crate::exit::UsageErrorTag>())
-        .map(ToString::to_string)
+        .map(|e| escape_control_chars(&e.to_string()))
         .collect();
     let mut summary: Option<&str> = None;
     let mut prefix_lines: Vec<String> = Vec::new();

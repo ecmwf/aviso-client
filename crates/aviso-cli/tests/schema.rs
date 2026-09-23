@@ -134,6 +134,32 @@ async fn schema_list_without_base_url_exits_2() {
 }
 
 #[tokio::test]
+async fn control_characters_in_a_server_error_are_shown_not_interpreted() {
+    // The error body is server text and reaches stderr through the shared
+    // error seam, whatever the command. An escape sequence in it must
+    // come out as visible characters.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/schema"))
+        .respond_with(
+            ResponseTemplate::new(500).set_body_string("boom \u{1b}[31mred\u{1b}[0m \u{7}"),
+        )
+        .mount(&server)
+        .await;
+
+    let assertion = aviso()
+        .args(["--base-url", &server.uri(), "schema", "list"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).into_owned();
+    assert!(
+        !stderr.chars().any(|c| c.is_control() && c != '\n'),
+        "got: {stderr:?}"
+    );
+    assert!(stderr.contains("\\u{1b}[31m"), "got: {stderr}");
+}
+
+#[tokio::test]
 async fn schema_list_auth_401_exits_1() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
