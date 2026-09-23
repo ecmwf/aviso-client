@@ -355,7 +355,7 @@ impl CompiledTemplate {
                                 });
                             }
                             let quoted = shell.quote(&rendered);
-                            shell.advance(&quoted);
+                            shell.advance_value(&quoted);
                             out.push_str(&quoted);
                         }
                         Sink::Url => {

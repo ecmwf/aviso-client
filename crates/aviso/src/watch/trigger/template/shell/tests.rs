@@ -49,6 +49,12 @@ fn advance_knows_where_a_comment_starts_and_ends() {
     assert_eq!(after("printf '%s' $# '"), Context::SingleQuoted);
     assert_eq!(after("echo $( (printf x) )# don't"), Context::SingleQuoted);
     assert_eq!(after("(a; (b))# don't"), Context::Comment);
+    // A `)` inside `${ }` is text; the `}` closes the expansion.
+    assert_eq!(
+        after("echo \"$(printf '%s' ${x:-foo)}'a')\""),
+        Context::Bare
+    );
+    assert_eq!(after("echo ${x:-a)b}'"), Context::SingleQuoted);
     // Quotes inside a `$( )` belong to it, even inside double quotes.
     assert_eq!(after("echo \"$(printf '%s' 'a\"b')\" "), Context::Bare);
     assert_eq!(after("echo \"$(printf '%s' 'a\"b')"), Context::DoubleQuoted);
@@ -72,10 +78,13 @@ fn constructs_the_tracker_does_not_follow_are_reported() {
     assert_eq!(seen("echo $((1))# "), Some("arithmetic expansion"));
     assert_eq!(seen("case x in a) echo;; esac"), Some("a case statement"));
     assert_eq!(
-        seen("x=1; case $x in 1) :;; esac"),
+        seen("$(if :; then case x in a) :;; esac; fi)# "),
         Some("a case statement")
     );
-    assert_eq!(seen("echo case; showcase; echo a case"), None);
+    // Flagged wherever the bare word appears; the shell grammar is not
+    // modelled and refusing costs only an error message.
+    assert_eq!(seen("echo case "), Some("a case statement"));
+    assert_eq!(seen("showcase; echo 'case' \"case\" "), None);
     assert_eq!(seen("echo \"$((1))\" "), Some("arithmetic expansion"));
     assert_eq!(seen("x=`date`"), Some("backticks"));
     assert_eq!(seen("echo \"`date`\""), Some("backticks"));
@@ -206,4 +215,28 @@ fn quote_leaves_plain_values_readable() {
     assert_eq!(tracker.quote("mars"), "mars");
     tracker.advance("' \"");
     assert_eq!(tracker.quote("20260101"), "20260101");
+}
+
+#[test]
+fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
+    let refused = |text: &str| {
+        let mut tracker = ShellTracker::new();
+        tracker.advance(text);
+        tracker.unsupported()
+    };
+    assert_eq!(refused(""), Some("the command word"));
+    assert_eq!(refused("run x; "), Some("the command word"));
+    assert_eq!(refused("echo $(printf x; "), Some("the command word"));
+    assert_eq!(refused("x=${y:-"), Some("an open `${ }` expansion"));
+    assert_eq!(refused("run "), None);
+    assert_eq!(refused("run '"), None);
+    assert_eq!(refused("echo $(printf "), None);
+    assert_eq!(refused("# "), None);
+    // A value in argument position, then another command: the second
+    // command word is the operator's.
+    let mut tracker = ShellTracker::new();
+    tracker.advance("run ");
+    tracker.advance_value(&tracker.quote("v"));
+    tracker.advance("; printf ");
+    assert_eq!(tracker.unsupported(), None);
 }

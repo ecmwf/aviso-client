@@ -96,11 +96,10 @@ pub(super) struct ShellTracker {
     /// The word being read at the current level, while bare. Only its
     /// first few characters matter, to recognise `case`.
     word: String,
-    /// True when the next word would be the first of a command, which
-    /// is the only place `case` is a keyword.
-    command_start: bool,
-    /// True when the word being read began a command.
-    word_began_command: bool,
+    /// True while the word being read is the first word of a command at
+    /// the current level: a value placed there would choose the program
+    /// to run.
+    command_word: bool,
     /// A token started but not finished, waiting for the next character.
     pending: Pending,
     /// The first construct seen that the tracker does not follow. From
@@ -109,14 +108,24 @@ pub(super) struct ShellTracker {
     unsupported: Option<&'static str>,
 }
 
-/// One open command: the outer one, a `$( )` substitution, or a `( )`
-/// group.
+/// What kind of bracket opened a level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Opener {
+    /// The outer command.
+    None,
+    /// `$( )`: its `)` continues the word around the substitution.
+    Substitution,
+    /// `( )`: its `)` ends a word.
+    Group,
+    /// `${ }`: closed by `}`; a `)` inside is ordinary text.
+    Brace,
+}
+
+/// One open command or expansion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Level {
     context: Context,
-    /// True for a `( )` group. Its closing `)` ends a word, where the
-    /// `)` of a `$( )` continues the word around the substitution.
-    group: bool,
+    opener: Opener,
 }
 
 impl ShellTracker {
@@ -124,12 +133,11 @@ impl ShellTracker {
         Self {
             levels: vec![Level {
                 context: Context::Bare,
-                group: false,
+                opener: Opener::None,
             }],
             word_start: true,
             word: String::new(),
-            command_start: true,
-            word_began_command: false,
+            command_word: true,
             pending: Pending::Token(Token::None),
             unsupported: None,
         }
@@ -147,41 +155,47 @@ impl ShellTracker {
         }
     }
 
-    fn open_level(&mut self, group: bool) {
+    fn open_level(&mut self, opener: Opener) {
         self.levels.push(Level {
             context: Context::Bare,
-            group,
+            opener,
         });
         self.word_start = true;
         self.word.clear();
-        self.command_start = true;
+        self.command_word = opener != Opener::Brace;
+    }
+
+    fn opener(&self) -> Opener {
+        self.levels
+            .last()
+            .map_or(Opener::None, |level| level.opener)
     }
 
     /// Records a bare character as part of the current word.
     fn note_word_char(&mut self, c: char) {
         if self.word_start {
             self.word.clear();
-            self.word_began_command = self.command_start;
         }
         if self.word.len() < 5 {
             self.word.push(c);
         }
     }
 
-    /// Closes the current word. A `case` statement is flagged: its
-    /// pattern list has `)` without a matching `(`, which the tracker
-    /// does not follow. `case` is a keyword only as the first word of a
-    /// command.
+    /// Closes the current word. The word `case` is flagged wherever it
+    /// stands: a `case` statement's pattern list has `)` without a
+    /// matching `(`, which the tracker does not follow, and the shell
+    /// grammar that decides when `case` is a keyword is not worth
+    /// modelling when refusing is free.
     fn end_word(&mut self, separator_starts_command: bool) {
-        if self.word == "case" && self.word_began_command {
+        if self.word == "case" {
             self.flag("a case statement");
         }
         if !self.word.is_empty() {
-            self.command_start = false;
+            self.command_word = false;
         }
         self.word.clear();
         if separator_starts_command {
-            self.command_start = true;
+            self.command_word = true;
         }
     }
 
@@ -190,12 +204,17 @@ impl ShellTracker {
     }
 
     /// Names why a notification value cannot be placed here, if it
-    /// cannot: a here-document (`<<`), arithmetic expansion (`$((`) or
-    /// backticks seen earlier, which the tracker does not follow and
-    /// after which its state can differ from the shell's; or a `$` or
-    /// `$(` immediately before the value, which the value's first
-    /// character would complete into an expansion.
+    /// cannot: a here-document (`<<`), arithmetic expansion (`$((`),
+    /// backticks or `case` seen earlier, which the tracker does not
+    /// follow and after which its state can differ from the shell's; a
+    /// `$` or `$(` immediately before the value, which the value's first
+    /// character would complete into an expansion; an open `${ }`; or
+    /// the value standing where the command name goes, which would let
+    /// the publisher choose the program.
     pub(super) fn unsupported(&self) -> Option<&'static str> {
+        if self.unsupported.is_some() {
+            return self.unsupported;
+        }
         if matches!(
             self.pending,
             Pending::Token(Token::Dollar | Token::DollarParen)
@@ -204,7 +223,13 @@ impl ShellTracker {
         {
             return Some("a `$` right before the placeholder");
         }
-        self.unsupported
+        if self.opener() == Opener::Brace {
+            return Some("an open `${ }` expansion");
+        }
+        if self.command_word && self.word.is_empty() && self.context() != Context::Comment {
+            return Some("the command word");
+        }
+        None
     }
 
     /// Reads a piece of the rendered command and updates the state. Call
@@ -277,7 +302,11 @@ impl ShellTracker {
             }
             Token::DollarParen => {
                 // `c` is the first character inside the substitution.
-                self.open_level(false);
+                self.open_level(Opener::Substitution);
+            }
+            Token::Dollar if c == '{' => {
+                self.open_level(Opener::Brace);
+                return;
             }
             Token::Less if c == '<' => {
                 self.flag("a here-document");
@@ -286,6 +315,12 @@ impl ShellTracker {
             Token::None | Token::Dollar | Token::Less => {}
         }
 
+        self.step_char(c);
+    }
+
+    /// Handles one ordinary character in bare or double-quoted text, once
+    /// pending tokens have been dealt with.
+    fn step_char(&mut self, c: char) {
         match c {
             '$' => {
                 self.pending = Pending::Token(Token::Dollar);
@@ -305,9 +340,18 @@ impl ShellTracker {
                 self.pending = Pending::Token(Token::Less);
                 self.word_start = false;
             }
+            _ if self.opener() == Opener::Brace => {
+                // Inside `${ }` only the closing brace matters; the word
+                // around the expansion continues after it.
+                if c == '}' {
+                    self.levels.pop();
+                    self.word_start = false;
+                    self.command_word = false;
+                }
+            }
             '(' => {
                 self.end_word(true);
-                self.open_level(true);
+                self.open_level(Opener::Group);
             }
             ')' => {
                 self.end_word(true);
@@ -318,7 +362,8 @@ impl ShellTracker {
                 };
                 // The `)` of a group ends a word; the `)` of a `$( )`
                 // continues the word around the substitution.
-                self.word_start = closed.is_none_or(|level| level.group);
+                self.word_start = closed.is_none_or(|level| level.opener == Opener::Group);
+                self.command_word = self.word_start;
             }
             ' ' | '\t' => {
                 self.end_word(false);
@@ -333,6 +378,14 @@ impl ShellTracker {
                 self.word_start = false;
             }
         }
+    }
+
+    /// Reads a quoted notification value. Its text is not a word start
+    /// and never a command name; the tracker only needs to know it is
+    /// no longer at the start of a word.
+    pub(super) fn advance_value(&mut self, quoted: &str) {
+        self.advance(quoted);
+        self.command_word = false;
     }
 
     /// Returns `value` written so the shell reads it as literal text in
