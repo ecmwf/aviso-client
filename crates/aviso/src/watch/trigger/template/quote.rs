@@ -37,10 +37,13 @@
 //! value there is left alone; tracking comments matters because an
 //! apostrophe in one must not be mistaken for an opening quote.
 //!
-//! The tracker models a command word in those three states. It does not
-//! model the inside of backticks, here-document bodies, or the text an
-//! operator passes to `eval`; a value placed there is not protected, and
-//! the documentation says so.
+//! The tracker follows quotes, comments and `$( )` nesting, each `$(`
+//! opening a fresh command with its own state. It does not follow
+//! here-document bodies, arithmetic expansion or backticks. Once it has
+//! seen one of those its state may no longer match the shell's, so the
+//! engine refuses to place a notification value after that point rather
+//! than guess; the operator reaches the notification through the
+//! `AVISO_*` variables there instead.
 //!
 //! # URL
 //!
@@ -51,7 +54,7 @@
 //! rendered text and reports whether the path has started; the engine
 //! refuses a notification value before that point.
 
-/// The shell's quoting state at a point in a command string.
+/// The shell's quoting state at one level of command substitution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Context {
     /// Outside any quotes.
@@ -65,28 +68,52 @@ enum Context {
 }
 
 /// Follows a command string the way `sh` reads it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Every `$(` opens a fresh command with its own quoting state, so the
+/// states form a stack; the innermost is the one a value lands in.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ShellTracker {
-    context: Context,
+    /// One entry per open `$(`, plus the outer command at the bottom.
+    levels: Vec<Context>,
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
-    /// How many `$(` are open. A `)` that closes one continues the
-    /// surrounding word; a `)` outside any ends a word.
-    substitution_depth: u32,
     /// True when the last piece ended with a backslash that escapes
     /// whatever comes next, which the tracker has not seen yet.
     pending_escape: bool,
+    /// The first construct seen that the tracker does not follow. From
+    /// that point its state may not match the shell's, so the engine
+    /// refuses to place a notification value.
+    unsupported: Option<&'static str>,
 }
 
 impl ShellTracker {
     pub(super) fn new() -> Self {
         Self {
-            context: Context::Bare,
+            levels: vec![Context::Bare],
             word_start: true,
-            substitution_depth: 0,
             pending_escape: false,
+            unsupported: None,
         }
+    }
+
+    fn context(&self) -> Context {
+        *self.levels.last().unwrap_or(&Context::Bare)
+    }
+
+    fn set_context(&mut self, context: Context) {
+        if let Some(last) = self.levels.last_mut() {
+            *last = context;
+        }
+    }
+
+    /// Names the construct after which the tracker no longer follows the
+    /// shell, if one has been seen: a here-document (`<<`), arithmetic
+    /// expansion (`$((`), or backticks. The shell reads text inside these
+    /// by rules the tracker does not model, and its state afterwards can
+    /// differ from the tracker's.
+    pub(super) fn unsupported(&self) -> Option<&'static str> {
+        self.unsupported
     }
 
     /// Reads a piece of the rendered command and updates the state. Call
@@ -96,10 +123,12 @@ impl ShellTracker {
     /// A backslash outside single quotes escapes the next character, so
     /// `\"` does not open or close double quotes. Valid: `echo "` ends in
     /// double quotes; `echo \"` stays bare; `# don't` is a comment, not
-    /// an open single quote. The text is not validated: an unbalanced
-    /// quote leaves the state open, as it would for the shell.
+    /// an open single quote; `"$(printf 'a"b')"` ends bare, because the
+    /// quotes inside the substitution belong to it. The text is not
+    /// validated: an unbalanced quote leaves the state open, as it would
+    /// for the shell.
     pub(super) fn advance(&mut self, text: &str) {
-        let mut chars = text.chars();
+        let mut chars = text.chars().peekable();
         if self.pending_escape
             && let Some(first) = chars.next()
         {
@@ -113,67 +142,86 @@ impl ShellTracker {
             }
         }
         while let Some(c) = chars.next() {
-            match self.context {
+            match self.context() {
                 Context::Comment => {
                     if c == '\n' {
-                        self.context = Context::Bare;
+                        self.set_context(Context::Bare);
                         self.word_start = true;
                     }
                 }
-                Context::Bare => {
-                    let mut word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(');
-                    match c {
-                        '#' if self.word_start => self.context = Context::Comment,
-                        '\'' => self.context = Context::SingleQuoted,
-                        '"' => self.context = Context::DoubleQuoted,
-                        '\\' => {
-                            // A backslash-newline pair is removed by the
-                            // shell, so the word state carries over from
-                            // before it. Any other escaped character is
-                            // part of the current word. A backslash at the
-                            // very end escapes the next piece's first
-                            // character, which decides then.
-                            let escaped = chars.next();
-                            self.pending_escape = escaped.is_none();
-                            word_start = match escaped {
-                                Some('\n') | None => self.word_start,
-                                Some(_) => false,
-                            };
-                        }
-                        '$' if chars.clone().next() == Some('(') => {
-                            chars.next();
-                            self.substitution_depth = self.substitution_depth.saturating_add(1);
-                            word_start = true;
-                        }
-                        ')' => {
-                            if self.substitution_depth == 0 {
-                                word_start = true;
-                            } else {
-                                self.substitution_depth -= 1;
-                            }
-                        }
-                        _ => {}
-                    }
-                    self.word_start = self.context == Context::Bare && word_start;
-                }
+                Context::Bare => self.advance_bare(c, &mut chars),
                 Context::SingleQuoted => {
                     if c == '\'' {
-                        self.context = Context::Bare;
+                        self.set_context(Context::Bare);
                         self.word_start = false;
                     }
                 }
                 Context::DoubleQuoted => match c {
                     '"' => {
-                        self.context = Context::Bare;
+                        self.set_context(Context::Bare);
                         self.word_start = false;
                     }
-                    '\\' => {
-                        self.pending_escape = chars.next().is_none();
+                    '\\' => self.pending_escape = chars.next().is_none(),
+                    '$' if chars.peek() == Some(&'(') => {
+                        chars.next();
+                        self.open_substitution();
+                    }
+                    '`' => {
+                        self.unsupported.get_or_insert("backticks");
                     }
                     _ => {}
                 },
             }
         }
+    }
+
+    fn advance_bare(&mut self, c: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+        let mut word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(');
+        match c {
+            '#' if self.word_start => self.set_context(Context::Comment),
+            '\'' => self.set_context(Context::SingleQuoted),
+            '"' => self.set_context(Context::DoubleQuoted),
+            '\\' => {
+                // A backslash-newline pair is removed by the shell, so the
+                // word state carries over from before it. Any other
+                // escaped character is part of the current word. A
+                // backslash at the very end escapes the next piece's
+                // first character, which decides then.
+                let escaped = chars.next();
+                self.pending_escape = escaped.is_none();
+                word_start = match escaped {
+                    Some('\n') | None => self.word_start,
+                    Some(_) => false,
+                };
+            }
+            '$' if chars.peek() == Some(&'(') => {
+                chars.next();
+                if chars.peek() == Some(&'(') {
+                    self.unsupported.get_or_insert("arithmetic expansion");
+                } else {
+                    self.open_substitution();
+                    word_start = true;
+                }
+            }
+            '`' => {
+                self.unsupported.get_or_insert("backticks");
+            }
+            '<' if chars.peek() == Some(&'<') => {
+                self.unsupported.get_or_insert("a here-document");
+            }
+            ')' if self.levels.len() > 1 => {
+                // Closes a `$(`: the surrounding word continues.
+                self.levels.pop();
+            }
+            ')' => word_start = true,
+            _ => {}
+        }
+        self.word_start = self.context() == Context::Bare && word_start;
+    }
+
+    fn open_substitution(&mut self) {
+        self.levels.push(Context::Bare);
+        self.word_start = true;
     }
 
     /// Returns `value` written so the shell reads it as literal text in
@@ -183,17 +231,17 @@ impl ShellTracker {
     /// with a newline: the shell removes a backslash-newline pair, so the
     /// escape is spent on nothing and the quoting that follows is read as
     /// written.
-    pub(super) fn quote(self, value: &str) -> String {
+    pub(super) fn quote(&self, value: &str) -> String {
         let quoted = self.quote_in_context(value);
-        if self.pending_escape && self.context != Context::SingleQuoted {
+        if self.pending_escape && self.context() != Context::SingleQuoted {
             format!("\n{quoted}")
         } else {
             quoted
         }
     }
 
-    fn quote_in_context(self, value: &str) -> String {
-        match self.context {
+    fn quote_in_context(&self, value: &str) -> String {
+        match self.context() {
             Context::Bare => format!("'{}'", value.replace('\'', "'\\''")),
             Context::SingleQuoted => value.replace('\'', "'\\''"),
             Context::DoubleQuoted => {
@@ -282,7 +330,7 @@ mod tests {
     fn after(text: &str) -> Context {
         let mut tracker = ShellTracker::new();
         tracker.advance(text);
-        tracker.context
+        tracker.context()
     }
 
     #[test]
@@ -313,6 +361,9 @@ mod tests {
         assert_eq!(after("$(a $(b))# don't"), Context::SingleQuoted);
         assert_eq!(after("(printf x)# don't"), Context::Comment);
         assert_eq!(after("$(# it's\nprintf x) '"), Context::SingleQuoted);
+        // Quotes inside a `$( )` belong to it, even inside double quotes.
+        assert_eq!(after("echo \"$(printf '%s' 'a\"b')\" "), Context::Bare);
+        assert_eq!(after("echo \"$(printf '%s' 'a\"b')"), Context::DoubleQuoted);
         // A backslash-newline is removed by the shell: the word state from
         // before it decides whether the `#` that follows is a comment.
         assert_eq!(after("echo foo \\\n# don't\n'"), Context::SingleQuoted);
@@ -323,17 +374,31 @@ mod tests {
     }
 
     #[test]
+    fn constructs_the_tracker_does_not_follow_are_reported() {
+        let seen = |text: &str| {
+            let mut tracker = ShellTracker::new();
+            tracker.advance(text);
+            tracker.unsupported()
+        };
+        assert_eq!(seen("cat <<EOF\ncan't\nEOF\n"), Some("a here-document"));
+        assert_eq!(seen("echo $((1))# "), Some("arithmetic expansion"));
+        assert_eq!(seen("x=`date`"), Some("backticks"));
+        assert_eq!(seen("echo \"`date`\""), Some("backticks"));
+        assert_eq!(seen("echo $(date) '<<' \"$((\""), None);
+    }
+
+    #[test]
     fn advance_over_a_quoted_value_returns_to_the_surrounding_state() {
         let mut tracker = ShellTracker::new();
         tracker.advance("run ");
         tracker.advance(&tracker.quote("a'b\"c"));
-        assert_eq!(tracker.context, Context::Bare);
+        assert_eq!(tracker.context(), Context::Bare);
         tracker.advance(" '");
         tracker.advance(&tracker.quote("it's"));
-        assert_eq!(tracker.context, Context::SingleQuoted);
+        assert_eq!(tracker.context(), Context::SingleQuoted);
         tracker.advance("' \"");
         tracker.advance(&tracker.quote("say \"hi\" $x"));
-        assert_eq!(tracker.context, Context::DoubleQuoted);
+        assert_eq!(tracker.context(), Context::DoubleQuoted);
     }
 
     #[test]
@@ -347,7 +412,7 @@ mod tests {
         let quoted = tracker.quote("a'b$(x)");
         assert_eq!(quoted, "\n'a'\\''b$(x)'");
         tracker.advance(&quoted);
-        assert_eq!(tracker.context, Context::Bare);
+        assert_eq!(tracker.context(), Context::Bare);
         assert!(!tracker.pending_escape);
 
         let mut tracker = ShellTracker::new();
@@ -355,7 +420,7 @@ mod tests {
         let quoted = tracker.quote("$(y)");
         assert_eq!(quoted, "\n\\$(y)");
         tracker.advance(&quoted);
-        assert_eq!(tracker.context, Context::DoubleQuoted);
+        assert_eq!(tracker.context(), Context::DoubleQuoted);
 
         // An env value that starts with a newline right after a trailing
         // backslash: sh removes the pair and the word state from before
@@ -363,11 +428,11 @@ mod tests {
         let mut tracker = ShellTracker::new();
         tracker.advance("echo foo \\");
         tracker.advance("\n# don't\n'");
-        assert_eq!(tracker.context, Context::SingleQuoted);
+        assert_eq!(tracker.context(), Context::SingleQuoted);
         let mut tracker = ShellTracker::new();
         tracker.advance("echo foo\\");
         tracker.advance("\n#don't");
-        assert_eq!(tracker.context, Context::SingleQuoted);
+        assert_eq!(tracker.context(), Context::SingleQuoted);
     }
 
     #[test]

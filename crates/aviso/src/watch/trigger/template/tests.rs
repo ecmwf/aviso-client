@@ -382,6 +382,42 @@ fn url_sink_percent_encodes_values() {
 }
 
 #[test]
+fn shell_sink_refuses_a_value_after_syntax_the_tracker_does_not_follow() {
+    let n = make_notification();
+    let refuse = |template: &str| {
+        let err = compile(template)
+            .unwrap()
+            .render(&n, Sink::Shell)
+            .unwrap_err();
+        assert_eq!(
+            err.kind,
+            TemplateErrorKind::ValueAfterUnsupportedShellSyntax,
+            "{template}"
+        );
+        err.field
+    };
+    assert_eq!(
+        refuse("cat <<EOF\ncan't\nEOF\nprintf '%s' {{ notification.event_type }}"),
+        "a here-document"
+    );
+    assert_eq!(
+        refuse("echo $((1))# {{ notification.event_type }}"),
+        "arithmetic expansion"
+    );
+    assert_eq!(
+        refuse("x=`date`; run {{ notification.event_type }}"),
+        "backticks"
+    );
+    // The same constructs after the last value are fine, and env values
+    // are placed whatever came before.
+    let ok = compile("run {{ notification.event_type }} <<EOF\n{{ env.X }}\nEOF").unwrap();
+    let out = ok
+        .render_with_env(&n, |_| Ok("env".to_string()), Sink::Shell)
+        .unwrap();
+    assert_eq!(out, "run 'mars' <<EOF\nenv\nEOF");
+}
+
+#[test]
 fn url_sink_refuses_a_value_in_the_scheme_or_authority() {
     let n = make_notification();
     let refuse = |template: &str| {

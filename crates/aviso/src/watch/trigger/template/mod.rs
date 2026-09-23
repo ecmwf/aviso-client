@@ -105,6 +105,13 @@ pub enum TemplateErrorKind {
     /// request goes to. Notification values may only appear in the
     /// path, query or fragment.
     ValueInUrlAuthority,
+    /// A `{{ notification.<path> }}` expression in a command comes after
+    /// shell syntax the engine does not follow (a here-document,
+    /// arithmetic expansion or backticks), so it cannot tell how the
+    /// shell would read the value there. The `field` names the
+    /// construct. Reach the notification through the `AVISO_*`
+    /// environment variables in such a command instead.
+    ValueAfterUnsupportedShellSyntax,
     /// The notification could not be serialised to JSON. Practically
     /// unreachable given the well-typed [`crate::Notification`]
     /// shape (every field is a concrete scalar or `serde_json::Value`
@@ -397,6 +404,13 @@ impl CompiledTemplate {
                     match sink {
                         Sink::Raw => out.push_str(&rendered),
                         Sink::Shell => {
+                            if let Some(construct) = shell.unsupported() {
+                                return Err(TemplateError {
+                                    raw_template: self.raw.clone(),
+                                    field: construct.to_string(),
+                                    kind: TemplateErrorKind::ValueAfterUnsupportedShellSyntax,
+                                });
+                            }
                             let quoted = shell.quote(&rendered);
                             shell.advance(&quoted);
                             out.push_str(&quoted);

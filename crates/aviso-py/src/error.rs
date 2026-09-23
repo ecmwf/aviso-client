@@ -336,6 +336,9 @@ fn template_kind_str(kind: TemplateErrorKind) -> &'static str {
         TemplateErrorKind::EnvNotUnicode => "env_not_unicode",
         TemplateErrorKind::BadSyntax => "bad_syntax",
         TemplateErrorKind::ValueInUrlAuthority => "value_in_url_authority",
+        TemplateErrorKind::ValueAfterUnsupportedShellSyntax => {
+            "value_after_unsupported_shell_syntax"
+        }
         TemplateErrorKind::NotificationEncode => "notification_encode",
         _ => "unknown",
     }
