@@ -250,6 +250,7 @@ pub(super) async fn run_one_connection(
         }
         match drain_frames(
             &mut parser,
+            request.event_type(),
             state,
             last_reconnect_policy,
             &mut gap_guard,

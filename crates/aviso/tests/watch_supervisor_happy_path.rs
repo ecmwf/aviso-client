@@ -218,6 +218,38 @@ async fn watch_malformed_cloudevent_id_terminates_stream_with_typed_error() {
 }
 
 #[tokio::test]
+async fn watch_rejects_a_notification_for_another_event_type() {
+    // The server is trusted to send only the stream that was asked for.
+    // One that sends something else is treated like one that sends a
+    // malformed id: the notification never reaches the caller or the
+    // triggers, and the watch ends rather than reconnecting into the
+    // same stream.
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 10)),
+        sse_chunk("live-notification", &cloud_event("cosmo", 11)),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(5), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly");
+
+    assert_eq!(items.len(), 2, "got: {items:?}");
+    assert_eq!(items[0].as_ref().unwrap().event_type, "mars");
+    match &items[1] {
+        Err(ClientError::MalformedEvent(message)) => {
+            assert!(message.contains("\"cosmo\""), "got: {message}");
+            assert!(message.contains("\"mars\""), "got: {message}");
+        }
+        other => panic!("expected MalformedEvent, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn watch_gap_detection_on_sequence_jump_terminates_with_history_gap() {
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();

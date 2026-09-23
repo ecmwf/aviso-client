@@ -37,7 +37,8 @@ use crate::Notification;
 use super::TriggerError;
 use super::http_method::HttpMethod;
 use super::template::{
-    CompiledTemplate, TemplateError, TemplateErrorKind, compile, template_error_to_trigger_error,
+    CompiledTemplate, Sink, TemplateError, TemplateErrorKind, compile,
+    template_error_to_trigger_error,
 };
 use super::webhook::WebhookConfig;
 use super::webhook::dispatch_webhook;
@@ -102,7 +103,7 @@ fn render_title(cfg: &TeamsConfig, notification: &Notification) -> Result<String
         .as_ref()
         .map_err(|e| template_error_to_trigger_error(e.clone(), "teams title"))?;
     title_template
-        .render_with_env(notification, env_resolver)
+        .render_with_env(notification, env_resolver, Sink::Raw)
         .map_err(|e| template_error_to_trigger_error(e, "teams title"))
 }
 

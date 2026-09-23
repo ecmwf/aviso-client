@@ -107,7 +107,8 @@ listener:
 - A required trigger that fails after all retries (the work cannot complete).
 - A history gap that the server has declared (the notification you need has been
   pruned).
-- A malformed event from the server (a CloudEvents id that does not parse).
+- A malformed event from the server (a CloudEvents id that does not parse, or
+  a notification for an event type other than the one the listener asked for).
 
 The CLI reports the failed listener's error. Other listeners in the same
 `aviso listen` command keep running. After all listeners stop, the command exits

@@ -18,6 +18,18 @@
 //!
 //! Literal `{{` is escaped as `\{{`.
 //!
+//! # Where the text goes
+//!
+//! Notification values come from whoever published the notification,
+//! not from the operator who wrote the template. A render therefore
+//! names its [`Sink`], and every substituted notification value is
+//! neutralised for it: quoted for the shell context it lands in when
+//! the text is a command, percent-encoded when the text is a URL, and
+//! verbatim when the caller builds its own encoding around the value
+//! (JSON bodies, header values). `{{ env.* }}` values are the
+//! operator's own and are always inserted verbatim. See [`shell`] and
+//! [`url`].
+//!
 //! # Resolution rules
 //!
 //! - Scalar string: rendered UNQUOTED (the inner string only). Both
@@ -47,58 +59,29 @@
 
 use crate::Notification;
 
+mod error;
+mod shell;
 #[cfg(test)]
 mod tests;
+mod url;
 
-/// Categorises a template-engine failure. Public because it appears as
-/// the `kind` field of [`crate::watch::TriggerError::Template`].
-#[non_exhaustive]
+pub use error::TemplateErrorKind;
+pub(crate) use error::{TemplateError, template_error_to_trigger_error};
+use shell::ShellTracker;
+use url::{UrlTracker, percent_encode};
+
+/// What the rendered text is used for, which decides how substituted
+/// notification values are neutralised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TemplateErrorKind {
-    /// A `{{ notification.<path> }}` expression resolved to no value
-    /// (one of the path segments did not exist on the notification JSON).
-    Missing,
-    /// A `{{ env.<NAME> }}` expression's environment variable was not
-    /// set in the process environment.
-    EnvNotSet,
-    /// A `{{ env.<NAME> }}` expression's environment variable WAS set
-    /// but contained bytes that are not valid UTF-8. Distinct from
-    /// `EnvNotSet` because the operator's diagnosis differs: a
-    /// not-set variable means a misconfigured deployment, while a
-    /// not-unicode variable means the value itself needs fixing.
-    EnvNotUnicode,
-    /// The template source itself was malformed. The accompanying
-    /// `field` on [`crate::watch::TriggerError::Template`] names the
-    /// parse failure category, NOT a snippet of the raw template, so
-    /// it is safe to surface even when the template contains secrets.
-    BadSyntax,
-    /// The notification could not be serialised to JSON. Practically
-    /// unreachable given the well-typed [`crate::Notification`]
-    /// shape (every field is a concrete scalar or `serde_json::Value`
-    /// that already round-trips through `serde_json::to_value`), but
-    /// kept as a distinct kind so the operator's diagnosis points at
-    /// the notification itself rather than chasing a missing-path
-    /// template bug.
-    NotificationEncode,
-}
-
-/// Crate-private carrier returned by the template engine. The raw
-/// template is retained for DEBUG-level tracing and never reaches the
-/// public [`crate::watch::TriggerError::Template`] variant.
-///
-/// `Clone` is required because [`CompiledTemplate`] is cloneable and
-/// dispatchers may store the compile result by value.
-#[derive(Debug, Clone)]
-pub(crate) struct TemplateError {
-    /// The original template source. Useful for DEBUG logging; not
-    /// surfaced in public errors.
-    pub raw_template: String,
-    /// What failed: a JSON path (`"notification.payload.target"`), an
-    /// env-var name (`"SLACK_TOKEN"`), or a safe static label for
-    /// `BadSyntax` (`"unclosed_braces"`, `"empty_path_segment"`, etc.).
-    pub field: String,
-    /// Categorisation of the failure.
-    pub kind: TemplateErrorKind,
+pub(crate) enum Sink {
+    /// Values are inserted verbatim. For text whose caller supplies the
+    /// surrounding encoding, such as a JSON body or a header value.
+    Raw,
+    /// The text is handed to `/bin/sh -c`. Each value is quoted for the
+    /// shell context it lands in, so it is read as one literal word.
+    Shell,
+    /// The text is a URL. Each value is percent-encoded.
+    Url,
 }
 
 /// A template parsed into segments and ready to render. Constructed via
@@ -270,16 +253,34 @@ impl CompiledTemplate {
     /// resolver via [`Self::render_with_env`] to avoid mutating the
     /// process environment (`std::env::set_var` is `unsafe` and the
     /// crate forbids unsafe).
-    pub(crate) fn render(&self, notification: &Notification) -> Result<String, TemplateError> {
+    pub(crate) fn render(
+        &self,
+        notification: &Notification,
+        sink: Sink,
+    ) -> Result<String, TemplateError> {
         // Match VarError variants explicitly so a present-but-not-UTF-8
         // env var surfaces as the distinct `EnvNotUnicode` error rather
         // than collapsing into `EnvNotSet` (which would mislead the
         // operator looking for a misconfigured deployment when the
         // actual bug is in the value).
-        self.render_with_env(notification, |name| match std::env::var(name) {
-            Ok(value) => Ok(value),
-            Err(std::env::VarError::NotPresent) => Err(TemplateErrorKind::EnvNotSet),
-            Err(std::env::VarError::NotUnicode(_)) => Err(TemplateErrorKind::EnvNotUnicode),
+        self.render_with_env(
+            notification,
+            |name| match std::env::var(name) {
+                Ok(value) => Ok(value),
+                Err(std::env::VarError::NotPresent) => Err(TemplateErrorKind::EnvNotSet),
+                Err(std::env::VarError::NotUnicode(_)) => Err(TemplateErrorKind::EnvNotUnicode),
+            },
+            sink,
+        )
+    }
+
+    /// Names of every `{{ env.NAME }}` the template reads, in order of
+    /// first appearance. The command trigger uses this to keep those
+    /// variables out of the child process it spawns.
+    pub(crate) fn env_names(&self) -> impl Iterator<Item = &str> {
+        self.segments.iter().filter_map(|segment| match segment {
+            Segment::EnvVar(name) => Some(name.as_str()),
+            Segment::Literal(_) | Segment::NotificationPath(_) => None,
         })
     }
 
@@ -296,6 +297,7 @@ impl CompiledTemplate {
         &self,
         notification: &Notification,
         env_resolver: F,
+        sink: Sink,
     ) -> Result<String, TemplateError>
     where
         F: Fn(&str) -> Result<String, TemplateErrorKind>,
@@ -317,22 +319,58 @@ impl CompiledTemplate {
                 kind: TemplateErrorKind::NotificationEncode,
             })?;
 
+        // For the shell sink, follow everything the shell will read, the
+        // operator's text and the quoted values alike, so each value is
+        // quoted for the context it lands in. Env values are the
+        // operator's own and are read as written.
+        let mut shell = ShellTracker::new();
+        let mut url = UrlTracker::new();
         let mut out = String::new();
         for segment in &self.segments {
             match segment {
-                Segment::Literal(s) => out.push_str(s),
+                Segment::Literal(s) => {
+                    match sink {
+                        Sink::Shell => shell.advance(s),
+                        Sink::Url => url.advance(s),
+                        Sink::Raw => {}
+                    }
+                    out.push_str(s);
+                }
                 Segment::NotificationPath(path) => {
                     let value =
                         walk_path(&notification_json, path).ok_or_else(|| TemplateError {
                             raw_template: self.raw.clone(),
-                            field: if path.is_empty() {
-                                "notification".to_string()
-                            } else {
-                                format!("notification.{}", path.join("."))
-                            },
+                            field: field_name(path),
                             kind: TemplateErrorKind::Missing,
                         })?;
-                    out.push_str(&render_value(value));
+                    let rendered = render_value(value);
+                    match sink {
+                        Sink::Raw => out.push_str(&rendered),
+                        Sink::Shell => {
+                            if let Some(construct) = shell.unsupported() {
+                                return Err(TemplateError {
+                                    raw_template: self.raw.clone(),
+                                    field: construct.to_string(),
+                                    kind: TemplateErrorKind::ValueAfterUnsupportedShellSyntax,
+                                });
+                            }
+                            let quoted = shell.quote(&rendered);
+                            shell.advance_value(&quoted);
+                            out.push_str(&quoted);
+                        }
+                        Sink::Url => {
+                            if !url.in_path() {
+                                return Err(TemplateError {
+                                    raw_template: self.raw.clone(),
+                                    field: field_name(path),
+                                    kind: TemplateErrorKind::ValueInUrlAuthority,
+                                });
+                            }
+                            let encoded = percent_encode(&rendered);
+                            url.advance(&encoded);
+                            out.push_str(&encoded);
+                        }
+                    }
                 }
                 Segment::EnvVar(name) => {
                     let value = env_resolver(name).map_err(|kind| TemplateError {
@@ -340,6 +378,11 @@ impl CompiledTemplate {
                         field: name.clone(),
                         kind,
                     })?;
+                    match sink {
+                        Sink::Shell => shell.advance(&value),
+                        Sink::Url => url.advance(&value),
+                        Sink::Raw => {}
+                    }
                     out.push_str(&value);
                 }
             }
@@ -353,6 +396,16 @@ impl CompiledTemplate {
     #[cfg(test)]
     pub(crate) fn raw(&self) -> &str {
         &self.raw
+    }
+}
+
+/// The `field` label for a notification path: `notification` for the
+/// whole notification, `notification.a.b` otherwise.
+fn field_name(path: &[String]) -> String {
+    if path.is_empty() {
+        "notification".to_string()
+    } else {
+        format!("notification.{}", path.join("."))
     }
 }
 
@@ -377,32 +430,5 @@ fn render_value(value: &serde_json::Value) -> String {
         // thing. Numbers and bools have no quotes; objects and arrays
         // serialise as compact JSON.
         other => other.to_string(),
-    }
-}
-
-/// Converts the crate-private [`TemplateError`] to the public
-/// [`crate::watch::TriggerError::Template`] variant.
-///
-/// The `context` is a SAFE static label set by the dispatch boundary
-/// (`"command"`, `"webhook url"`, etc.), NOT the raw template text.
-/// The raw template is emitted at DEBUG level for operators who
-/// control the logging sink, but never reaches the public error.
-pub(crate) fn template_error_to_trigger_error(
-    e: TemplateError,
-    context: impl Into<String>,
-) -> crate::watch::TriggerError {
-    let context_str = context.into();
-    tracing::debug!(
-        event.name = "client.trigger.template.render_failed",
-        context = %context_str,
-        raw_template = %e.raw_template,
-        field = %e.field,
-        kind = ?e.kind,
-        "template render failed (raw template suppressed from public error)"
-    );
-    crate::watch::TriggerError::Template {
-        context: context_str,
-        field: e.field,
-        kind: e.kind,
     }
 }

@@ -13,6 +13,18 @@
 //! 4 KiB of stdout and stderr into ring buffers, and reports a typed
 //! [`crate::watch::TriggerError::Command`] when the child exits non-zero.
 //!
+//! # What the child does not see
+//!
+//! The child inherits the listener's environment except for the
+//! variables that hold the listener's own credentials
+//! ([`CREDENTIAL_VARS`]) and any variable the command template already
+//! read through `{{ env.NAME }}`. A trigger has no reason to hold the
+//! bearer token the listener uses to talk to the server, and a template
+//! that has already placed a value on the command line does not need
+//! the child to be able to read it again by name. An operator who wants
+//! one of these in the child sets it explicitly in the trigger's `env`
+//! map, which is applied last and wins.
+//!
 //! # Stdout suppression
 //!
 //! Command stdout may contain user payloads or secrets; per the
@@ -55,13 +67,21 @@ use tokio::process::Command as TokioCommand;
 use crate::Notification;
 
 use super::TriggerError;
-use super::template::{CompiledTemplate, TemplateError, compile, template_error_to_trigger_error};
+use super::template::{
+    CompiledTemplate, Sink, TemplateError, compile, template_error_to_trigger_error,
+};
 
+#[cfg(test)]
+mod injection_tests;
 #[cfg(test)]
 mod tests;
 
 /// Bytes of stdout / stderr to retain per attempt.
 const RING_CAP: usize = 4096;
+
+/// Environment variables that carry the listener's own credentials and
+/// are removed from every command child.
+pub(crate) const CREDENTIAL_VARS: [&str; 3] = ["AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"];
 
 /// Max time to wait for drain tasks after the child has exited; bounds
 /// dispatcher exposure to backgrounded descendants holding the pipes
@@ -135,7 +155,7 @@ pub(super) async fn dispatch_command(
         .as_ref()
         .map_err(|e| template_error_to_trigger_error(e.clone(), "command"))?;
     let rendered_command = template
-        .render(notification)
+        .render(notification, Sink::Shell)
         .map_err(|e| template_error_to_trigger_error(e, "command"))?;
 
     if let Some(path) = &cfg.working_dir {
@@ -165,8 +185,14 @@ pub(super) async fn dispatch_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .envs(injected_env)
-        .envs(&cfg.env);
+        .envs(injected_env);
+    // After the injected AVISO_* set, so a template that read one of
+    // those by name does not get it back; before the operator's map, so
+    // an explicit entry there still wins.
+    for name in CREDENTIAL_VARS.iter().copied().chain(template.env_names()) {
+        cmd.env_remove(name);
+    }
+    cmd.envs(&cfg.env);
     if let Some(path) = &cfg.working_dir {
         cmd.current_dir(path);
     }

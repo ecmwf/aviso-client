@@ -152,7 +152,7 @@ Appends one line of compact JSON per notification.
 
 | Field | Required | Description |
 |---|---|---|
-| `command` | yes | Shell command to run. Goes through the template engine. |
+| `command` | yes | Shell command to run. Goes through the template engine; notification values are quoted so the shell reads each as one literal argument. |
 | `env` | no | Extra environment variables, applied on top of the dispatcher-injected `AVISO_*` set. Values are not template-rendered. |
 | `working_dir` | no | Directory to spawn the shell in. |
 

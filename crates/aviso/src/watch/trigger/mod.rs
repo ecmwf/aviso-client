@@ -210,6 +210,33 @@ impl Trigger {
     /// substitutes a notification field, `{{ env.<NAME> }}` reads from
     /// the process environment.
     ///
+    /// # Notification values are data, never code
+    ///
+    /// Identifier and payload values are written by whoever published
+    /// the notification. Each substituted notification value is quoted
+    /// for the shell context it lands in, so `run {{ notification.x }}`,
+    /// `run '{{ notification.x }}'` and `run "{{ notification.x }}"` all
+    /// pass the value to `run` as one literal argument, whatever it
+    /// contains. A value cannot add a command, redirect output, or
+    /// expand `$(...)`. This covers a placeholder that is part of a
+    /// command word, inside `$( )` or not. A placeholder that comes
+    /// after a here-document, arithmetic expansion, backticks or a
+    /// `case` statement, one directly after a `$` or inside `${ }`, one
+    /// naming the file of a redirection, one standing where the
+    /// command name goes, and one among the arguments of `eval`, `trap`
+    /// or a shell run with `-c` are refused at dispatch with
+    /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
+    /// the engine does not follow how the shell reads those. For the
+    /// unfollowed constructs, pass the notification as a data argument
+    /// through the `AVISO_*` environment variables, in double quotes;
+    /// the command name and any redirection target must stay the
+    /// operator's, by either route. Do not pass notification data to `eval`, `trap` or
+    /// `sh -c` by either route: they reparse their arguments, so a
+    /// value that was safely quoted or expanded once becomes shell
+    /// syntax the second time.
+    /// `{{ env.* }}` values are the operator's own and are inserted as
+    /// written.
+    ///
     /// # Environment variable injection
     ///
     /// The dispatcher injects `AVISO_EVENT_TYPE`, `AVISO_SEQUENCE`,
@@ -220,6 +247,11 @@ impl Trigger {
     /// via [`Self::env`] are applied
     /// AFTER the dispatcher-injected vars, so user keys override
     /// dispatcher keys when both are present.
+    ///
+    /// The child does not inherit `AVISO_TOKEN`, `AVISO_USERNAME` or
+    /// `AVISO_PASSWORD`, nor any variable the command string reads
+    /// through `{{ env.NAME }}`. To hand one of these to the child on
+    /// purpose, set it through [`Self::env`].
     ///
     /// # Output capture
     ///

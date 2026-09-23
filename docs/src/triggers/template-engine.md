@@ -71,6 +71,10 @@ How each JSON value type renders into the template's output:
 | Object | Compact JSON, **including the surrounding braces** | `{"class":"od","date":"20260601"}` |
 | Array | Compact JSON | `["a","b","c"]` |
 
+These are the values as rendered for a JSON body or a header. When the text is
+a shell command or a URL, each notification value is also neutralised for that
+use; see [Where the text goes](#where-the-text-goes).
+
 The string-unquoted rule is the load-bearing one for safe embedding in JSON
 bodies. Compare:
 
@@ -95,6 +99,20 @@ For object/array values, embed them **outside** a JSON string field:
                 ↓ renders ↓
 "identifier": {"class":"od","date":"20260601"}   ← valid JSON; object is a JSON value, not a string
 ```
+
+## Where the text goes
+
+Notification values are written by the publisher, not by you. Each place a
+rendered template is used has its own idea of which characters are special, so
+the engine neutralises every `{{ notification.* }}` value for that place:
+
+| Rendered text is | Notification values are |
+|---|---|
+| a `command:` string | quoted for the shell context they land in: wrapped in single quotes when bare, `'` escaped inside single quotes, and backslash, `$`, backtick and `"` escaped inside double quotes. The shell reads the value as one literal argument. A placeholder after a here-document, arithmetic expansion or backticks is refused with `ValueAfterUnsupportedShellSyntax`; see the [Command trigger](./command.md#notification-values-are-data-never-code) page. |
+| a webhook `url:` | percent-encoded (letters, digits, `-`, `_` and `~` kept; `.` is encoded too so `..` cannot fold the path), so a value cannot add or remove a path segment or add a query parameter. A notification placeholder in the scheme or authority, where the value would be the host, is refused with `ValueInUrlAuthority`. Put the host in the template or in an `{{ env.* }}` value and notification values in the path, query or fragment. |
+| a header value or a body | inserted as written. You supply the encoding around the value, for example the quotes of a JSON string. |
+
+`{{ env.* }}` values are your own and are inserted as written everywhere.
 
 ## Common patterns
 
@@ -151,7 +169,7 @@ different prefixes per deployment.
 
 ## Error categories
 
-Template errors fall into one of five `TemplateErrorKind` values, surfaced via
+Template errors fall into one of seven `TemplateErrorKind` values, surfaced via
 `TriggerError::Template { context, field, kind }`:
 
 | Kind | When | Example template |
@@ -160,13 +178,15 @@ Template errors fall into one of five `TemplateErrorKind` values, surfaced via
 | `EnvNotSet` | A `{{ env.<NAME> }}` variable is not in the process environment | `{{ env.UNDEFINED_VAR }}` when `UNDEFINED_VAR` is not exported |
 | `EnvNotUnicode` | A `{{ env.<NAME> }}` variable's value is not valid UTF-8 | (rare; usually a misconfigured deployment) |
 | `BadSyntax` | Template parse failure: unclosed `{{`, empty path segment, unknown namespace | `{{ unclosed`, `{{ notification..empty }}`, `{{ unknown.foo }}` |
+| `ValueInUrlAuthority` | A `{{ notification.<path> }}` in the scheme or authority of a webhook URL | `https://{{ notification.payload.host }}/hook` |
+| `ValueAfterUnsupportedShellSyntax` | A `{{ notification.<path> }}` in a command after a here-document, `$(( ))`, backticks or `case`, directly after a `$`, inside `${ }`, after a redirection operator, as the command name, or as an argument to `eval`, `trap`, `.` or `sh -c`; `field` names the reason | `cat <<EOF ... EOF; run {{ notification.sequence }}` |
 | `NotificationEncode` | Notification could not be serialised to JSON | Practically unreachable |
 
 `NotificationEncode` occurs when resolving a path. It is practically
 unreachable for well-typed notifications. The variant points the diagnosis at
 the notification rather than a missing-path template bug.
 
-All five are **terminal** under `fail_fast: true` (the default): retrying with
+All seven are **terminal** under `fail_fast: true` (the default): retrying with
 the same notification and environment will produce the same template error.
 
 The `context` carried on `TriggerError::Template` is the safe static label
@@ -184,7 +204,9 @@ carry secrets.
   iterate identifier fields at dispatch time via Rust code (not via the template
   engine).
 - **Filters / pipes** - no `{{ value | uppercase }}` or `{{ value | json }}`.
-  Operators wanting transformation should do it in the receiver.
+  Escaping for the shell and for URLs is applied by the engine according to
+  where the text goes, so no filter is needed for that. Operators wanting other
+  transformations should do them in the receiver.
 - **Macros / includes** - templates are flat strings; no recursion.
 
 This is intentional: a more featureful template engine adds attack surface and
