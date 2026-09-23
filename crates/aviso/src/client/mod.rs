@@ -32,6 +32,7 @@ use crate::state::{ResumeKey, StateStore};
 
 mod builder;
 mod helpers;
+pub mod resolve;
 mod settings;
 mod watch_spawn;
 

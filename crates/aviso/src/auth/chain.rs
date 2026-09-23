@@ -52,6 +52,10 @@ impl Chain {
 
 #[async_trait::async_trait]
 impl AuthProvider for Chain {
+    fn kind(&self) -> &'static str {
+        "chain"
+    }
+
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         let mut last_err: Option<ClientError> = None;
         for provider in &self.providers {

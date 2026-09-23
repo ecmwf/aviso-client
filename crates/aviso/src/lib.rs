@@ -28,6 +28,7 @@ pub mod schema;
 pub mod state;
 pub mod watch;
 
+pub use client::resolve;
 pub use client::{
     AvisoClient, AvisoClientBuilder, ClientSettings, LoadedSettings, display_url, read_ca_bundle,
 };

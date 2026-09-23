@@ -35,6 +35,9 @@ pub struct AvisoClientBuilder {
     /// by the caller. `build` then refuses a plain http address that is not
     /// loopback, whatever order the address and the credential arrived in.
     auth_was_found: Option<crate::auth::CredentialSource>,
+    /// Set when the builder came from the resolver, so a missing address can
+    /// say where it looked.
+    looked_up: bool,
 }
 
 impl std::fmt::Debug for AvisoClientBuilder {
@@ -59,6 +62,7 @@ impl std::fmt::Debug for AvisoClientBuilder {
             )
             .field("flush_cursor_on_exit", &self.flush_cursor_on_exit)
             .field("auth_was_found", &self.auth_was_found)
+            .field("looked_up", &self.looked_up)
             .finish()
     }
 }
@@ -99,21 +103,69 @@ impl AvisoClientBuilder {
     /// unusable. The plaintext-address refusal is reported by
     /// [`Self::build`], not here.
     pub fn from_file() -> crate::Result<Self> {
-        let mut paths = crate::auth::DiscoveryPaths::from_env();
-        let loaded = super::settings::ClientSettings::read_default(paths.config_file.as_deref())?;
-        // The file is read once. Its text goes to the credential search, so
-        // the credential cannot come from a newer file than the settings.
-        // When there was no file, the search skips that tier rather than
-        // probe the path again and find something that appeared since.
-        let settings = if let Some(loaded) = loaded {
-            paths.config_file = Some(loaded.path);
-            paths.config_content = Some(loaded.content);
-            loaded.settings
-        } else {
-            paths.config_file = None;
-            super::settings::ClientSettings::default()
+        Self::from_resolution(super::resolve::resolve(
+            &super::resolve::CodeInputs::default(),
+            &crate::auth::DiscoveryPaths::from_env(),
+            super::resolve::EnvAddress::Ignore,
+        )?)
+    }
+
+    /// Like [`Self::from_file`], with two differences: the `AVISO_BASE_URL`
+    /// environment variable is consulted for the address, after `inputs`
+    /// and before the file, and the values in `inputs` are applied to the
+    /// builder, so nothing needs setting afterwards. This is the path a
+    /// client built with no arguments takes; see [`super::resolve`] for the
+    /// order.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_file`].
+    pub fn from_environment(inputs: &super::resolve::CodeInputs) -> crate::Result<Self> {
+        Self::from_resolution(super::resolve::resolve(
+            inputs,
+            &crate::auth::DiscoveryPaths::from_env(),
+            super::resolve::EnvAddress::Read,
+        )?)
+    }
+
+    /// A builder carrying everything a [`resolve`](super::resolve::resolve)
+    /// call chose: the winning address, timeouts and certificates, and a
+    /// found credential with its source. Setters called afterwards replace
+    /// what was chosen. This is how to build the client a report describes
+    /// without resolving twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Config`] when a certificate the file names
+    /// cannot be loaded.
+    pub fn from_resolution(resolution: super::resolve::Resolution) -> crate::Result<Self> {
+        let mut builder = Self {
+            looked_up: true,
+            ..Self::default()
         };
-        Self::from_settings(&settings, &paths)
+        if let Some(url) = resolution.raw_base_url {
+            builder = builder.base_url(url);
+        }
+        let report = &resolution.settings;
+        if let Some(t) = report.timeout.value {
+            builder = builder.timeout(t);
+        }
+        if let Some(h) = report.heartbeat_interval.value {
+            builder = builder.heartbeat_interval(h);
+        }
+        for path in &resolution.file_settings.ca_bundle {
+            builder = builder.ca_bundle(super::settings::read_ca_bundle(path)?);
+        }
+        if report.danger_accept_invalid_certs.value {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        // The address may still change before build, so the plaintext rule is
+        // not applied here. Record that the credential was found; build
+        // checks it against the address the client will actually use.
+        if let Some(found) = resolution.found {
+            builder = builder.found_auth(found);
+        }
+        Ok(builder)
     }
 
     /// Like [`Self::from_file`], reading a specific file.
@@ -127,41 +179,17 @@ impl AvisoClientBuilder {
     /// As [`Self::from_file`], and [`ClientError::Config`] when the path does
     /// not exist.
     pub fn from_file_at(path: impl AsRef<std::path::Path>) -> crate::Result<Self> {
+        // A named file must exist; resolve() treats a missing default file as
+        // empty, so check first.
         let loaded = super::settings::ClientSettings::read(path.as_ref())?;
         let mut paths = crate::auth::DiscoveryPaths::from_env();
         paths.config_file = Some(loaded.path);
         paths.config_content = Some(loaded.content);
-        Self::from_settings(&loaded.settings, &paths)
-    }
-
-    /// Applies parsed settings, then runs the credential search.
-    fn from_settings(
-        settings: &super::settings::ClientSettings,
-        discovery: &crate::auth::DiscoveryPaths,
-    ) -> crate::Result<Self> {
-        let mut builder = Self::default();
-        if let Some(url) = &settings.base_url {
-            builder = builder.base_url(url);
-        }
-        if let Some(t) = settings.timeout {
-            builder = builder.timeout(t);
-        }
-        if let Some(h) = settings.heartbeat_interval {
-            builder = builder.heartbeat_interval(h);
-        }
-        for path in &settings.ca_bundle {
-            builder = builder.ca_bundle(super::settings::read_ca_bundle(path)?);
-        }
-        if settings.danger_accept_invalid_certs {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-        // The address may still change before build, so the plaintext rule is
-        // not applied here. Record that the credential was found; build
-        // checks it against the address the client will actually use.
-        if let Some(found) = crate::auth::discover_with(discovery)? {
-            builder = builder.found_auth(found);
-        }
-        Ok(builder)
+        Self::from_resolution(super::resolve::resolve(
+            &super::resolve::CodeInputs::default(),
+            &paths,
+            super::resolve::EnvAddress::Ignore,
+        )?)
     }
 
     /// The base URL set so far, if any. Useful after [`Self::from_file`],
@@ -346,9 +374,16 @@ impl AvisoClientBuilder {
     /// [`Self::from_file`] rather than named with [`Self::auth`], and
     /// `base_url` is plain http to an address other than loopback.
     pub fn build(self) -> crate::Result<AvisoClient> {
-        let raw = self
-            .base_url
-            .ok_or_else(|| ClientError::Config("AvisoClient requires a base_url".into()))?;
+        let looked_up = self.looked_up;
+        let raw = self.base_url.ok_or_else(|| {
+            ClientError::Config(if looked_up {
+                "AvisoClient requires a base_url; none was set in code, and none was \
+                 found in AVISO_BASE_URL or the config file"
+                    .into()
+            } else {
+                "AvisoClient requires a base_url".into()
+            })
+        })?;
         let mut base_url =
             Url::parse(&raw).map_err(|e| ClientError::Config(format!("invalid base_url: {e}")))?;
         if !matches!(base_url.scheme(), "http" | "https") {

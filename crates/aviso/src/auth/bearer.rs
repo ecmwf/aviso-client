@@ -48,6 +48,10 @@ impl std::fmt::Debug for Bearer {
 
 #[async_trait::async_trait]
 impl AuthProvider for Bearer {
+    fn kind(&self) -> &'static str {
+        "bearer"
+    }
+
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         let header = format!("Bearer {}", self.token);
         let mut value = HeaderValue::from_str(&header)

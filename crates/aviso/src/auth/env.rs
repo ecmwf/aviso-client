@@ -95,6 +95,13 @@ impl Env {
 
 #[async_trait::async_trait]
 impl AuthProvider for Env {
+    fn kind(&self) -> &'static str {
+        match &self.inner {
+            EnvSource::Bearer(_) => "bearer",
+            EnvSource::Basic(_) => "basic",
+        }
+    }
+
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         match &self.inner {
             EnvSource::Bearer(b) => b.authorization_header().await,
