@@ -22,7 +22,7 @@ doctest = false
 
 [dependencies]
 assert_cmd = { workspace = true }
-aviso = { path = "../../../crates/aviso", version = "=2.2.0" }
+aviso = { path = "../../../crates/aviso", version = "=2.2.1" }
 futures-util = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
