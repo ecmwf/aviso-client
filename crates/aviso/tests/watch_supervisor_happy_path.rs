@@ -273,7 +273,7 @@ async fn watch_ends_with_a_protocol_error_when_a_line_never_terminates() {
     assert_eq!(items[0].as_ref().unwrap().sequence, 10);
     match &items[1] {
         Err(ClientError::StreamProtocol { message, .. }) => {
-            assert!(message.contains("without a terminator"), "got: {message}");
+            assert!(message.contains("SSE line exceeds"), "got: {message}");
         }
         other => panic!("expected StreamProtocol, got {other:?}"),
     }
@@ -328,7 +328,7 @@ async fn an_overflow_before_the_stream_is_confirmed_is_reported() {
     assert_eq!(items.len(), 1, "got: {items:?}");
     match &items[0] {
         Err(ClientError::StreamProtocol { message, .. }) => {
-            assert!(message.contains("without a terminator"), "got: {message}");
+            assert!(message.contains("SSE line exceeds"), "got: {message}");
         }
         other => panic!("expected StreamProtocol, got {other:?}"),
     }

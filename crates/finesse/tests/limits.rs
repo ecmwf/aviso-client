@@ -123,7 +123,7 @@ fn the_defaults_are_generous() {
     assert_eq!(limits.max_event_bytes, 8 * MIB);
     assert_eq!(
         Overflow::Line { max: MIB }.to_string(),
-        "SSE line exceeds 1048576 bytes without a terminator"
+        "SSE line exceeds 1048576 bytes"
     );
 }
 
@@ -153,4 +153,29 @@ fn a_completed_line_longer_than_the_bound_is_refused_too() {
         parser.feed(b"data: yyy\n\n"),
         Err(Overflow::Line { max: 8 })
     );
+}
+
+#[test]
+fn the_bound_counts_line_content_only_however_the_bytes_are_chunked() {
+    // A line exactly at the bound, with its CR arriving at the end of one
+    // chunk and the LF in the next, is within the bound: the held CR is a
+    // terminator, not content.
+    let limits = Limits::default().with_max_line_bytes(7);
+    let mut parser = Parser::with_limits(limits);
+    parser.feed(b"data: x\r").unwrap();
+    parser.feed(b"\n\n").unwrap();
+    assert!(matches!(parser.next_frame(), Some(Frame::Message(_))));
+
+    // A BOM split across chunks is not content either. With a bound of
+    // one byte, the one-chunk parse of the same bytes succeeds, and so
+    // must the chunked one.
+    let limits = Limits::default().with_max_line_bytes(1);
+    let mut parser = Parser::with_limits(limits);
+    parser.feed(b"\xEF").unwrap();
+    parser.feed(b"\xBB").unwrap();
+    parser.feed(b"\xBFx\n").unwrap();
+    parser.end();
+    let mut whole = Parser::with_limits(limits);
+    whole.feed(b"\xEF\xBB\xBFx\n").unwrap();
+    whole.end();
 }

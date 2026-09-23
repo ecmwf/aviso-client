@@ -64,7 +64,7 @@ impl Limits {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Overflow {
-    /// More than `max` bytes arrived without a line terminator.
+    /// A line, terminated or not, is longer than `max` bytes.
     Line {
         /// The bound that was exceeded.
         max: usize,
@@ -80,9 +80,7 @@ pub enum Overflow {
 impl fmt::Display for Overflow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Line { max } => {
-                write!(f, "SSE line exceeds {max} bytes without a terminator")
-            }
+            Self::Line { max } => write!(f, "SSE line exceeds {max} bytes"),
             Self::Event { max } => write!(
                 f,
                 "SSE event exceeds {max} bytes of data without a dispatching blank line"

@@ -95,9 +95,11 @@ impl LineSplitter {
                         return self.take_line(i, i + 1);
                     }
                     // Hold the CR: the next byte decides whether it is
-                    // half of a CRLF. Look at it again next time.
+                    // half of a CRLF. Look at it again next time. The CR
+                    // is a terminator, not line content, so it does not
+                    // count towards the bound.
                     self.scan_from = i;
-                    return self.check_bound();
+                    return self.check_bound(i);
                 }
                 _ => {
                     i = i.saturating_add(1);
@@ -105,11 +107,15 @@ impl LineSplitter {
             }
         }
         self.scan_from = self.buf.len();
-        self.check_bound()
+        self.check_bound(self.buf.len())
     }
 
-    fn check_bound(&self) -> Result<Option<Vec<u8>>, Overflow> {
-        if self.buf.len() > self.max_line_bytes {
+    /// Reports an overflow when the `content_len` bytes held for the
+    /// current line exceed the bound. While the BOM is unresolved the
+    /// buffer holds at most two bytes that may not be content at all, so
+    /// the check waits; the result then matches a one-chunk parse.
+    fn check_bound(&self, content_len: usize) -> Result<Option<Vec<u8>>, Overflow> {
+        if self.bom_state == BomState::Resolved && content_len > self.max_line_bytes {
             return Err(Overflow::Line {
                 max: self.max_line_bytes,
             });
