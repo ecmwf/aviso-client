@@ -95,8 +95,9 @@ pub(super) struct ShellTracker {
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
-    /// The word being read at the current level, while bare. Only its
-    /// first few characters matter, to recognise `case`.
+    /// The word being read at the current level, while bare. Enough of
+    /// it is kept to recognise `case`, the reserved words that leave the
+    /// command position open, and an assignment.
     word: String,
     /// True while the word being read is the first word of a command at
     /// the current level: a value placed there would choose the program
@@ -197,7 +198,7 @@ impl ShellTracker {
         if self.word_start {
             self.word.clear();
         }
-        if self.word.len() < 5 {
+        if self.word.len() < 8 {
             self.word.push(c);
         }
     }
@@ -211,13 +212,23 @@ impl ShellTracker {
         if self.word == "case" {
             self.flag("a case statement");
         }
-        if !self.word.is_empty() {
+        if !self.word.is_empty() && !Self::leaves_command_position_open(&self.word) {
             self.command_word = false;
         }
         self.word.clear();
         if separator_starts_command {
             self.command_word = true;
         }
+    }
+
+    /// True for a first word after which the next word is still the
+    /// command name: an assignment such as `MODE=prod`, the negation `!`,
+    /// and the reserved words that introduce a command.
+    fn leaves_command_position_open(word: &str) -> bool {
+        matches!(
+            word,
+            "!" | "{" | "if" | "then" | "else" | "elif" | "while" | "until" | "do" | "time"
+        ) || word.contains('=')
     }
 
     fn flag(&mut self, construct: &'static str) {

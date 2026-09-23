@@ -245,6 +245,21 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     assert_eq!(refused("cat < "), Some("a redirection"));
     assert_eq!(refused("printf ok > /dev/null "), None);
     assert_eq!(refused("printf ok >/dev/null; printf "), None);
+    // Assignments, `!` and the reserved words do not take the command
+    // position; the word after them names the command.
+    for prefix in [
+        "MODE=prod ",
+        "! ",
+        "if ",
+        "while ",
+        "{ ",
+        "A=1 B=2 ",
+        "if ! ",
+    ] {
+        assert_eq!(refused(prefix), Some("the command word"), "{prefix:?}");
+    }
+    assert_eq!(refused("MODE=prod run "), None);
+    assert_eq!(refused("if run "), None);
     // An expansion at the start of a command is still part of its name.
     assert_eq!(refused("$(true)"), Some("the command word"));
     assert_eq!(refused("${CMD}"), Some("the command word"));

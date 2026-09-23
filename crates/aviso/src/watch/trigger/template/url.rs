@@ -18,6 +18,8 @@
 /// Which part of a URL the rendered text has reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct UrlTracker {
+    /// How many bytes of `://` have matched so far, across pieces.
+    separator_matched: u8,
     seen_scheme_separator: bool,
     in_path: bool,
 }
@@ -25,6 +27,7 @@ pub(super) struct UrlTracker {
 impl UrlTracker {
     pub(super) fn new() -> Self {
         Self {
+            separator_matched: 0,
             seen_scheme_separator: false,
             in_path: false,
         }
@@ -37,17 +40,23 @@ impl UrlTracker {
     /// Valid: `https://h` ends in the authority; `https://h/` and
     /// `https://h?q` have reached the path.
     pub(super) fn advance(&mut self, text: &str) {
-        let bytes = text.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() && !self.in_path {
+        for byte in text.bytes() {
+            if self.in_path {
+                return;
+            }
             if self.seen_scheme_separator {
-                self.in_path = matches!(bytes[i], b'/' | b'?' | b'#');
-                i += 1;
-            } else if bytes[i..].starts_with(b"://") {
+                self.in_path = matches!(byte, b'/' | b'?' | b'#');
+                continue;
+            }
+            // Match `://` one byte at a time so the three bytes may arrive
+            // in different pieces.
+            self.separator_matched = match (self.separator_matched, byte) {
+                (_, b':') => 1,
+                (1 | 2, b'/') => self.separator_matched + 1,
+                _ => 0,
+            };
+            if self.separator_matched == 3 {
                 self.seen_scheme_separator = true;
-                i += 3;
-            } else {
-                i += 1;
             }
         }
     }
@@ -100,6 +109,16 @@ mod tests {
         tracker.advance("https://hooks.example");
         assert!(!tracker.in_path());
         tracker.advance("/notify/");
+        assert!(tracker.in_path());
+        // The separator itself may be split across pieces.
+        let mut tracker = UrlTracker::new();
+        tracker.advance("https:");
+        tracker.advance("/");
+        tracker.advance("/");
+        assert!(!tracker.in_path());
+        tracker.advance("evil.example");
+        assert!(!tracker.in_path());
+        tracker.advance("/hook");
         assert!(tracker.in_path());
     }
 
