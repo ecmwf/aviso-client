@@ -19,16 +19,20 @@ iterator directly, without `await`.
 ```python
 class pyaviso.AvisoClient(
     *,
-    base_url: str,
+    base_url: str | None = None,
     auth: AuthProvider | Anonymous | None = None,
     timeout: float | None = None,
     user_agent: str | None = None,
     state_store: StateStore | None = None,
     heartbeat_interval: float | None = None,
-    danger_accept_invalid_certs: bool = False,
-    flush_cursor_on_exit: bool = False,
+    danger_accept_invalid_certs: bool | None = None,
+    flush_cursor_on_exit: bool | None = None,
 )
 ```
+
+Every argument is optional. What is not given is taken from the environment,
+then the aviso config file, then the default; see
+[Configuration](./configuration.md) for the order.
 
 ### Discover schemas
 
@@ -79,21 +83,38 @@ whether a payload is required.
 These remove retained data and require appropriate permission. A publish
 response's request ID is not a notification ID.
 
+### What the client resolved
+
+- `config -> ResolvedConfig`: every setting with its value and source, the
+  credential by kind and source only. Safe to log.
+- `pyaviso.resolve_config(*, base_url=None, auth=None, timeout=None, heartbeat_interval=None, danger_accept_invalid_certs=None) -> ResolvedConfig`:
+  the same report for those arguments, without building a client.
+
+`ResolvedConfig` has `base_url` (`SourcedValue | None`), `timeout`,
+`heartbeat_interval`, `ca_bundle`, `danger_accept_invalid_certs` (each a
+`SourcedValue` with `.value` and `.source`), `auth` (`ResolvedAuth | None`
+with `.kind`, `.source` and `.refused`), `config_file`, `credentials_file`,
+and `as_dict()`.
+See [Configuration](./configuration.md#see-what-a-client-resolved).
+
 ### Constructor options and lifecycle
 
-`base_url` is required and includes the HTTP or HTTPS scheme. `auth=None`
-searches the environment and the credential files; see
+`base_url` includes the HTTP or HTTPS scheme; when `None` it comes from
+`AVISO_BASE_URL` or the config file, and `ConfigError` is raised if neither
+has one. `auth=None` searches the environment and the credential files; see
 [Authentication](./auth.md). Pass `auth=pyaviso.Anonymous()` to send no
 credentials. `state_store=None` does not persist checkpoints.
 `flush_cursor_on_exit=False` leaves the final pending cursor unflushed;
 enabling it does not acknowledge completed work.
 See [shutdown behavior](./state-and-resume.md#flush-on-exit).
 
-`timeout` and `heartbeat_interval` are seconds. `timeout=None` imposes no
-request timeout. `heartbeat_interval=None` uses 30 seconds as the expected
-server heartbeat interval; it does not set the server's cadence.
+`timeout` and `heartbeat_interval` are seconds. When `None`, each comes from
+the config file if it is set there; otherwise `timeout` imposes no request
+timeout and `heartbeat_interval` uses 30 seconds as the expected server
+heartbeat interval (it does not set the server's cadence).
 `user_agent=None` uses `aviso/<crate-version>`.
-`danger_accept_invalid_certs=False` keeps certificate validation enabled.
+`danger_accept_invalid_certs=None` keeps certificate validation enabled unless
+the config file's `tls:` block turns it off.
 
 Use `with client.listen(...)` to close a synchronous listener. The synchronous
 client's own `__enter__` / `__exit__` do not close its listeners. The async

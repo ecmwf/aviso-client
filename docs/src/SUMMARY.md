@@ -36,6 +36,7 @@ SPDX-License-Identifier: Apache-2.0
 - [Overview](./python/overview.md)
 - [Install](./python/install.md)
 - [Quickstart](./python/quickstart.md)
+- [Configuration](./python/configuration.md)
 - [Publishing](./python/publish.md)
 - [Listening](./python/listen.md)
 - [Triggers](./python/triggers.md)

@@ -19,13 +19,17 @@ in three places and uses the first one it finds:
 3. `~/.config/aviso/credentials.yaml`.
 
 ```python
-import os
-
 import pyaviso
 
-client = pyaviso.AvisoClient(base_url=os.environ["AVISO_BASE_URL"])
+client = pyaviso.AvisoClient()
 print(client.schema().event_types)
+print(client.config.auth)
 ```
+
+The address is found the same way, from `AVISO_BASE_URL` or the config file;
+[Configuration](./configuration.md) has the full order and how to see what
+was chosen. `client.config.auth` names the credential's kind and source
+without its value.
 
 This suits a script or notebook whose credentials were set up beforehand by
 something else. Nothing in the code names a credential, so the same file runs
@@ -60,47 +64,25 @@ client = pyaviso.AvisoClient(
 )
 ```
 
-## Read the whole connection from the config file
+## Read a particular config file
 
-The `aviso` command reads `~/.config/aviso/config.yaml` for its server address,
-timeouts and TLS settings. If that file is already set up on your machine,
-`from_file` uses it too, so a script needs no arguments at all:
-
-```python
-import pyaviso
-
-client = pyaviso.AvisoClient.from_file()
-print(client.schema().event_types)
-```
-
-It reads `base_url`, `timeout`, `heartbeat_interval` and `tls` from the file,
-then finds a credential in the order above. Sections that only the command
-uses, such as `listeners`, are ignored. Keyword arguments replace what the
-file said, and `auth=pyaviso.Anonymous()` drops a credential the search found:
-
-```python
-client = pyaviso.AvisoClient.from_file(
-    base_url="https://other.example.org", timeout=10
-)
-```
-
-A missing default file sets nothing, so this behaves like a plain
-`AvisoClient(...)` call and you must supply `base_url` yourself. Pass a path
-to read a different file; that path must exist:
+`AvisoClient()` already reads `~/.config/aviso/config.yaml`. To read a
+different file instead, name it; that path must exist:
 
 ```python
 client = pyaviso.AvisoClient.from_file("/etc/aviso/production.yaml")
 ```
 
-`AVISO_CLIENT_CONFIG_FILE` moves the default location. A file that cannot be
-read, or that has a mistyped key inside a section the client reads, raises
-`pyaviso.ConfigError`. Relative paths under `tls.ca_bundle` are resolved
-against the file's own directory, not the working directory.
+Keyword arguments replace what the file said, and `auth=pyaviso.Anonymous()`
+drops a credential the search found. A file that cannot be read, or that has a
+mistyped key inside a section the client reads, raises `pyaviso.ConfigError`.
+Relative paths under `tls.ca_bundle` are resolved against the file's own
+directory, not the working directory.
 
 The plaintext rule above still applies: a credential the file supplied is
 refused for a plain `http://` address that is not loopback, whether that
-address came from the file or from a `base_url` argument here. Pass `auth`
-yourself to lift it.
+address came from the file or from a `base_url` argument. Pass `auth` yourself
+to lift it.
 
 `AsyncAvisoClient.from_file` takes the same arguments.
 
