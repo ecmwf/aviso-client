@@ -197,8 +197,11 @@ impl ShellTracker {
             && !self.word.redirect_operand
             && !Self::leaves_command_position_open(&self.word)
         {
-            if self.command_word
-                && (self.word.opaque || Self::reparses_its_arguments(&self.word.text))
+            // A reparsing command as the first word, or a shell named
+            // anywhere among the arguments (`find -exec sh -c`, `sudo -u
+            // name sh -c`), makes the rest of the command code again.
+            if (self.command_word && self.word.opaque)
+                || Self::reparses_its_arguments(&self.word.text)
             {
                 self.reparsing_command = true;
             }
@@ -417,13 +420,21 @@ impl ShellTracker {
                 self.flag("a here-document");
                 return;
             }
-            Token::Dollar => {
+            Token::Dollar
+                if c.is_ascii_alphanumeric()
+                    || matches!(c, '_' | '#' | '?' | '!' | '@' | '*' | '-' | '$') =>
+            {
                 // `$name`, `$#`, `$?` and the like: the character after
-                // the `$` belongs to the parameter, whatever it is, and
-                // continues the word.
+                // the `$` belongs to the parameter and continues the word.
                 self.word_start = false;
                 self.word.opaque = true;
                 return;
+            }
+            Token::Dollar => {
+                // A `$` before anything else is a literal dollar sign; the
+                // character itself is read as usual.
+                self.word_start = false;
+                self.word.opaque = true;
             }
             Token::Less | Token::Redirect => {
                 // A redirection operator, `<`, `>`, `>>` or `<>`, is

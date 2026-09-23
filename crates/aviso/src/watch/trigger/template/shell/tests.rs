@@ -48,6 +48,9 @@ fn advance_knows_where_a_comment_starts_and_ends() {
     // group whose `)` does not close the substitution.
     assert_eq!(after("printf '%s' $# '"), Context::SingleQuoted);
     assert_eq!(after("printf '%s' $($#) '"), Context::SingleQuoted);
+    // A `$` before a quote is a literal dollar; the quote still counts.
+    assert_eq!(after("printf '%s' \"$\""), Context::Bare);
+    assert_eq!(after("printf '%s' $'"), Context::SingleQuoted);
     assert_eq!(after("printf '%s' $(#x\n) '"), Context::SingleQuoted);
     assert_eq!(after("echo $( (printf x) )# don't"), Context::SingleQuoted);
     assert_eq!(after("(a; (b))# don't"), Context::Comment);
@@ -320,9 +323,10 @@ fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
     // substitution inside a reparsing command is its own command.
     assert_eq!(refused("eval 'x'; run "), None);
     assert_eq!(refused("trap 'x' EXIT\nrun "), None);
-    // `sh` as an argument is just a word, and a quoted argument does not
-    // make the command unknown.
-    assert_eq!(refused("run sh "), None);
+    // A shell named among the arguments makes the rest code again; a
+    // quoted argument does not make the command unknown.
+    assert_eq!(refused("find . -exec sh -c '"), reason);
+    assert_eq!(refused("sudo -u name sh -c '"), reason);
     assert_eq!(refused("run 'x' "), None);
     // `.` and `source` run the file they are given.
     assert_eq!(refused(". "), reason);
