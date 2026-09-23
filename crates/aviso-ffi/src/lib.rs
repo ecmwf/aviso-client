@@ -31,6 +31,10 @@
 //!
 //! [`aviso`]: https://docs.rs/aviso
 
+// Every unsafe block names the invariant it rests on, so a reader can tell
+// at a glance why it is sound without re-deriving the caller contract.
+#![warn(clippy::undocumented_unsafe_blocks)]
+
 mod async_ops;
 mod client;
 mod error;
@@ -117,6 +121,10 @@ pub extern "C" fn aviso_version() -> *const c_char {
 #[allow(
     clippy::expect_used,
     reason = "test code: expect on known-valid inputs is the standard test diagnostic"
+)]
+#[allow(
+    clippy::undocumented_unsafe_blocks,
+    reason = "test code: every unsafe block here is a call into the crate's own C ABI from Rust, with the arguments constructed a few lines above"
 )]
 mod tests {
     use super::*;

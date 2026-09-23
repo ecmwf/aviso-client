@@ -149,6 +149,10 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
     clippy::expect_used,
     reason = "test code: expect on known-valid inputs is the standard test diagnostic"
 )]
+#[allow(
+    clippy::undocumented_unsafe_blocks,
+    reason = "test code: every unsafe block here is a call into the crate's own C ABI from Rust, with the arguments constructed a few lines above"
+)]
 mod tests {
     use std::ffi::CString;
 
