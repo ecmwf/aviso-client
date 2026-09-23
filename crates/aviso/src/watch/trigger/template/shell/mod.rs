@@ -33,9 +33,10 @@
 //! value there is left alone; tracking comments matters because an
 //! apostrophe in one must not be mistaken for an opening quote.
 //!
-//! The tracker follows quotes, comments and `$( )` nesting, each `$(`
-//! opening a fresh command with its own state. It does not follow
-//! here-document bodies, arithmetic expansion or backticks. Once it has
+//! The tracker follows quotes, comments, and `$( )` and `( )` nesting,
+//! each opening a fresh command with its own state. It does not follow
+//! here-document bodies, arithmetic expansion, backticks or `case`
+//! statements, whose pattern list has unmatched `)`. Once it has
 //! seen one of those its state may no longer match the shell's, so the
 //! engine refuses to place a notification value after that point rather
 //! than guess; the operator reaches the notification through the
@@ -81,16 +82,25 @@ enum Pending {
 /// The shell removes every unquoted backslash-newline pair before it
 /// looks for tokens, so the tracker does the same: such a pair is
 /// skipped wherever it appears, including across pieces, and the
-/// characters on either side are treated as adjacent. Every `$(` opens
-/// a fresh command with its own quoting state, so the states form a
-/// stack; the innermost is the one a value lands in.
+/// characters on either side are treated as adjacent. Every `$(` and
+/// every `(` opens a fresh command with its own quoting state, so the
+/// states form a stack; the innermost is the one a value lands in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ShellTracker {
-    /// One entry per open `$(`, plus the outer command at the bottom.
-    levels: Vec<Context>,
+    /// One entry per open `$(` or `(`, plus the outer command at the
+    /// bottom.
+    levels: Vec<Level>,
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
+    /// The word being read at the current level, while bare. Only its
+    /// first few characters matter, to recognise `case`.
+    word: String,
+    /// True when the next word would be the first of a command, which
+    /// is the only place `case` is a keyword.
+    command_start: bool,
+    /// True when the word being read began a command.
+    word_began_command: bool,
     /// A token started but not finished, waiting for the next character.
     pending: Pending,
     /// The first construct seen that the tracker does not follow. From
@@ -99,23 +109,79 @@ pub(super) struct ShellTracker {
     unsupported: Option<&'static str>,
 }
 
+/// One open command: the outer one, a `$( )` substitution, or a `( )`
+/// group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Level {
+    context: Context,
+    /// True for a `( )` group. Its closing `)` ends a word, where the
+    /// `)` of a `$( )` continues the word around the substitution.
+    group: bool,
+}
+
 impl ShellTracker {
     pub(super) fn new() -> Self {
         Self {
-            levels: vec![Context::Bare],
+            levels: vec![Level {
+                context: Context::Bare,
+                group: false,
+            }],
             word_start: true,
+            word: String::new(),
+            command_start: true,
+            word_began_command: false,
             pending: Pending::Token(Token::None),
             unsupported: None,
         }
     }
 
     fn context(&self) -> Context {
-        *self.levels.last().unwrap_or(&Context::Bare)
+        self.levels
+            .last()
+            .map_or(Context::Bare, |level| level.context)
     }
 
     fn set_context(&mut self, context: Context) {
         if let Some(last) = self.levels.last_mut() {
-            *last = context;
+            last.context = context;
+        }
+    }
+
+    fn open_level(&mut self, group: bool) {
+        self.levels.push(Level {
+            context: Context::Bare,
+            group,
+        });
+        self.word_start = true;
+        self.word.clear();
+        self.command_start = true;
+    }
+
+    /// Records a bare character as part of the current word.
+    fn note_word_char(&mut self, c: char) {
+        if self.word_start {
+            self.word.clear();
+            self.word_began_command = self.command_start;
+        }
+        if self.word.len() < 5 {
+            self.word.push(c);
+        }
+    }
+
+    /// Closes the current word. A `case` statement is flagged: its
+    /// pattern list has `)` without a matching `(`, which the tracker
+    /// does not follow. `case` is a keyword only as the first word of a
+    /// command.
+    fn end_word(&mut self, separator_starts_command: bool) {
+        if self.word == "case" && self.word_began_command {
+            self.flag("a case statement");
+        }
+        if !self.word.is_empty() {
+            self.command_start = false;
+        }
+        self.word.clear();
+        if separator_starts_command {
+            self.command_start = true;
         }
     }
 
@@ -210,9 +276,8 @@ impl ShellTracker {
                 return;
             }
             Token::DollarParen => {
-                self.levels.push(Context::Bare);
-                self.word_start = true;
                 // `c` is the first character inside the substitution.
+                self.open_level(false);
             }
             Token::Less if c == '<' => {
                 self.flag("a here-document");
@@ -222,7 +287,10 @@ impl ShellTracker {
         }
 
         match c {
-            '$' => self.pending = Pending::Token(Token::Dollar),
+            '$' => {
+                self.pending = Pending::Token(Token::Dollar);
+                self.word_start = false;
+            }
             '`' => self.flag("backticks"),
             _ if self.context() == Context::DoubleQuoted => {
                 if c == '"' {
@@ -233,13 +301,37 @@ impl ShellTracker {
             '#' if self.word_start => self.set_context(Context::Comment),
             '\'' => self.set_context(Context::SingleQuoted),
             '"' => self.set_context(Context::DoubleQuoted),
-            '<' => self.pending = Pending::Token(Token::Less),
-            ')' if self.levels.len() > 1 => {
-                // Closes a `$(`: the surrounding word continues.
-                self.levels.pop();
+            '<' => {
+                self.pending = Pending::Token(Token::Less);
                 self.word_start = false;
             }
-            _ => self.word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(' | ')'),
+            '(' => {
+                self.end_word(true);
+                self.open_level(true);
+            }
+            ')' => {
+                self.end_word(true);
+                let closed = if self.levels.len() > 1 {
+                    self.levels.pop()
+                } else {
+                    None
+                };
+                // The `)` of a group ends a word; the `)` of a `$( )`
+                // continues the word around the substitution.
+                self.word_start = closed.is_none_or(|level| level.group);
+            }
+            ' ' | '\t' => {
+                self.end_word(false);
+                self.word_start = true;
+            }
+            '\n' | ';' | '&' | '|' => {
+                self.end_word(true);
+                self.word_start = true;
+            }
+            _ => {
+                self.note_word_char(c);
+                self.word_start = false;
+            }
         }
     }
 
@@ -281,193 +373,4 @@ impl ShellTracker {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn after(text: &str) -> Context {
-        let mut tracker = ShellTracker::new();
-        tracker.advance(text);
-        tracker.context()
-    }
-
-    #[test]
-    fn advance_follows_quotes_and_escapes() {
-        assert_eq!(after("echo "), Context::Bare);
-        assert_eq!(after("echo '"), Context::SingleQuoted);
-        assert_eq!(after("echo \""), Context::DoubleQuoted);
-        assert_eq!(after("echo \\\""), Context::Bare);
-        assert_eq!(after("echo 'a\"b' "), Context::Bare);
-        assert_eq!(after("echo \"a'b\" "), Context::Bare);
-        assert_eq!(after("'\\'"), Context::Bare);
-        assert_eq!(after("\"\\\""), Context::DoubleQuoted);
-    }
-
-    #[test]
-    fn advance_knows_where_a_comment_starts_and_ends() {
-        assert_eq!(after("# don't\n"), Context::Bare);
-        assert_eq!(after("# don't"), Context::Comment);
-        assert_eq!(after("run x # it's\n"), Context::Bare);
-        assert_eq!(after("run;# it's\n"), Context::Bare);
-        // A `#` inside a word, or right after a quote, is not a comment.
-        assert_eq!(after("run a#b'"), Context::SingleQuoted);
-        assert_eq!(after("run 'x'#it's"), Context::SingleQuoted);
-        assert_eq!(after("echo '#' '"), Context::SingleQuoted);
-        // A `)` that closes a `$(` continues the word; one that closes a
-        // subshell ends it.
-        assert_eq!(after("$(printf x)# don't"), Context::SingleQuoted);
-        assert_eq!(after("$(a $(b))# don't"), Context::SingleQuoted);
-        assert_eq!(after("(printf x)# don't"), Context::Comment);
-        assert_eq!(after("$(# it's\nprintf x) '"), Context::SingleQuoted);
-        // Quotes inside a `$( )` belong to it, even inside double quotes.
-        assert_eq!(after("echo \"$(printf '%s' 'a\"b')\" "), Context::Bare);
-        assert_eq!(after("echo \"$(printf '%s' 'a\"b')"), Context::DoubleQuoted);
-        // A backslash-newline is removed by the shell: the word state from
-        // before it decides whether the `#` that follows is a comment.
-        assert_eq!(after("echo foo \\\n# don't\n'"), Context::SingleQuoted);
-        // Without the space the shell sees `foo#don't`: no comment, and the
-        // apostrophe opens a quote.
-        assert_eq!(after("echo foo\\\n#don't"), Context::SingleQuoted);
-        assert_eq!(after("echo foo\\\n#dont"), Context::Bare);
-    }
-
-    #[test]
-    fn constructs_the_tracker_does_not_follow_are_reported() {
-        let seen = |text: &str| {
-            let mut tracker = ShellTracker::new();
-            tracker.advance(text);
-            tracker.unsupported()
-        };
-        assert_eq!(seen("cat <<EOF\ncan't\nEOF\n"), Some("a here-document"));
-        assert_eq!(seen("echo $((1))# "), Some("arithmetic expansion"));
-        assert_eq!(seen("echo \"$((1))\" "), Some("arithmetic expansion"));
-        assert_eq!(seen("x=`date`"), Some("backticks"));
-        assert_eq!(seen("echo \"`date`\""), Some("backticks"));
-        assert_eq!(seen("echo $(date) '<<' '$((' \"<<\" "), None);
-    }
-
-    #[test]
-    fn advance_over_a_quoted_value_returns_to_the_surrounding_state() {
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run ");
-        tracker.advance(&tracker.quote("a'b\"c"));
-        assert_eq!(tracker.context(), Context::Bare);
-        tracker.advance(" '");
-        tracker.advance(&tracker.quote("it's"));
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-        tracker.advance("' \"");
-        tracker.advance(&tracker.quote("say \"hi\" $x"));
-        assert_eq!(tracker.context(), Context::DoubleQuoted);
-    }
-
-    #[test]
-    fn a_trailing_backslash_is_spent_before_the_value() {
-        // An operator's env value ends with a backslash. Without care the
-        // opening quote of the next value would be escaped and the value
-        // read bare by the shell.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run C:\\dir\\");
-        assert_eq!(tracker.pending, Pending::Escape(Token::None));
-        let quoted = tracker.quote("a'b$(x)");
-        assert_eq!(quoted, "\n'a'\\''b$(x)'");
-        tracker.advance(&quoted);
-        assert_eq!(tracker.context(), Context::Bare);
-        assert_eq!(tracker.pending, Pending::Token(Token::None));
-
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run \"x\\");
-        let quoted = tracker.quote("$(y)");
-        assert_eq!(quoted, "\n\\$(y)");
-        tracker.advance(&quoted);
-        assert_eq!(tracker.context(), Context::DoubleQuoted);
-
-        // An env value that starts with a newline right after a trailing
-        // backslash: sh removes the pair and the word state from before
-        // it decides whether the `#` that follows is a comment.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("echo foo \\");
-        tracker.advance("\n# don't\n'");
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-        let mut tracker = ShellTracker::new();
-        tracker.advance("echo foo\\");
-        tracker.advance("\n#don't");
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-    }
-
-    #[test]
-    fn a_trailing_dollar_cannot_join_the_value_into_an_expansion() {
-        // `"${{ v }}"` with a value of `(touch x)` would render
-        // `"$(touch x)"`, so a value right after a `$` is refused.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("printf '%s' \"$");
-        assert_eq!(
-            tracker.unsupported(),
-            Some("a `$` right before the placeholder")
-        );
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        assert_eq!(
-            tracker.unsupported(),
-            Some("a `$` right before the placeholder")
-        );
-        // Inside single quotes a `$` is literal and the value is fine.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run '$");
-        assert_eq!(tracker.unsupported(), None);
-        // Once more text follows, the `$` was a literal dollar sign.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        tracker.advance("x ");
-        assert_eq!(tracker.unsupported(), None);
-
-        // A token split across pieces, or across a backslash-newline,
-        // is read the way the shell reads it: as one token.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        tracker.advance("(printf '%s' 'a\"b')# don't");
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        tracker.advance("((1))");
-        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $(");
-        tracker.advance("(1))");
-        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
-        let mut tracker = ShellTracker::new();
-        tracker.advance("x=$\\\n(echo a)# don't");
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-        let mut tracker = ShellTracker::new();
-        tracker.advance("cat <");
-        tracker.advance("<EOF\n");
-        assert_eq!(tracker.unsupported(), Some("a here-document"));
-        let mut tracker = ShellTracker::new();
-        tracker.advance("cat <\\\n<EOF\n");
-        assert_eq!(tracker.unsupported(), Some("a here-document"));
-    }
-
-    #[test]
-    fn quote_neutralises_metacharacters_per_context() {
-        let hostile = "a'b$(x)`y` \"z\" \\ ; &";
-        let mut tracker = ShellTracker::new();
-        assert_eq!(tracker.quote(hostile), "'a'\\''b$(x)`y` \"z\" \\ ; &'");
-        tracker.advance("'");
-        assert_eq!(tracker.quote(hostile), "a'\\''b$(x)`y` \"z\" \\ ; &");
-        tracker.advance("' \"");
-        assert_eq!(
-            tracker.quote(hostile),
-            "a'b\\$(x)\\`y\\` \\\"z\\\" \\\\ ; &"
-        );
-        tracker.advance("\" # ");
-        assert_eq!(tracker.quote("x\ny"), "x y");
-    }
-
-    #[test]
-    fn quote_leaves_plain_values_readable() {
-        let mut tracker = ShellTracker::new();
-        assert_eq!(tracker.quote("12"), "'12'");
-        tracker.advance("'");
-        assert_eq!(tracker.quote("mars"), "mars");
-        tracker.advance("' \"");
-        assert_eq!(tracker.quote("20260101"), "20260101");
-    }
-}
+mod tests;

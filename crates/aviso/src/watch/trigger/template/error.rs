@@ -38,7 +38,8 @@ pub enum TemplateErrorKind {
     ValueInUrlAuthority,
     /// A `{{ notification.<path> }}` expression in a command comes after
     /// shell syntax the engine does not follow (a here-document,
-    /// arithmetic expansion or backticks), or directly after a `$`, so
+    /// arithmetic expansion, backticks or a `case` statement), or
+    /// directly after a `$`, so
     /// it cannot tell how the shell would read the value there. The
     /// `field` names the reason. Reach the notification through the `AVISO_*`
     /// environment variables in such a command instead.

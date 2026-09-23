@@ -179,7 +179,7 @@ Template errors fall into one of seven `TemplateErrorKind` values, surfaced via
 | `EnvNotUnicode` | A `{{ env.<NAME> }}` variable's value is not valid UTF-8 | (rare; usually a misconfigured deployment) |
 | `BadSyntax` | Template parse failure: unclosed `{{`, empty path segment, unknown namespace | `{{ unclosed`, `{{ notification..empty }}`, `{{ unknown.foo }}` |
 | `ValueInUrlAuthority` | A `{{ notification.<path> }}` in the scheme or authority of a webhook URL | `https://{{ notification.payload.host }}/hook` |
-| `ValueAfterUnsupportedShellSyntax` | A `{{ notification.<path> }}` in a command after a here-document, `$(( ))` or backticks, or directly after a `$`; `field` names the reason | `cat <<EOF ... EOF; run {{ notification.sequence }}` |
+| `ValueAfterUnsupportedShellSyntax` | A `{{ notification.<path> }}` in a command after a here-document, `$(( ))`, backticks or a `case` statement, or directly after a `$`; `field` names the reason | `cat <<EOF ... EOF; run {{ notification.sequence }}` |
 | `NotificationEncode` | Notification could not be serialised to JSON | Practically unreachable |
 
 `NotificationEncode` occurs when resolving a path. It is practically

@@ -220,8 +220,8 @@ impl Trigger {
     /// contains. A value cannot add a command, redirect output, or
     /// expand `$(...)`. This covers a placeholder that is part of a
     /// command word, inside `$( )` or not. A placeholder that comes
-    /// after a here-document, arithmetic expansion or backticks is
-    /// refused at dispatch with
+    /// after a here-document, arithmetic expansion, backticks or a
+    /// `case` statement is refused at dispatch with
     /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
     /// the engine does not follow how the shell reads those; use the
     /// `AVISO_*` environment variables in such a command, in double
