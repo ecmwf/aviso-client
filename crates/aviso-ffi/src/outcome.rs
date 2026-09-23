@@ -95,7 +95,9 @@ impl AvisoOutcome {
 /// and not yet freed. A null pointer is tolerated and returns `false`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_is_ok(outcome: *const AvisoOutcome) -> bool {
-    // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     let Some(outcome) = (unsafe { outcome.as_ref() }) else {
         return false;
     };
@@ -111,7 +113,9 @@ pub unsafe extern "C" fn aviso_outcome_is_ok(outcome: *const AvisoOutcome) -> bo
 /// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_error(outcome: *const AvisoOutcome) -> *const AvisoError {
-    // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     let Some(outcome) = (unsafe { outcome.as_ref() }) else {
         return ptr::null();
     };
@@ -132,7 +136,9 @@ pub unsafe extern "C" fn aviso_outcome_error(outcome: *const AvisoOutcome) -> *c
 /// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_take_string(outcome: *mut AvisoOutcome) -> *mut c_char {
-    // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     let Some(outcome) = (unsafe { outcome.as_mut() }) else {
         return ptr::null_mut();
     };
@@ -155,7 +161,9 @@ pub unsafe extern "C" fn aviso_outcome_take_string(outcome: *mut AvisoOutcome) -
 /// and not yet freed. A null pointer is tolerated and returns null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_outcome_take_client(outcome: *mut AvisoOutcome) -> *mut AvisoClient {
-    // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+    // SAFETY: the handle is null or one this library handed out and the caller
+    // has not freed, per this function's # Safety; as_ref/as_mut return None
+    // for null.
     let Some(outcome) = (unsafe { outcome.as_mut() }) else {
         return ptr::null_mut();
     };
@@ -179,7 +187,8 @@ pub unsafe extern "C" fn aviso_outcome_free(outcome: *mut AvisoOutcome) {
     if outcome.is_null() {
         return;
     }
-    // SAFETY: the pointer came from this library's constructor and is freed at most once, per this function's # Safety.
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     drop(unsafe { Box::from_raw(outcome) });
 }
 
@@ -195,6 +204,7 @@ pub unsafe extern "C" fn aviso_string_free(text: *mut c_char) {
     if text.is_null() {
         return;
     }
-    // SAFETY: `text` came from `CString::into_raw` in this library and is freed at most once, per this function's # Safety.
+    // SAFETY: `text` came from `CString::into_raw` in this library and is freed
+    // at most once, per this function's # Safety.
     drop(unsafe { CString::from_raw(text) });
 }

@@ -92,7 +92,8 @@ pub extern "C" fn aviso_trigger_echo() -> *mut AvisoTrigger {
 /// `path`, when non-null, must be a NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_log(path: *const c_char) -> *mut AvisoTrigger {
-    // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+    // SAFETY: each string argument is null or a NUL-terminated C string that
+    // stays valid for this call, per this function's # Safety.
     guard(ptr::null_mut(), || match unsafe { cstr_opt(path) } {
         Some(path) => into_handle(Trigger::log(path)),
         None => error_handle(error::invalid_input(
@@ -115,7 +116,8 @@ pub unsafe extern "C" fn aviso_trigger_command(cmd: *const c_char) -> *mut Aviso
     guard(ptr::null_mut(), || {
         #[cfg(unix)]
         {
-            // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+            // SAFETY: each string argument is null or a NUL-terminated C string
+            // that stays valid for this call, per this function's # Safety.
             match unsafe { cstr_opt(cmd) } {
                 Some(cmd) => into_handle(Trigger::command(cmd)),
                 None => error_handle(error::invalid_input(
@@ -140,7 +142,8 @@ pub unsafe extern "C" fn aviso_trigger_command(cmd: *const c_char) -> *mut Aviso
 /// `url`, when non-null, must be a NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_webhook(url: *const c_char) -> *mut AvisoTrigger {
-    // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+    // SAFETY: each string argument is null or a NUL-terminated C string that
+    // stays valid for this call, per this function's # Safety.
     guard(ptr::null_mut(), || match unsafe { cstr_opt(url) } {
         Some(url) => into_handle(Trigger::webhook(url)),
         None => error_handle(error::invalid_input(
@@ -158,7 +161,8 @@ pub unsafe extern "C" fn aviso_trigger_webhook(url: *const c_char) -> *mut Aviso
 /// `url`, when non-null, must be a NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_teams(url: *const c_char) -> *mut AvisoTrigger {
-    // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+    // SAFETY: each string argument is null or a NUL-terminated C string that
+    // stays valid for this call, per this function's # Safety.
     guard(ptr::null_mut(), || match unsafe { cstr_opt(url) } {
         Some(url) => into_handle(Trigger::teams(url)),
         None => error_handle(error::invalid_input(
@@ -176,7 +180,8 @@ pub unsafe extern "C" fn aviso_trigger_teams(url: *const c_char) -> *mut AvisoTr
 /// `url`, when non-null, must be a NUL-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_post(url: *const c_char) -> *mut AvisoTrigger {
-    // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+    // SAFETY: each string argument is null or a NUL-terminated C string that
+    // stays valid for this call, per this function's # Safety.
     guard(ptr::null_mut(), || match unsafe { cstr_opt(url) } {
         Some(url) => into_handle(Trigger::post(url)),
         None => error_handle(error::invalid_input(
@@ -196,14 +201,17 @@ pub unsafe extern "C" fn aviso_trigger_post(url: *const c_char) -> *mut AvisoTri
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_label(trigger: *mut AvisoTrigger, label: *const c_char) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
         if trigger.error.is_some() {
             return;
         }
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(label) } {
             Some(label) => trigger.apply(|t| t.label(label)),
             None => {
@@ -223,7 +231,9 @@ pub unsafe extern "C" fn aviso_trigger_set_label(trigger: *mut AvisoTrigger, lab
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_retries(trigger: *mut AvisoTrigger, retries: u32) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(trigger) = unsafe { trigger.as_mut() } {
             trigger.apply(|t| t.retries(retries));
         }
@@ -240,7 +250,9 @@ pub unsafe extern "C" fn aviso_trigger_set_retries(trigger: *mut AvisoTrigger, r
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_required(trigger: *mut AvisoTrigger, required: bool) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(trigger) = unsafe { trigger.as_mut() } {
             trigger.apply(|t| t.required(required));
         }
@@ -259,7 +271,9 @@ pub unsafe extern "C" fn aviso_trigger_set_timeout_secs(
     timeout_secs: u64,
 ) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(trigger) = unsafe { trigger.as_mut() } {
             trigger.apply(|t| t.timeout(Duration::from_secs(timeout_secs)));
         }
@@ -275,7 +289,9 @@ pub unsafe extern "C" fn aviso_trigger_set_timeout_secs(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_fail_fast(trigger: *mut AvisoTrigger, fail_fast: bool) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         if let Some(trigger) = unsafe { trigger.as_mut() } {
             trigger.apply(|t| t.fail_fast(fail_fast));
         }
@@ -294,7 +310,9 @@ pub unsafe extern "C" fn aviso_trigger_set_fail_fast(trigger: *mut AvisoTrigger,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_trigger_set_method(trigger: *mut AvisoTrigger, method: u32) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
@@ -333,14 +351,17 @@ pub unsafe extern "C" fn aviso_trigger_set_header(
     value: *const c_char,
 ) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
         if trigger.error.is_some() {
             return;
         }
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let (Some(name), Some(value)) = (unsafe { cstr_opt(name) }, unsafe { cstr_opt(value) })
         else {
             trigger.error = Some(error::invalid_input(
@@ -366,14 +387,17 @@ pub unsafe extern "C" fn aviso_trigger_set_body_template(
     body: *const c_char,
 ) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
         if trigger.error.is_some() {
             return;
         }
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(body) } {
             Some(body) => trigger.apply(|t| t.body_template(body)),
             None => {
@@ -401,7 +425,9 @@ pub unsafe extern "C" fn aviso_trigger_set_env(
     value: *const c_char,
 ) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
@@ -410,7 +436,8 @@ pub unsafe extern "C" fn aviso_trigger_set_env(
         }
         #[cfg(unix)]
         {
-            // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+            // SAFETY: each string argument is null or a NUL-terminated C string
+            // that stays valid for this call, per this function's # Safety.
             let (Some(key), Some(value)) = (unsafe { cstr_opt(key) }, unsafe { cstr_opt(value) })
             else {
                 trigger.error = Some(error::invalid_input(
@@ -443,7 +470,9 @@ pub unsafe extern "C" fn aviso_trigger_set_working_dir(
     dir: *const c_char,
 ) {
     guard((), || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(trigger) = (unsafe { trigger.as_mut() }) else {
             return;
         };
@@ -452,7 +481,8 @@ pub unsafe extern "C" fn aviso_trigger_set_working_dir(
         }
         #[cfg(unix)]
         {
-            // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+            // SAFETY: each string argument is null or a NUL-terminated C string
+            // that stays valid for this call, per this function's # Safety.
             match unsafe { cstr_opt(dir) } {
                 Some(dir) => trigger.apply(|t| t.working_dir(dir)),
                 None => {
@@ -483,7 +513,8 @@ pub unsafe extern "C" fn aviso_trigger_free(trigger: *mut AvisoTrigger) {
     if trigger.is_null() {
         return;
     }
-    // SAFETY: the pointer came from this library's constructor and is freed at most once, per this function's # Safety.
+    // SAFETY: the pointer came from this library's constructor and is freed at
+    // most once, per this function's # Safety.
     drop(unsafe { Box::from_raw(trigger) });
 }
 

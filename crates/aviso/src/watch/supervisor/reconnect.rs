@@ -207,7 +207,7 @@ pub(crate) async fn run_supervisor(
                         event_type = request.event_type(),
                         cause = %retry_cause,
                         delay_ms = delay.as_millis(),
-                        attempt = retry_counter,
+                        attempt = attempt.saturating_add(1),
                         "Retrying listener connection"
                     );
                     last_retry_log = Some(tokio::time::Instant::now());

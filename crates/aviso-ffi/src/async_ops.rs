@@ -108,7 +108,9 @@ pub unsafe extern "C" fn aviso_client_notify_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -117,7 +119,8 @@ pub unsafe extern "C" fn aviso_client_notify_async(
             );
             return;
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(event_type) = (unsafe { cstr_opt(event_type) }) else {
             deliver_error(
                 on_complete,
@@ -126,7 +129,8 @@ pub unsafe extern "C" fn aviso_client_notify_async(
             );
             return;
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let identifier = match unsafe { cstr_nullable(identifier_json) } {
             Ok(None) => BTreeMap::new(),
             Ok(Some(text)) => match parse_identifier(text) {
@@ -145,7 +149,8 @@ pub unsafe extern "C" fn aviso_client_notify_async(
                 return;
             }
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let payload = match unsafe { cstr_nullable(payload_json) } {
             Ok(None) => None,
             Ok(Some(text)) => match serde_json::from_str::<Value>(text) {
@@ -207,7 +212,9 @@ pub unsafe extern "C" fn aviso_client_schema_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -250,7 +257,9 @@ pub unsafe extern "C" fn aviso_client_schema_for_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -259,7 +268,8 @@ pub unsafe extern "C" fn aviso_client_schema_for_async(
             );
             return;
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(event_type) = (unsafe { cstr_opt(event_type) }) else {
             deliver_error(
                 on_complete,
@@ -304,7 +314,9 @@ pub unsafe extern "C" fn aviso_client_wipe_stream_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -313,7 +325,8 @@ pub unsafe extern "C" fn aviso_client_wipe_stream_async(
             );
             return;
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(stream_name) = (unsafe { cstr_opt(stream_name) }) else {
             deliver_error(
                 on_complete,
@@ -356,7 +369,9 @@ pub unsafe extern "C" fn aviso_client_wipe_all_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -400,7 +415,9 @@ pub unsafe extern "C" fn aviso_client_delete_notification_async(
         return;
     };
     guard_async(on_complete, ctx, || {
-        // SAFETY: the handle is null or one this library handed out and the caller has not freed, per this function's # Safety; as_ref/as_mut return None for null.
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
         let Some(client) = (unsafe { client.as_ref() }) else {
             deliver_error(
                 on_complete,
@@ -409,7 +426,8 @@ pub unsafe extern "C" fn aviso_client_delete_notification_async(
             );
             return;
         };
-        // SAFETY: each string argument is null or a NUL-terminated C string that stays valid for this call, per this function's # Safety.
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
         let Some(notification_id) = (unsafe { cstr_opt(notification_id) }) else {
             deliver_error(
                 on_complete,
