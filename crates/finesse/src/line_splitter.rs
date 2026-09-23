@@ -14,6 +14,14 @@
 //! per spec, holding a trailing `\r` for one byte of lookahead so a
 //! CR that turns out to be the first half of a CRLF does not falsely
 //! emit an empty line.
+//!
+//! Each byte is examined once. A scan that finds no terminator
+//! remembers where it stopped, so the next chunk does not make the
+//! splitter re-read everything it has already seen. A line that grows
+//! past the configured bound without a terminator is reported as an
+//! [`Overflow`] instead of being kept.
+
+use crate::limits::Overflow;
 
 const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
@@ -24,14 +32,34 @@ enum BomState {
     Resolved,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct LineSplitter {
     buf: Vec<u8>,
+    /// First byte of `buf` not yet examined for a terminator. Everything
+    /// before it was scanned by an earlier `next_line` that found none.
+    scan_from: usize,
+    max_line_bytes: usize,
     bom_state: BomState,
     closed: bool,
 }
 
+impl Default for LineSplitter {
+    fn default() -> Self {
+        Self::new(crate::limits::Limits::default().max_line_bytes)
+    }
+}
+
 impl LineSplitter {
+    pub(crate) fn new(max_line_bytes: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            scan_from: 0,
+            max_line_bytes,
+            bom_state: BomState::default(),
+            closed: false,
+        }
+    }
+
     pub(crate) fn feed(&mut self, chunk: &[u8]) {
         if self.closed {
             return;
@@ -44,15 +72,16 @@ impl LineSplitter {
     }
 
     /// Drains and returns the next completed line (without terminator
-    /// bytes). Returns `None` when more input is needed or when the
-    /// stream is closed and exhausted.
-    pub(crate) fn next_line(&mut self) -> Option<Vec<u8>> {
+    /// bytes). Returns `Ok(None)` when more input is needed or when the
+    /// stream is closed and exhausted, and `Err` when the bytes held
+    /// without a terminator exceed the bound.
+    pub(crate) fn next_line(&mut self) -> Result<Option<Vec<u8>>, Overflow> {
         self.resolve_bom();
 
-        let mut i = 0;
+        let mut i = self.scan_from;
         while i < self.buf.len() {
             match self.buf[i] {
-                b'\n' => return Some(self.take_line(i, i + 1)),
+                b'\n' => return self.take_line(i, i + 1),
                 b'\r' => {
                     if i + 1 < self.buf.len() {
                         let consumed = if self.buf[i + 1] == b'\n' {
@@ -60,25 +89,58 @@ impl LineSplitter {
                         } else {
                             i + 1
                         };
-                        return Some(self.take_line(i, consumed));
+                        return self.take_line(i, consumed);
                     }
                     if self.closed {
-                        return Some(self.take_line(i, i + 1));
+                        return self.take_line(i, i + 1);
                     }
-                    return None;
+                    // Hold the CR: the next byte decides whether it is
+                    // half of a CRLF. Look at it again next time. The CR
+                    // is a terminator, not line content, so it does not
+                    // count towards the bound.
+                    self.scan_from = i;
+                    return self.check_bound(i);
                 }
                 _ => {
                     i = i.saturating_add(1);
                 }
             }
         }
-        None
+        self.scan_from = self.buf.len();
+        self.check_bound(self.buf.len())
     }
 
-    fn take_line(&mut self, line_end: usize, drain_through: usize) -> Vec<u8> {
+    /// Reports an overflow when the `content_len` bytes held for the
+    /// current line exceed the bound. While the BOM is unresolved the
+    /// buffer holds at most two bytes that may not be content at all, so
+    /// the check waits; the result then matches a one-chunk parse.
+    fn check_bound(&self, content_len: usize) -> Result<Option<Vec<u8>>, Overflow> {
+        if self.bom_state == BomState::Resolved && content_len > self.max_line_bytes {
+            return Err(Overflow::Line {
+                max: self.max_line_bytes,
+            });
+        }
+        Ok(None)
+    }
+
+    /// Removes the completed line from the buffer and returns it, unless
+    /// it is longer than the bound: a line that completes in the same
+    /// piece that carried it past the bound is refused like one that
+    /// never completes.
+    fn take_line(
+        &mut self,
+        line_end: usize,
+        drain_through: usize,
+    ) -> Result<Option<Vec<u8>>, Overflow> {
+        if line_end > self.max_line_bytes {
+            return Err(Overflow::Line {
+                max: self.max_line_bytes,
+            });
+        }
         let line = self.buf[..line_end].to_vec();
         self.buf.drain(..drain_through);
-        line
+        self.scan_from = 0;
+        Ok(Some(line))
     }
 
     fn resolve_bom(&mut self) {
@@ -88,6 +150,7 @@ impl LineSplitter {
         if self.buf.len() >= BOM.len() {
             if self.buf.starts_with(BOM) {
                 self.buf.drain(..BOM.len());
+                self.scan_from = 0;
             }
             self.bom_state = BomState::Resolved;
             return;
@@ -113,7 +176,7 @@ mod tests {
 
     fn collect_all(mut s: LineSplitter) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
-        while let Some(line) = s.next_line() {
+        while let Some(line) = s.next_line().unwrap() {
             out.push(line);
         }
         out
@@ -123,7 +186,7 @@ mod tests {
     fn empty_stream() {
         let mut s = LineSplitter::default();
         s.end();
-        assert!(s.next_line().is_none());
+        assert!(s.next_line().unwrap().is_none());
     }
 
     #[test]
@@ -167,7 +230,7 @@ mod tests {
         let mut s = LineSplitter::default();
         s.feed(b"abc\r");
         assert!(
-            s.next_line().is_none(),
+            s.next_line().unwrap().is_none(),
             "trailing CR with stream open must wait for lookahead"
         );
     }
@@ -185,7 +248,7 @@ mod tests {
     fn cr_then_lf_in_next_chunk_is_crlf() {
         let mut s = LineSplitter::default();
         s.feed(b"abc\r");
-        assert!(s.next_line().is_none());
+        assert!(s.next_line().unwrap().is_none());
         s.feed(b"\nxyz\n");
         s.end();
         let lines = collect_all(s);
@@ -196,7 +259,7 @@ mod tests {
     fn cr_then_non_lf_in_next_chunk_is_lone_cr() {
         let mut s = LineSplitter::default();
         s.feed(b"abc\r");
-        assert!(s.next_line().is_none());
+        assert!(s.next_line().unwrap().is_none());
         s.feed(b"def\n");
         s.end();
         let lines = collect_all(s);
@@ -234,7 +297,10 @@ mod tests {
     fn bom_split_across_chunks_1_2() {
         let mut s = LineSplitter::default();
         s.feed(b"\xEF");
-        assert!(s.next_line().is_none(), "must wait for the rest of the BOM");
+        assert!(
+            s.next_line().unwrap().is_none(),
+            "must wait for the rest of the BOM"
+        );
         s.feed(b"\xBB\xBFhello\n");
         s.end();
         let lines = collect_all(s);
@@ -245,7 +311,7 @@ mod tests {
     fn bom_split_across_chunks_2_1() {
         let mut s = LineSplitter::default();
         s.feed(b"\xEF\xBB");
-        assert!(s.next_line().is_none());
+        assert!(s.next_line().unwrap().is_none());
         s.feed(b"\xBFhello\n");
         s.end();
         let lines = collect_all(s);
@@ -308,10 +374,10 @@ mod tests {
     fn line_with_no_terminator_is_held_until_close() {
         let mut s = LineSplitter::default();
         s.feed(b"abc");
-        assert!(s.next_line().is_none(), "must wait for terminator");
+        assert!(s.next_line().unwrap().is_none(), "must wait for terminator");
         s.end();
         assert!(
-            s.next_line().is_none(),
+            s.next_line().unwrap().is_none(),
             "spec: incomplete final line is discarded"
         );
     }

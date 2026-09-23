@@ -250,6 +250,91 @@ async fn watch_rejects_a_notification_for_another_event_type() {
 }
 
 #[tokio::test]
+async fn watch_ends_with_a_protocol_error_when_a_line_never_terminates() {
+    // A server that streams bytes with no line ending would otherwise be
+    // held in memory for as long as it kept sending. The parser stops at
+    // its bound and the watch reports it as a protocol violation rather
+    // than reconnecting into the same stream.
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 10)),
+        "x".repeat(20 * 1024 * 1024),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(10), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly");
+
+    assert_eq!(items.len(), 2, "got: {items:?}");
+    assert_eq!(items[0].as_ref().unwrap().sequence, 10);
+    match &items[1] {
+        Err(ClientError::StreamProtocol { message, .. }) => {
+            assert!(message.contains("SSE line exceeds"), "got: {message}");
+        }
+        other => panic!("expected StreamProtocol, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_notification_completed_before_the_overflow_is_still_delivered() {
+    // Whether the transport hands over the notification and the endless
+    // line together or apart, the notification was complete before the
+    // bound was hit and must reach the caller before the watch ends.
+    let server = MockServer::start().await;
+    let body = format!(
+        "{}{}",
+        sse_chunk("live-notification", &cloud_event("mars", 7)),
+        "y".repeat(20 * 1024 * 1024),
+    );
+    mount_sse_body(&server, body).await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(10), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly");
+
+    assert_eq!(items.len(), 2, "got: {items:?}");
+    assert_eq!(items[0].as_ref().unwrap().sequence, 7);
+    assert!(matches!(items[1], Err(ClientError::StreamProtocol { .. })));
+}
+
+#[tokio::test]
+async fn an_overflow_before_the_stream_is_confirmed_is_reported() {
+    // The server never sends the frame that confirms the subscription;
+    // it sends an endless line instead. The watch must report the
+    // overflow rather than wait for a confirmation that cannot come.
+    let server = MockServer::start().await;
+    // Not `mount_sse_body`: that helper prepends the confirmation frame.
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw("z".repeat(20 * 1024 * 1024), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(5), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly, not wait for the opening deadline");
+
+    assert_eq!(items.len(), 1, "got: {items:?}");
+    match &items[0] {
+        Err(ClientError::StreamProtocol { message, .. }) => {
+            assert!(message.contains("SSE line exceeds"), "got: {message}");
+        }
+        other => panic!("expected StreamProtocol, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn watch_gap_detection_on_sequence_jump_terminates_with_history_gap() {
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();

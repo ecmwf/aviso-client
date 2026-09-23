@@ -17,25 +17,57 @@
 use core::mem;
 
 use crate::frame::{Frame, Message, Retry};
+use crate::limits::Overflow;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Dispatcher {
     pending_event: String,
     pending_data: String,
     last_event_id: Option<String>,
+    max_event_bytes: usize,
+}
+
+impl Default for Dispatcher {
+    fn default() -> Self {
+        Self::new(crate::limits::Limits::default().max_event_bytes)
+    }
 }
 
 impl Dispatcher {
+    pub(crate) fn new(max_event_bytes: usize) -> Self {
+        Self {
+            pending_event: String::new(),
+            pending_data: String::new(),
+            last_event_id: None,
+            max_event_bytes,
+        }
+    }
+
     /// Process one field, returning a `Frame::Retry` if the field was
     /// a valid `retry:` directive. All other fields update internal
-    /// state and return `None`.
-    pub(crate) fn process_field(&mut self, name: &str, value: &str) -> Option<Frame> {
-        match name {
+    /// state and return `None`. A `data:` field that would take the
+    /// pending event past the bound is refused with an `Overflow`.
+    pub(crate) fn process_field(
+        &mut self,
+        name: &str,
+        value: &str,
+    ) -> Result<Option<Frame>, Overflow> {
+        Ok(match name {
             "event" => {
                 value.clone_into(&mut self.pending_event);
                 None
             }
             "data" => {
+                let after = self
+                    .pending_data
+                    .len()
+                    .saturating_add(value.len())
+                    .saturating_add(1);
+                if after > self.max_event_bytes {
+                    return Err(Overflow::Event {
+                        max: self.max_event_bytes,
+                    });
+                }
                 self.pending_data.push_str(value);
                 self.pending_data.push('\n');
                 None
@@ -48,7 +80,7 @@ impl Dispatcher {
             }
             "retry" => Self::parse_retry(value).map(|millis| Frame::Retry(Retry { millis })),
             _ => None,
-        }
+        })
     }
 
     /// Run the dispatch algorithm on a blank line. Returns a
@@ -106,14 +138,14 @@ mod tests {
     #[test]
     fn event_field_alone_does_not_dispatch() {
         let mut d = Dispatcher::default();
-        assert!(d.process_field("event", "msg").is_none());
+        assert!(d.process_field("event", "msg").unwrap().is_none());
         assert!(d.dispatch().is_none(), "empty data suppresses dispatch");
     }
 
     #[test]
     fn data_field_dispatches_with_trailing_lf_stripped_once() {
         let mut d = Dispatcher::default();
-        d.process_field("data", "hello");
+        d.process_field("data", "hello").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "hello", None)));
     }
 
@@ -124,15 +156,15 @@ mod tests {
         // at dispatch time. One LF is stripped, leaving an empty
         // message data string.
         let mut d = Dispatcher::default();
-        d.process_field("data", "");
+        d.process_field("data", "").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "", None)));
     }
 
     #[test]
     fn multi_line_data_joined_with_lf() {
         let mut d = Dispatcher::default();
-        d.process_field("data", "a");
-        d.process_field("data", "b");
+        d.process_field("data", "a").unwrap();
+        d.process_field("data", "b").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "a\nb", None)));
     }
 
@@ -141,8 +173,8 @@ mod tests {
         // Per WHATWG: "remove the last character from the data buffer"
         // is exactly one character, not `trim_end_matches('\n')`.
         let mut d = Dispatcher::default();
-        d.process_field("data", "a");
-        d.process_field("data", "");
+        d.process_field("data", "a").unwrap();
+        d.process_field("data", "").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "a\n", None)));
     }
 
@@ -152,18 +184,18 @@ mod tests {
         // strip one LF -> "\n". Tests the strip-one-LF rule from a
         // second angle, with no leading non-empty content.
         let mut d = Dispatcher::default();
-        d.process_field("data", "");
-        d.process_field("data", "");
+        d.process_field("data", "").unwrap();
+        d.process_field("data", "").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "\n", None)));
     }
 
     #[test]
     fn event_resets_between_dispatches() {
         let mut d = Dispatcher::default();
-        d.process_field("event", "first");
-        d.process_field("data", "x");
+        d.process_field("event", "first").unwrap();
+        d.process_field("data", "x").unwrap();
         assert_eq!(d.dispatch(), Some(msg("first", "x", None)));
-        d.process_field("data", "y");
+        d.process_field("data", "y").unwrap();
         assert_eq!(
             d.dispatch(),
             Some(msg("", "y", None)),
@@ -174,10 +206,10 @@ mod tests {
     #[test]
     fn id_persists_across_dispatches() {
         let mut d = Dispatcher::default();
-        d.process_field("id", "1");
-        d.process_field("data", "x");
+        d.process_field("id", "1").unwrap();
+        d.process_field("data", "x").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "x", Some("1"))));
-        d.process_field("data", "y");
+        d.process_field("data", "y").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "y", Some("1"))));
     }
 
@@ -185,9 +217,9 @@ mod tests {
     fn id_with_nul_is_ignored_entirely() {
         // WPT: format-field-id-null.window.js
         let mut d = Dispatcher::default();
-        d.process_field("id", "1");
-        d.process_field("id", "bad\0value");
-        d.process_field("data", "x");
+        d.process_field("id", "1").unwrap();
+        d.process_field("id", "bad\0value").unwrap();
+        d.process_field("data", "x").unwrap();
         assert_eq!(
             d.dispatch(),
             Some(msg("", "x", Some("1"))),
@@ -199,20 +231,20 @@ mod tests {
     fn empty_id_clears_last_event_id_to_some_empty() {
         // WPT: format-field-id-3.window.js
         let mut d = Dispatcher::default();
-        d.process_field("id", "1");
-        d.process_field("data", "x");
+        d.process_field("id", "1").unwrap();
+        d.process_field("data", "x").unwrap();
         let _ = d.dispatch();
-        d.process_field("id", "");
-        d.process_field("data", "y");
+        d.process_field("id", "").unwrap();
+        d.process_field("data", "y").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "y", Some(""))));
     }
 
     #[test]
     fn id_only_event_updates_last_id_but_emits_no_frame() {
         let mut d = Dispatcher::default();
-        d.process_field("id", "42");
+        d.process_field("id", "42").unwrap();
         assert!(d.dispatch().is_none(), "empty data suppresses dispatch");
-        d.process_field("data", "next");
+        d.process_field("data", "next").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "next", Some("42"))));
     }
 
@@ -220,7 +252,7 @@ mod tests {
     fn retry_with_digits_emits_retry_frame() {
         let mut d = Dispatcher::default();
         assert_eq!(
-            d.process_field("retry", "1500"),
+            d.process_field("retry", "1500").unwrap(),
             Some(Frame::Retry(Retry { millis: 1500 }))
         );
     }
@@ -229,23 +261,25 @@ mod tests {
     fn retry_non_digit_is_ignored() {
         // WPT: format-field-retry-bogus.any.js
         let mut d = Dispatcher::default();
-        assert!(d.process_field("retry", "foo").is_none());
-        assert!(d.process_field("retry", "1 5 0 0").is_none());
-        assert!(d.process_field("retry", "-100").is_none());
-        assert!(d.process_field("retry", "1.5").is_none());
+        assert!(d.process_field("retry", "foo").unwrap().is_none());
+        assert!(d.process_field("retry", "1 5 0 0").unwrap().is_none());
+        assert!(d.process_field("retry", "-100").unwrap().is_none());
+        assert!(d.process_field("retry", "1.5").unwrap().is_none());
     }
 
     #[test]
     fn retry_empty_is_ignored() {
         let mut d = Dispatcher::default();
-        assert!(d.process_field("retry", "").is_none());
+        assert!(d.process_field("retry", "").unwrap().is_none());
     }
 
     #[test]
     fn retry_overflow_is_ignored() {
         let mut d = Dispatcher::default();
         assert!(
-            d.process_field("retry", "99999999999999999999").is_none(),
+            d.process_field("retry", "99999999999999999999")
+                .unwrap()
+                .is_none(),
             "u64 overflow must be ignored"
         );
     }
@@ -253,8 +287,8 @@ mod tests {
     #[test]
     fn unknown_field_has_no_effect() {
         let mut d = Dispatcher::default();
-        assert!(d.process_field("custom", "value").is_none());
-        d.process_field("data", "x");
+        assert!(d.process_field("custom", "value").unwrap().is_none());
+        d.process_field("data", "x").unwrap();
         assert_eq!(d.dispatch(), Some(msg("", "x", None)));
     }
 }

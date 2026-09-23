@@ -23,8 +23,8 @@ use crate::state::{ResumeKey, StateStore};
 use crate::watch::retry_after;
 use crate::watch::wire::WireWatchRequest;
 use crate::watch::{
-    ConnectionLossReason, ReconnectPolicy, ResumeStart, WatchEvent, WatchMode, WatchRequest,
-    WatchState,
+    ConnectionLossReason, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent, WatchMode,
+    WatchRequest, WatchState,
 };
 use crate::{ClientError, Notification};
 
@@ -223,11 +223,15 @@ pub(super) async fn run_one_connection(
             }
         };
         let eof = matches!(chunk, Ok(None));
-        match chunk {
-            Ok(Some(bytes)) => parser.feed(&bytes),
-            Ok(None) => parser.end(),
+        // Set when the server sent more for one line or one event than the
+        // parser will hold. The frames the parser completed before that
+        // point are still delivered below; then the watch ends, since
+        // reconnecting would only let the same stream do it again.
+        let overflow = match chunk {
+            Ok(Some(bytes)) => parser.feed(&bytes).err(),
+            Ok(None) => parser.end().err(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
-        }
+        };
         if !confirmed {
             match opening::confirmed(&mut parser, wire_from.is_some()) {
                 Ok(true) => {
@@ -243,7 +247,11 @@ pub(super) async fn run_one_connection(
                         "Aviso stream confirmed"
                     );
                 }
-                Ok(false) if !eof => continue,
+                // Keep reading unless the stream has ended or the parser
+                // has stopped on an overflow, in which case there is
+                // nothing more to wait for and the error below must be
+                // reported.
+                Ok(false) if !eof && overflow.is_none() => continue,
                 Ok(false) => {}
                 Err(error) => return ConnectionOutcome::Fatal(error),
             }
@@ -267,10 +275,26 @@ pub(super) async fn run_one_connection(
         )
         .await
         {
+            // A close frame queued in the same chunk as an overflow does
+            // not make the overflow routine: the fatal branch below wins.
+            Ok(DrainOutcome::Continue | DrainOutcome::ServerClosed) if overflow.is_some() => {}
             Ok(DrainOutcome::Continue) => {}
             Ok(DrainOutcome::ServerClosed) => return ConnectionOutcome::ServerClosed,
             Ok(DrainOutcome::StopRequested) => return ConnectionOutcome::Cancelled,
             Err(terminal_err) => return ConnectionOutcome::Fatal(terminal_err),
+        }
+        if let Some(overflow) = overflow {
+            let message = overflow.to_string();
+            apply_outcome(
+                last_reconnect_policy,
+                state.transition(WatchEvent::Fatal(FatalKind::ProtocolViolation(
+                    message.clone(),
+                ))),
+            );
+            return ConnectionOutcome::Fatal(ClientError::StreamProtocol {
+                message,
+                request_id: None,
+            });
         }
         if state.is_terminal() {
             return ConnectionOutcome::ServerClosed;
