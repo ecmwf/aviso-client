@@ -129,6 +129,39 @@ async fn a_server_that_closes_at_once_is_not_reconnected_to_in_a_hot_loop() {
 }
 
 #[tokio::test]
+async fn a_session_of_ordinary_length_keeps_the_immediate_reconnect() {
+    // The server takes just over a second to answer and then closes with
+    // the routine reason. Each session therefore counts as healthy, the
+    // short-session count stays at zero, and every reconnect is
+    // immediate: about one connection per 1.1 s. Had the backoff engaged
+    // it would grow to seconds and far fewer connections would fit.
+    let server = MockServer::start().await;
+    let body = max_duration_chunk();
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(move |request: &Request| {
+            common::opened_sse(request, &body).set_delay(Duration::from_millis(1100))
+        })
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    drop(stream);
+
+    let connections = server.received_requests().await.unwrap().len();
+    // Eight sessions of 1.1 s need 8.8 s, leaving 1.2 s of slack for the
+    // handshakes. With the backoff engaged the seven delays in between
+    // (windows of 250 ms to 16 s, full jitter) would almost surely exceed
+    // that slack; the same run without the reset gives five.
+    assert!(
+        connections >= 8,
+        "expected at least eight immediate reconnects in ten seconds, got {connections}"
+    );
+}
+
+#[tokio::test]
 async fn reconnect_after_max_duration_reached() {
     // Server returns a stream that ends with `max_duration_reached`. The
     // supervisor must reconnect and serve the next iteration's notifications
