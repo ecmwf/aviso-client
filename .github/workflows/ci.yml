@@ -51,7 +51,9 @@ jobs:
     steps:
       - name: Validate cache configuration
         run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - run: mkdir -p "$TMPDIR"
 
       - name: Format check
@@ -98,7 +100,9 @@ jobs:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: cargo-deny
         run: cargo deny --log-level warn check
 
@@ -113,7 +117,9 @@ jobs:
         username: ${{ secrets.ECMWF_DOCKER_REGISTRY_USERNAME }}
         password: ${{ secrets.ECMWF_DOCKER_REGISTRY_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Build docs
         run: mdbook build docs
@@ -158,7 +164,9 @@ jobs:
     steps:
       - name: Validate cache configuration
         run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - run: mkdir -p "$TMPDIR"
 
       - name: Sync environment with dev dependency group
@@ -195,13 +203,36 @@ jobs:
     name: e2e config and tooling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Validate docker-compose
         run: docker compose -f tests/e2e/docker-compose.yml config --quiet
       - name: Shellcheck the stack lifecycle script
         run: shellcheck tests/e2e/shared/stack.sh tests/e2e/shared/stack.test.sh
       - name: Stack readiness unit tests
         run: bash tests/e2e/shared/stack.test.sh
+
+  # ── Workflow files: syntax, and no unpinned or over-privileged steps ─
+  # Runs on GitHub-hosted runners with no secrets. zizmor runs offline so
+  # it needs no token and its result does not depend on the network. The
+  # linters install from a hash-pinned requirements file, so this gate
+  # runs reviewed code only; bump the pins with
+  #   uv pip compile --generate-hashes --python-version 3.12 \
+  #     -o .github/ci/lint-requirements.txt .github/ci/lint-requirements.in
+  workflows:
+    name: workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install the linters
+        run: pip install --quiet --require-hashes -r .github/ci/lint-requirements.txt
+      - name: actionlint
+        run: actionlint -color
+      - name: zizmor
+        run: zizmor --no-progress --offline --min-severity medium .github/workflows
 
   # ── Release tooling: lint and unit-test the release scripts ─────
   # GitHub-hosted with no image and no secrets; the suites mock `gh`, `cargo`,
@@ -212,7 +243,9 @@ jobs:
     name: release tooling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Shellcheck the release scripts
         run: shellcheck scripts/*.sh scripts/tests/*.test.sh
       - name: Release-invariant unit tests
@@ -264,7 +297,9 @@ jobs:
     steps:
       - name: Validate cache configuration
         run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - run: mkdir -p "$TMPDIR"
 
       - name: Install the C library to a staging prefix
@@ -334,7 +369,7 @@ jobs:
     steps:
       - name: Validate cache configuration
         run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -413,7 +448,7 @@ jobs:
 
       - name: Upload e2e logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-logs
           path: |
@@ -459,7 +494,9 @@ jobs:
     steps:
       - name: Validate cache configuration
         run: ': "${SCCACHE_ENDPOINT:?Set the repository Actions variable SCCACHE_ENDPOINT}"'
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - run: mkdir -p "$TMPDIR"
 
       - name: Build the C ABI library
@@ -492,7 +529,7 @@ jobs:
   ci-pass:
     name: ci-pass
     if: always()
-    needs: [rust, deny, docs, python, e2e-config, e2e, cpp, release-tooling, ffi-cargo-c]
+    needs: [rust, deny, docs, python, e2e-config, workflows, e2e, cpp, release-tooling, ffi-cargo-c]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every required job succeeded
