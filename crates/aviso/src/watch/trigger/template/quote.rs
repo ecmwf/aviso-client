@@ -100,11 +100,17 @@ impl ShellTracker {
     /// quote leaves the state open, as it would for the shell.
     pub(super) fn advance(&mut self, text: &str) {
         let mut chars = text.chars();
-        if self.pending_escape && chars.next().is_some() {
+        if self.pending_escape
+            && let Some(first) = chars.next()
+        {
             // The first character of this piece is the one the previous
-            // piece's trailing backslash escapes.
+            // piece's trailing backslash escapes. A backslash-newline pair
+            // is removed by the shell and leaves the word state as it
+            // was; any other escaped character is part of the word.
             self.pending_escape = false;
-            self.word_start = false;
+            if first != '\n' {
+                self.word_start = false;
+            }
         }
         while let Some(c) = chars.next() {
             match self.context {
@@ -126,10 +132,13 @@ impl ShellTracker {
                             // before it. Any other escaped character is
                             // part of the current word. A backslash at the
                             // very end escapes the next piece's first
-                            // character.
+                            // character, which decides then.
                             let escaped = chars.next();
                             self.pending_escape = escaped.is_none();
-                            word_start = escaped == Some('\n') && self.word_start;
+                            word_start = match escaped {
+                                Some('\n') | None => self.word_start,
+                                Some(_) => false,
+                            };
                         }
                         '$' if chars.clone().next() == Some('(') => {
                             chars.next();
@@ -347,6 +356,18 @@ mod tests {
         assert_eq!(quoted, "\n\\$(y)");
         tracker.advance(&quoted);
         assert_eq!(tracker.context, Context::DoubleQuoted);
+
+        // An env value that starts with a newline right after a trailing
+        // backslash: sh removes the pair and the word state from before
+        // it decides whether the `#` that follows is a comment.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("echo foo \\");
+        tracker.advance("\n# don't\n'");
+        assert_eq!(tracker.context, Context::SingleQuoted);
+        let mut tracker = ShellTracker::new();
+        tracker.advance("echo foo\\");
+        tracker.advance("\n#don't");
+        assert_eq!(tracker.context, Context::SingleQuoted);
     }
 
     #[test]
