@@ -98,6 +98,7 @@ impl ShellTracker {
                 opener: Opener::None,
                 outer_command_word: false,
                 outer_reparsing: false,
+                outer_redirect_operand: false,
             }],
             word_start: true,
             word: Word::default(),
@@ -128,15 +129,22 @@ impl ShellTracker {
         if self.command_word && opener != Opener::Group {
             self.reparsing_command = true;
         }
+        // What a substitution inside a redirection operand produces is
+        // part of the file name, so values inside it are refused too.
+        let inside_redirect = self.word.redirect_operand && opener != Opener::Group;
         self.levels.push(Level {
             context: Context::Bare,
             opener,
             outer_command_word: self.command_word,
             outer_reparsing: self.reparsing_command,
+            outer_redirect_operand: self.word.redirect_operand,
         });
         self.word_start = true;
         self.word.clear();
         self.command_word = opener != Opener::Brace;
+        if inside_redirect {
+            self.reparsing_command = true;
+        }
         // What a nested command produces becomes text of the command
         // around it, so if that one reparses its arguments, so does
         // everything inside: `eval "$(printf '%s' v)"` reparses v.
@@ -154,6 +162,7 @@ impl ShellTracker {
             self.reparsing_command = level.outer_reparsing;
             if level.opener != Opener::Group {
                 self.word.opaque = true;
+                self.word.redirect_operand = level.outer_redirect_operand;
             }
         }
         closed
@@ -203,13 +212,24 @@ impl ShellTracker {
     }
 
     /// True for a command that reads its arguments as shell code a second
-    /// time, so quoting done for the first read does not hold: `eval`,
-    /// `trap`, and a shell started with `-c`. The shells are listed by
-    /// name; `sh -c` is the shape every one of them takes.
+    /// time, or runs the file they name, so quoting done for the first
+    /// read does not hold: `eval`, `trap`, `.` and `source`, and a shell
+    /// started with `-c`. The shells are listed by name; `sh -c` is the
+    /// shape every one of them takes.
     fn reparses_its_arguments(word: &str) -> bool {
         matches!(
             word,
-            "eval" | "trap" | "sh" | "bash" | "dash" | "zsh" | "ksh" | "ash" | "busybox"
+            "eval"
+                | "trap"
+                | "."
+                | "source"
+                | "sh"
+                | "bash"
+                | "dash"
+                | "zsh"
+                | "ksh"
+                | "ash"
+                | "busybox"
         )
     }
 
@@ -397,6 +417,14 @@ impl ShellTracker {
                 self.flag("a here-document");
                 return;
             }
+            Token::Dollar => {
+                // `$name`, `$#`, `$?` and the like: the character after
+                // the `$` belongs to the parameter, whatever it is, and
+                // continues the word.
+                self.word_start = false;
+                self.word.opaque = true;
+                return;
+            }
             Token::Less | Token::Redirect => {
                 // A redirection operator, `<`, `>`, `>>` or `<>`, is
                 // followed by a file name. It stays pending until the
@@ -411,7 +439,7 @@ impl ShellTracker {
                 self.word.redirect_operand = true;
                 self.word_start = false;
             }
-            Token::None | Token::Dollar => {}
+            Token::None => {}
         }
 
         self.step_char(c);

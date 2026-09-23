@@ -74,8 +74,9 @@ redirection opens must stay yours: `"$AVISO_IDENTIFIER_PROGRAM"` as the command
 name or `> "$AVISO_IDENTIFIER_PATH"` hands that choice to the publisher just as
 a placeholder would.
 
-Some commands read their arguments as shell code a second time: `eval`, `trap`,
-and a shell started with `-c` (`sh -c`, `bash -c`). Nothing makes notification
+Some commands read their arguments as shell code a second time, or run the
+file they name: `eval`, `trap`, `.` and `source`, and a shell started with `-c`
+(`sh -c`, `bash -c`). Nothing makes notification
 data safe there. A value that was quoted once, or expanded once from
 `"$AVISO_EVENT_TYPE"`, is read as shell syntax the second time. A
 `{{ notification.* }}` placeholder anywhere in the arguments of such a command

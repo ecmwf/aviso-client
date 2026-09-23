@@ -47,6 +47,8 @@ fn advance_knows_where_a_comment_starts_and_ends() {
     // `$#` is a parameter, not a comment; a `(` inside `$( )` opens a
     // group whose `)` does not close the substitution.
     assert_eq!(after("printf '%s' $# '"), Context::SingleQuoted);
+    assert_eq!(after("printf '%s' $($#) '"), Context::SingleQuoted);
+    assert_eq!(after("printf '%s' $(#x\n) '"), Context::SingleQuoted);
     assert_eq!(after("echo $( (printf x) )# don't"), Context::SingleQuoted);
     assert_eq!(after("(a; (b))# don't"), Context::Comment);
     // A `)` inside `${ }` is text; the `}` closes the expansion.
@@ -322,6 +324,12 @@ fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
     // make the command unknown.
     assert_eq!(refused("run sh "), None);
     assert_eq!(refused("run 'x' "), None);
+    // `.` and `source` run the file they are given.
+    assert_eq!(refused(". "), reason);
+    assert_eq!(refused("source "), reason);
+    // A substitution inside a redirection operand produces the file name.
+    assert_eq!(refused("printf ok >$(printf '%s' "), reason);
+    assert_eq!(refused("printf ok > \"$(printf '%s' "), reason);
     // A command name assembled from an expansion, a parameter, quotes or
     // escapes could be anything, and the flag reaches nested commands.
     assert_eq!(refused("ev$(true)al "), reason);

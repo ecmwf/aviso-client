@@ -67,15 +67,18 @@ impl UrlTracker {
     }
 }
 
-/// Percent-encodes every byte of `value` except the RFC 3986 unreserved
-/// set (`A-Z a-z 0-9 - . _ ~`).
+/// Percent-encodes every byte of `value` except letters, digits, `-`,
+/// `_` and `~`. RFC 3986 also leaves `.` unreserved, but a value of `..`
+/// would then be a dot-segment that the URL parser folds into the path
+/// the operator wrote, so `.` is encoded too.
 ///
-/// Valid: `mars` stays `mars`; `a/b?c=1` becomes `a%2Fb%3Fc%3D1`.
+/// Valid: `mars` stays `mars`; `a/b?c=1` becomes `a%2Fb%3Fc%3D1`; `..`
+/// becomes `%2E%2E`.
 pub(super) fn percent_encode(value: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'~') {
             out.push(char::from(byte));
         } else {
             out.push('%');
@@ -124,7 +127,9 @@ mod tests {
 
     #[test]
     fn percent_encode_keeps_unreserved_and_encodes_the_rest() {
-        assert_eq!(percent_encode("mars-2.0_x~"), "mars-2.0_x~");
+        assert_eq!(percent_encode("mars-2_x~"), "mars-2_x~");
+        assert_eq!(percent_encode(".."), "%2E%2E");
+        assert_eq!(percent_encode("v2.0"), "v2%2E0");
         assert_eq!(percent_encode("a/b?c=1&d"), "a%2Fb%3Fc%3D1%26d");
         assert_eq!(percent_encode("{\"a\":1}"), "%7B%22a%22%3A1%7D");
         assert_eq!(percent_encode("é"), "%C3%A9");

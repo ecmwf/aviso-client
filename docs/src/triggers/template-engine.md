@@ -109,7 +109,7 @@ the engine neutralises every `{{ notification.* }}` value for that place:
 | Rendered text is | Notification values are |
 |---|---|
 | a `command:` string | quoted for the shell context they land in: wrapped in single quotes when bare, `'` escaped inside single quotes, and backslash, `$`, backtick and `"` escaped inside double quotes. The shell reads the value as one literal argument. A placeholder after a here-document, arithmetic expansion or backticks is refused with `ValueAfterUnsupportedShellSyntax`; see the [Command trigger](./command.md#notification-values-are-data-never-code) page. |
-| a webhook `url:` | percent-encoded (RFC 3986 unreserved characters kept), so a value cannot add a path segment or a query parameter. A notification placeholder in the scheme or authority, where the value would be the host, is refused with `ValueInUrlAuthority`. Put the host in the template or in an `{{ env.* }}` value and notification values in the path, query or fragment. |
+| a webhook `url:` | percent-encoded (letters, digits, `-`, `_` and `~` kept; `.` is encoded too so `..` cannot fold the path), so a value cannot add or remove a path segment or add a query parameter. A notification placeholder in the scheme or authority, where the value would be the host, is refused with `ValueInUrlAuthority`. Put the host in the template or in an `{{ env.* }}` value and notification values in the path, query or fragment. |
 | a header value or a body | inserted as written. You supply the encoding around the value, for example the quotes of a JSON string. |
 
 `{{ env.* }}` values are your own and are inserted as written everywhere.
@@ -179,7 +179,7 @@ Template errors fall into one of seven `TemplateErrorKind` values, surfaced via
 | `EnvNotUnicode` | A `{{ env.<NAME> }}` variable's value is not valid UTF-8 | (rare; usually a misconfigured deployment) |
 | `BadSyntax` | Template parse failure: unclosed `{{`, empty path segment, unknown namespace | `{{ unclosed`, `{{ notification..empty }}`, `{{ unknown.foo }}` |
 | `ValueInUrlAuthority` | A `{{ notification.<path> }}` in the scheme or authority of a webhook URL | `https://{{ notification.payload.host }}/hook` |
-| `ValueAfterUnsupportedShellSyntax` | A `{{ notification.<path> }}` in a command after a here-document, `$(( ))`, backticks or `case`, directly after a `$`, inside `${ }`, after a redirection operator, as the command name, or as an argument to `eval`, `trap` or `sh -c`; `field` names the reason | `cat <<EOF ... EOF; run {{ notification.sequence }}` |
+| `ValueAfterUnsupportedShellSyntax` | A `{{ notification.<path> }}` in a command after a here-document, `$(( ))`, backticks or `case`, directly after a `$`, inside `${ }`, after a redirection operator, as the command name, or as an argument to `eval`, `trap`, `.` or `sh -c`; `field` names the reason | `cat <<EOF ... EOF; run {{ notification.sequence }}` |
 | `NotificationEncode` | Notification could not be serialised to JSON | Practically unreachable |
 
 `NotificationEncode` occurs when resolving a path. It is practically

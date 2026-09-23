@@ -36,6 +36,9 @@ pub(super) struct Level {
     /// Whether the command this level was opened in reparses its
     /// arguments, restored likewise.
     pub(super) outer_reparsing: bool,
+    /// Whether the word this level was opened in names the file of a
+    /// redirection, restored likewise.
+    pub(super) outer_redirect_operand: bool,
 }
 
 /// The bare word being read, with the facts about it the tracker acts
