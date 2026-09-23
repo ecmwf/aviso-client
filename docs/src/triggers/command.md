@@ -59,10 +59,11 @@ quotes, inside double quotes, or inside `$( )`, nested or not. Four shell
 constructs are read by rules the engine does not follow: here-documents (`<<`),
 arithmetic expansion (`$(( ))`), backticks and `case` statements. A
 `{{ notification.* }}` placeholder that comes after one of those in the
-command, directly after a `$`, inside a `${ }` expansion, or where the command
-name goes (a quoted value there would still let the publisher pick the program)
-is refused at dispatch with a `ValueAfterUnsupportedShellSyntax` template error
-naming the reason, rather than quoted on a guess. Placeholders before it
+command, directly after a `$`, inside a `${ }` expansion, as the operand of a
+redirection (a quoted value there would still let the publisher pick the file),
+or where the command name goes (likewise the program) is refused at dispatch
+with a `ValueAfterUnsupportedShellSyntax` template error naming the reason,
+rather than quoted on a guess. Placeholders before it
 are fine, and so are `{{ env.* }}` values anywhere. In such a command reach the
 notification through the `AVISO_*` environment variables below, with the usual
 double quotes around them.

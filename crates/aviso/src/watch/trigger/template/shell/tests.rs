@@ -55,6 +55,12 @@ fn advance_knows_where_a_comment_starts_and_ends() {
         Context::Bare
     );
     assert_eq!(after("echo ${x:-a)b}'"), Context::SingleQuoted);
+    // A redirection operator does not change the quoting state.
+    assert_eq!(
+        after("printf ok > /dev/null; printf '"),
+        Context::SingleQuoted
+    );
+    assert_eq!(after("printf ok 2>&1 >out '"), Context::SingleQuoted);
     // Quotes inside a `$( )` belong to it, even inside double quotes.
     assert_eq!(after("echo \"$(printf '%s' 'a\"b')\" "), Context::Bare);
     assert_eq!(after("echo \"$(printf '%s' 'a\"b')"), Context::DoubleQuoted);
@@ -228,6 +234,17 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     assert_eq!(refused("run x; "), Some("the command word"));
     assert_eq!(refused("echo $(printf x; "), Some("the command word"));
     assert_eq!(refused("x=${y:-"), Some("an open `${ }` expansion"));
+    assert_eq!(
+        refused("printf '%s' \"${UNSET:-x}\" "),
+        Some("a `${ }` expansion inside double quotes")
+    );
+    assert_eq!(refused("printf ok > "), Some("a redirection"));
+    assert_eq!(refused("printf ok >"), Some("a redirection"));
+    assert_eq!(refused("printf ok >> "), Some("a redirection"));
+    assert_eq!(refused("printf ok 2> "), Some("a redirection"));
+    assert_eq!(refused("cat < "), Some("a redirection"));
+    assert_eq!(refused("printf ok > /dev/null "), None);
+    assert_eq!(refused("printf ok >/dev/null; printf "), None);
     assert_eq!(refused("run "), None);
     assert_eq!(refused("run '"), None);
     assert_eq!(refused("echo $(printf "), None);

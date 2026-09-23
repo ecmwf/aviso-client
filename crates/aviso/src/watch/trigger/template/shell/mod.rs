@@ -66,6 +66,8 @@ enum Token {
     DollarParen,
     /// `<`: a following `<` starts a here-document.
     Less,
+    /// A redirection operator: the next word names a file.
+    Redirect,
 }
 
 /// What the tracker is waiting for.
@@ -223,6 +225,14 @@ impl ShellTracker {
         {
             return Some("a `$` right before the placeholder");
         }
+        if matches!(
+            self.pending,
+            Pending::Token(Token::Less | Token::Redirect)
+                | Pending::Escape(Token::Less | Token::Redirect)
+        ) && self.context() != Context::SingleQuoted
+        {
+            return Some("a redirection");
+        }
         if self.opener() == Opener::Brace {
             return Some("an open `${ }` expansion");
         }
@@ -305,6 +315,12 @@ impl ShellTracker {
                 self.open_level(Opener::Substitution);
             }
             Token::Dollar if c == '{' => {
+                // Shells disagree on how quotes inside a `${ }` that sits
+                // inside double quotes are read, so that shape is not
+                // followed.
+                if self.context() == Context::DoubleQuoted {
+                    self.flag("a `${ }` expansion inside double quotes");
+                }
                 self.open_level(Opener::Brace);
                 return;
             }
@@ -312,7 +328,18 @@ impl ShellTracker {
                 self.flag("a here-document");
                 return;
             }
-            Token::None | Token::Dollar | Token::Less => {}
+            Token::Less | Token::Redirect => {
+                // A redirection operator, `<`, `>`, `>>` or `<>`, is
+                // followed by a file name. It stays pending until the
+                // first character of that word arrives, so a value
+                // placed there is refused.
+                if matches!(c, '>' | ' ' | '\t') {
+                    self.pending = Pending::Token(Token::Redirect);
+                    return;
+                }
+                self.word_start = false;
+            }
+            Token::None | Token::Dollar => {}
         }
 
         self.step_char(c);
@@ -338,6 +365,10 @@ impl ShellTracker {
             '"' => self.set_context(Context::DoubleQuoted),
             '<' => {
                 self.pending = Pending::Token(Token::Less);
+                self.word_start = false;
+            }
+            '>' => {
+                self.pending = Pending::Token(Token::Redirect);
                 self.word_start = false;
             }
             _ if self.opener() == Opener::Brace => {

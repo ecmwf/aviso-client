@@ -221,9 +221,9 @@ impl Trigger {
     /// expand `$(...)`. This covers a placeholder that is part of a
     /// command word, inside `$( )` or not. A placeholder that comes
     /// after a here-document, arithmetic expansion, backticks or a
-    /// `case` statement, one directly after a `$` or inside `${ }`, and
-    /// one standing where the command name goes are refused at dispatch
-    /// with
+    /// `case` statement, one directly after a `$` or inside `${ }`, one
+    /// naming the file of a redirection, and one standing where the
+    /// command name goes are refused at dispatch with
     /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
     /// the engine does not follow how the shell reads those; use the
     /// `AVISO_*` environment variables in such a command, in double
