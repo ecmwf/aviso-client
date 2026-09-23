@@ -308,10 +308,13 @@ def resolve_config(
     """Reports what a client built with these arguments would use, without
     connecting.
 
-    The same arguments as ``AvisoClient()``, and the same order of
-    precedence: code, then the environment, then the config file, then the
-    default. Works even when a client could not be built, for example with
-    no address anywhere (``base_url`` is then ``None``) or with a found
+    Takes the ``AvisoClient()`` arguments that take part in the lookup, with
+    the same order of precedence: code, then the environment, then the
+    config file, then the default. ``user_agent``, ``state_store`` and
+    ``flush_cursor_on_exit`` are never looked up and are not accepted here.
+
+    Works even when a client could not be built, for example with no
+    address anywhere (``base_url`` is then ``None``) or with a found
     credential that would be refused (``auth.refused`` says why). Raises
     ``ConfigError`` when the config or credentials file exists but cannot be
     read, and ``AuthError`` when a credential source is present but

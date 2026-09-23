@@ -18,6 +18,7 @@ use std::ffi::c_char;
 use std::sync::Arc;
 
 use aviso::auth::{Basic, Bearer};
+use aviso::resolve::CodeAuth;
 
 use crate::client::{AvisoClientBuilder, cstr_opt};
 use crate::error;
@@ -57,8 +58,9 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
         };
         match Basic::new(user, pass) {
             Ok(basic) => {
-                builder.inputs.auth_kind = Some("basic");
-                builder.apply(|b| b.auth(Arc::new(basic)));
+                let provider: Arc<dyn aviso::auth::AuthProvider> = Arc::new(basic);
+                builder.inputs.auth = Some(CodeAuth::Named(provider.clone()));
+                builder.apply(|b| b.auth(provider));
             }
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
@@ -101,8 +103,9 @@ pub unsafe extern "C" fn aviso_client_builder_bearer_auth(
         };
         match Bearer::new(token) {
             Ok(bearer) => {
-                builder.inputs.auth_kind = Some("bearer");
-                builder.apply(|b| b.auth(Arc::new(bearer)));
+                let provider: Arc<dyn aviso::auth::AuthProvider> = Arc::new(bearer);
+                builder.inputs.auth = Some(CodeAuth::Named(provider.clone()));
+                builder.apply(|b| b.auth(provider));
             }
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
@@ -142,7 +145,7 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
         // the address, and build checks the final one. Attaching through
         // found_auth keeps the record that the credential was found.
         let paths = aviso::auth::DiscoveryPaths::from_env();
-        builder.inputs.auth_kind = None;
+        builder.inputs.auth = None;
         builder.searched = true;
         match aviso::auth::discover_with(&paths) {
             Ok(Some(found)) => builder.apply(|b| b.found_auth(found)),

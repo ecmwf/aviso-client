@@ -106,8 +106,11 @@ returns the same information as plain values, for a JSON log line.
 ## Ask before building
 
 `pyaviso.resolve_config()` produces the same report without building a
-client. It takes the constructor's arguments and works even when a client
-could not be built:
+client. It takes the constructor arguments that take part in the lookup
+(`base_url`, `auth`, `timeout`, `heartbeat_interval` and
+`danger_accept_invalid_certs`; not `user_agent`, `state_store` or
+`flush_cursor_on_exit`, which are never looked up) and works even when a
+client could not be built:
 
 ```python
 import pyaviso

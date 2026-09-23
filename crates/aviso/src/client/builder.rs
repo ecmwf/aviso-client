@@ -36,8 +36,9 @@ pub struct AvisoClientBuilder {
     /// loopback, whatever order the address and the credential arrived in.
     auth_was_found: Option<crate::auth::CredentialSource>,
     /// Set when the builder came from the resolver, so a missing address can
-    /// say where it looked.
-    looked_up: bool,
+    /// say where it looked: the config file, and `AVISO_BASE_URL` too when
+    /// the resolver read it.
+    looked_up: Option<super::resolve::EnvAddress>,
 }
 
 impl std::fmt::Debug for AvisoClientBuilder {
@@ -129,10 +130,10 @@ impl AvisoClientBuilder {
     }
 
     /// A builder carrying everything a [`resolve`](super::resolve::resolve)
-    /// call chose: the winning address, timeouts and certificates, and a
-    /// found credential with its source. Setters called afterwards replace
-    /// what was chosen. This is how to build the client a report describes
-    /// without resolving twice.
+    /// call chose: the winning address, timeouts and certificates, and the
+    /// credential, whether named in the inputs or found with its source.
+    /// Setters called afterwards replace what was chosen. This is how to
+    /// build the client a report describes without resolving twice.
     ///
     /// # Errors
     ///
@@ -140,7 +141,7 @@ impl AvisoClientBuilder {
     /// cannot be loaded.
     pub fn from_resolution(resolution: super::resolve::Resolution) -> crate::Result<Self> {
         let mut builder = Self {
-            looked_up: true,
+            looked_up: Some(resolution.env_address),
             ..Self::default()
         };
         if let Some(url) = resolution.raw_base_url {
@@ -164,6 +165,11 @@ impl AvisoClientBuilder {
         // checks it against the address the client will actually use.
         if let Some(found) = resolution.found {
             builder = builder.found_auth(found);
+        }
+        match resolution.code_auth {
+            Some(super::resolve::CodeAuth::Named(provider)) => builder = builder.auth(provider),
+            Some(super::resolve::CodeAuth::Anonymous) => builder = builder.anonymous(),
+            None => {}
         }
         Ok(builder)
     }
@@ -376,12 +382,18 @@ impl AvisoClientBuilder {
     pub fn build(self) -> crate::Result<AvisoClient> {
         let looked_up = self.looked_up;
         let raw = self.base_url.ok_or_else(|| {
-            ClientError::Config(if looked_up {
-                "AvisoClient requires a base_url; none was set in code, and none was \
-                 found in AVISO_BASE_URL or the config file"
-                    .into()
-            } else {
-                "AvisoClient requires a base_url".into()
+            ClientError::Config(match looked_up {
+                Some(super::resolve::EnvAddress::Read) => {
+                    "AvisoClient requires a base_url; none was set in code, and none was \
+                     found in AVISO_BASE_URL or the config file"
+                        .into()
+                }
+                Some(super::resolve::EnvAddress::Ignore) => {
+                    "AvisoClient requires a base_url; none was set in code, and the \
+                     config file has none"
+                        .into()
+                }
+                None => "AvisoClient requires a base_url".into(),
             })
         })?;
         let mut base_url =

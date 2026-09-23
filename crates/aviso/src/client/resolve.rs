@@ -30,10 +30,11 @@
 //! source, and the address is stored with any `user:password@` removed.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::settings::ClientSettings;
-use crate::auth::{CredentialSource, Discovered, DiscoveryPaths};
+use crate::auth::{AuthProvider, CredentialSource, Discovered, DiscoveryPaths};
 
 /// Where a resolved value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,7 +127,8 @@ pub struct ResolvedSettings {
     pub auth: Option<ResolvedAuth>,
     /// The config file that was read, if one existed.
     pub config_file: Option<PathBuf>,
-    /// The credentials file that was consulted, if any.
+    /// The credentials file that was read: set only when the search ran and
+    /// reached it, because no earlier source had a credential.
     pub credentials_file: Option<PathBuf>,
 }
 
@@ -206,9 +208,28 @@ pub struct CodeInputs {
     pub heartbeat_interval: Option<Duration>,
     /// Whether certificate validation is off.
     pub danger_accept_invalid_certs: Option<bool>,
-    /// The kind of a credential the caller named, when it named one. A named
-    /// credential is never refused.
-    pub auth_kind: Option<&'static str>,
+    /// The credential the caller chose, when it chose one. A named
+    /// credential is never refused, and is attached to the builder by
+    /// [`AvisoClientBuilder::from_resolution`](crate::AvisoClientBuilder::from_resolution).
+    pub auth: Option<CodeAuth>,
+}
+
+/// A credential decision made in code.
+#[derive(Debug, Clone)]
+pub enum CodeAuth {
+    /// Send this credential, wherever the address points.
+    Named(Arc<dyn AuthProvider>),
+    /// Send none, even if the machine has one set up.
+    Anonymous,
+}
+
+impl CodeAuth {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Named(provider) => provider.kind(),
+            Self::Anonymous => "anonymous",
+        }
+    }
 }
 
 /// Whether the `AVISO_BASE_URL` environment variable may supply the address.
@@ -225,23 +246,35 @@ pub enum EnvAddress {
 /// `paths.config_file` (already read into `paths.config_content` when the
 /// caller has done so) and the credentials file at `paths.credentials_file`.
 ///
-/// The credential search runs only when `inputs.auth_kind` is `None`; a
-/// found credential is checked against the resolved address and marked
-/// refused rather than dropped, so a dump can say why it is not being sent.
+/// The credential search runs only when `inputs.auth` is `None`; a found
+/// credential is checked against the resolved address and marked refused
+/// rather than dropped, so a dump can say why it is not being sent.
+///
+/// The config file is read once. When `paths.config_content` already holds
+/// its text, that text is used and the file is not opened again, so the
+/// settings and the credential come from one snapshot.
 ///
 /// # Errors
 ///
 /// Returns [`crate::ClientError::Config`] when the config file or the
-/// credentials file exists but cannot be read or parsed, and
-/// [`crate::ClientError::Auth`] when a credential source is present but
-/// unusable, such as a username with no password.
+/// credentials file exists but cannot be read or parsed, or `AVISO_BASE_URL`
+/// is set to a value that is not UTF-8, and [`crate::ClientError::Auth`]
+/// when a credential source is present but unusable, such as a username
+/// with no password.
 pub fn resolve(
     inputs: &CodeInputs,
     paths: &DiscoveryPaths,
     env_address: EnvAddress,
 ) -> crate::Result<Resolution> {
     let mut paths = paths.clone();
-    let loaded = ClientSettings::read_default(paths.config_file.as_deref())?;
+    let loaded = match (&paths.config_file, &paths.config_content) {
+        (Some(path), Some(content)) => Some(super::settings::LoadedSettings {
+            settings: ClientSettings::parse(content, path)?,
+            content: content.clone(),
+            path: path.clone(),
+        }),
+        _ => ClientSettings::read_default(paths.config_file.as_deref())?,
+    };
     // The file is read once. Its text goes to the credential search, so the
     // credential cannot come from a newer file than the settings. When there
     // was no file, the search skips that tier rather than probe the path
@@ -261,10 +294,10 @@ pub fn resolve(
 
     let base_url = if let Some(url) = &inputs.base_url {
         Some(Sourced::new(url.clone(), Source::Code))
-    } else if let Some(url) = (env_address == EnvAddress::Read)
-        .then(|| env_var("AVISO_BASE_URL"))
-        .flatten()
-    {
+    } else if let Some(url) = match env_address {
+        EnvAddress::Read => env_var("AVISO_BASE_URL")?,
+        EnvAddress::Ignore => None,
+    } {
         Some(Sourced::new(url, Source::Environment("AVISO_BASE_URL")))
     } else {
         settings
@@ -287,17 +320,27 @@ pub fn resolve(
     let ca_bundle_paths = settings.ca_bundle.clone();
     let ca_bundle = Sourced::new(
         settings.ca_bundle.clone(),
-        file_source(!settings.ca_bundle.is_empty()),
+        file_source(settings.explicit.ca_bundle),
     );
     let danger_accept_invalid_certs = match inputs.danger_accept_invalid_certs {
         Some(v) => Sourced::new(v, Source::Code),
         None => Sourced::new(
             settings.danger_accept_invalid_certs,
-            file_source(settings.danger_accept_invalid_certs),
+            file_source(settings.explicit.danger_accept_invalid_certs),
         ),
     };
 
     let (auth, found) = resolve_auth(inputs, &paths, base_url.as_ref().map(|u| u.value.as_str()))?;
+    // The credentials file is the last tier of the search: it was read only
+    // when the search ran and nothing earlier had a credential.
+    let reached_credentials_file = inputs.auth.is_none()
+        && found
+            .as_ref()
+            .is_none_or(|f| matches!(f.source(), CredentialSource::CredentialsFile(_)));
+    let credentials_file = paths
+        .credentials_file
+        .clone()
+        .filter(|_| reached_credentials_file);
 
     let raw_base_url = base_url.as_ref().map(|url| url.value.clone());
     let settings = ResolvedSettings {
@@ -308,7 +351,7 @@ pub fn resolve(
         danger_accept_invalid_certs,
         auth,
         config_file,
-        credentials_file: paths.credentials_file.clone(),
+        credentials_file,
     };
     Ok(Resolution {
         settings,
@@ -318,6 +361,8 @@ pub fn resolve(
             ..ClientSettings::default()
         },
         found,
+        code_auth: inputs.auth.clone(),
+        env_address,
     })
 }
 
@@ -334,6 +379,10 @@ pub struct Resolution {
     pub(crate) file_settings: ClientSettings,
     /// The found credential, for the builder to attach with its source.
     pub(crate) found: Option<Discovered>,
+    /// The credential named in code, for the builder to attach as given.
+    pub(crate) code_auth: Option<CodeAuth>,
+    /// Whether `AVISO_BASE_URL` took part, for the builder's error message.
+    pub(crate) env_address: EnvAddress,
 }
 
 impl std::fmt::Debug for Resolution {
@@ -353,10 +402,10 @@ fn resolve_auth(
     paths: &DiscoveryPaths,
     base_url: Option<&str>,
 ) -> crate::Result<(Option<ResolvedAuth>, Option<Discovered>)> {
-    if let Some(kind) = inputs.auth_kind {
+    if let Some(chosen) = &inputs.auth {
         return Ok((
             Some(ResolvedAuth {
-                kind,
+                kind: chosen.kind(),
                 source: Source::Code,
                 refused: None,
             }),
@@ -404,6 +453,14 @@ fn display_address(url: &str) -> String {
     )
 }
 
-fn env_var(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|v| !v.is_empty())
+fn env_var(name: &str) -> crate::Result<Option<String>> {
+    match std::env::var(name) {
+        Ok(v) if !v.is_empty() => Ok(Some(v)),
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(raw)) => Err(crate::ClientError::Config(format!(
+            "{name} is set but its value is not valid UTF-8 ({}); set a UTF-8 \
+             value or unset the variable",
+            raw.display()
+        ))),
+    }
 }

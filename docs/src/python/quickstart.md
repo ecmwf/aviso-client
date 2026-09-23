@@ -25,9 +25,11 @@ export AVISO_TOKEN=your-bearer-token
 The scripts create the client with no arguments; it reads the address and the
 credential from these variables. If you have a username and password instead,
 unset `AVISO_TOKEN` and set `AVISO_USERNAME` and `AVISO_PASSWORD`. A token
-takes precedence when both are set. With neither set, requests go out
-anonymous. The first script prints what the client resolved, so you can check
-it picked up what you meant. See [Configuration](./configuration.md) for
+takes precedence when both are set. With neither set, the client looks in
+`~/.config/aviso/config.yaml` and `~/.config/aviso/credentials.yaml`, and
+requests go out anonymous only if those have no credential either. The first
+script prints what the client resolved, so you can check it picked up what
+you meant. See [Configuration](./configuration.md) for
 where settings come from, and [Authentication](./auth.md) for naming a
 credential in code.
 

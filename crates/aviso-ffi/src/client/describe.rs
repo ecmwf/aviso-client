@@ -11,7 +11,7 @@
 use std::ffi::CString;
 use std::ptr;
 
-use aviso::resolve::{CodeInputs, EnvAddress};
+use aviso::resolve::{CodeAuth, CodeInputs, EnvAddress};
 
 use crate::client::{AvisoClientBuilder, builder_from};
 use crate::outcome::AvisoOutcome;
@@ -71,8 +71,8 @@ pub unsafe extern "C" fn aviso_client_builder_describe(
         // A builder that never searched for a credential and had none named
         // is anonymous; the resolver would otherwise report one it found.
         let mut inputs = builder.inputs.clone();
-        if inputs.auth_kind.is_none() && !builder.searched {
-            inputs.auth_kind = Some("anonymous");
+        if inputs.auth.is_none() && !builder.searched {
+            inputs.auth = Some(CodeAuth::Anonymous);
         }
         let resolved = aviso::resolve::resolve(
             &inputs,

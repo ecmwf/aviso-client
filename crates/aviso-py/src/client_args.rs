@@ -15,7 +15,7 @@
 //! build the client and to fill `client.config`, so the report cannot drift
 //! from what was built.
 
-use aviso::resolve::{CodeInputs, EnvAddress, Resolution};
+use aviso::resolve::{CodeAuth, CodeInputs, EnvAddress, Resolution};
 use aviso::{AvisoClient, AvisoClientBuilder};
 use pyo3::prelude::*;
 
@@ -48,9 +48,9 @@ pub(crate) struct Built {
 impl ClientArgs<'_> {
     /// What the resolver needs to know about the caller's inputs.
     fn code_inputs(&self) -> PyResult<CodeInputs> {
-        let auth_kind = match self.auth {
-            Some(obj) if is_anonymous(obj) => Some("anonymous"),
-            Some(obj) => Some(extract_provider(obj)?.kind()),
+        let auth = match self.auth {
+            Some(obj) if is_anonymous(obj) => Some(CodeAuth::Anonymous),
+            Some(obj) => Some(CodeAuth::Named(extract_provider(obj)?)),
             None => None,
         };
         Ok(CodeInputs {
@@ -64,7 +64,7 @@ impl ClientArgs<'_> {
                 .map(|secs| duration_from_seconds("heartbeat_interval", secs))
                 .transpose()?,
             danger_accept_invalid_certs: self.danger_accept_invalid_certs,
-            auth_kind,
+            auth,
         })
     }
 
@@ -135,17 +135,10 @@ impl ClientArgs<'_> {
         Ok(Built { client, config })
     }
 
-    /// Applies what the resolver does not carry: the credential object, the
-    /// user agent, the state store and the flush flag. The address and the
+    /// Applies what the resolver does not carry: the user agent, the state
+    /// store and the flush flag. The address, the credential and the
     /// timeouts passed in code are already in the builder.
     fn apply(&self, mut builder: AvisoClientBuilder) -> PyResult<AvisoClientBuilder> {
-        if let Some(obj) = self.auth {
-            builder = if is_anonymous(obj) {
-                builder.anonymous()
-            } else {
-                builder.auth(extract_provider(obj)?)
-            };
-        }
         if let Some(ua) = &self.user_agent {
             builder = builder.user_agent(ua.clone());
         }

@@ -20,7 +20,7 @@
 #[path = "common/env.rs"]
 mod env;
 
-use aviso::resolve::{CodeInputs, EnvAddress, ResolvedSettings, Source, resolve};
+use aviso::resolve::{CodeAuth, CodeInputs, EnvAddress, ResolvedSettings, Source, resolve};
 use aviso::{AvisoClient, AvisoClientBuilder, ClientError};
 use env::{Sources, write_config};
 
@@ -126,15 +126,25 @@ fn the_report_says_when_a_found_credential_would_be_refused() -> TestResult {
     assert!(refused.contains("refused"), "got: {refused}");
     assert!(refused.contains("public.example.org"), "got: {refused}");
 
-    // Named in code, the credential is reported as such and never refused.
+    // Named in code, the credential is reported as such and never refused,
+    // and the client built from the resolution carries it.
     let inputs = CodeInputs {
-        auth_kind: Some("bearer"),
+        auth: Some(CodeAuth::Named(std::sync::Arc::new(
+            aviso::auth::Bearer::new("named")?,
+        ))),
         ..CodeInputs::default()
     };
     let report = resolve_here(&inputs);
     let auth = report.auth.expect("named");
+    assert_eq!(auth.kind, "bearer");
     assert_eq!(auth.source, Source::Code);
     assert_eq!(auth.refused, None);
+    let built = AvisoClientBuilder::from_environment(&inputs)?;
+    assert!(
+        format!("{built:?}").contains("Bearer"),
+        "the named credential must be on the builder: {built:?}"
+    );
+    built.build()?;
     Ok(())
 }
 
@@ -262,5 +272,78 @@ fn the_report_displays_one_setting_per_line_without_the_secret() -> TestResult {
     assert!(lines[1].contains("bearer"), "got: {shown}");
     assert!(lines[2].contains("7s"), "got: {shown}");
     assert!(lines[3].ends_with("(default)"), "got: {shown}");
+    Ok(())
+}
+
+#[test]
+fn a_named_file_is_parsed_from_the_text_already_read() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "base_url: https://first.example.org\n");
+    let _sources = Sources::in_dir(dir.path());
+    let loaded = aviso::ClientSettings::read(&dir.path().join("config.yaml"))?;
+    let mut paths = aviso::auth::DiscoveryPaths::from_env();
+    paths.config_file = Some(loaded.path);
+    paths.config_content = Some(loaded.content);
+
+    // The file changes after the read; the resolution must not notice.
+    write_config(dir.path(), "base_url: https://second.example.org\n");
+    let report = resolve(&CodeInputs::default(), &paths, EnvAddress::Ignore)?.settings;
+    assert_eq!(
+        report.base_url.expect("set").value,
+        "https://first.example.org/"
+    );
+    Ok(())
+}
+
+#[test]
+fn explicit_tls_keys_are_attributed_to_the_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(
+        dir.path(),
+        "base_url: https://file.example.org\ntls:\n  ca_bundle: []\n  danger_accept_invalid_certs: false\n",
+    );
+    let _sources = Sources::in_dir(dir.path());
+    let report = resolve_here(&CodeInputs::default());
+    assert!(matches!(report.ca_bundle.source, Source::ConfigFile(_)));
+    assert!(matches!(
+        report.danger_accept_invalid_certs.source,
+        Source::ConfigFile(_)
+    ));
+    assert!(!report.danger_accept_invalid_certs.value);
+    Ok(())
+}
+
+#[test]
+fn the_credentials_file_is_reported_only_when_the_search_reached_it() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "base_url: https://file.example.org\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    // Nothing earlier: the search reaches the credentials file.
+    let report = resolve_here(&CodeInputs::default());
+    assert!(report.credentials_file.is_some());
+
+    // Found in the environment: the file was never read.
+    // SAFETY: as above.
+    unsafe { std::env::set_var("AVISO_TOKEN", "from-env") };
+    let report = resolve_here(&CodeInputs::default());
+    assert_eq!(report.credentials_file, None);
+
+    // Chosen in code: no search at all.
+    let report = resolve_here(&CodeInputs {
+        auth: Some(CodeAuth::Anonymous),
+        ..CodeInputs::default()
+    });
+    assert_eq!(report.credentials_file, None);
+    Ok(())
+}
+
+#[test]
+fn from_file_without_an_address_does_not_mention_the_environment() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let _sources = Sources::in_dir(dir.path());
+    let error = AvisoClientBuilder::from_file()?.build().unwrap_err();
+    assert!(!error.to_string().contains("AVISO_BASE_URL"), "got {error}");
+    assert!(error.to_string().contains("config file"), "got {error}");
     Ok(())
 }

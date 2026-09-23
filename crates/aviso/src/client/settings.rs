@@ -66,6 +66,16 @@ pub struct ClientSettings {
     pub ca_bundle: Vec<PathBuf>,
     /// Whether to skip TLS certificate validation. Off unless the file says so.
     pub danger_accept_invalid_certs: bool,
+    /// Which `tls:` keys the file wrote out, so a report can attribute an
+    /// empty list or an explicit `false` to the file rather than the default.
+    pub(crate) explicit: Explicit,
+}
+
+/// Which optional keys were present in the file.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Explicit {
+    pub(crate) ca_bundle: bool,
+    pub(crate) danger_accept_invalid_certs: bool,
 }
 
 impl ClientSettings {
@@ -165,13 +175,19 @@ impl ClientSettings {
             heartbeat_interval: doc.heartbeat_interval,
             ca_bundle: tls
                 .ca_bundle
+                .clone()
+                .unwrap_or_default()
                 .into_iter()
                 .map(|p| match base_dir {
                     Some(dir) if p.is_relative() => dir.join(p),
                     _ => p,
                 })
                 .collect(),
-            danger_accept_invalid_certs: tls.danger_accept_invalid_certs,
+            danger_accept_invalid_certs: tls.danger_accept_invalid_certs.unwrap_or(false),
+            explicit: Explicit {
+                ca_bundle: tls.ca_bundle.is_some(),
+                danger_accept_invalid_certs: tls.danger_accept_invalid_certs.is_some(),
+            },
         })
     }
 }
@@ -241,9 +257,9 @@ struct Doc {
 #[serde(deny_unknown_fields)]
 struct TlsDoc {
     #[serde(default)]
-    ca_bundle: Vec<PathBuf>,
+    ca_bundle: Option<Vec<PathBuf>>,
     #[serde(default)]
-    danger_accept_invalid_certs: bool,
+    danger_accept_invalid_certs: Option<bool>,
 }
 
 #[cfg(test)]

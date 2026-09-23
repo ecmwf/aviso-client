@@ -22,6 +22,7 @@ import pathlib
 import pyaviso
 import pytest
 from pytest_httpserver import HTTPServer
+from werkzeug.wrappers import Request, Response
 
 
 def write_config(
@@ -204,3 +205,30 @@ def test_a_half_set_environment_is_an_auth_error_even_for_the_report(
     monkeypatch.setenv("AVISO_USERNAME", "alice")
     with pytest.raises(pyaviso.AuthError):
         pyaviso.resolve_config()
+
+
+def test_a_credential_named_in_code_is_the_one_the_client_sends(
+    httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    write_config(
+        monkeypatch,
+        tmp_path,
+        f"base_url: {httpserver.url_for('/')}\nauth:\n  bearer_token: from-file\n",
+    )
+    seen: list[str | None] = []
+
+    def handler(request: Request) -> Response:
+        seen.append(request.headers.get("Authorization"))
+        body = '{"status": "success", "schema": {}, "event_types": [], "total_schemas": 0}'
+        return Response(body, content_type="application/json")
+
+    httpserver.expect_request("/api/v1/schema").respond_with_handler(handler)
+
+    client = pyaviso.AvisoClient(auth=pyaviso.Bearer("named-in-code"))
+    client.schema()
+
+    assert client.config.auth is not None
+    assert client.config.auth.kind == "bearer"
+    assert client.config.auth.source == "code"
+    assert "named-in-code" not in repr(client.config)
+    assert seen == ["Bearer named-in-code"]
