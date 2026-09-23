@@ -128,6 +128,10 @@ enum Opener {
 struct Level {
     context: Context,
     opener: Opener,
+    /// Whether the word this level was opened in was the command word of
+    /// the level outside, restored when this level closes so `$(x)` at
+    /// the start of a command still leaves what follows as its name.
+    outer_command_word: bool,
 }
 
 impl ShellTracker {
@@ -136,6 +140,7 @@ impl ShellTracker {
             levels: vec![Level {
                 context: Context::Bare,
                 opener: Opener::None,
+                outer_command_word: false,
             }],
             word_start: true,
             word: String::new(),
@@ -161,10 +166,24 @@ impl ShellTracker {
         self.levels.push(Level {
             context: Context::Bare,
             opener,
+            outer_command_word: self.command_word,
         });
         self.word_start = true;
         self.word.clear();
         self.command_word = opener != Opener::Brace;
+    }
+
+    /// Closes the innermost level, if it is not the outer command, and
+    /// restores whether the word it sat in names the command.
+    fn close_level(&mut self) -> Option<Level> {
+        if self.levels.len() <= 1 {
+            return None;
+        }
+        let closed = self.levels.pop();
+        if let Some(level) = closed {
+            self.command_word = level.outer_command_word;
+        }
+        closed
     }
 
     fn opener(&self) -> Opener {
@@ -375,9 +394,8 @@ impl ShellTracker {
                 // Inside `${ }` only the closing brace matters; the word
                 // around the expansion continues after it.
                 if c == '}' {
-                    self.levels.pop();
+                    self.close_level();
                     self.word_start = false;
-                    self.command_word = false;
                 }
             }
             '(' => {
@@ -386,15 +404,14 @@ impl ShellTracker {
             }
             ')' => {
                 self.end_word(true);
-                let closed = if self.levels.len() > 1 {
-                    self.levels.pop()
-                } else {
-                    None
-                };
-                // The `)` of a group ends a word; the `)` of a `$( )`
-                // continues the word around the substitution.
+                let closed = self.close_level();
+                // The `)` of a group ends a word and the next word starts
+                // a command; the `)` of a `$( )` continues the word around
+                // the substitution, which keeps whatever role it had.
                 self.word_start = closed.is_none_or(|level| level.opener == Opener::Group);
-                self.command_word = self.word_start;
+                if self.word_start {
+                    self.command_word = true;
+                }
             }
             ' ' | '\t' => {
                 self.end_word(false);
