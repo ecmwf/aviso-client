@@ -253,3 +253,22 @@ async fn a_value_after_a_here_document_is_refused_rather_than_guessed() {
     assert_eq!(field, "a here-document");
     assert!(!marker.exists());
 }
+
+#[tokio::test]
+async fn a_value_right_after_a_dollar_is_refused() {
+    // `"${{ v }}"` with a value of `(touch x)` would be `"$(touch x)"`.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("injected");
+    let mut n = hostile_notification(&marker);
+    n.payload = serde_json::json!({ "v": format!("(touch {})", marker.display()) });
+    let cfg = build_command_config("printf '%s' \"${{ notification.payload.v }}\"");
+    let result = dispatch_command(&cfg, None, &n).await;
+    let Err(crate::watch::TriggerError::Template { kind, .. }) = result else {
+        unreachable!("expected a template error, got {result:?}");
+    };
+    assert_eq!(
+        kind,
+        crate::watch::TemplateErrorKind::ValueAfterUnsupportedShellSyntax
+    );
+    assert!(!marker.exists(), "the joined $( ran");
+}

@@ -382,6 +382,28 @@ fn url_sink_percent_encodes_values() {
 }
 
 #[test]
+fn shell_sink_refuses_a_value_right_after_a_dollar() {
+    let n = make_notification();
+    for template in [
+        "printf '%s' \"${{ notification.event_type }}\"",
+        "printf '%s' ${{ notification.event_type }}",
+    ] {
+        let err = compile(template)
+            .unwrap()
+            .render(&n, Sink::Shell)
+            .unwrap_err();
+        assert_eq!(
+            err.kind,
+            TemplateErrorKind::ValueAfterUnsupportedShellSyntax,
+            "{template}"
+        );
+        assert_eq!(err.field, "a `$` right before the placeholder");
+    }
+    let ok = compile("printf '%s' '${{ notification.event_type }}'").unwrap();
+    assert_eq!(ok.render(&n, Sink::Shell).unwrap(), "printf '%s' '$mars'");
+}
+
+#[test]
 fn shell_sink_refuses_a_value_after_syntax_the_tracker_does_not_follow() {
     let n = make_notification();
     let refuse = |template: &str| {

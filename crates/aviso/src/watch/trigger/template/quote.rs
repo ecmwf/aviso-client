@@ -81,6 +81,10 @@ pub(super) struct ShellTracker {
     /// True when the last piece ended with a backslash that escapes
     /// whatever comes next, which the tracker has not seen yet.
     pending_escape: bool,
+    /// True when the last piece ended with an unescaped `$` outside
+    /// single quotes, which would start an expansion if the next piece
+    /// began with `(`.
+    pending_dollar: bool,
     /// The first construct seen that the tracker does not follow. From
     /// that point its state may not match the shell's, so the engine
     /// refuses to place a notification value.
@@ -93,6 +97,7 @@ impl ShellTracker {
             levels: vec![Context::Bare],
             word_start: true,
             pending_escape: false,
+            pending_dollar: false,
             unsupported: None,
         }
     }
@@ -107,12 +112,16 @@ impl ShellTracker {
         }
     }
 
-    /// Names the construct after which the tracker no longer follows the
-    /// shell, if one has been seen: a here-document (`<<`), arithmetic
-    /// expansion (`$((`), or backticks. The shell reads text inside these
-    /// by rules the tracker does not model, and its state afterwards can
-    /// differ from the tracker's.
+    /// Names why a notification value cannot be placed here, if it
+    /// cannot: a here-document (`<<`), arithmetic expansion (`$((`) or
+    /// backticks seen earlier, which the tracker does not follow and
+    /// after which its state can differ from the shell's; or a `$`
+    /// immediately before the value, which would join with a value that
+    /// starts with `(` into a substitution.
     pub(super) fn unsupported(&self) -> Option<&'static str> {
+        if self.pending_dollar && self.context() != Context::SingleQuoted {
+            return Some("a `$` right before the placeholder");
+        }
         self.unsupported
     }
 
@@ -141,6 +150,20 @@ impl ShellTracker {
                 self.word_start = false;
             }
         }
+        if self.pending_dollar {
+            // The previous piece ended with `$`. If this one opens a
+            // substitution the `$` belongs to it; otherwise it was a
+            // literal dollar sign.
+            self.pending_dollar = false;
+            if chars.peek() == Some(&'(') {
+                chars.next();
+                if chars.peek() == Some(&'(') {
+                    self.unsupported.get_or_insert("arithmetic expansion");
+                } else {
+                    self.open_substitution();
+                }
+            }
+        }
         while let Some(c) = chars.next() {
             match self.context() {
                 Context::Comment => {
@@ -162,6 +185,7 @@ impl ShellTracker {
                         self.word_start = false;
                     }
                     '\\' => self.pending_escape = chars.next().is_none(),
+                    '$' if chars.peek().is_none() => self.pending_dollar = true,
                     '$' if chars.peek() == Some(&'(') => {
                         chars.next();
                         if chars.peek() == Some(&'(') {
@@ -198,6 +222,7 @@ impl ShellTracker {
                     Some(_) => false,
                 };
             }
+            '$' if chars.peek().is_none() => self.pending_dollar = true,
             '$' if chars.peek() == Some(&'(') => {
                 chars.next();
                 if chars.peek() == Some(&'(') {
@@ -438,6 +463,43 @@ mod tests {
         tracker.advance("echo foo\\");
         tracker.advance("\n#don't");
         assert_eq!(tracker.context(), Context::SingleQuoted);
+    }
+
+    #[test]
+    fn a_trailing_dollar_cannot_join_the_value_into_an_expansion() {
+        // `"${{ v }}"` with a value of `(touch x)` would render
+        // `"$(touch x)"`, so a value right after a `$` is refused.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("printf '%s' \"$");
+        assert_eq!(
+            tracker.unsupported(),
+            Some("a `$` right before the placeholder")
+        );
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        assert_eq!(
+            tracker.unsupported(),
+            Some("a `$` right before the placeholder")
+        );
+        // Inside single quotes a `$` is literal and the value is fine.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run '$");
+        assert_eq!(tracker.unsupported(), None);
+        // Once more text follows, the `$` was a literal dollar sign.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        tracker.advance("x ");
+        assert_eq!(tracker.unsupported(), None);
+
+        // An env value that does open a substitution is followed as one.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        tracker.advance("(printf '%s' 'a\"b')# don't");
+        assert_eq!(tracker.context(), Context::SingleQuoted);
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        tracker.advance("((1))");
+        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
     }
 
     #[test]

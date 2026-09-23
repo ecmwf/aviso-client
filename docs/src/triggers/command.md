@@ -58,9 +58,9 @@ This holds when the placeholder is part of a command word: bare, inside single
 quotes, inside double quotes, or inside `$( )`, nested or not. Three shell
 constructs are read by rules the engine does not follow: here-documents (`<<`),
 arithmetic expansion (`$(( ))`) and backticks. A `{{ notification.* }}`
-placeholder that comes after one of those in the command is refused at dispatch
-with a `ValueAfterUnsupportedShellSyntax` template error naming the construct,
-rather than quoted on a guess. Placeholders before it are fine, and so are
+placeholder that comes after one of those in the command, or directly after a
+`$`, is refused at dispatch with a `ValueAfterUnsupportedShellSyntax` template
+error naming the reason, rather than quoted on a guess. Placeholders before it are fine, and so are
 `{{ env.* }}` values anywhere. In such a command reach the notification through
 the `AVISO_*` environment variables below, with the usual double quotes around
 them.
