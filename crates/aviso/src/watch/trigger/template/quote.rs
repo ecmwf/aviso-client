@@ -67,10 +67,36 @@ enum Context {
     Comment,
 }
 
+/// The start of a token that needs one more character to be recognised.
+/// Kept across pieces, so the two halves may arrive separately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Token {
+    None,
+    /// `$`: a following `(` opens a substitution.
+    Dollar,
+    /// `$(`: a following `(` makes it arithmetic expansion instead.
+    DollarParen,
+    /// `<`: a following `<` starts a here-document.
+    Less,
+}
+
+/// What the tracker is waiting for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pending {
+    Token(Token),
+    /// A backslash that escapes whatever comes next. If that is a
+    /// newline the pair vanishes and the interrupted token resumes.
+    Escape(Token),
+}
+
 /// Follows a command string the way `sh` reads it.
 ///
-/// Every `$(` opens a fresh command with its own quoting state, so the
-/// states form a stack; the innermost is the one a value lands in.
+/// The shell removes every unquoted backslash-newline pair before it
+/// looks for tokens, so the tracker does the same: such a pair is
+/// skipped wherever it appears, including across pieces, and the
+/// characters on either side are treated as adjacent. Every `$(` opens
+/// a fresh command with its own quoting state, so the states form a
+/// stack; the innermost is the one a value lands in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ShellTracker {
     /// One entry per open `$(`, plus the outer command at the bottom.
@@ -78,13 +104,8 @@ pub(super) struct ShellTracker {
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
-    /// True when the last piece ended with a backslash that escapes
-    /// whatever comes next, which the tracker has not seen yet.
-    pending_escape: bool,
-    /// True when the last piece ended with an unescaped `$` outside
-    /// single quotes, which would start an expansion if the next piece
-    /// began with `(`.
-    pending_dollar: bool,
+    /// A token started but not finished, waiting for the next character.
+    pending: Pending,
     /// The first construct seen that the tracker does not follow. From
     /// that point its state may not match the shell's, so the engine
     /// refuses to place a notification value.
@@ -96,8 +117,7 @@ impl ShellTracker {
         Self {
             levels: vec![Context::Bare],
             word_start: true,
-            pending_escape: false,
-            pending_dollar: false,
+            pending: Pending::Token(Token::None),
             unsupported: None,
         }
     }
@@ -112,14 +132,23 @@ impl ShellTracker {
         }
     }
 
+    fn flag(&mut self, construct: &'static str) {
+        self.unsupported.get_or_insert(construct);
+    }
+
     /// Names why a notification value cannot be placed here, if it
     /// cannot: a here-document (`<<`), arithmetic expansion (`$((`) or
     /// backticks seen earlier, which the tracker does not follow and
-    /// after which its state can differ from the shell's; or a `$`
-    /// immediately before the value, which would join with a value that
-    /// starts with `(` into a substitution.
+    /// after which its state can differ from the shell's; or a `$` or
+    /// `$(` immediately before the value, which the value's first
+    /// character would complete into an expansion.
     pub(super) fn unsupported(&self) -> Option<&'static str> {
-        if self.pending_dollar && self.context() != Context::SingleQuoted {
+        if matches!(
+            self.pending,
+            Pending::Token(Token::Dollar | Token::DollarParen)
+                | Pending::Escape(Token::Dollar | Token::DollarParen)
+        ) && self.context() != Context::SingleQuoted
+        {
             return Some("a `$` right before the placeholder");
         }
         self.unsupported
@@ -137,126 +166,93 @@ impl ShellTracker {
     /// validated: an unbalanced quote leaves the state open, as it would
     /// for the shell.
     pub(super) fn advance(&mut self, text: &str) {
-        let mut chars = text.chars().peekable();
-        if self.pending_escape
-            && let Some(first) = chars.next()
-        {
-            // The first character of this piece is the one the previous
-            // piece's trailing backslash escapes. A backslash-newline pair
-            // is removed by the shell and leaves the word state as it
-            // was; any other escaped character is part of the word.
-            self.pending_escape = false;
-            if first != '\n' {
-                self.word_start = false;
-            }
-        }
-        if self.pending_dollar {
-            // The previous piece ended with `$`. If this one opens a
-            // substitution, whether `$(` or `$((` is decided by text the
-            // tracker has to piece together across a boundary; it does
-            // not try. Otherwise it was a literal dollar sign.
-            self.pending_dollar = false;
-            if chars.peek() == Some(&'(') {
-                self.unsupported
-                    .get_or_insert("a substitution opened across template pieces");
-            }
-        }
-        while let Some(c) = chars.next() {
-            match self.context() {
-                Context::Comment => {
-                    if c == '\n' {
-                        self.set_context(Context::Bare);
-                        self.word_start = true;
-                    }
-                }
-                Context::Bare => self.advance_bare(c, &mut chars),
-                Context::SingleQuoted => {
-                    if c == '\'' {
-                        self.set_context(Context::Bare);
-                        self.word_start = false;
-                    }
-                }
-                Context::DoubleQuoted => match c {
-                    '"' => {
-                        self.set_context(Context::Bare);
-                        self.word_start = false;
-                    }
-                    '\\' => self.pending_escape = chars.next().is_none(),
-                    '$' if chars.peek().is_none() => self.pending_dollar = true,
-                    '$' if chars.peek() == Some(&'(') => {
-                        chars.next();
-                        self.open_substitution_or_flag(chars.peek().copied());
-                    }
-                    '`' => {
-                        self.unsupported.get_or_insert("backticks");
-                    }
-                    _ => {}
-                },
-            }
+        for c in text.chars() {
+            self.step(c);
         }
     }
 
-    fn advance_bare(&mut self, c: char, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
-        let mut word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(');
+    fn step(&mut self, c: char) {
+        // Inside single quotes and comments nothing is special except
+        // the character that ends them.
+        match self.context() {
+            Context::SingleQuoted => {
+                if c == '\'' {
+                    self.set_context(Context::Bare);
+                    self.word_start = false;
+                }
+                return;
+            }
+            Context::Comment => {
+                if c == '\n' {
+                    self.set_context(Context::Bare);
+                    self.word_start = true;
+                }
+                return;
+            }
+            Context::Bare | Context::DoubleQuoted => {}
+        }
+
+        // Finish a token that was waiting for this character.
+        let token = match std::mem::replace(&mut self.pending, Pending::Token(Token::None)) {
+            Pending::Escape(interrupted) => {
+                if c == '\n' {
+                    // A backslash-newline pair is removed by the shell
+                    // and leaves everything as it was, including a token
+                    // that was half read when the backslash came.
+                    self.pending = Pending::Token(interrupted);
+                } else {
+                    // Any other escaped character is an ordinary part of
+                    // the current word.
+                    self.word_start = false;
+                }
+                return;
+            }
+            Pending::Token(token) => token,
+        };
+        if c == '\\' {
+            self.pending = Pending::Escape(token);
+            return;
+        }
+        match token {
+            Token::Dollar if c == '(' => {
+                self.pending = Pending::Token(Token::DollarParen);
+                return;
+            }
+            Token::DollarParen if c == '(' => {
+                self.flag("arithmetic expansion");
+                return;
+            }
+            Token::DollarParen => {
+                self.levels.push(Context::Bare);
+                self.word_start = true;
+                // `c` is the first character inside the substitution.
+            }
+            Token::Less if c == '<' => {
+                self.flag("a here-document");
+                return;
+            }
+            Token::None | Token::Dollar | Token::Less => {}
+        }
+
         match c {
+            '$' => self.pending = Pending::Token(Token::Dollar),
+            '`' => self.flag("backticks"),
+            _ if self.context() == Context::DoubleQuoted => {
+                if c == '"' {
+                    self.set_context(Context::Bare);
+                    self.word_start = false;
+                }
+            }
             '#' if self.word_start => self.set_context(Context::Comment),
             '\'' => self.set_context(Context::SingleQuoted),
             '"' => self.set_context(Context::DoubleQuoted),
-            '\\' => {
-                // A backslash-newline pair is removed by the shell, so the
-                // word state carries over from before it. Any other
-                // escaped character is part of the current word. A
-                // backslash at the very end escapes the next piece's
-                // first character, which decides then.
-                let escaped = chars.next();
-                self.pending_escape = escaped.is_none();
-                word_start = match escaped {
-                    Some('\n') | None => self.word_start,
-                    Some(_) => false,
-                };
-            }
-            '$' if chars.peek().is_none() => self.pending_dollar = true,
-            '$' if chars.peek() == Some(&'(') => {
-                chars.next();
-                word_start = self.open_substitution_or_flag(chars.peek().copied());
-            }
-            '`' => {
-                self.unsupported.get_or_insert("backticks");
-            }
-            '<' if chars.peek() == Some(&'<') => {
-                self.unsupported.get_or_insert("a here-document");
-            }
+            '<' => self.pending = Pending::Token(Token::Less),
             ')' if self.levels.len() > 1 => {
                 // Closes a `$(`: the surrounding word continues.
                 self.levels.pop();
+                self.word_start = false;
             }
-            ')' => word_start = true,
-            _ => {}
-        }
-        self.word_start = self.context() == Context::Bare && word_start;
-    }
-
-    /// Handles the text right after `$(`. A second `(` is arithmetic
-    /// expansion, which is not followed. No character at all means the
-    /// piece ended there and the next one decides, which the tracker does
-    /// not follow either. Anything else opens a command substitution and
-    /// returns true.
-    fn open_substitution_or_flag(&mut self, after: Option<char>) -> bool {
-        match after {
-            Some('(') => {
-                self.unsupported.get_or_insert("arithmetic expansion");
-                false
-            }
-            None => {
-                self.unsupported
-                    .get_or_insert("a substitution opened across template pieces");
-                false
-            }
-            Some(_) => {
-                self.levels.push(Context::Bare);
-                self.word_start = true;
-                true
-            }
+            _ => self.word_start = matches!(c, ' ' | '\t' | '\n' | ';' | '&' | '|' | '(' | ')'),
         }
     }
 
@@ -269,7 +265,7 @@ impl ShellTracker {
     /// written.
     pub(super) fn quote(&self, value: &str) -> String {
         let quoted = self.quote_in_context(value);
-        if self.pending_escape && self.context() != Context::SingleQuoted {
+        if matches!(self.pending, Pending::Escape(_)) && self.context() != Context::SingleQuoted {
             format!("\n{quoted}")
         } else {
             quoted
@@ -445,12 +441,12 @@ mod tests {
         // read bare by the shell.
         let mut tracker = ShellTracker::new();
         tracker.advance("run C:\\dir\\");
-        assert!(tracker.pending_escape);
+        assert_eq!(tracker.pending, Pending::Escape(Token::None));
         let quoted = tracker.quote("a'b$(x)");
         assert_eq!(quoted, "\n'a'\\''b$(x)'");
         tracker.advance(&quoted);
         assert_eq!(tracker.context(), Context::Bare);
-        assert!(!tracker.pending_escape);
+        assert_eq!(tracker.pending, Pending::Token(Token::None));
 
         let mut tracker = ShellTracker::new();
         tracker.advance("run \"x\\");
@@ -498,22 +494,30 @@ mod tests {
         tracker.advance("x ");
         assert_eq!(tracker.unsupported(), None);
 
-        // A substitution whose opening is split across pieces is not
-        // followed: the tracker cannot tell `$(` from `$((` there.
-        for (first, second) in [
-            ("run $", "(printf x)"),
-            ("run $", "((1))"),
-            ("run $(", "(1))"),
-        ] {
-            let mut tracker = ShellTracker::new();
-            tracker.advance(first);
-            tracker.advance(second);
-            assert_eq!(
-                tracker.unsupported(),
-                Some("a substitution opened across template pieces"),
-                "{first}{second}"
-            );
-        }
+        // A token split across pieces, or across a backslash-newline,
+        // is read the way the shell reads it: as one token.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        tracker.advance("(printf '%s' 'a\"b')# don't");
+        assert_eq!(tracker.context(), Context::SingleQuoted);
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $");
+        tracker.advance("((1))");
+        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run $(");
+        tracker.advance("(1))");
+        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
+        let mut tracker = ShellTracker::new();
+        tracker.advance("x=$\\\n(echo a)# don't");
+        assert_eq!(tracker.context(), Context::SingleQuoted);
+        let mut tracker = ShellTracker::new();
+        tracker.advance("cat <");
+        tracker.advance("<EOF\n");
+        assert_eq!(tracker.unsupported(), Some("a here-document"));
+        let mut tracker = ShellTracker::new();
+        tracker.advance("cat <\\\n<EOF\n");
+        assert_eq!(tracker.unsupported(), Some("a here-document"));
     }
 
     #[test]
