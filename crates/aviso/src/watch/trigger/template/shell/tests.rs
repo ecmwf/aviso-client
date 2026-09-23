@@ -255,11 +255,20 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
         "{ ",
         "A=1 B=2 ",
         "if ! ",
+        "command ",
+        "exec ",
+        "nohup ",
+        "env -i ",
+        "timeout 5 ",
+        "sudo ",
+        "xargs -0 ",
     ] {
         assert_eq!(refused(prefix), Some("the command word"), "{prefix:?}");
     }
     assert_eq!(refused("MODE=prod run "), None);
     assert_eq!(refused("if run "), None);
+    assert_eq!(refused("exec run "), None);
+    assert_eq!(refused("timeout 5 run "), None);
     // An expansion at the start of a command is still part of its name.
     assert_eq!(refused("$(true)"), Some("the command word"));
     assert_eq!(refused("${CMD}"), Some("the command word"));

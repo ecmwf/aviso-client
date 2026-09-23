@@ -223,12 +223,46 @@ impl ShellTracker {
 
     /// True for a first word after which the next word is still the
     /// command name: an assignment such as `MODE=prod`, the negation `!`,
-    /// and the reserved words that introduce a command.
+    /// the reserved words that introduce a command, and the utilities
+    /// that run their first argument (`command`, `exec`, `nohup`, `env`,
+    /// `nice`, `time`, `xargs`, `sudo`, `timeout`). Their options are
+    /// covered by the leading `-`, and their numeric arguments, such as
+    /// the seconds of `timeout`, by the leading digit. An option that
+    /// takes a separate value, such as `sudo -u name`, is not: that name
+    /// is taken for the command, and a value after it is accepted as an
+    /// argument. Operators pass the notification to such wrappers through
+    /// the `AVISO_*` variables, which the docs recommend for anything
+    /// beyond a plain command word.
     fn leaves_command_position_open(word: &str) -> bool {
         matches!(
             word,
-            "!" | "{" | "if" | "then" | "else" | "elif" | "while" | "until" | "do" | "time"
+            "!" | "{"
+                | "if"
+                | "then"
+                | "else"
+                | "elif"
+                | "while"
+                | "until"
+                | "do"
+                | "time"
+                | "command"
+                | "exec"
+                | "builtin"
+                | "eval"
+                | "nohup"
+                | "env"
+                | "nice"
+                | "xargs"
+                | "sudo"
+                | "doas"
+                | "timeout"
+                | "stdbuf"
+                | "setsid"
+                | "chroot"
+                | "flock"
+                | "watch"
         ) || word.contains('=')
+            || word.starts_with(|c: char| c == '-' || c.is_ascii_digit())
     }
 
     fn flag(&mut self, construct: &'static str) {
