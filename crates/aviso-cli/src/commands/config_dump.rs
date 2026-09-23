@@ -183,11 +183,11 @@ fn build_json_payload(resolved: &Resolved, redact: bool) -> serde_json::Value {
     })
 }
 
-/// The base URL as typed, minus any `user:password@`. The value may be
-/// unparseable (the dump shows configuration, it does not validate it),
-/// in which case it is shown as is.
+/// The base URL as typed, minus any `user:password@`. A value that does
+/// not parse is shown as a placeholder rather than echoed, since the part
+/// that made it unparseable may sit next to a password.
 fn display_base_url(url: &str) -> String {
-    url::Url::parse(url).map_or_else(|_| url.to_string(), |parsed| aviso::display_url(&parsed))
+    aviso::auth::url_without_userinfo(url)
 }
 
 fn source_label(source: Source) -> &'static str {

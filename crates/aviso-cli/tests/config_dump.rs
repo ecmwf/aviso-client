@@ -153,6 +153,17 @@ fn dump_does_not_show_credentials_embedded_in_the_base_url() {
         assert!(!stdout.contains("hunter2"), "got: {stdout}");
         assert!(!stdout.contains("operator"), "got: {stdout}");
     }
+
+    // A value that does not parse as a URL is not echoed either: the part
+    // that breaks it may sit right next to the password.
+    let cfg = write_config(dir.path(), "base_url: https://operator:hunter2@\n");
+    let assertion = aviso_with_config(&cfg)
+        .args(["config", "dump"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).into_owned();
+    assert!(stdout.contains("<unparseable url>"), "got: {stdout}");
+    assert!(!stdout.contains("hunter2"), "got: {stdout}");
 }
 
 #[test]
