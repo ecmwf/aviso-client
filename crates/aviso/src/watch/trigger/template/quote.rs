@@ -152,16 +152,13 @@ impl ShellTracker {
         }
         if self.pending_dollar {
             // The previous piece ended with `$`. If this one opens a
-            // substitution the `$` belongs to it; otherwise it was a
-            // literal dollar sign.
+            // substitution, whether `$(` or `$((` is decided by text the
+            // tracker has to piece together across a boundary; it does
+            // not try. Otherwise it was a literal dollar sign.
             self.pending_dollar = false;
             if chars.peek() == Some(&'(') {
-                chars.next();
-                if chars.peek() == Some(&'(') {
-                    self.unsupported.get_or_insert("arithmetic expansion");
-                } else {
-                    self.open_substitution();
-                }
+                self.unsupported
+                    .get_or_insert("a substitution opened across template pieces");
             }
         }
         while let Some(c) = chars.next() {
@@ -188,11 +185,7 @@ impl ShellTracker {
                     '$' if chars.peek().is_none() => self.pending_dollar = true,
                     '$' if chars.peek() == Some(&'(') => {
                         chars.next();
-                        if chars.peek() == Some(&'(') {
-                            self.unsupported.get_or_insert("arithmetic expansion");
-                        } else {
-                            self.open_substitution();
-                        }
+                        self.open_substitution_or_flag(chars.peek().copied());
                     }
                     '`' => {
                         self.unsupported.get_or_insert("backticks");
@@ -225,12 +218,7 @@ impl ShellTracker {
             '$' if chars.peek().is_none() => self.pending_dollar = true,
             '$' if chars.peek() == Some(&'(') => {
                 chars.next();
-                if chars.peek() == Some(&'(') {
-                    self.unsupported.get_or_insert("arithmetic expansion");
-                } else {
-                    self.open_substitution();
-                    word_start = true;
-                }
+                word_start = self.open_substitution_or_flag(chars.peek().copied());
             }
             '`' => {
                 self.unsupported.get_or_insert("backticks");
@@ -248,9 +236,28 @@ impl ShellTracker {
         self.word_start = self.context() == Context::Bare && word_start;
     }
 
-    fn open_substitution(&mut self) {
-        self.levels.push(Context::Bare);
-        self.word_start = true;
+    /// Handles the text right after `$(`. A second `(` is arithmetic
+    /// expansion, which is not followed. No character at all means the
+    /// piece ended there and the next one decides, which the tracker does
+    /// not follow either. Anything else opens a command substitution and
+    /// returns true.
+    fn open_substitution_or_flag(&mut self, after: Option<char>) -> bool {
+        match after {
+            Some('(') => {
+                self.unsupported.get_or_insert("arithmetic expansion");
+                false
+            }
+            None => {
+                self.unsupported
+                    .get_or_insert("a substitution opened across template pieces");
+                false
+            }
+            Some(_) => {
+                self.levels.push(Context::Bare);
+                self.word_start = true;
+                true
+            }
+        }
     }
 
     /// Returns `value` written so the shell reads it as literal text in
@@ -491,15 +498,22 @@ mod tests {
         tracker.advance("x ");
         assert_eq!(tracker.unsupported(), None);
 
-        // An env value that does open a substitution is followed as one.
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        tracker.advance("(printf '%s' 'a\"b')# don't");
-        assert_eq!(tracker.context(), Context::SingleQuoted);
-        let mut tracker = ShellTracker::new();
-        tracker.advance("run $");
-        tracker.advance("((1))");
-        assert_eq!(tracker.unsupported(), Some("arithmetic expansion"));
+        // A substitution whose opening is split across pieces is not
+        // followed: the tracker cannot tell `$(` from `$((` there.
+        for (first, second) in [
+            ("run $", "(printf x)"),
+            ("run $", "((1))"),
+            ("run $(", "(1))"),
+        ] {
+            let mut tracker = ShellTracker::new();
+            tracker.advance(first);
+            tracker.advance(second);
+            assert_eq!(
+                tracker.unsupported(),
+                Some("a substitution opened across template pieces"),
+                "{first}{second}"
+            );
+        }
     }
 
     #[test]
