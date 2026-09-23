@@ -304,6 +304,37 @@ async fn a_notification_completed_before_the_overflow_is_still_delivered() {
 }
 
 #[tokio::test]
+async fn an_overflow_before_the_stream_is_confirmed_is_reported() {
+    // The server never sends the frame that confirms the subscription;
+    // it sends an endless line instead. The watch must report the
+    // overflow rather than wait for a confirmation that cannot come.
+    let server = MockServer::start().await;
+    // Not `mount_sse_body`: that helper prepends the confirmation frame.
+    Mock::given(method("POST"))
+        .and(path("/api/v1/watch"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw("z".repeat(2 * 1024 * 1024), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server);
+    let stream = client.watch(WatchRequest::watch("mars")).unwrap();
+    let items = timeout(Duration::from_secs(5), collect_stream(stream))
+        .await
+        .expect("stream should terminate promptly, not wait for the opening deadline");
+
+    assert_eq!(items.len(), 1, "got: {items:?}");
+    match &items[0] {
+        Err(ClientError::StreamProtocol { message, .. }) => {
+            assert!(message.contains("without a terminator"), "got: {message}");
+        }
+        other => panic!("expected StreamProtocol, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn watch_gap_detection_on_sequence_jump_terminates_with_history_gap() {
     let server = MockServer::start().await;
     let (eos_event, eos_data) = end_of_stream();

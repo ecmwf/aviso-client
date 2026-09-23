@@ -248,7 +248,11 @@ pub(super) async fn run_one_connection(
                         "Aviso stream confirmed"
                     );
                 }
-                Ok(false) if !eof => continue,
+                // Keep reading unless the stream has ended or the parser
+                // has stopped on an overflow, in which case there is
+                // nothing more to wait for and the error below must be
+                // reported.
+                Ok(false) if !eof && overflow.is_none() => continue,
                 Ok(false) => {}
                 Err(error) => return ConnectionOutcome::Fatal(error),
             }
