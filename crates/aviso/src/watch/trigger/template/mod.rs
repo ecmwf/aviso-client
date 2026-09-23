@@ -27,7 +27,8 @@
 //! the text is a command, percent-encoded when the text is a URL, and
 //! verbatim when the caller builds its own encoding around the value
 //! (JSON bodies, header values). `{{ env.* }}` values are the
-//! operator's own and are always inserted verbatim. See [`quote`].
+//! operator's own and are always inserted verbatim. See [`shell`] and
+//! [`url`].
 //!
 //! # Resolution rules
 //!
@@ -58,11 +59,16 @@
 
 use crate::Notification;
 
-mod quote;
+mod error;
+mod shell;
 #[cfg(test)]
 mod tests;
+mod url;
 
-use quote::{ShellTracker, UrlTracker, percent_encode};
+pub use error::TemplateErrorKind;
+pub(crate) use error::{TemplateError, template_error_to_trigger_error};
+use shell::ShellTracker;
+use url::{UrlTracker, percent_encode};
 
 /// What the rendered text is used for, which decides how substituted
 /// notification values are neutralised.
@@ -76,69 +82,6 @@ pub(crate) enum Sink {
     Shell,
     /// The text is a URL. Each value is percent-encoded.
     Url,
-}
-
-/// Categorises a template-engine failure. Public because it appears as
-/// the `kind` field of [`crate::watch::TriggerError::Template`].
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TemplateErrorKind {
-    /// A `{{ notification.<path> }}` expression resolved to no value
-    /// (one of the path segments did not exist on the notification JSON).
-    Missing,
-    /// A `{{ env.<NAME> }}` expression's environment variable was not
-    /// set in the process environment.
-    EnvNotSet,
-    /// A `{{ env.<NAME> }}` expression's environment variable WAS set
-    /// but contained bytes that are not valid UTF-8. Distinct from
-    /// `EnvNotSet` because the operator's diagnosis differs: a
-    /// not-set variable means a misconfigured deployment, while a
-    /// not-unicode variable means the value itself needs fixing.
-    EnvNotUnicode,
-    /// The template source itself was malformed. The accompanying
-    /// `field` on [`crate::watch::TriggerError::Template`] names the
-    /// parse failure category, NOT a snippet of the raw template, so
-    /// it is safe to surface even when the template contains secrets.
-    BadSyntax,
-    /// A `{{ notification.<path> }}` expression sits in the scheme or
-    /// authority of a URL, where the value would choose the host the
-    /// request goes to. Notification values may only appear in the
-    /// path, query or fragment.
-    ValueInUrlAuthority,
-    /// A `{{ notification.<path> }}` expression in a command comes after
-    /// shell syntax the engine does not follow (a here-document,
-    /// arithmetic expansion or backticks), or directly after a `$`, so
-    /// it cannot tell how the shell would read the value there. The
-    /// `field` names the reason. Reach the notification through the `AVISO_*`
-    /// environment variables in such a command instead.
-    ValueAfterUnsupportedShellSyntax,
-    /// The notification could not be serialised to JSON. Practically
-    /// unreachable given the well-typed [`crate::Notification`]
-    /// shape (every field is a concrete scalar or `serde_json::Value`
-    /// that already round-trips through `serde_json::to_value`), but
-    /// kept as a distinct kind so the operator's diagnosis points at
-    /// the notification itself rather than chasing a missing-path
-    /// template bug.
-    NotificationEncode,
-}
-
-/// Crate-private carrier returned by the template engine. The raw
-/// template is retained for DEBUG-level tracing and never reaches the
-/// public [`crate::watch::TriggerError::Template`] variant.
-///
-/// `Clone` is required because [`CompiledTemplate`] is cloneable and
-/// dispatchers may store the compile result by value.
-#[derive(Debug, Clone)]
-pub(crate) struct TemplateError {
-    /// The original template source. Useful for DEBUG logging; not
-    /// surfaced in public errors.
-    pub raw_template: String,
-    /// What failed: a JSON path (`"notification.payload.target"`), an
-    /// env-var name (`"SLACK_TOKEN"`), or a safe static label for
-    /// `BadSyntax` (`"unclosed_braces"`, `"empty_path_segment"`, etc.).
-    pub field: String,
-    /// Categorisation of the failure.
-    pub kind: TemplateErrorKind,
 }
 
 /// A template parsed into segments and ready to render. Constructed via
@@ -487,32 +430,5 @@ fn render_value(value: &serde_json::Value) -> String {
         // thing. Numbers and bools have no quotes; objects and arrays
         // serialise as compact JSON.
         other => other.to_string(),
-    }
-}
-
-/// Converts the crate-private [`TemplateError`] to the public
-/// [`crate::watch::TriggerError::Template`] variant.
-///
-/// The `context` is a SAFE static label set by the dispatch boundary
-/// (`"command"`, `"webhook url"`, etc.), NOT the raw template text.
-/// The raw template is emitted at DEBUG level for operators who
-/// control the logging sink, but never reaches the public error.
-pub(crate) fn template_error_to_trigger_error(
-    e: TemplateError,
-    context: impl Into<String>,
-) -> crate::watch::TriggerError {
-    let context_str = context.into();
-    tracing::debug!(
-        event.name = "client.trigger.template.render_failed",
-        context = %context_str,
-        raw_template = %e.raw_template,
-        field = %e.field,
-        kind = ?e.kind,
-        "template render failed (raw template suppressed from public error)"
-    );
-    crate::watch::TriggerError::Template {
-        context: context_str,
-        field: e.field,
-        kind: e.kind,
     }
 }

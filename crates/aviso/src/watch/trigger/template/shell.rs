@@ -6,16 +6,12 @@
 // granted to it by virtue of its status as an intergovernmental organisation nor
 // does it submit to any jurisdiction.
 
-//! Neutralises substituted notification values for the text they land in.
+//! Neutralises notification values for a `/bin/sh -c` command.
 //!
 //! A notification's identifier and payload are written by whoever
 //! published it, which is a different principal from the operator who
 //! wrote the trigger template. When the rendered text is handed to a
-//! shell or used as a URL, a value containing metacharacters must stay
-//! data. This module provides the two neutralisers the template engine
-//! applies per [`super::Sink`].
-//!
-//! # Shell
+//! shell, a value containing metacharacters must stay data.
 //!
 //! Which characters the shell treats specially depends on where the
 //! value lands. [`ShellTracker`] reads the rendered text as it is
@@ -44,15 +40,6 @@
 //! engine refuses to place a notification value after that point rather
 //! than guess; the operator reaches the notification through the
 //! `AVISO_*` variables there instead.
-//!
-//! # URL
-//!
-//! [`percent_encode`] keeps RFC 3986 unreserved characters and encodes
-//! every other byte, so a value cannot add path segments or query
-//! parameters. Encoding cannot stop a value from being the host when the
-//! operator put the placeholder there, so [`UrlTracker`] follows the
-//! rendered text and reports whether the path has started; the engine
-//! refuses a notification value before that point.
 
 /// The shell's quoting state at one level of command substitution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,68 +280,6 @@ impl ShellTracker {
     }
 }
 
-/// Which part of a URL the rendered text has reached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct UrlTracker {
-    seen_scheme_separator: bool,
-    in_path: bool,
-}
-
-impl UrlTracker {
-    pub(super) fn new() -> Self {
-        Self {
-            seen_scheme_separator: false,
-            in_path: false,
-        }
-    }
-
-    /// Reads a piece of the rendered URL. The authority runs from `://`
-    /// to the first `/`, `?` or `#`; everything after that is path,
-    /// query or fragment.
-    ///
-    /// Valid: `https://h` ends in the authority; `https://h/` and
-    /// `https://h?q` have reached the path.
-    pub(super) fn advance(&mut self, text: &str) {
-        let bytes = text.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() && !self.in_path {
-            if self.seen_scheme_separator {
-                self.in_path = matches!(bytes[i], b'/' | b'?' | b'#');
-                i += 1;
-            } else if bytes[i..].starts_with(b"://") {
-                self.seen_scheme_separator = true;
-                i += 3;
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    /// True once the scheme and authority are behind us.
-    pub(super) fn in_path(self) -> bool {
-        self.in_path
-    }
-}
-
-/// Percent-encodes every byte of `value` except the RFC 3986 unreserved
-/// set (`A-Z a-z 0-9 - . _ ~`).
-///
-/// Valid: `mars` stays `mars`; `a/b?c=1` becomes `a%2Fb%3Fc%3D1`.
-pub(super) fn percent_encode(value: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            out.push(char::from(byte));
-        } else {
-            out.push('%');
-            out.push(char::from(HEX[usize::from(byte >> 4)]));
-            out.push(char::from(HEX[usize::from(byte & 0x0F)]));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -544,35 +469,5 @@ mod tests {
         assert_eq!(tracker.quote("mars"), "mars");
         tracker.advance("' \"");
         assert_eq!(tracker.quote("20260101"), "20260101");
-    }
-
-    #[test]
-    fn url_tracker_knows_when_the_path_starts() {
-        let reached = |text: &str| {
-            let mut tracker = UrlTracker::new();
-            tracker.advance(text);
-            tracker.in_path()
-        };
-        assert!(!reached(""));
-        assert!(!reached("https://"));
-        assert!(!reached("https://hooks.example"));
-        assert!(!reached("https://user:pw@hooks.example:8443"));
-        assert!(reached("https://hooks.example/"));
-        assert!(reached("https://hooks.example?q=1"));
-        assert!(reached("https://hooks.example#f"));
-        // Pieces arrive one at a time, an env value among them.
-        let mut tracker = UrlTracker::new();
-        tracker.advance("https://hooks.example");
-        assert!(!tracker.in_path());
-        tracker.advance("/notify/");
-        assert!(tracker.in_path());
-    }
-
-    #[test]
-    fn percent_encode_keeps_unreserved_and_encodes_the_rest() {
-        assert_eq!(percent_encode("mars-2.0_x~"), "mars-2.0_x~");
-        assert_eq!(percent_encode("a/b?c=1&d"), "a%2Fb%3Fc%3D1%26d");
-        assert_eq!(percent_encode("{\"a\":1}"), "%7B%22a%22%3A1%7D");
-        assert_eq!(percent_encode("é"), "%C3%A9");
     }
 }
