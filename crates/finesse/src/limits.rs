@@ -12,7 +12,7 @@
 //! bytes until a line terminator or a blank line arrives. Without a
 //! bound, a server that never sends one makes the parser grow without
 //! limit. The bounds here sit above the largest message the server's
-//! store will pass on (a NATS JetStream message is 1 MiB by default and
+//! store will pass on (a NATS `JetStream` message is 1 MiB by default and
 //! 64 MiB at most), so a notification the server could deliver, a large
 //! polygon included, is never refused, and a stream that does exceed
 //! them is reported as an [`Overflow`] rather than kept, from `feed` or,
