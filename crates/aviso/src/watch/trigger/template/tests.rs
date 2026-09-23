@@ -351,6 +351,26 @@ fn shell_sink_quotes_each_value_for_the_context_it_lands_in() {
 }
 
 #[test]
+fn shell_sink_spends_a_trailing_backslash_from_an_env_value() {
+    let mut identifier = BTreeMap::new();
+    identifier.insert("country".to_string(), serde_json::json!("a; touch x"));
+    let n = Notification {
+        event_type: "mars".to_string(),
+        sequence: 1,
+        identifier,
+        payload: serde_json::json!({}),
+        cloudevent: None,
+    };
+    let t = compile("run {{ env.PREFIX }}{{ notification.identifier.country }}").unwrap();
+    let out = t
+        .render_with_env(&n, |_| Ok("C:\\dir\\".to_string()), Sink::Shell)
+        .unwrap();
+    // The backslash-newline pair is removed by sh, so `run` receives one
+    // argument: the prefix followed by the value.
+    assert_eq!(out, "run C:\\dir\\\n'a; touch x'");
+}
+
+#[test]
 fn url_sink_percent_encodes_values() {
     let t =
         compile("https://h/{{ notification.event_type }}?p={{ notification.payload }}").unwrap();

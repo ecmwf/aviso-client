@@ -74,6 +74,9 @@ pub(super) struct ShellTracker {
     /// How many `$(` are open. A `)` that closes one continues the
     /// surrounding word; a `)` outside any ends a word.
     substitution_depth: u32,
+    /// True when the last piece ended with a backslash that escapes
+    /// whatever comes next, which the tracker has not seen yet.
+    pending_escape: bool,
 }
 
 impl ShellTracker {
@@ -82,6 +85,7 @@ impl ShellTracker {
             context: Context::Bare,
             word_start: true,
             substitution_depth: 0,
+            pending_escape: false,
         }
     }
 
@@ -96,6 +100,12 @@ impl ShellTracker {
     /// quote leaves the state open, as it would for the shell.
     pub(super) fn advance(&mut self, text: &str) {
         let mut chars = text.chars();
+        if self.pending_escape && chars.next().is_some() {
+            // The first character of this piece is the one the previous
+            // piece's trailing backslash escapes.
+            self.pending_escape = false;
+            self.word_start = false;
+        }
         while let Some(c) = chars.next() {
             match self.context {
                 Context::Comment => {
@@ -114,8 +124,11 @@ impl ShellTracker {
                             // A backslash-newline pair is removed by the
                             // shell, so the word state carries over from
                             // before it. Any other escaped character is
-                            // part of the current word.
+                            // part of the current word. A backslash at the
+                            // very end escapes the next piece's first
+                            // character.
                             let escaped = chars.next();
+                            self.pending_escape = escaped.is_none();
                             word_start = escaped == Some('\n') && self.word_start;
                         }
                         '$' if chars.clone().next() == Some('(') => {
@@ -146,7 +159,7 @@ impl ShellTracker {
                         self.word_start = false;
                     }
                     '\\' => {
-                        chars.next();
+                        self.pending_escape = chars.next().is_none();
                     }
                     _ => {}
                 },
@@ -156,7 +169,21 @@ impl ShellTracker {
 
     /// Returns `value` written so the shell reads it as literal text in
     /// the current state.
+    ///
+    /// When the text so far ends with a backslash, the quoted value starts
+    /// with a newline: the shell removes a backslash-newline pair, so the
+    /// escape is spent on nothing and the quoting that follows is read as
+    /// written.
     pub(super) fn quote(self, value: &str) -> String {
+        let quoted = self.quote_in_context(value);
+        if self.pending_escape && self.context != Context::SingleQuoted {
+            format!("\n{quoted}")
+        } else {
+            quoted
+        }
+    }
+
+    fn quote_in_context(self, value: &str) -> String {
         match self.context {
             Context::Bare => format!("'{}'", value.replace('\'', "'\\''")),
             Context::SingleQuoted => value.replace('\'', "'\\''"),
@@ -297,6 +324,28 @@ mod tests {
         assert_eq!(tracker.context, Context::SingleQuoted);
         tracker.advance("' \"");
         tracker.advance(&tracker.quote("say \"hi\" $x"));
+        assert_eq!(tracker.context, Context::DoubleQuoted);
+    }
+
+    #[test]
+    fn a_trailing_backslash_is_spent_before_the_value() {
+        // An operator's env value ends with a backslash. Without care the
+        // opening quote of the next value would be escaped and the value
+        // read bare by the shell.
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run C:\\dir\\");
+        assert!(tracker.pending_escape);
+        let quoted = tracker.quote("a'b$(x)");
+        assert_eq!(quoted, "\n'a'\\''b$(x)'");
+        tracker.advance(&quoted);
+        assert_eq!(tracker.context, Context::Bare);
+        assert!(!tracker.pending_escape);
+
+        let mut tracker = ShellTracker::new();
+        tracker.advance("run \"x\\");
+        let quoted = tracker.quote("$(y)");
+        assert_eq!(quoted, "\n\\$(y)");
+        tracker.advance(&quoted);
         assert_eq!(tracker.context, Context::DoubleQuoted);
     }
 
