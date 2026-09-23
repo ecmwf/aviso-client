@@ -39,7 +39,9 @@
 //!
 //! The parser holds bytes until a line terminator or a blank line
 //! arrives, so it bounds how much it will hold: see [`Limits`]. A
-//! stream that exceeds a bound ends with an [`Overflow`] from `feed`.
+//! stream that exceeds a bound ends with an [`Overflow`] from `feed`, or
+//! from `end` when the line a held carriage return completes at
+//! end-of-stream is the one that crosses it. Check both.
 
 #![forbid(unsafe_code)]
 

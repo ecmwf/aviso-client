@@ -275,6 +275,9 @@ pub(super) async fn run_one_connection(
         )
         .await
         {
+            // A close frame queued in the same chunk as an overflow does
+            // not make the overflow routine: the fatal branch below wins.
+            Ok(DrainOutcome::Continue | DrainOutcome::ServerClosed) if overflow.is_some() => {}
             Ok(DrainOutcome::Continue) => {}
             Ok(DrainOutcome::ServerClosed) => return ConnectionOutcome::ServerClosed,
             Ok(DrainOutcome::StopRequested) => return ConnectionOutcome::Cancelled,
