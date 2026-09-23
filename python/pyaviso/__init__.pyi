@@ -220,19 +220,134 @@ class AsyncNotificationIterator:
         traceback: object | None,
     ) -> Awaitable[None]: ...
 
+class SourcedValue:
+    """One resolved setting: its value and where it came from.
+
+    ``source`` is one of ``code``, ``environment <NAME>``,
+    ``config file <path>``, ``credentials file <path>`` or ``default``.
+    """
+
+    @property
+    def value(self) -> Any: ...
+    @property
+    def source(self) -> str: ...
+
+class ResolvedAuth:
+    """The credential a client sends, described without the secret."""
+
+    @property
+    def kind(self) -> str:
+        """``bearer``, ``basic``, ``anonymous`` when the caller asked for
+        none, ``chain``, or a custom provider's name."""
+        ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def refused(self) -> str | None:
+        """Why the credential is not being sent, when it is not.
+
+        Set when a credential that was found rather than passed would go to
+        a plain ``http://`` address on a host that is not loopback. A client
+        built in that state raises ``AuthError``; this says why.
+        """
+        ...
+
+class ResolvedConfig:
+    """Everything a client's connection depends on, each with its source.
+
+    Returned by ``resolve_config()`` and ``client.config``. ``repr()`` lays it
+    out one setting per line and is written to be pasted into a ticket;
+    ``as_dict()`` gives the same as plain values for JSON logging. Nothing in
+    it is a secret.
+    """
+
+    @property
+    def base_url(self) -> SourcedValue | None:
+        """The address with credentials removed, or ``None`` if nothing set one."""
+        ...
+    @property
+    def timeout(self) -> SourcedValue:
+        """Seconds, or ``None`` for the library default."""
+        ...
+    @property
+    def heartbeat_interval(self) -> SourcedValue:
+        """Seconds, or ``None`` for the library default."""
+        ...
+    @property
+    def ca_bundle(self) -> SourcedValue:
+        """Extra CA bundle paths."""
+        ...
+    @property
+    def danger_accept_invalid_certs(self) -> SourcedValue: ...
+    @property
+    def auth(self) -> ResolvedAuth | None:
+        """The credential, or ``None`` when no source supplied one.
+
+        ``Anonymous()`` passed in code is reported as kind ``anonymous``
+        from ``code``, not as ``None``.
+        """
+        ...
+    @property
+    def config_file(self) -> str | None:
+        """The config file that was read, if one existed."""
+        ...
+    @property
+    def credentials_file(self) -> str | None:
+        """The credentials file that was consulted, if any."""
+        ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+def resolve_config(
+    *,
+    base_url: str | None = None,
+    auth: AuthProvider | Anonymous | None = None,
+    timeout: float | None = None,
+    heartbeat_interval: float | None = None,
+    danger_accept_invalid_certs: bool | None = None,
+) -> ResolvedConfig:
+    """Reports what a client built with these arguments would use, without
+    connecting.
+
+    The same arguments as ``AvisoClient()``, and the same order of
+    precedence: code, then the environment, then the config file, then the
+    default. Works even when a client could not be built, for example with
+    no address anywhere (``base_url`` is then ``None``) or with a found
+    credential that would be refused (``auth.refused`` says why). Raises
+    ``ConfigError`` when the config or credentials file exists but cannot be
+    read, and ``AuthError`` when a credential source is present but
+    unusable.
+    """
+    ...
+
 class AvisoClient:
     def __init__(
         self,
         *,
-        base_url: str,
+        base_url: str | None = None,
         auth: AuthProvider | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: StateStore | None = None,
         heartbeat_interval: float | None = None,
-        danger_accept_invalid_certs: bool = False,
-        flush_cursor_on_exit: bool = False,
-    ) -> None: ...
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> None:
+        """Builds a client.
+
+        Every argument is optional. What is not given is taken from the
+        environment, then the aviso config file, then the library default:
+        ``base_url`` from ``AVISO_BASE_URL`` or the file's ``base_url``;
+        ``auth`` from ``AVISO_TOKEN`` or ``AVISO_USERNAME`` with
+        ``AVISO_PASSWORD``, the file's ``auth:`` block, or the credentials
+        file; ``timeout``, ``heartbeat_interval`` and the TLS settings from
+        the file. ``config`` shows what was chosen and from where.
+
+        A credential that was found rather than passed is not sent to a
+        plain ``http://`` address unless it is loopback; ``AuthError`` is
+        raised instead. ``auth=Anonymous()`` sends none. With no address in
+        code, the environment or the file, ``ConfigError`` is raised.
+        """
+        ...
     @staticmethod
     def from_file(
         path: str | os.PathLike[str] | None = None,
@@ -259,7 +374,21 @@ class AvisoClient:
         """
         ...
     @property
-    def base_url(self) -> str: ...
+    def base_url(self) -> str:
+        """The base URL exactly as configured, ``user:password@`` included.
+
+        ``repr(client)`` and ``client.config`` show it without the
+        credentials, and are the forms to log.
+        """
+        ...
+    @property
+    def config(self) -> ResolvedConfig:
+        """The settings this client uses and where each came from.
+
+        Safe to log: the credential is described by kind and source, never
+        by value, and the address has any ``user:password@`` removed.
+        """
+        ...
     def notify(
         self,
         *,
@@ -300,15 +429,31 @@ class AsyncAvisoClient:
     def __init__(
         self,
         *,
-        base_url: str,
+        base_url: str | None = None,
         auth: AuthProvider | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: StateStore | None = None,
         heartbeat_interval: float | None = None,
-        danger_accept_invalid_certs: bool = False,
-        flush_cursor_on_exit: bool = False,
-    ) -> None: ...
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
+    ) -> None:
+        """Builds a client.
+
+        Every argument is optional. What is not given is taken from the
+        environment, then the aviso config file, then the library default:
+        ``base_url`` from ``AVISO_BASE_URL`` or the file's ``base_url``;
+        ``auth`` from ``AVISO_TOKEN`` or ``AVISO_USERNAME`` with
+        ``AVISO_PASSWORD``, the file's ``auth:`` block, or the credentials
+        file; ``timeout``, ``heartbeat_interval`` and the TLS settings from
+        the file. ``config`` shows what was chosen and from where.
+
+        A credential that was found rather than passed is not sent to a
+        plain ``http://`` address unless it is loopback; ``AuthError`` is
+        raised instead. ``auth=Anonymous()`` sends none. With no address in
+        code, the environment or the file, ``ConfigError`` is raised.
+        """
+        ...
     @staticmethod
     def from_file(
         path: str | os.PathLike[str] | None = None,
@@ -335,7 +480,21 @@ class AsyncAvisoClient:
         """
         ...
     @property
-    def base_url(self) -> str: ...
+    def base_url(self) -> str:
+        """The base URL exactly as configured, ``user:password@`` included.
+
+        ``repr(client)`` and ``client.config`` show it without the
+        credentials, and are the forms to log.
+        """
+        ...
+    @property
+    def config(self) -> ResolvedConfig:
+        """The settings this client uses and where each came from.
+
+        Safe to log: the credential is described by kind and source, never
+        by value, and the address has any ``user:password@`` removed.
+        """
+        ...
     def notify(
         self,
         *,
@@ -449,8 +608,11 @@ __all__ = [
     "NotificationIterator",
     "NotifyResponse",
     "NotifyResult",
+    "ResolvedAuth",
+    "ResolvedConfig",
     "SchemaCatalog",
     "SchemaResponse",
+    "SourcedValue",
     "StateStore",
     "StateStoreError",
     "StreamProtocolError",
@@ -460,4 +622,5 @@ __all__ = [
     "WatchMode",
     "WatchRequest",
     "__version__",
+    "resolve_config",
 ]

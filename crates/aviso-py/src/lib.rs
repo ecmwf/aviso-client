@@ -39,7 +39,9 @@ use pyo3_log::{Caching, Logger};
 
 mod auth;
 mod cli;
+mod client_args;
 mod clients;
+mod config;
 mod error;
 mod error_test_helper;
 mod paths;
@@ -108,6 +110,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     triggers::register_triggers(m)?;
     watch::register_watch(m)?;
     streams::register_streams(m)?;
+    config::register(m)?;
     clients::register_clients(m)?;
     cli::register_cli(m)?;
     m.add("VERSION", VERSION)?;
