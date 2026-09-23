@@ -265,6 +265,16 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     ] {
         assert_eq!(refused(prefix), Some("the command word"), "{prefix:?}");
     }
+    // Long names still count as assignments; the `=` is kept as a fact
+    // about the word, not found in its stored prefix.
+    assert_eq!(refused("VERY_LONG_NAME=prod "), Some("the command word"));
+    // A redirection operand does not take the command position, and a
+    // value anywhere in that word, not only at its start, is refused.
+    assert_eq!(refused("> /tmp/out "), Some("the command word"));
+    assert_eq!(refused("> /safe/"), Some("a redirection"));
+    assert_eq!(refused("2>/var/log/x."), Some("a redirection"));
+    // A comment ends the command; the next line starts a new one.
+    assert_eq!(refused("printf ok # note\n"), Some("the command word"));
     assert_eq!(refused("MODE=prod run "), None);
     assert_eq!(refused("if run "), None);
     assert_eq!(refused("exec run "), None);

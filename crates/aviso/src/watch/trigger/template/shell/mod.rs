@@ -42,42 +42,14 @@
 //! than guess; the operator reaches the notification through the
 //! `AVISO_*` variables there instead.
 
-/// The shell's quoting state at one level of command substitution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Context {
-    /// Outside any quotes.
-    Bare,
-    /// Inside `'...'`.
-    SingleQuoted,
-    /// Inside `"..."`.
-    DoubleQuoted,
-    /// After a `#` that starts a word, until the end of the line.
-    Comment,
-}
+mod level;
+mod quote;
+mod state;
+#[cfg(test)]
+mod tests;
 
-/// The start of a token that needs one more character to be recognised.
-/// Kept across pieces, so the two halves may arrive separately.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Token {
-    None,
-    /// `$`: a following `(` opens a substitution.
-    Dollar,
-    /// `$(`: a following `(` makes it arithmetic expansion instead.
-    DollarParen,
-    /// `<`: a following `<` starts a here-document.
-    Less,
-    /// A redirection operator: the next word names a file.
-    Redirect,
-}
-
-/// What the tracker is waiting for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Pending {
-    Token(Token),
-    /// A backslash that escapes whatever comes next. If that is a
-    /// newline the pair vanishes and the interrupted token resumes.
-    Escape(Token),
-}
+use level::{Level, Opener, Word};
+use state::{Context, Pending, Token};
 
 /// Follows a command string the way `sh` reads it.
 ///
@@ -95,10 +67,8 @@ pub(super) struct ShellTracker {
     /// True when the next character would start a new word, which is
     /// where a `#` begins a comment.
     word_start: bool,
-    /// The word being read at the current level, while bare. Enough of
-    /// it is kept to recognise `case`, the reserved words that leave the
-    /// command position open, and an assignment.
-    word: String,
+    /// The word being read at the current level, while bare.
+    word: Word,
     /// True while the word being read is the first word of a command at
     /// the current level: a value placed there would choose the program
     /// to run.
@@ -111,30 +81,6 @@ pub(super) struct ShellTracker {
     unsupported: Option<&'static str>,
 }
 
-/// What kind of bracket opened a level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Opener {
-    /// The outer command.
-    None,
-    /// `$( )`: its `)` continues the word around the substitution.
-    Substitution,
-    /// `( )`: its `)` ends a word.
-    Group,
-    /// `${ }`: closed by `}`; a `)` inside is ordinary text.
-    Brace,
-}
-
-/// One open command or expansion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Level {
-    context: Context,
-    opener: Opener,
-    /// Whether the word this level was opened in was the command word of
-    /// the level outside, restored when this level closes so `$(x)` at
-    /// the start of a command still leaves what follows as its name.
-    outer_command_word: bool,
-}
-
 impl ShellTracker {
     pub(super) fn new() -> Self {
         Self {
@@ -144,7 +90,7 @@ impl ShellTracker {
                 outer_command_word: false,
             }],
             word_start: true,
-            word: String::new(),
+            word: Word::default(),
             command_word: true,
             pending: Pending::Token(Token::None),
             unsupported: None,
@@ -198,9 +144,7 @@ impl ShellTracker {
         if self.word_start {
             self.word.clear();
         }
-        if self.word.len() < 8 {
-            self.word.push(c);
-        }
+        self.word.push(c);
     }
 
     /// Closes the current word. The word `case` is flagged wherever it
@@ -209,10 +153,15 @@ impl ShellTracker {
     /// grammar that decides when `case` is a keyword is not worth
     /// modelling when refusing is free.
     fn end_word(&mut self, separator_starts_command: bool) {
-        if self.word == "case" {
+        if self.word.text == "case" {
             self.flag("a case statement");
         }
-        if !self.word.is_empty() && !Self::leaves_command_position_open(&self.word) {
+        // A redirection operand is not a command word and does not take
+        // the command position: `> out cmd` still runs `cmd`.
+        if !self.word.is_empty()
+            && !self.word.redirect_operand
+            && !Self::leaves_command_position_open(&self.word)
+        {
             self.command_word = false;
         }
         self.word.clear();
@@ -233,9 +182,9 @@ impl ShellTracker {
     /// argument. Operators pass the notification to such wrappers through
     /// the `AVISO_*` variables, which the docs recommend for anything
     /// beyond a plain command word.
-    fn leaves_command_position_open(word: &str) -> bool {
+    fn leaves_command_position_open(word: &Word) -> bool {
         matches!(
-            word,
+            word.text.as_str(),
             "!" | "{"
                 | "if"
                 | "then"
@@ -261,8 +210,10 @@ impl ShellTracker {
                 | "chroot"
                 | "flock"
                 | "watch"
-        ) || word.contains('=')
-            || word.starts_with(|c: char| c == '-' || c.is_ascii_digit())
+        ) || word.assignment
+            || word
+                .text
+                .starts_with(|c: char| c == '-' || c.is_ascii_digit())
     }
 
     fn flag(&mut self, construct: &'static str) {
@@ -300,8 +251,13 @@ impl ShellTracker {
         if self.opener() == Opener::Brace {
             return Some("an open `${ }` expansion");
         }
-        if self.command_word && self.word.is_empty() && self.context() != Context::Comment {
-            return Some("the command word");
+        if self.context() != Context::Comment {
+            if self.word.redirect_operand {
+                return Some("a redirection");
+            }
+            if self.command_word && self.word.is_empty() {
+                return Some("the command word");
+            }
         }
         None
     }
@@ -338,6 +294,7 @@ impl ShellTracker {
                 if c == '\n' {
                     self.set_context(Context::Bare);
                     self.word_start = true;
+                    self.command_word = true;
                 }
                 return;
             }
@@ -395,12 +352,15 @@ impl ShellTracker {
             Token::Less | Token::Redirect => {
                 // A redirection operator, `<`, `>`, `>>` or `<>`, is
                 // followed by a file name. It stays pending until the
-                // first character of that word arrives, so a value
-                // placed there is refused.
+                // first character of that word arrives; the whole word
+                // is then the operand, and a value anywhere in it is
+                // refused.
                 if matches!(c, '>' | ' ' | '\t') {
                     self.pending = Pending::Token(Token::Redirect);
                     return;
                 }
+                self.word.clear();
+                self.word.redirect_operand = true;
                 self.word_start = false;
             }
             Token::None | Token::Dollar => {}
@@ -480,43 +440,4 @@ impl ShellTracker {
         self.advance(quoted);
         self.command_word = false;
     }
-
-    /// Returns `value` written so the shell reads it as literal text in
-    /// the current state.
-    ///
-    /// When the text so far ends with a backslash, the quoted value starts
-    /// with a newline: the shell removes a backslash-newline pair, so the
-    /// escape is spent on nothing and the quoting that follows is read as
-    /// written.
-    pub(super) fn quote(&self, value: &str) -> String {
-        let quoted = self.quote_in_context(value);
-        if matches!(self.pending, Pending::Escape(_)) && self.context() != Context::SingleQuoted {
-            format!("\n{quoted}")
-        } else {
-            quoted
-        }
-    }
-
-    fn quote_in_context(&self, value: &str) -> String {
-        match self.context() {
-            Context::Bare => format!("'{}'", value.replace('\'', "'\\''")),
-            Context::SingleQuoted => value.replace('\'', "'\\''"),
-            Context::DoubleQuoted => {
-                let mut out = String::with_capacity(value.len());
-                for c in value.chars() {
-                    if matches!(c, '\\' | '$' | '`' | '"') {
-                        out.push('\\');
-                    }
-                    out.push(c);
-                }
-                out
-            }
-            // Nothing in a comment is read. A newline in the value would
-            // end the comment, so it is dropped.
-            Context::Comment => value.replace('\n', " "),
-        }
-    }
 }
-
-#[cfg(test)]
-mod tests;
