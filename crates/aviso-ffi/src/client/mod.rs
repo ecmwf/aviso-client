@@ -45,6 +45,10 @@ pub struct AvisoClientBuilder {
     /// from `aviso_client_builder_new` stays anonymous until a credential is
     /// named or `aviso_client_builder_discover_auth` is called.
     pub(crate) searched: bool,
+    /// The files the builder was resolved against, with the text of a named
+    /// config file, so `describe` and a later credential search read the
+    /// same file the builder did.
+    pub(crate) paths: aviso::auth::DiscoveryPaths,
 }
 
 impl AvisoClientBuilder {
@@ -224,6 +228,7 @@ pub unsafe extern "C" fn aviso_client_builder_new(
             inputs: aviso::resolve::CodeInputs::default(),
             env_address: aviso::resolve::EnvAddress::Ignore,
             searched: false,
+            paths: aviso::auth::DiscoveryPaths::from_env(),
         };
         // SAFETY: each string argument is null or a NUL-terminated C string
         // that stays valid for this call, per this function's # Safety.
@@ -286,12 +291,28 @@ pub unsafe extern "C" fn aviso_client_builder_from_file_at(
                 inputs: aviso::resolve::CodeInputs::default(),
                 env_address: aviso::resolve::EnvAddress::Ignore,
                 searched: false,
+                paths: aviso::auth::DiscoveryPaths::from_env(),
             }));
         };
-        Box::into_raw(Box::new(builder_from(
-            aviso::AvisoClientBuilder::from_file_at(path),
+        // Read the named file here, once, and keep its text: the builder,
+        // `describe` and a later `discover_auth` then all see this snapshot.
+        // A path that is not there is an error, reported at build time.
+        let mut paths = aviso::auth::DiscoveryPaths::from_env();
+        let resolved = aviso::ClientSettings::read(std::path::Path::new(path)).and_then(|loaded| {
+            paths.config_file = Some(loaded.path);
+            paths.config_content = Some(loaded.content);
+            aviso::resolve::resolve(
+                &aviso::resolve::CodeInputs::default(),
+                &paths,
+                aviso::resolve::EnvAddress::Ignore,
+            )
+        });
+        let mut builder = builder_from(
+            resolved.and_then(aviso::AvisoClientBuilder::from_resolution),
             aviso::resolve::EnvAddress::Ignore,
-        )))
+        );
+        builder.paths = paths;
+        Box::into_raw(Box::new(builder))
     })
 }
 
@@ -345,6 +366,7 @@ pub(crate) fn builder_from(
         inputs: aviso::resolve::CodeInputs::default(),
         env_address,
         searched: true,
+        paths: aviso::auth::DiscoveryPaths::from_env(),
     }
 }
 

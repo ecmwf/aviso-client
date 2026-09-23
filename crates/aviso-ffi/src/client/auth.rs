@@ -144,11 +144,14 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
         // The address check is not applied here: the caller may still change
         // the address, and build checks the final one. Attaching through
         // found_auth keeps the record that the credential was found.
-        let paths = aviso::auth::DiscoveryPaths::from_env();
-        builder.inputs.auth = None;
         builder.searched = true;
-        match aviso::auth::discover_with(&paths) {
-            Ok(Some(found)) => builder.apply(|b| b.found_auth(found)),
+        match aviso::auth::discover_with(&builder.paths) {
+            Ok(Some(found)) => {
+                // A found credential replaces a named one; finding nothing
+                // leaves the named one in place, so the record stays too.
+                builder.inputs.auth = None;
+                builder.apply(|b| b.found_auth(found));
+            }
             Ok(None) => {}
             Err(err) => builder.error = Some(error::map_error(&err)),
         }

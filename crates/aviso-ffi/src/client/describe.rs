@@ -74,11 +74,7 @@ pub unsafe extern "C" fn aviso_client_builder_describe(
         if inputs.auth.is_none() && !builder.searched {
             inputs.auth = Some(CodeAuth::Anonymous);
         }
-        let resolved = aviso::resolve::resolve(
-            &inputs,
-            &aviso::auth::DiscoveryPaths::from_env(),
-            builder.env_address,
-        );
+        let resolved = aviso::resolve::resolve(&inputs, &builder.paths, builder.env_address);
         match resolved {
             Ok(resolution) => match CString::new(resolution.settings.to_string()) {
                 Ok(text) => AvisoOutcome::text(text),
@@ -211,6 +207,54 @@ mod tests {
             .find(|l| l.starts_with("auth"))
             .expect("auth line");
         assert!(auth_line.contains("anonymous"), "got: {auth_line}");
+        unsafe { aviso_client_builder_free(builder) };
+    }
+
+    #[test]
+    fn describe_reads_the_named_file_not_the_default_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("default.yaml"),
+            "base_url: https://default.example.org\n",
+        )
+        .expect("write default");
+        std::fs::write(
+            dir.path().join("named.yaml"),
+            "base_url: https://named.example.org\n",
+        )
+        .expect("write named");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        unsafe { std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.path().join("default.yaml")) };
+        let path = CString::new(dir.path().join("named.yaml").to_string_lossy().into_owned())
+            .expect("cstring");
+
+        let builder = unsafe { crate::client::aviso_client_builder_from_file_at(path.as_ptr()) };
+        let report = describe(builder).expect("report");
+        assert!(
+            report.contains("https://named.example.org/"),
+            "got: {report}"
+        );
+        assert!(!report.contains("default.example.org"), "got: {report}");
+        unsafe { aviso_client_builder_free(builder) };
+    }
+
+    #[test]
+    fn a_named_credential_survives_a_search_that_finds_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _env = CredentialEnv::pointing_at(dir.path(), None);
+        let url = CString::new("https://aviso.example.org").expect("cstring");
+        let token = CString::new("named").expect("cstring");
+        let builder = unsafe { aviso_client_builder_new(url.as_ptr()) };
+        unsafe { aviso_client_builder_bearer_auth(builder, token.as_ptr()) };
+        unsafe { crate::client::auth::aviso_client_builder_discover_auth(builder) };
+
+        let report = describe(builder).expect("report");
+        let auth_line = report
+            .lines()
+            .find(|l| l.starts_with("auth"))
+            .expect("auth line");
+        assert!(auth_line.contains("bearer"), "got: {auth_line}");
+        assert!(auth_line.contains("(code)"), "got: {auth_line}");
         unsafe { aviso_client_builder_free(builder) };
     }
 
