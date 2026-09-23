@@ -107,11 +107,8 @@ int main() {
             client, AvisoErrorKind_InvalidInput);
 
     // The same server, a credential it will not accept. Naming it after
-    // from_file() replaces whatever the file or environment supplied.
-    aviso::ClientBuilder rejected = aviso::ClientBuilder::from_file();
-    if (const auto url = example::env("AVISO_BASE_URL")) {
-      rejected.base_url(*url);
-    }
+    // from_environment() replaces whatever the file or environment supplied.
+    aviso::ClientBuilder rejected = aviso::ClientBuilder::from_environment();
     rejected.basic_auth("nobody", "wrong");
     aviso::Client stranger = rejected.build();
     all_failed &= attempt("credential the server rejects",

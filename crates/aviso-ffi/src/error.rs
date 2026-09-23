@@ -128,6 +128,24 @@ impl OutcomeError {
         error
     }
 
+    /// A fresh copy with its own buffers. Not `Clone`: the view points into
+    /// this value's buffers, so a bitwise copy would alias them.
+    pub(crate) fn duplicate(&self) -> Self {
+        Self::build(
+            self.kind(),
+            self.http_status(),
+            self.message_string(),
+            self.request_id_string(),
+            self.trigger_kind
+                .as_ref()
+                .map(|s| s.to_string_lossy().into_owned())
+                .as_deref(),
+            self.error_kind
+                .as_ref()
+                .map(|s| s.to_string_lossy().into_owned()),
+        )
+    }
+
     /// Pointer to the C-visible view, valid for the owner's lifetime.
     pub(crate) fn view(&self) -> *const AvisoError {
         &raw const self.view

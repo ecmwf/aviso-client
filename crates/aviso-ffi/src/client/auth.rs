@@ -56,7 +56,10 @@ pub unsafe extern "C" fn aviso_client_builder_basic_auth(
             return;
         };
         match Basic::new(user, pass) {
-            Ok(basic) => builder.apply(|b| b.auth(Arc::new(basic))),
+            Ok(basic) => {
+                builder.inputs.auth_kind = Some("basic");
+                builder.apply(|b| b.auth(Arc::new(basic)));
+            }
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
     });
@@ -97,7 +100,10 @@ pub unsafe extern "C" fn aviso_client_builder_bearer_auth(
             return;
         };
         match Bearer::new(token) {
-            Ok(bearer) => builder.apply(|b| b.auth(Arc::new(bearer))),
+            Ok(bearer) => {
+                builder.inputs.auth_kind = Some("bearer");
+                builder.apply(|b| b.auth(Arc::new(bearer)));
+            }
             Err(err) => builder.error = Some(error::map_error(&err)),
         }
     });
@@ -136,6 +142,8 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
         // the address, and build checks the final one. Attaching through
         // found_auth keeps the record that the credential was found.
         let paths = aviso::auth::DiscoveryPaths::from_env();
+        builder.inputs.auth_kind = None;
+        builder.searched = true;
         match aviso::auth::discover_with(&paths) {
             Ok(Some(found)) => builder.apply(|b| b.found_auth(found)),
             Ok(None) => {}
@@ -153,7 +161,7 @@ pub unsafe extern "C" fn aviso_client_builder_discover_auth(builder: *mut AvisoC
     clippy::undocumented_unsafe_blocks,
     reason = "test code: every unsafe block here is a call into the crate's own C ABI from Rust, with the arguments constructed a few lines above"
 )]
-mod tests {
+pub(crate) mod tests {
     use std::ffi::CString;
 
     use super::*;
@@ -229,13 +237,16 @@ mod tests {
     /// Points every credential source at `dir` and restores the previous
     /// values when dropped, so a variable set on the developer's machine does
     /// not change what these tests exercise.
-    struct CredentialEnv {
+    pub(crate) struct CredentialEnv {
         _guard: std::sync::MutexGuard<'static, ()>,
         saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
     }
 
     impl CredentialEnv {
-        fn pointing_at(dir: &std::path::Path, credentials: Option<&std::path::Path>) -> Self {
+        pub(crate) fn pointing_at(
+            dir: &std::path::Path,
+            credentials: Option<&std::path::Path>,
+        ) -> Self {
             let guard = ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -243,6 +254,7 @@ mod tests {
                 "AVISO_TOKEN",
                 "AVISO_USERNAME",
                 "AVISO_PASSWORD",
+                "AVISO_BASE_URL",
                 "AVISO_CLIENT_CONFIG_FILE",
                 "AVISO_CREDENTIALS_FILE",
             ];
@@ -250,7 +262,12 @@ mod tests {
             // SAFETY: ENV_LOCK is held, so no other test in this binary is
             // reading or writing these variables while they are changed.
             unsafe {
-                for name in ["AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD"] {
+                for name in [
+                    "AVISO_TOKEN",
+                    "AVISO_USERNAME",
+                    "AVISO_PASSWORD",
+                    "AVISO_BASE_URL",
+                ] {
                     std::env::remove_var(name);
                 }
                 std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.join("absent-config.yaml"));

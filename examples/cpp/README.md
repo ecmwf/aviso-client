@@ -36,10 +36,10 @@ Every example becomes an executable named after its file, so
 
 ## Connect
 
-Every example connects through [`common.hpp`](./common.hpp), which reads the
-aviso config file first and lets the environment override it. If you already
-use the `aviso` command on this machine, the examples work with no setup.
-Otherwise set:
+Every example connects through [`common.hpp`](./common.hpp), which starts
+from `ClientBuilder::from_environment()`: the environment first, then the
+aviso config file. If you already use the `aviso` command on this machine,
+the examples work with no setup. Otherwise set:
 
 ```bash
 export AVISO_BASE_URL=http://localhost:8000
@@ -77,7 +77,7 @@ when you run it.
 
 | File | Shows |
 |---|---|
-| `01_schema.cpp` | Ask the server what streams it has and what fields they take. Exits cleanly with no server configured or reachable, so it is also the build check. |
+| `01_schema.cpp` | Print what the builder resolved with `describe()`, then ask the server what streams it has and what fields they take. Exits cleanly with no server configured or reachable, so it is also the build check. |
 | `02_publish.cpp` | Publish one notification with an identifier and a payload. |
 | `03_listen.cpp` | Listen to a stream with a handler; stop after three. |
 | `04_publish_many.cpp` | Publish a batch concurrently; see a per-item failure reported instead of thrown. |

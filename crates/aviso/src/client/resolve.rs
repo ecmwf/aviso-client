@@ -130,6 +130,69 @@ pub struct ResolvedSettings {
     pub credentials_file: Option<PathBuf>,
 }
 
+impl std::fmt::Display for ResolvedSettings {
+    /// One setting per line, value then source, aligned for reading. Nothing
+    /// in it is a secret, so it can go into a log or a ticket as it is.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let line = |f: &mut std::fmt::Formatter<'_>, name: &str, value: &str, source: &str| {
+            writeln!(f, "{name:<28}{value:<40}({source})")
+        };
+        match &self.base_url {
+            Some(url) => line(f, "base_url", &url.value, &url.source.to_string())?,
+            None => line(
+                f,
+                "base_url",
+                "none",
+                "not set in code, AVISO_BASE_URL or the config file",
+            )?,
+        }
+        match &self.auth {
+            Some(auth) => {
+                let source = match &auth.refused {
+                    Some(why) => format!("{}; {why}", auth.source),
+                    None => auth.source.to_string(),
+                };
+                line(f, "auth", auth.kind, &source)?;
+            }
+            None => line(f, "auth", "none", "no credential found")?,
+        }
+        let seconds = |d: Option<Duration>| {
+            d.map_or_else(|| "none".to_string(), |d| format!("{}s", d.as_secs_f64()))
+        };
+        line(
+            f,
+            "timeout",
+            &seconds(self.timeout.value),
+            &self.timeout.source.to_string(),
+        )?;
+        line(
+            f,
+            "heartbeat_interval",
+            &seconds(self.heartbeat_interval.value),
+            &self.heartbeat_interval.source.to_string(),
+        )?;
+        let bundle = self
+            .ca_bundle
+            .value
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        line(
+            f,
+            "ca_bundle",
+            if bundle.is_empty() { "none" } else { &bundle },
+            &self.ca_bundle.source.to_string(),
+        )?;
+        line(
+            f,
+            "danger_accept_invalid_certs",
+            &self.danger_accept_invalid_certs.value.to_string(),
+            &self.danger_accept_invalid_certs.source.to_string(),
+        )
+    }
+}
+
 /// What the caller supplied in code. Anything `None` is looked up. Fill it
 /// with struct update syntax over [`CodeInputs::default`], so a field added
 /// later needs no change at the call site.

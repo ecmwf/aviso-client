@@ -239,3 +239,28 @@ fn a_plain_builder_error_does_not_claim_to_have_looked_anywhere() {
     let error = AvisoClient::builder().build().unwrap_err();
     assert!(!error.to_string().contains("AVISO_BASE_URL"), "got {error}");
 }
+
+#[test]
+fn the_report_displays_one_setting_per_line_without_the_secret() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(
+        dir.path(),
+        "base_url: https://alice:hunter2@file.example.org\ntimeout: 7s\nauth:\n  bearer_token: from-file\n",
+    );
+    let _sources = Sources::in_dir(dir.path());
+
+    let shown = resolve_here(&CodeInputs::default()).to_string();
+    assert!(!shown.contains("hunter2"), "got: {shown}");
+    assert!(!shown.contains("from-file"), "got: {shown}");
+    let lines: Vec<&str> = shown.lines().collect();
+    assert_eq!(lines.len(), 6, "got: {shown}");
+    assert!(lines[0].starts_with("base_url"), "got: {shown}");
+    assert!(
+        lines[0].contains("https://file.example.org/"),
+        "got: {shown}"
+    );
+    assert!(lines[1].contains("bearer"), "got: {shown}");
+    assert!(lines[2].contains("7s"), "got: {shown}");
+    assert!(lines[3].ends_with("(default)"), "got: {shown}");
+    Ok(())
+}

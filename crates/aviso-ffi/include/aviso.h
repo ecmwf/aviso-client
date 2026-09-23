@@ -572,6 +572,41 @@ void aviso_client_builder_bearer_auth(AvisoClientBuilder *builder, const char *t
 void aviso_client_builder_discover_auth(AvisoClientBuilder *builder);
 
 /**
+ * Creates a client builder with nothing named in code, the way a script on
+ * a machine set up for the `aviso` command wants one.
+ *
+ * The address comes from `AVISO_BASE_URL`, then the config file's
+ * `base_url`; the credential from `AVISO_TOKEN` or `AVISO_USERNAME` with
+ * `AVISO_PASSWORD`, then the file's `auth:` block, then the credentials
+ * file; timeouts and TLS settings from the file. Setters called afterwards
+ * replace what was found. With no address anywhere, or a found credential
+ * headed for a plain http address that is not loopback, the error is
+ * reported at build time. `aviso_client_builder_describe` shows what was
+ * chosen and from where.
+ *
+ * Returns a builder handle, or null only if an internal panic is trapped.
+ */
+AvisoClientBuilder *aviso_client_builder_from_environment(void);
+
+/**
+ * Reports the settings a client built from this builder would use and
+ * where each came from, one per line, without building. Nothing in the
+ * text is a secret: the credential is described by kind and source, and
+ * the address has any `user:password@` removed, so it can be logged or
+ * pasted into a ticket as it is.
+ *
+ * The builder is not consumed. The outcome carries the text; take it with
+ * `aviso_outcome_take_string` and free it with `aviso_string_free`. An
+ * error remembered by the builder, or a config file that cannot be read,
+ * is returned as the outcome's error instead.
+ *
+ * # Safety
+ *
+ * `builder` must be a live builder handle.
+ */
+AvisoOutcome *aviso_client_builder_describe(const AvisoClientBuilder *builder);
+
+/**
  * Returns `true` when the outcome carries no error.
  *
  * # Safety
