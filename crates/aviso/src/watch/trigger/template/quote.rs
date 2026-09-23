@@ -164,7 +164,11 @@ impl ShellTracker {
                     '\\' => self.pending_escape = chars.next().is_none(),
                     '$' if chars.peek() == Some(&'(') => {
                         chars.next();
-                        self.open_substitution();
+                        if chars.peek() == Some(&'(') {
+                            self.unsupported.get_or_insert("arithmetic expansion");
+                        } else {
+                            self.open_substitution();
+                        }
                     }
                     '`' => {
                         self.unsupported.get_or_insert("backticks");
@@ -382,9 +386,10 @@ mod tests {
         };
         assert_eq!(seen("cat <<EOF\ncan't\nEOF\n"), Some("a here-document"));
         assert_eq!(seen("echo $((1))# "), Some("arithmetic expansion"));
+        assert_eq!(seen("echo \"$((1))\" "), Some("arithmetic expansion"));
         assert_eq!(seen("x=`date`"), Some("backticks"));
         assert_eq!(seen("echo \"`date`\""), Some("backticks"));
-        assert_eq!(seen("echo $(date) '<<' \"$((\""), None);
+        assert_eq!(seen("echo $(date) '<<' '$((' \"<<\" "), None);
     }
 
     #[test]
