@@ -226,9 +226,11 @@ impl Trigger {
     /// command name goes, and one among the arguments of `eval`, `trap`
     /// or a shell run with `-c` are refused at dispatch with
     /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
-    /// the engine does not follow how the shell reads those; use the
-    /// `AVISO_*` environment variables in such a command, in double
-    /// quotes. Do not pass notification data to `eval`, `trap` or
+    /// the engine does not follow how the shell reads those. For the
+    /// unfollowed constructs, pass the notification as a data argument
+    /// through the `AVISO_*` environment variables, in double quotes;
+    /// the command name and any redirection target must stay the
+    /// operator's, by either route. Do not pass notification data to `eval`, `trap` or
     /// `sh -c` by either route: they reparse their arguments, so a
     /// value that was safely quoted or expanded once becomes shell
     /// syntax the second time.

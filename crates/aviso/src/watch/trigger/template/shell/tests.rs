@@ -232,6 +232,8 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     };
     assert_eq!(refused(""), Some("the command word"));
     assert_eq!(refused("run x; "), Some("the command word"));
+    assert_eq!(refused("eva"), Some("the command word"));
+    assert_eq!(refused("exec eva"), Some("the command word"));
     assert_eq!(refused("echo $(printf x; "), Some("the command word"));
     assert_eq!(refused("x=${y:-"), Some("an open `${ }` expansion"));
     assert_eq!(
@@ -279,11 +281,9 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     assert_eq!(refused("if run "), None);
     assert_eq!(refused("exec run "), None);
     assert_eq!(refused("timeout 5 run "), None);
-    // An expansion at the start of a command is still part of its name,
-    // and a name assembled that way cannot be told from eval or sh.
-    let unknown = Some("an argument to a command the engine cannot name");
-    assert_eq!(refused("$(true)"), unknown);
-    assert_eq!(refused("${CMD}"), unknown);
+    // An expansion at the start of a command is still part of its name.
+    assert_eq!(refused("$(true)"), Some("the command word"));
+    assert_eq!(refused("${CMD}"), Some("the command word"));
     assert_eq!(refused("run $(true)"), None);
     assert_eq!(refused("(true)"), Some("the command word"));
     assert_eq!(refused("run "), None);
@@ -318,12 +318,21 @@ fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
     // substitution inside a reparsing command is its own command.
     assert_eq!(refused("eval 'x'; run "), None);
     assert_eq!(refused("trap 'x' EXIT\nrun "), None);
-    assert_eq!(refused("sh -c \"$(run "), None);
-    // `sh` as an argument is just a word.
+    // `sh` as an argument is just a word, and a quoted argument does not
+    // make the command unknown.
     assert_eq!(refused("run sh "), None);
-    // A command name assembled from an expansion could be anything.
+    assert_eq!(refused("run 'x' "), None);
+    // A command name assembled from an expansion, a parameter, quotes or
+    // escapes could be anything, and the flag reaches nested commands.
     assert_eq!(refused("ev$(true)al "), reason);
     assert_eq!(refused("${CMD} "), reason);
     assert_eq!(refused("$(printf sh) -c '"), reason);
+    assert_eq!(refused("$CMD '"), reason);
+    assert_eq!(refused("e\"val\" "), reason);
+    assert_eq!(refused("ev'al' '"), reason);
+    assert_eq!(refused("ev\\al "), reason);
+    assert_eq!(refused("eval \"$(printf '%s' "), reason);
+    assert_eq!(refused("sh -c \"$(run "), reason);
     assert_eq!(refused("run $(true) "), None);
+    assert_eq!(refused("run \"$(printf '%s' "), None);
 }

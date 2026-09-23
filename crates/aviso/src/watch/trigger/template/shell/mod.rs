@@ -40,10 +40,11 @@
 //! seen one of those its state may no longer match the shell's, so the
 //! engine refuses to place a notification value after that point rather
 //! than guess; the operator reaches the notification through the
-//! `AVISO_*` variables there instead. Quoting also only holds for one
-//! read, so a value is refused where the command name goes, in a
-//! redirection operand, and in the arguments of `eval`, `trap` or a
-//! shell run with `-c`, which read their arguments as code again.
+//! `AVISO_*` variables there instead, as a data argument. Quoting also
+//! only holds for one read, so a value is refused where the command
+//! name goes, in a redirection operand, and in the arguments of `eval`,
+//! `trap`, a shell run with `-c`, or any command whose name is not plain
+//! text and so cannot be told apart from those.
 
 mod level;
 mod quote;
@@ -136,7 +137,9 @@ impl ShellTracker {
         self.word_start = true;
         self.word.clear();
         self.command_word = opener != Opener::Brace;
-        self.reparsing_command = false;
+        // What a nested command produces becomes text of the command
+        // around it, so if that one reparses its arguments, so does
+        // everything inside: `eval "$(printf '%s' v)"` reparses v.
     }
 
     /// Closes the innermost level, if it is not the outer command, and
@@ -150,7 +153,7 @@ impl ShellTracker {
             self.command_word = level.outer_command_word;
             self.reparsing_command = level.outer_reparsing;
             if level.opener != Opener::Group {
-                self.word.has_expansion = true;
+                self.word.opaque = true;
             }
         }
         closed
@@ -185,7 +188,9 @@ impl ShellTracker {
             && !self.word.redirect_operand
             && !Self::leaves_command_position_open(&self.word)
         {
-            if self.command_word && Self::reparses_its_arguments(&self.word.text) {
+            if self.command_word
+                && (self.word.opaque || Self::reparses_its_arguments(&self.word.text))
+            {
                 self.reparsing_command = true;
             }
             self.command_word = false;
@@ -292,7 +297,7 @@ impl ShellTracker {
             if self.word.redirect_operand {
                 return Some("a redirection");
             }
-            if self.command_word && self.word.is_empty() {
+            if self.command_word {
                 return Some("the command word");
             }
             if self.reparsing_command {
@@ -352,8 +357,10 @@ impl ShellTracker {
                     self.pending = Pending::Token(interrupted);
                 } else {
                     // Any other escaped character is an ordinary part of
-                    // the current word.
+                    // the current word, but not one the tracker records,
+                    // so the word's text is no longer all of it.
                     self.word_start = false;
+                    self.word.opaque = true;
                 }
                 return;
             }
@@ -417,6 +424,7 @@ impl ShellTracker {
             '$' => {
                 self.pending = Pending::Token(Token::Dollar);
                 self.word_start = false;
+                self.word.opaque = true;
             }
             '`' => self.flag("backticks"),
             _ if self.context() == Context::DoubleQuoted => {
@@ -426,8 +434,14 @@ impl ShellTracker {
                 }
             }
             '#' if self.word_start => self.set_context(Context::Comment),
-            '\'' => self.set_context(Context::SingleQuoted),
-            '"' => self.set_context(Context::DoubleQuoted),
+            '\'' => {
+                self.set_context(Context::SingleQuoted);
+                self.word.opaque = true;
+            }
+            '"' => {
+                self.set_context(Context::DoubleQuoted);
+                self.word.opaque = true;
+            }
             '<' => {
                 self.pending = Pending::Token(Token::Less);
                 self.word_start = false;
@@ -479,6 +493,6 @@ impl ShellTracker {
     /// no longer at the start of a word.
     pub(super) fn advance_value(&mut self, quoted: &str) {
         self.advance(quoted);
-        self.command_word = false;
+        self.word.opaque = true;
     }
 }

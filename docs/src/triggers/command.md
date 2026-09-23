@@ -62,13 +62,17 @@ arithmetic expansion (`$(( ))`), backticks and `case` statements. A
 command, directly after a `$`, inside a `${ }` expansion, as the operand of a
 redirection (a quoted value there would still let the publisher pick the file),
 where the command name goes (likewise the program), or as an argument to a
-command that reparses its arguments or whose name is assembled from an
-expansion (see below) is refused at dispatch
-with a `ValueAfterUnsupportedShellSyntax` template error naming the reason,
-rather than quoted on a guess. Placeholders before it
-are fine, and so are `{{ env.* }}` values anywhere. In such a command reach the
-notification through the `AVISO_*` environment variables below, with the usual
-double quotes around them.
+command that reparses its arguments or whose name is not plain text (see
+below) is refused at dispatch with a `ValueAfterUnsupportedShellSyntax`
+template error naming the reason, rather than quoted on a guess.
+Placeholders before it are fine, and so are `{{ env.* }}` values anywhere.
+
+For the constructs the engine does not follow, reach the notification through
+the `AVISO_*` environment variables below, with the usual double quotes around
+them, as a data argument. The program a command runs and the file a
+redirection opens must stay yours: `"$AVISO_IDENTIFIER_PROGRAM"` as the command
+name or `> "$AVISO_IDENTIFIER_PATH"` hands that choice to the publisher just as
+a placeholder would.
 
 Some commands read their arguments as shell code a second time: `eval`, `trap`,
 and a shell started with `-c` (`sh -c`, `bash -c`). Nothing makes notification
