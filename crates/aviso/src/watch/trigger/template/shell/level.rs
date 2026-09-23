@@ -33,12 +33,15 @@ pub(super) struct Level {
     /// the level outside, restored when this level closes so `$(x)` at
     /// the start of a command still leaves what follows as its name.
     pub(super) outer_command_word: bool,
+    /// Whether the command this level was opened in reparses its
+    /// arguments, restored likewise.
+    pub(super) outer_reparsing: bool,
 }
 
 /// The bare word being read, with the facts about it the tracker acts
-/// on. Only a prefix of the text is kept, enough to recognise `case`
-/// and the words that leave the command position open; the flags are
-/// exact whatever the length.
+/// on. Only a prefix of the text after its last `/` is kept, enough to
+/// recognise `case`, the words that leave the command position open and
+/// the shells; the flags are exact whatever the length.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct Word {
     /// The first characters of the word.
@@ -54,6 +57,11 @@ impl Word {
     pub(super) fn push(&mut self, c: char) {
         if c == '=' {
             self.assignment = true;
+        }
+        if c == '/' {
+            // Only the last path segment names the program.
+            self.text.clear();
+            return;
         }
         if self.text.len() < 8 {
             self.text.push(c);

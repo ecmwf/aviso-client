@@ -40,7 +40,10 @@
 //! seen one of those its state may no longer match the shell's, so the
 //! engine refuses to place a notification value after that point rather
 //! than guess; the operator reaches the notification through the
-//! `AVISO_*` variables there instead.
+//! `AVISO_*` variables there instead. Quoting also only holds for one
+//! read, so a value is refused where the command name goes, in a
+//! redirection operand, and in the arguments of `eval`, `trap` or a
+//! shell run with `-c`, which read their arguments as code again.
 
 mod level;
 mod quote;
@@ -73,6 +76,10 @@ pub(super) struct ShellTracker {
     /// the current level: a value placed there would choose the program
     /// to run.
     command_word: bool,
+    /// True once the command at the current level is one that reads its
+    /// arguments as shell code again (`eval`, `trap`, `sh -c`). A value
+    /// anywhere in such a command is code the second time round.
+    reparsing_command: bool,
     /// A token started but not finished, waiting for the next character.
     pending: Pending,
     /// The first construct seen that the tracker does not follow. From
@@ -88,10 +95,12 @@ impl ShellTracker {
                 context: Context::Bare,
                 opener: Opener::None,
                 outer_command_word: false,
+                outer_reparsing: false,
             }],
             word_start: true,
             word: Word::default(),
             command_word: true,
+            reparsing_command: false,
             pending: Pending::Token(Token::None),
             unsupported: None,
         }
@@ -114,10 +123,12 @@ impl ShellTracker {
             context: Context::Bare,
             opener,
             outer_command_word: self.command_word,
+            outer_reparsing: self.reparsing_command,
         });
         self.word_start = true;
         self.word.clear();
         self.command_word = opener != Opener::Brace;
+        self.reparsing_command = false;
     }
 
     /// Closes the innermost level, if it is not the outer command, and
@@ -129,6 +140,7 @@ impl ShellTracker {
         let closed = self.levels.pop();
         if let Some(level) = closed {
             self.command_word = level.outer_command_word;
+            self.reparsing_command = level.outer_reparsing;
         }
         closed
     }
@@ -162,12 +174,27 @@ impl ShellTracker {
             && !self.word.redirect_operand
             && !Self::leaves_command_position_open(&self.word)
         {
+            if self.command_word && Self::reparses_its_arguments(&self.word.text) {
+                self.reparsing_command = true;
+            }
             self.command_word = false;
         }
         self.word.clear();
         if separator_starts_command {
             self.command_word = true;
+            self.reparsing_command = false;
         }
+    }
+
+    /// True for a command that reads its arguments as shell code a second
+    /// time, so quoting done for the first read does not hold: `eval`,
+    /// `trap`, and a shell started with `-c`. The shells are listed by
+    /// name; `sh -c` is the shape every one of them takes.
+    fn reparses_its_arguments(word: &str) -> bool {
+        matches!(
+            word,
+            "eval" | "trap" | "sh" | "bash" | "dash" | "zsh" | "ksh" | "ash" | "busybox"
+        )
     }
 
     /// True for a first word after which the next word is still the
@@ -197,7 +224,6 @@ impl ShellTracker {
                 | "command"
                 | "exec"
                 | "builtin"
-                | "eval"
                 | "nohup"
                 | "env"
                 | "nice"
@@ -258,6 +284,9 @@ impl ShellTracker {
             if self.command_word && self.word.is_empty() {
                 return Some("the command word");
             }
+            if self.reparsing_command {
+                return Some("an argument to a command that reads it as shell code");
+            }
         }
         None
     }
@@ -295,6 +324,7 @@ impl ShellTracker {
                     self.set_context(Context::Bare);
                     self.word_start = true;
                     self.command_word = true;
+                    self.reparsing_command = false;
                 }
                 return;
             }

@@ -296,3 +296,27 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     tracker.advance("; printf ");
     assert_eq!(tracker.unsupported(), None);
 }
+
+#[test]
+fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
+    let refused = |text: &str| {
+        let mut tracker = ShellTracker::new();
+        tracker.advance(text);
+        tracker.unsupported()
+    };
+    let reason = Some("an argument to a command that reads it as shell code");
+    assert_eq!(refused("eval '"), reason);
+    assert_eq!(refused("trap '"), reason);
+    assert_eq!(refused("trap \""), reason);
+    assert_eq!(refused("sh -c '"), reason);
+    assert_eq!(refused("/bin/bash -c \""), reason);
+    assert_eq!(refused("exec sh -c '"), reason);
+    assert_eq!(refused("x=$(sh -c '"), reason);
+    // The flag belongs to the command; the next command is clean, and a
+    // substitution inside a reparsing command is its own command.
+    assert_eq!(refused("eval 'x'; run "), None);
+    assert_eq!(refused("trap 'x' EXIT\nrun "), None);
+    assert_eq!(refused("sh -c \"$(run "), None);
+    // `sh` as an argument is just a word.
+    assert_eq!(refused("run sh "), None);
+}

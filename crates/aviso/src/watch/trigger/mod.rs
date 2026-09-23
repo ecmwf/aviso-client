@@ -222,14 +222,16 @@ impl Trigger {
     /// command word, inside `$( )` or not. A placeholder that comes
     /// after a here-document, arithmetic expansion, backticks or a
     /// `case` statement, one directly after a `$` or inside `${ }`, one
-    /// naming the file of a redirection, and one standing where the
-    /// command name goes are refused at dispatch with
+    /// naming the file of a redirection, one standing where the
+    /// command name goes, and one among the arguments of `eval`, `trap`
+    /// or a shell run with `-c` are refused at dispatch with
     /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
     /// the engine does not follow how the shell reads those; use the
     /// `AVISO_*` environment variables in such a command, in double
-    /// quotes. Do not pass notification data to `eval` by either route:
-    /// `eval` reparses its argument, so a value that was safely quoted
-    /// or expanded once becomes shell syntax the second time.
+    /// quotes. Do not pass notification data to `eval`, `trap` or
+    /// `sh -c` by either route: they reparse their arguments, so a
+    /// value that was safely quoted or expanded once becomes shell
+    /// syntax the second time.
     /// `{{ env.* }}` values are the operator's own and are inserted as
     /// written.
     ///

@@ -61,17 +61,20 @@ arithmetic expansion (`$(( ))`), backticks and `case` statements. A
 `{{ notification.* }}` placeholder that comes after one of those in the
 command, directly after a `$`, inside a `${ }` expansion, as the operand of a
 redirection (a quoted value there would still let the publisher pick the file),
-or where the command name goes (likewise the program) is refused at dispatch
+where the command name goes (likewise the program), or as an argument to a
+command that reparses its arguments (see below) is refused at dispatch
 with a `ValueAfterUnsupportedShellSyntax` template error naming the reason,
 rather than quoted on a guess. Placeholders before it
 are fine, and so are `{{ env.* }}` values anywhere. In such a command reach the
 notification through the `AVISO_*` environment variables below, with the usual
 double quotes around them.
 
-`eval` is different: nothing makes notification data safe there. `eval`
-reparses its argument, so a value that was quoted once, or expanded once from
-`"$AVISO_EVENT_TYPE"`, is read as shell syntax the second time. Keep
-notification data out of anything you pass to `eval`.
+Some commands read their arguments as shell code a second time: `eval`, `trap`,
+and a shell started with `-c` (`sh -c`, `bash -c`). Nothing makes notification
+data safe there. A value that was quoted once, or expanded once from
+`"$AVISO_EVENT_TYPE"`, is read as shell syntax the second time. A
+`{{ notification.* }}` placeholder anywhere in the arguments of such a command
+is refused; keep the `AVISO_*` variables out of them too.
 
 `{{ env.* }}` values are yours, so they are inserted as written. If you want one
 to expand into several arguments, it still can.
