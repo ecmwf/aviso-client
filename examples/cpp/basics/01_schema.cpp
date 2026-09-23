@@ -15,40 +15,30 @@
 
 #include "../common.hpp"
 
-#include <filesystem>
 #include <iostream>
 #include <string>
 
-namespace {
-
-// True when nothing on this machine can supply a server address: no
-// AVISO_BASE_URL, and no config file where from_file() would look. The file
-// is ~/.config/aviso/config.yaml unless AVISO_CLIENT_CONFIG_FILE names one.
-bool nothing_configured() {
-  if (example::env("AVISO_BASE_URL")) {
-    return false;
-  }
-  if (const auto named = example::env("AVISO_CLIENT_CONFIG_FILE")) {
-    return !std::filesystem::exists(*named);
-  }
-  const auto home = example::env("HOME");
-  return !home || !std::filesystem::exists(*home + "/.config/aviso/config.yaml");
-}
-
-}  // namespace
-
 int main() {
   std::cout << "client version " << aviso::version() << '\n';
-  if (nothing_configured()) {
-    // Not a failure of this program, so exit 0. Everything below assumes an
-    // address exists somewhere, and then any config error is a real one,
-    // such as a file that will not parse.
-    std::cout << "no server configured: set AVISO_BASE_URL, or put base_url in "
-                 "~/.config/aviso/config.yaml\n";
-    return 0;
-  }
   try {
-    aviso::Client client = example::connect();
+    aviso::ClientBuilder builder = example::configure();
+
+    // What the builder resolved, one setting per line with its source. The
+    // credential appears by kind only, so this is safe to print or log.
+    const std::string settings = builder.describe();
+    std::cout << settings << '\n';
+    // The first line is the address; its value reads "none" when neither
+    // the environment nor the file supplied one.
+    const std::string address_line = settings.substr(0, settings.find('\n'));
+    if (address_line.find(" none ") != std::string::npos) {
+      // Not a failure of this program, so exit 0. Everything below assumes
+      // an address exists somewhere, and then any config error is a real
+      // one, such as a file that will not parse.
+      std::cout << "no server configured: set AVISO_BASE_URL, or put base_url "
+                   "in ~/.config/aviso/config.yaml\n";
+      return 0;
+    }
+    aviso::Client client = builder.build();
 
     // The catalog: every event type and its schema, as one JSON document.
     const std::string catalog = client.schema();

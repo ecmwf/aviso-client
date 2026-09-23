@@ -67,8 +67,11 @@ def test_public_surface_matches_documented_set() -> None:
         "NotificationIterator",
         "NotifyResponse",
         "NotifyResult",
+        "ResolvedAuth",
+        "ResolvedConfig",
         "SchemaCatalog",
         "SchemaResponse",
+        "SourcedValue",
         "StateStore",
         "StateStoreError",
         "StreamProtocolError",
@@ -78,4 +81,5 @@ def test_public_surface_matches_documented_set() -> None:
         "WatchMode",
         "WatchRequest",
         "__version__",
+        "resolve_config",
     }

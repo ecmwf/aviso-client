@@ -19,70 +19,15 @@
     reason = "test code: unwrap and expect on fixture setup are the expected diagnostics"
 )]
 
-use std::path::Path;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+#[path = "common/env.rs"]
+mod env;
 
 use aviso::{AvisoClient, AvisoClientBuilder, ClientError};
+use env::{Sources, write_config};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-/// Points every source at `dir` and restores the previous values on drop.
-struct Sources {
-    _guard: MutexGuard<'static, ()>,
-    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
-}
-
-impl Sources {
-    fn in_dir(dir: &Path) -> Self {
-        let guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-        let names = [
-            "AVISO_TOKEN",
-            "AVISO_USERNAME",
-            "AVISO_PASSWORD",
-            "AVISO_CLIENT_CONFIG_FILE",
-            "AVISO_CREDENTIALS_FILE",
-        ];
-        let saved = names.iter().map(|k| (*k, std::env::var_os(k))).collect();
-        // SAFETY: ENV_LOCK is held, so no other test in this binary reads or
-        // writes these variables while they are changed.
-        unsafe {
-            for name in &names[..3] {
-                std::env::remove_var(name);
-            }
-            std::env::set_var("AVISO_CLIENT_CONFIG_FILE", dir.join("config.yaml"));
-            std::env::set_var(
-                "AVISO_CREDENTIALS_FILE",
-                dir.join("absent-credentials.yaml"),
-            );
-        }
-        Self {
-            _guard: guard,
-            saved,
-        }
-    }
-}
-
-impl Drop for Sources {
-    fn drop(&mut self) {
-        // SAFETY: the lock is still held for the lifetime of this value.
-        unsafe {
-            for (name, value) in &self.saved {
-                match value {
-                    Some(v) => std::env::set_var(name, v),
-                    None => std::env::remove_var(name),
-                }
-            }
-        }
-    }
-}
-
-fn write_config(dir: &Path, body: &str) {
-    std::fs::write(dir.join("config.yaml"), body).expect("write config");
-}
 
 fn schema_ok() -> ResponseTemplate {
     ResponseTemplate::new(200).set_body_json(serde_json::json!({

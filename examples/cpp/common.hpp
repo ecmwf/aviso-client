@@ -10,10 +10,9 @@
 // Every example connects the same way, so the connection code lives here and
 // each example shows only the thing it is about.
 //
-// `connect()` starts from the aviso config file and lets the environment
-// override it. If you already use the `aviso` command on this machine, the
-// examples pick up its server address and credentials with no setup. If not,
-// set these:
+// `connect()` starts from the environment and the aviso config file. If you
+// already use the `aviso` command on this machine, the examples pick up its
+// server address and credentials with no setup. If not, set these:
 //
 //   AVISO_BASE_URL   the server, for example http://localhost:8000
 //   AVISO_TOKEN      a bearer token
@@ -49,24 +48,19 @@ inline std::optional<std::string> env(const char* name) {
 
 // Builds a client from whatever configuration this machine has.
 //
-// from_file() reads ~/.config/aviso/config.yaml when it exists and finds a
-// credential the way the `aviso` command does: AVISO_TOKEN first, then the
-// Basic pair, then the file. A missing file sets nothing.
-//
-// The environment then wins over the file. That is the only precedence rule:
-// a setter after from_file() replaces what the file said.
+// from_environment() reads the address from AVISO_BASE_URL, then from
+// ~/.config/aviso/config.yaml when it exists, and finds a credential the way
+// the `aviso` command does: AVISO_TOKEN first, then the Basic pair, then the
+// file. A missing file sets nothing. `builder.describe()` says what it chose.
 //
 // Credentials from the environment are named here on purpose, even though
-// from_file() has already found them. A named credential may travel to a
-// plain http address that is not loopback, which the CI stack is
+// from_environment() has already found them. A named credential may travel
+// to a plain http address that is not loopback, which the CI stack is
 // (http://aviso-server:8000). A found credential may not; the client refuses
 // it at build(), so a mistyped host cannot send it in the clear. When you rely
 // on the file alone, that protection applies to you too.
-inline aviso::Client connect() {
-  aviso::ClientBuilder builder = aviso::ClientBuilder::from_file();
-  if (const auto url = env("AVISO_BASE_URL")) {
-    builder.base_url(*url);
-  }
+inline aviso::ClientBuilder configure() {
+  aviso::ClientBuilder builder = aviso::ClientBuilder::from_environment();
   const auto token = env("AVISO_TOKEN");
   const auto username = env("AVISO_USERNAME");
   const auto password = env("AVISO_PASSWORD");
@@ -77,8 +71,10 @@ inline aviso::Client connect() {
   }
   // Half a Basic pair is left alone. Discovery treats it as an error and
   // build() reports what is missing, before anything is sent.
-  return builder.build();
+  return builder;
 }
+
+inline aviso::Client connect() { return configure().build(); }
 
 // A readable name for each error kind, for the examples' error output.
 inline const char* kind_name(AvisoErrorKind kind) {

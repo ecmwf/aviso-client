@@ -505,6 +505,29 @@ class ClientBuilder {
     return ClientBuilder(aviso_client_builder_from_file_at(path.c_str()));
   }
 
+  // Starts with nothing named in code, the way a program on a machine set
+  // up for the `aviso` command wants to. The address comes from
+  // `AVISO_BASE_URL`, then the config file; the credential from
+  // `AVISO_TOKEN` or `AVISO_USERNAME` with `AVISO_PASSWORD`, then the file,
+  // then the credentials file; timeouts and TLS settings from the file.
+  // Setters called afterwards replace what was found. No address anywhere,
+  // or a found credential headed for a plain http address that is not
+  // loopback, throws from `build()`. `describe()` shows what was chosen.
+  static ClientBuilder from_environment() {
+    return ClientBuilder(aviso_client_builder_from_environment());
+  }
+
+  // The settings a client built from this builder would use and where each
+  // came from, one per line, without building. Nothing in it is a secret:
+  // the credential appears by kind and source, the address without any
+  // `user:password@`. Log it, or paste it into a ticket. Throws
+  // `aviso::Error` for an error the builder already holds, or a config
+  // file that cannot be read.
+  [[nodiscard]] std::string describe() const {
+    return Client::take_string(aviso_client_builder_describe(handle_.get()),
+                               "describe");
+  }
+
   // Sets or replaces the server address. After `from_file()` this overrides
   // the file, or supplies an address the file did not have.
   ClientBuilder& base_url(const std::string& url) {

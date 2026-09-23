@@ -128,6 +128,36 @@ for callers that want to inspect them before building.
 The same code is the doctest on `AvisoClientBuilder::from_file`, compiled by
 `cargo test --doc`; this copy is not.
 
+### Reading the address from the environment too
+
+`from_file` reads the address from the file only. Where a script should also
+honour `AVISO_BASE_URL`, as the `aviso` command and the Python binding do,
+build from the environment instead, passing whatever the code itself fixes:
+
+```rust,ignore
+use aviso::resolve::CodeInputs;
+use aviso::AvisoClientBuilder;
+
+let client = AvisoClientBuilder::from_environment(&CodeInputs {
+    timeout: Some(std::time::Duration::from_secs(10)),
+    ..CodeInputs::default()
+})?
+.build()?;
+```
+
+For each setting the first source with a value wins: the `CodeInputs`, then
+the environment (`AVISO_BASE_URL`; `AVISO_TOKEN` or `AVISO_USERNAME` with
+`AVISO_PASSWORD`), then the config file, then the credentials file. Setters
+called on the returned builder still replace what was found.
+
+To report what was chosen without building, call `aviso::resolve::resolve`
+with the same `CodeInputs` and `DiscoveryPaths::from_env()`. The
+`ResolvedSettings` in its result carries every setting as a `Sourced<T>`
+(value plus `Source`), the credential as a `ResolvedAuth` (kind, source, and
+the reason if it would be refused), and never a secret, so it can go into a
+log as it is. `Source` implements `Display` (`code`, `environment NAME`,
+`config file PATH`, `credentials file PATH`, `default`).
+
 For custom providers (OAuth, OIDC, AWS SigV4, ...), implement the `AuthProvider`
 trait. Always call `HeaderValue::set_sensitive(true)` on the value you return;
 that is what makes downstream loggers redact it.

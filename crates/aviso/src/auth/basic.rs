@@ -61,6 +61,10 @@ impl std::fmt::Debug for Basic {
 
 #[async_trait::async_trait]
 impl AuthProvider for Basic {
+    fn kind(&self) -> &'static str {
+        "basic"
+    }
+
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         // user is guaranteed non-empty and ':'-free by Basic::new; that invariant lets us format
         // the credentials directly without re-validating on every request.

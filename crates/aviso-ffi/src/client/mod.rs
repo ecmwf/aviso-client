@@ -21,6 +21,7 @@ use crate::outcome::AvisoOutcome;
 use crate::{guard, guard_outcome, reject_blocking_on_runtime, runtime};
 
 mod auth;
+mod describe;
 
 /// Opaque client handle. Wraps the core client (cheap to clone, shares the
 /// connection pool and auth state).
@@ -34,8 +35,20 @@ pub struct AvisoClient {
 pub struct AvisoClientBuilder {
     inner: Option<aviso::AvisoClientBuilder>,
     error: Option<OutcomeError>,
-    /// Kept so credential discovery can check where the credential would go.
-    base_url: String,
+    /// What the caller set through the C API, so `describe` can resolve the
+    /// same inputs the builder holds.
+    pub(crate) inputs: aviso::resolve::CodeInputs,
+    /// Whether `AVISO_BASE_URL` takes part: it does for a builder from
+    /// `aviso_client_builder_from_environment`, not otherwise.
+    pub(crate) env_address: aviso::resolve::EnvAddress,
+    /// Whether the credential search has run for this builder. A builder
+    /// from `aviso_client_builder_new` stays anonymous until a credential is
+    /// named or `aviso_client_builder_discover_auth` is called.
+    pub(crate) searched: bool,
+    /// The files the builder was resolved against, with the text of a named
+    /// config file, so `describe` and a later credential search read the
+    /// same file the builder did.
+    pub(crate) paths: aviso::auth::DiscoveryPaths,
 }
 
 impl AvisoClientBuilder {
@@ -212,13 +225,16 @@ pub unsafe extern "C" fn aviso_client_builder_new(
         let mut builder = AvisoClientBuilder {
             inner: Some(aviso::AvisoClient::builder()),
             error: None,
-            base_url: String::new(),
+            inputs: aviso::resolve::CodeInputs::default(),
+            env_address: aviso::resolve::EnvAddress::Ignore,
+            searched: false,
+            paths: aviso::auth::DiscoveryPaths::from_env(),
         };
         // SAFETY: each string argument is null or a NUL-terminated C string
         // that stays valid for this call, per this function's # Safety.
         match unsafe { cstr_opt(base_url) } {
             Some(url) => {
-                url.clone_into(&mut builder.base_url);
+                builder.inputs.base_url = Some(url.to_owned());
                 builder.apply(|b| b.base_url(url));
             }
             None => {
@@ -248,6 +264,7 @@ pub extern "C" fn aviso_client_builder_from_file() -> *mut AvisoClientBuilder {
     guard(ptr::null_mut(), || {
         Box::into_raw(Box::new(builder_from(
             aviso::AvisoClientBuilder::from_file(),
+            aviso::resolve::EnvAddress::Ignore,
         )))
     })
 }
@@ -271,12 +288,31 @@ pub unsafe extern "C" fn aviso_client_builder_from_file_at(
                 error: Some(error::invalid_input(
                     "from_file_at path must be non-null and valid UTF-8",
                 )),
-                base_url: String::new(),
+                inputs: aviso::resolve::CodeInputs::default(),
+                env_address: aviso::resolve::EnvAddress::Ignore,
+                searched: false,
+                paths: aviso::auth::DiscoveryPaths::from_env(),
             }));
         };
-        Box::into_raw(Box::new(builder_from(
-            aviso::AvisoClientBuilder::from_file_at(path),
-        )))
+        // Read the named file here, once, and keep its text: the builder,
+        // `describe` and a later `discover_auth` then all see this snapshot.
+        // A path that is not there is an error, reported at build time.
+        let mut paths = aviso::auth::DiscoveryPaths::from_env();
+        let resolved = aviso::ClientSettings::read(std::path::Path::new(path)).and_then(|loaded| {
+            paths.config_file = Some(loaded.path);
+            paths.config_content = Some(loaded.content);
+            aviso::resolve::resolve(
+                &aviso::resolve::CodeInputs::default(),
+                &paths,
+                aviso::resolve::EnvAddress::Ignore,
+            )
+        });
+        let mut builder = builder_from(
+            resolved.and_then(aviso::AvisoClientBuilder::from_resolution),
+            aviso::resolve::EnvAddress::Ignore,
+        );
+        builder.paths = paths;
+        Box::into_raw(Box::new(builder))
     })
 }
 
@@ -310,24 +346,27 @@ pub unsafe extern "C" fn aviso_client_builder_base_url(
             ));
             return;
         };
-        url.clone_into(&mut builder.base_url);
+        builder.inputs.base_url = Some(url.to_owned());
         builder.apply(|b| b.base_url(url));
     });
 }
 
 /// Wraps a builder result as a handle, carrying a failure to build time.
-fn builder_from(result: aviso::Result<aviso::AvisoClientBuilder>) -> AvisoClientBuilder {
-    match result {
-        Ok(inner) => AvisoClientBuilder {
-            base_url: inner.configured_base_url().unwrap_or_default().to_owned(),
-            inner: Some(inner),
-            error: None,
-        },
-        Err(err) => AvisoClientBuilder {
-            inner: None,
-            error: Some(error::map_error(&err)),
-            base_url: String::new(),
-        },
+pub(crate) fn builder_from(
+    result: aviso::Result<aviso::AvisoClientBuilder>,
+    env_address: aviso::resolve::EnvAddress,
+) -> AvisoClientBuilder {
+    let (inner, error) = match result {
+        Ok(inner) => (Some(inner), None),
+        Err(err) => (None, Some(error::map_error(&err))),
+    };
+    AvisoClientBuilder {
+        inner,
+        error,
+        inputs: aviso::resolve::CodeInputs::default(),
+        env_address,
+        searched: true,
+        paths: aviso::auth::DiscoveryPaths::from_env(),
     }
 }
 

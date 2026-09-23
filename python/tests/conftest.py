@@ -23,14 +23,14 @@ import pathlib
 
 import pytest
 
-CREDENTIAL_ENV_VARS = ("AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD")
+CREDENTIAL_ENV_VARS = ("AVISO_TOKEN", "AVISO_USERNAME", "AVISO_PASSWORD", "AVISO_BASE_URL")
 
 
 @pytest.fixture(autouse=True)
 def isolate_credential_sources(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    """Hides any credential the developer or CI runner has on disk."""
+    """Hides any credential or server address the developer or CI runner has set."""
     absent = pathlib.Path(tmp_path_factory.mktemp("no-credentials"))
     for name in CREDENTIAL_ENV_VARS:
         monkeypatch.delenv(name, raising=False)

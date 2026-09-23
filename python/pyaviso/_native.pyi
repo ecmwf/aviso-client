@@ -199,18 +199,60 @@ class AsyncNotificationIterator:
         traceback: object | None,
     ) -> Awaitable[None]: ...
 
+class SourcedValue:
+    @property
+    def value(self) -> Any: ...
+    @property
+    def source(self) -> str: ...
+
+class ResolvedAuth:
+    @property
+    def kind(self) -> str: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def refused(self) -> str | None: ...
+
+class ResolvedConfig:
+    @property
+    def base_url(self) -> SourcedValue | None: ...
+    @property
+    def timeout(self) -> SourcedValue: ...
+    @property
+    def heartbeat_interval(self) -> SourcedValue: ...
+    @property
+    def ca_bundle(self) -> SourcedValue: ...
+    @property
+    def danger_accept_invalid_certs(self) -> SourcedValue: ...
+    @property
+    def auth(self) -> ResolvedAuth | None: ...
+    @property
+    def config_file(self) -> str | None: ...
+    @property
+    def credentials_file(self) -> str | None: ...
+    def as_dict(self) -> dict[str, Any]: ...
+
+def resolve_config(
+    *,
+    base_url: str | None = None,
+    auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
+    timeout: float | None = None,
+    heartbeat_interval: float | None = None,
+    danger_accept_invalid_certs: bool | None = None,
+) -> ResolvedConfig: ...
+
 class AvisoClient:
     def __init__(
         self,
         *,
-        base_url: str,
+        base_url: str | None = None,
         auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: MemoryStore | JsonFileStore | None = None,
         heartbeat_interval: float | None = None,
-        danger_accept_invalid_certs: bool = False,
-        flush_cursor_on_exit: bool = False,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
     ) -> None: ...
     @staticmethod
     def from_file(
@@ -227,6 +269,8 @@ class AvisoClient:
     ) -> AvisoClient: ...
     @property
     def base_url(self) -> str: ...
+    @property
+    def config(self) -> ResolvedConfig: ...
     def notify(
         self,
         *,
@@ -267,14 +311,14 @@ class AsyncAvisoClient:
     def __init__(
         self,
         *,
-        base_url: str,
+        base_url: str | None = None,
         auth: Bearer | Basic | Env | ConfigFile | Chain | Anonymous | None = None,
         timeout: float | None = None,
         user_agent: str | None = None,
         state_store: MemoryStore | JsonFileStore | None = None,
         heartbeat_interval: float | None = None,
-        danger_accept_invalid_certs: bool = False,
-        flush_cursor_on_exit: bool = False,
+        danger_accept_invalid_certs: bool | None = None,
+        flush_cursor_on_exit: bool | None = None,
     ) -> None: ...
     @staticmethod
     def from_file(
@@ -291,6 +335,8 @@ class AsyncAvisoClient:
     ) -> AsyncAvisoClient: ...
     @property
     def base_url(self) -> str: ...
+    @property
+    def config(self) -> ResolvedConfig: ...
     def notify(
         self,
         *,

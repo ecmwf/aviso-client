@@ -22,12 +22,16 @@ export AVISO_BASE_URL=https://aviso.example.org
 export AVISO_TOKEN=your-bearer-token
 ```
 
-The scripts use `pyaviso.Env()` to read credentials. If you have a username and
-password instead, unset `AVISO_TOKEN` and set `AVISO_USERNAME` and
-`AVISO_PASSWORD`. A token takes precedence when both are set. `Env()` requires
-credentials; for an anonymous server, pass `auth=pyaviso.Anonymous()` instead.
-See [Authentication](./auth.md) for other options, including letting the
-client find a credential for you.
+The scripts create the client with no arguments; it reads the address and the
+credential from these variables. If you have a username and password instead,
+unset `AVISO_TOKEN` and set `AVISO_USERNAME` and `AVISO_PASSWORD`. A token
+takes precedence when both are set. With neither set, the client looks in
+`~/.config/aviso/config.yaml` and `~/.config/aviso/credentials.yaml`, and
+requests go out anonymous only if those have no credential either. The first
+script prints what the client resolved, so you can check it picked up what
+you meant. See [Configuration](./configuration.md) for
+where settings come from, and [Authentication](./auth.md) for naming a
+credential in code.
 
 ## What is on your server
 
@@ -42,20 +46,26 @@ for `mars`. If `mars` is absent, use a listed name and run again.
 
 ```python
 import json
-import os
-
 import pyaviso
 
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
-)
+client = pyaviso.AvisoClient()
+print(client.config)
 print(client.schema().event_types)
 print(json.dumps(client.schema_for("mars").as_dict(), indent=2, sort_keys=True))
 ```
 
-On a server configured with only this example schema, the output is:
+On a server configured with only this example schema, the output starts with
+the resolved configuration (your paths and address will differ), then:
 
 ```text
+ResolvedConfig(
+    base_url='https://aviso.example.org/'            (environment AVISO_BASE_URL),
+    auth="bearer"                                    (environment AVISO_TOKEN or AVISO_USERNAME),
+    timeout=None                                     (default),
+    heartbeat_interval=None                          (default),
+    ca_bundle=[]                                     (default),
+    danger_accept_invalid_certs=False                (default),
+)
 ['mars']
 {
   "event_type": "mars",
@@ -110,13 +120,9 @@ Save this as `listen.py` and run `python listen.py` in the same terminal. It
 selects `mars` notifications whose `class` is `od`, at any forecast step:
 
 ```python
-import os
-
 import pyaviso
 
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
-)
+client = pyaviso.AvisoClient()
 for notification in client.listen("mars", filter={"class": "od"}):
     print(notification.payload)
 ```
@@ -173,13 +179,9 @@ You need permission to publish. With the schema above, save this as `publish.py`
 and run `python publish.py` to announce an operational forecast at step 12:
 
 ```python
-import os
-
 import pyaviso
 
-client = pyaviso.AvisoClient(
-    base_url=os.environ["AVISO_BASE_URL"], auth=pyaviso.Env()
-)
+client = pyaviso.AvisoClient()
 response = client.notify(
     event_type="mars",
     identifier={"class": "od", "step": 12},

@@ -96,4 +96,12 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     async fn refresh(&self) -> crate::Result<()> {
         Ok(())
     }
+
+    /// A short name for the kind of credential this provider sends, such as
+    /// `bearer` or `basic`, for configuration dumps. Never the credential
+    /// itself. The default is `custom`; the shipped providers override it,
+    /// and a wrapper reports the kind of what it wraps.
+    fn kind(&self) -> &'static str {
+        "custom"
+    }
 }

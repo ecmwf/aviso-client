@@ -150,6 +150,18 @@ impl ConfigFile {
 
 #[async_trait::async_trait]
 impl AuthProvider for ConfigFile {
+    fn kind(&self) -> &'static str {
+        // A refresh may hold the write lock for the instant of its swap;
+        // reporting the kind is not worth waiting for it.
+        match self.inner.try_read() {
+            Ok(inner) => match &*inner {
+                ConfigSource::Bearer(_) => "bearer",
+                ConfigSource::Basic(_) => "basic",
+            },
+            Err(_) => "file",
+        }
+    }
+
     async fn authorization_header(&self) -> crate::Result<HeaderValue> {
         match &*self.inner.read().await {
             ConfigSource::Bearer(b) => b.authorization_header().await,

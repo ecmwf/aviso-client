@@ -50,14 +50,18 @@ from pyaviso._native import (
     NotificationIterator,
     NotifyResponse,
     NotifyResult,
+    ResolvedAuth,
+    ResolvedConfig,
     SchemaCatalog,
     SchemaResponse,
+    SourcedValue,
     StateStoreError,
     StreamProtocolError,
     TransportError,
     Trigger,
     TriggerError,
     WatchRequest,
+    resolve_config,
 )
 
 AuthProvider = Bearer | Basic | Env | ConfigFile | Chain
@@ -113,8 +117,11 @@ __all__ = [
     "NotificationIterator",
     "NotifyResponse",
     "NotifyResult",
+    "ResolvedAuth",
+    "ResolvedConfig",
     "SchemaCatalog",
     "SchemaResponse",
+    "SourcedValue",
     "StateStore",
     "StateStoreError",
     "StreamProtocolError",
@@ -124,4 +131,5 @@ __all__ = [
     "WatchMode",
     "WatchRequest",
     "__version__",
+    "resolve_config",
 ]
