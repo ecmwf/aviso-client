@@ -219,13 +219,17 @@ impl Trigger {
     /// pass the value to `run` as one literal argument, whatever it
     /// contains. A value cannot add a command, redirect output, or
     /// expand `$(...)`. This covers a placeholder that is part of a
-    /// command word. It does not cover backticks, `$( )` inside double
-    /// quotes, or here-document bodies; use the `AVISO_*` environment
-    /// variables there, in double quotes. Do not pass notification data
-    /// to `eval` by either route: `eval` reparses its argument, so a
-    /// value that was safely quoted or expanded once becomes shell
-    /// syntax the second time. `{{ env.* }}` values are the operator's
-    /// own and are inserted as written.
+    /// command word, inside `$( )` or not. A placeholder that comes
+    /// after a here-document, arithmetic expansion or backticks is
+    /// refused at dispatch with
+    /// [`TemplateErrorKind::ValueAfterUnsupportedShellSyntax`], since
+    /// the engine does not follow how the shell reads those; use the
+    /// `AVISO_*` environment variables in such a command, in double
+    /// quotes. Do not pass notification data to `eval` by either route:
+    /// `eval` reparses its argument, so a value that was safely quoted
+    /// or expanded once becomes shell syntax the second time.
+    /// `{{ env.* }}` values are the operator's own and are inserted as
+    /// written.
     ///
     /// # Environment variable injection
     ///

@@ -55,11 +55,15 @@ empty value is one empty argument. A `#` comment is recognised, so an apostrophe
 in a comment does not count as an opening quote.
 
 This holds when the placeholder is part of a command word: bare, inside single
-quotes, or inside double quotes. It does not hold everywhere the shell can read
-text. Do not put a `{{ notification.* }}` placeholder inside backticks, inside
-`$( )` that is itself inside double quotes, or in the body of a here-document.
-In those places use the `AVISO_*` environment variables below instead, with the
-usual double quotes around them.
+quotes, inside double quotes, or inside `$( )`, nested or not. Three shell
+constructs are read by rules the engine does not follow: here-documents (`<<`),
+arithmetic expansion (`$(( ))`) and backticks. A `{{ notification.* }}`
+placeholder that comes after one of those in the command is refused at dispatch
+with a `ValueAfterUnsupportedShellSyntax` template error naming the construct,
+rather than quoted on a guess. Placeholders before it are fine, and so are
+`{{ env.* }}` values anywhere. In such a command reach the notification through
+the `AVISO_*` environment variables below, with the usual double quotes around
+them.
 
 `eval` is different: nothing makes notification data safe there. `eval`
 reparses its argument, so a value that was quoted once, or expanded once from
