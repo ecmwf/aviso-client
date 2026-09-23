@@ -220,9 +220,12 @@ impl Trigger {
     /// contains. A value cannot add a command, redirect output, or
     /// expand `$(...)`. This covers a placeholder that is part of a
     /// command word. It does not cover backticks, `$( )` inside double
-    /// quotes, here-document bodies, or text passed to `eval`; use the
-    /// `AVISO_*` environment variables there. `{{ env.* }}` values are
-    /// the operator's own and are inserted as written.
+    /// quotes, or here-document bodies; use the `AVISO_*` environment
+    /// variables there, in double quotes. Do not pass notification data
+    /// to `eval` by either route: `eval` reparses its argument, so a
+    /// value that was safely quoted or expanded once becomes shell
+    /// syntax the second time. `{{ env.* }}` values are the operator's
+    /// own and are inserted as written.
     ///
     /// # Environment variable injection
     ///

@@ -57,9 +57,14 @@ in a comment does not count as an opening quote.
 This holds when the placeholder is part of a command word: bare, inside single
 quotes, or inside double quotes. It does not hold everywhere the shell can read
 text. Do not put a `{{ notification.* }}` placeholder inside backticks, inside
-`$( )` that is itself inside double quotes, in the body of a here-document, or
-in a string you pass to `eval`. In those places use the `AVISO_*` environment
-variables below instead, with the usual double quotes around them.
+`$( )` that is itself inside double quotes, or in the body of a here-document.
+In those places use the `AVISO_*` environment variables below instead, with the
+usual double quotes around them.
+
+`eval` is different: nothing makes notification data safe there. `eval`
+reparses its argument, so a value that was quoted once, or expanded once from
+`"$AVISO_EVENT_TYPE"`, is read as shell syntax the second time. Keep
+notification data out of anything you pass to `eval`.
 
 `{{ env.* }}` values are yours, so they are inserted as written. If you want one
 to expand into several arguments, it still can.
