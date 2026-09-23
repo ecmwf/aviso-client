@@ -231,3 +231,25 @@ async fn a_comment_after_a_line_continuation_is_still_a_comment() {
         "the value after the comment ran as code"
     );
 }
+
+#[tokio::test]
+async fn a_value_after_a_here_document_is_refused_rather_than_guessed() {
+    // The here-document body is opaque to sh but would confuse a tracker
+    // that read it as shell text. Instead of guessing, the render fails
+    // and nothing runs.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("injected");
+    let cfg = build_command_config(
+        "cat <<EOF >/dev/null\ncan't\nEOF\nprintf '%s' {{ notification.payload.location }}",
+    );
+    let result = dispatch_command(&cfg, None, &hostile_notification(&marker)).await;
+    let Err(crate::watch::TriggerError::Template { kind, field, .. }) = result else {
+        unreachable!("expected a template error, got {result:?}");
+    };
+    assert_eq!(
+        kind,
+        crate::watch::TemplateErrorKind::ValueAfterUnsupportedShellSyntax
+    );
+    assert_eq!(field, "a here-document");
+    assert!(!marker.exists());
+}
