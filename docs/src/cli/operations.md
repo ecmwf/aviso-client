@@ -109,21 +109,9 @@ identifier count, and trigger count.
 
 ## Shell completions {#shell-completions}
 
-```bash
-# Bash
-aviso completions bash > ~/.local/share/bash-completion/completions/aviso
-
-# Zsh
-aviso completions zsh > ~/.local/share/zsh/site-functions/_aviso
-
-# Fish
-aviso completions fish > ~/.config/fish/completions/aviso.fish
-
-# Elvish
-aviso completions elvish > ~/.config/elvish/lib/aviso.elv
-```
-
-Restart the shell (or source the file) for the completions to take effect.
+`aviso completions <shell>` prints a completion script for bash, zsh, fish or
+elvish. Where to save it, and what to do when Tab does nothing afterwards, is
+covered in [Install: shell completions](./install.md#shell-completions).
 
 ## Exit codes
 
