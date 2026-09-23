@@ -279,9 +279,11 @@ fn a_value_cannot_be_the_command_word_or_sit_inside_a_brace_expansion() {
     assert_eq!(refused("if run "), None);
     assert_eq!(refused("exec run "), None);
     assert_eq!(refused("timeout 5 run "), None);
-    // An expansion at the start of a command is still part of its name.
-    assert_eq!(refused("$(true)"), Some("the command word"));
-    assert_eq!(refused("${CMD}"), Some("the command word"));
+    // An expansion at the start of a command is still part of its name,
+    // and a name assembled that way cannot be told from eval or sh.
+    let unknown = Some("an argument to a command the engine cannot name");
+    assert_eq!(refused("$(true)"), unknown);
+    assert_eq!(refused("${CMD}"), unknown);
     assert_eq!(refused("run $(true)"), None);
     assert_eq!(refused("(true)"), Some("the command word"));
     assert_eq!(refused("run "), None);
@@ -304,7 +306,7 @@ fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
         tracker.advance(text);
         tracker.unsupported()
     };
-    let reason = Some("an argument to a command that reads it as shell code");
+    let reason = Some("an argument to a command the engine cannot name");
     assert_eq!(refused("eval '"), reason);
     assert_eq!(refused("trap '"), reason);
     assert_eq!(refused("trap \""), reason);
@@ -319,4 +321,9 @@ fn a_value_cannot_be_an_argument_to_a_command_that_reparses_it() {
     assert_eq!(refused("sh -c \"$(run "), None);
     // `sh` as an argument is just a word.
     assert_eq!(refused("run sh "), None);
+    // A command name assembled from an expansion could be anything.
+    assert_eq!(refused("ev$(true)al "), reason);
+    assert_eq!(refused("${CMD} "), reason);
+    assert_eq!(refused("$(printf sh) -c '"), reason);
+    assert_eq!(refused("run $(true) "), None);
 }

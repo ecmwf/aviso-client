@@ -77,8 +77,9 @@ pub(super) struct ShellTracker {
     /// to run.
     command_word: bool,
     /// True once the command at the current level is one that reads its
-    /// arguments as shell code again (`eval`, `trap`, `sh -c`). A value
-    /// anywhere in such a command is code the second time round.
+    /// arguments as shell code again (`eval`, `trap`, `sh -c`), or one
+    /// whose name is assembled from an expansion and so cannot be told
+    /// apart from those. A value anywhere in such a command is refused.
     reparsing_command: bool,
     /// A token started but not finished, waiting for the next character.
     pending: Pending,
@@ -119,6 +120,13 @@ impl ShellTracker {
     }
 
     fn open_level(&mut self, opener: Opener) {
+        // The word this expansion sits in continues after it, assembled
+        // from parts the tracker cannot see. If that word names the
+        // command, the program is unknown, and so is whether it reparses
+        // its arguments: refuse values in that command.
+        if self.command_word && opener != Opener::Group {
+            self.reparsing_command = true;
+        }
         self.levels.push(Level {
             context: Context::Bare,
             opener,
@@ -141,6 +149,9 @@ impl ShellTracker {
         if let Some(level) = closed {
             self.command_word = level.outer_command_word;
             self.reparsing_command = level.outer_reparsing;
+            if level.opener != Opener::Group {
+                self.word.has_expansion = true;
+            }
         }
         closed
     }
@@ -285,7 +296,7 @@ impl ShellTracker {
                 return Some("the command word");
             }
             if self.reparsing_command {
-                return Some("an argument to a command that reads it as shell code");
+                return Some("an argument to a command the engine cannot name");
             }
         }
         None

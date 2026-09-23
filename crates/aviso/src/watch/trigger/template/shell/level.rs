@@ -51,6 +51,9 @@ pub(super) struct Word {
     pub(super) assignment: bool,
     /// True when the word names the file of a redirection.
     pub(super) redirect_operand: bool,
+    /// True when part of the word came from an expansion, so its text
+    /// is not all of it.
+    pub(super) has_expansion: bool,
 }
 
 impl Word {
@@ -73,6 +76,6 @@ impl Word {
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.text.is_empty() && !self.assignment && !self.redirect_operand
+        self.text.is_empty() && !self.assignment && !self.redirect_operand && !self.has_expansion
     }
 }

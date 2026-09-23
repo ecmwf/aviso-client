@@ -62,7 +62,8 @@ arithmetic expansion (`$(( ))`), backticks and `case` statements. A
 command, directly after a `$`, inside a `${ }` expansion, as the operand of a
 redirection (a quoted value there would still let the publisher pick the file),
 where the command name goes (likewise the program), or as an argument to a
-command that reparses its arguments (see below) is refused at dispatch
+command that reparses its arguments or whose name is assembled from an
+expansion (see below) is refused at dispatch
 with a `ValueAfterUnsupportedShellSyntax` template error naming the reason,
 rather than quoted on a guess. Placeholders before it
 are fine, and so are `{{ env.* }}` values anywhere. In such a command reach the
