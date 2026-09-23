@@ -214,3 +214,20 @@ async fn a_value_inside_a_comment_is_ignored() {
     assert_eq!(std::fs::read_to_string(&out).unwrap(), "ok");
     assert!(!marker.exists());
 }
+
+#[tokio::test]
+async fn a_comment_after_a_line_continuation_is_still_a_comment() {
+    let run =
+        run("printf '%s' ok \\\n# don't\nprintf '%s' {{ notification.payload.location }}").await;
+    // The first printf writes to the child's stdout, which is dropped; the
+    // redirect run() appends applies to the last command only.
+    assert!(
+        run.output.starts_with("south; touch "),
+        "got: {}",
+        run.output
+    );
+    assert!(
+        !run.marker_exists,
+        "the value after the comment ran as code"
+    );
+}

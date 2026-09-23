@@ -111,7 +111,12 @@ impl ShellTracker {
                         '\'' => self.context = Context::SingleQuoted,
                         '"' => self.context = Context::DoubleQuoted,
                         '\\' => {
-                            chars.next();
+                            // A backslash-newline pair is removed by the
+                            // shell, so the word state carries over from
+                            // before it. Any other escaped character is
+                            // part of the current word.
+                            let escaped = chars.next();
+                            word_start = escaped == Some('\n') && self.word_start;
                         }
                         '$' if chars.clone().next() == Some('(') => {
                             chars.next();
@@ -272,6 +277,13 @@ mod tests {
         assert_eq!(after("$(a $(b))# don't"), Context::SingleQuoted);
         assert_eq!(after("(printf x)# don't"), Context::Comment);
         assert_eq!(after("$(# it's\nprintf x) '"), Context::SingleQuoted);
+        // A backslash-newline is removed by the shell: the word state from
+        // before it decides whether the `#` that follows is a comment.
+        assert_eq!(after("echo foo \\\n# don't\n'"), Context::SingleQuoted);
+        // Without the space the shell sees `foo#don't`: no comment, and the
+        // apostrophe opens a quote.
+        assert_eq!(after("echo foo\\\n#don't"), Context::SingleQuoted);
+        assert_eq!(after("echo foo\\\n#dont"), Context::Bare);
     }
 
     #[test]
