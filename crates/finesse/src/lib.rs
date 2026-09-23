@@ -20,7 +20,7 @@
 //!
 //! let mut parser = Parser::new();
 //! parser.feed(b"event: ping\ndata: hello\n\n").expect("within limits");
-//! parser.end();
+//! parser.end().expect("within limits");
 //!
 //! match parser.next_frame() {
 //!     Some(Frame::Message(msg)) => {
@@ -130,15 +130,23 @@ impl Parser {
     /// terminator. Per WHATWG §9.2.6, any pending event without a
     /// trailing blank line is discarded; this method does NOT
     /// dispatch it. Idempotent.
-    pub fn end(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Overflow`] when the line completed by the held CR
+    /// takes an event past its bound, the same way [`feed`](Self::feed)
+    /// would have.
+    pub fn end(&mut self) -> Result<(), Overflow> {
         if self.closed {
-            return;
+            return Ok(());
         }
         self.line_splitter.end();
-        // A bound exceeded at end-of-stream changes nothing: whatever
-        // is held has no terminator and is discarded either way.
-        self.drain_lines().ok();
+        let drained = self.drain_lines();
+        if drained.is_err() {
+            self.abandon();
+        }
         self.closed = true;
+        drained
     }
 
     /// Drain one ready [`Frame`].
@@ -205,7 +213,7 @@ mod tests {
     #[test]
     fn empty_stream_yields_no_frames() {
         let mut p = Parser::new();
-        p.end();
+        p.end().unwrap();
         assert!(collect(p).is_empty());
     }
 
@@ -213,7 +221,7 @@ mod tests {
     fn single_message_event() {
         let mut p = Parser::new();
         p.feed(b"data: hello\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "hello", None)]);
     }
 
@@ -221,7 +229,7 @@ mod tests {
     fn event_field_carries_through() {
         let mut p = Parser::new();
         p.feed(b"event: ping\ndata: hello\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("ping", "hello", None)]);
     }
 
@@ -229,7 +237,7 @@ mod tests {
     fn two_consecutive_events_in_one_chunk() {
         let mut p = Parser::new();
         p.feed(b"data: one\n\ndata: two\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(
             collect(p),
             vec![message("", "one", None), message("", "two", None)]
@@ -240,7 +248,7 @@ mod tests {
     fn retry_emits_retry_frame_before_message() {
         let mut p = Parser::new();
         p.feed(b"retry: 1500\ndata: x\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(
             collect(p),
             vec![Frame::Retry(Retry { millis: 1500 }), message("", "x", None)]
@@ -254,7 +262,7 @@ mod tests {
         p.feed(b"ta: he").unwrap();
         p.feed(b"llo\n").unwrap();
         p.feed(b"\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "hello", None)]);
     }
 
@@ -262,7 +270,7 @@ mod tests {
     fn id_persists_across_events() {
         let mut p = Parser::new();
         p.feed(b"id: 1\ndata: a\n\ndata: b\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(
             collect(p),
             vec![message("", "a", Some("1")), message("", "b", Some("1"))]
@@ -273,7 +281,7 @@ mod tests {
     fn end_with_held_cr_does_not_dispatch_incomplete_event() {
         let mut p = Parser::new();
         p.feed(b"data: x\r").unwrap();
-        p.end();
+        p.end().unwrap();
         assert!(collect(p).is_empty(), "no blank line means no dispatch");
     }
 
@@ -281,9 +289,9 @@ mod tests {
     fn end_is_idempotent() {
         let mut p = Parser::new();
         p.feed(b"data: x\n\n").unwrap();
-        p.end();
-        p.end();
-        p.end();
+        p.end().unwrap();
+        p.end().unwrap();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "x", None)]);
     }
 
@@ -291,7 +299,7 @@ mod tests {
     fn feed_after_end_is_no_op() {
         let mut p = Parser::new();
         p.feed(b"data: x\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         p.feed(b"data: y\n\n").unwrap();
         assert_eq!(
             collect(p),
@@ -304,7 +312,7 @@ mod tests {
     fn bom_stripped_at_start() {
         let mut p = Parser::new();
         p.feed(b"\xEF\xBB\xBFdata: hello\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "hello", None)]);
     }
 
@@ -312,7 +320,7 @@ mod tests {
     fn comment_line_ignored() {
         let mut p = Parser::new();
         p.feed(b":keepalive\ndata: hello\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "hello", None)]);
     }
 
@@ -320,7 +328,7 @@ mod tests {
     fn crlf_terminators() {
         let mut p = Parser::new();
         p.feed(b"data: a\r\ndata: b\r\n\r\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "a\nb", None)]);
     }
 
@@ -331,7 +339,7 @@ mod tests {
         // event-type buffer must not leak into the next event.
         let mut p = Parser::new();
         p.feed(b"event: heartbeat\n\ndata: real\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(
             collect(p),
             vec![message("", "real", None)],
@@ -343,7 +351,7 @@ mod tests {
     fn id_only_block_updates_last_id_without_emitting() {
         let mut p = Parser::new();
         p.feed(b"id: 42\n\ndata: next\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         assert_eq!(collect(p), vec![message("", "next", Some("42"))]);
     }
 
@@ -351,7 +359,7 @@ mod tests {
     fn invalid_utf8_in_data_becomes_replacement_chars() {
         let mut p = Parser::new();
         p.feed(b"data: \xFF\xFE\n\n").unwrap();
-        p.end();
+        p.end().unwrap();
         let frames = collect(p);
         assert_eq!(frames.len(), 1);
         let Frame::Message(Message { data, .. }) = &frames[0] else {

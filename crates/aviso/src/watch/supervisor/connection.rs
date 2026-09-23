@@ -227,12 +227,11 @@ pub(super) async fn run_one_connection(
         // parser will hold. The frames the parser completed before that
         // point are still delivered below; then the watch ends, since
         // reconnecting would only let the same stream do it again.
-        let mut overflow = None;
-        match chunk {
-            Ok(Some(bytes)) => overflow = parser.feed(&bytes).err(),
-            Ok(None) => parser.end(),
+        let overflow = match chunk {
+            Ok(Some(bytes)) => parser.feed(&bytes).err(),
+            Ok(None) => parser.end().err(),
             Err(transport_e) => return ConnectionOutcome::TransportError(transport_e),
-        }
+        };
         if !confirmed {
             match opening::confirmed(&mut parser, wire_from.is_some()) {
                 Ok(true) => {

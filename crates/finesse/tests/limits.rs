@@ -109,7 +109,7 @@ fn a_held_carriage_return_is_examined_again_when_the_next_byte_arrives() {
     let mut parser = Parser::new();
     parser.feed(b"data: a\r").unwrap();
     parser.feed(b"\ndata: b\r\n\r\n").unwrap();
-    parser.end();
+    parser.end().unwrap();
     match parser.next_frame() {
         Some(Frame::Message(message)) => assert_eq!(message.data, "a\nb"),
         other => panic!("expected one message, got {other:?}"),
@@ -174,8 +174,21 @@ fn the_bound_counts_line_content_only_however_the_bytes_are_chunked() {
     parser.feed(b"\xEF").unwrap();
     parser.feed(b"\xBB").unwrap();
     parser.feed(b"\xBFx\n").unwrap();
-    parser.end();
+    parser.end().unwrap();
     let mut whole = Parser::with_limits(limits);
     whole.feed(b"\xEF\xBB\xBFx\n").unwrap();
-    whole.end();
+    whole.end().unwrap();
+}
+
+#[test]
+fn an_overflow_completed_by_end_of_stream_is_reported() {
+    // A trailing CR is held until the next byte or the end of the stream
+    // decides what it is. At the end it completes the line, and that line
+    // can take an event past its bound; the report must not be lost.
+    // "xyz" plus the newline the dispatcher adds is four bytes.
+    let limits = Limits::default().with_max_event_bytes(3);
+    let mut parser = Parser::with_limits(limits);
+    parser.feed(b"data: xyz\r").unwrap();
+    assert_eq!(parser.end(), Err(Overflow::Event { max: 3 }));
+    assert!(parser.next_frame().is_none());
 }
