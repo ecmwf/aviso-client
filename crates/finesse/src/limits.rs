@@ -11,9 +11,11 @@
 //! The byte stream comes from the server, and the parser has to hold
 //! bytes until a line terminator or a blank line arrives. Without a
 //! bound, a server that never sends one makes the parser grow without
-//! limit. The bounds here are far above anything a well-formed stream
-//! produces, so a healthy server never meets them, and a stream that
-//! does is reported as an [`Overflow`] rather than kept, from `feed` or,
+//! limit. The bounds here sit above the largest message the server's
+//! store will pass on (a NATS JetStream message is 1 MiB by default and
+//! 64 MiB at most), so a notification the server could deliver, a large
+//! polygon included, is never refused, and a stream that does exceed
+//! them is reported as an [`Overflow`] rather than kept, from `feed` or,
 //! for a line that a held CR completes at end-of-stream, from `end`. A
 //! bound is checked after every 64 KiB copied in, so the parser holds at
 //! most a bound plus 64 KiB before it reports.
@@ -28,18 +30,19 @@ const MIB: usize = 1024 * 1024;
 #[non_exhaustive]
 pub struct Limits {
     /// Longest line, in bytes, that may be buffered while waiting for
-    /// its terminator. Default 1 MiB.
+    /// its terminator. A notification arrives as one `data:` line, so
+    /// this bounds the notification itself. Default 16 MiB.
     pub max_line_bytes: usize,
     /// Most `data:` bytes one event may accumulate before the blank line
-    /// that dispatches it. Default 8 MiB.
+    /// that dispatches it. Default 32 MiB.
     pub max_event_bytes: usize,
 }
 
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_line_bytes: MIB,
-            max_event_bytes: 8 * MIB,
+            max_line_bytes: 16 * MIB,
+            max_event_bytes: 32 * MIB,
         }
     }
 }

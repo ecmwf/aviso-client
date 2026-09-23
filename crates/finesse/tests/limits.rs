@@ -46,8 +46,8 @@ fn feed_without_terminator(
 #[test]
 fn a_line_that_never_ends_stops_at_the_bound() {
     let mut parser = Parser::new();
-    let err = feed_without_terminator(&mut parser, b'x', 4 * MIB, 8 * KIB);
-    assert_eq!(err, Some(Overflow::Line { max: MIB }));
+    let err = feed_without_terminator(&mut parser, b'x', 40 * MIB, 8 * KIB);
+    assert_eq!(err, Some(Overflow::Line { max: 16 * MIB }));
     assert!(parser.next_frame().is_none());
 }
 
@@ -119,12 +119,17 @@ fn a_held_carriage_return_is_examined_again_when_the_next_byte_arrives() {
 #[test]
 fn the_defaults_are_generous() {
     let limits = Limits::default();
-    assert_eq!(limits.max_line_bytes, MIB);
-    assert_eq!(limits.max_event_bytes, 8 * MIB);
+    assert_eq!(limits.max_line_bytes, 16 * MIB);
+    assert_eq!(limits.max_event_bytes, 32 * MIB);
     assert_eq!(
         Overflow::Line { max: MIB }.to_string(),
         "SSE line exceeds 1048576 bytes"
     );
+    // A notification the server's store can hold passes untouched.
+    let mut parser = Parser::new();
+    let big = format!("data: {}\n\n", "p".repeat(2 * MIB));
+    parser.feed(big.as_bytes()).unwrap();
+    assert!(matches!(parser.next_frame(), Some(Frame::Message(_))));
 }
 
 #[test]

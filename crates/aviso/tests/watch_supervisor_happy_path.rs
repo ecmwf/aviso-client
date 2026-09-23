@@ -259,7 +259,7 @@ async fn watch_ends_with_a_protocol_error_when_a_line_never_terminates() {
     let body = format!(
         "{}{}",
         sse_chunk("live-notification", &cloud_event("mars", 10)),
-        "x".repeat(2 * 1024 * 1024),
+        "x".repeat(20 * 1024 * 1024),
     );
     mount_sse_body(&server, body).await;
 
@@ -288,7 +288,7 @@ async fn a_notification_completed_before_the_overflow_is_still_delivered() {
     let body = format!(
         "{}{}",
         sse_chunk("live-notification", &cloud_event("mars", 7)),
-        "y".repeat(2 * 1024 * 1024),
+        "y".repeat(20 * 1024 * 1024),
     );
     mount_sse_body(&server, body).await;
 
@@ -314,7 +314,7 @@ async fn an_overflow_before_the_stream_is_confirmed_is_reported() {
         .and(path("/api/v1/watch"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_raw("z".repeat(2 * 1024 * 1024), "text/event-stream"),
+                .set_body_raw("z".repeat(20 * 1024 * 1024), "text/event-stream"),
         )
         .mount(&server)
         .await;
