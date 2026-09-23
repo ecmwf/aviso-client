@@ -81,7 +81,7 @@ impl LineSplitter {
         let mut i = self.scan_from;
         while i < self.buf.len() {
             match self.buf[i] {
-                b'\n' => return Ok(Some(self.take_line(i, i + 1))),
+                b'\n' => return self.take_line(i, i + 1),
                 b'\r' => {
                     if i + 1 < self.buf.len() {
                         let consumed = if self.buf[i + 1] == b'\n' {
@@ -89,10 +89,10 @@ impl LineSplitter {
                         } else {
                             i + 1
                         };
-                        return Ok(Some(self.take_line(i, consumed)));
+                        return self.take_line(i, consumed);
                     }
                     if self.closed {
-                        return Ok(Some(self.take_line(i, i + 1)));
+                        return self.take_line(i, i + 1);
                     }
                     // Hold the CR: the next byte decides whether it is
                     // half of a CRLF. Look at it again next time.
@@ -117,11 +117,24 @@ impl LineSplitter {
         Ok(None)
     }
 
-    fn take_line(&mut self, line_end: usize, drain_through: usize) -> Vec<u8> {
+    /// Removes the completed line from the buffer and returns it, unless
+    /// it is longer than the bound: a line that completes in the same
+    /// piece that carried it past the bound is refused like one that
+    /// never completes.
+    fn take_line(
+        &mut self,
+        line_end: usize,
+        drain_through: usize,
+    ) -> Result<Option<Vec<u8>>, Overflow> {
+        if line_end > self.max_line_bytes {
+            return Err(Overflow::Line {
+                max: self.max_line_bytes,
+            });
+        }
         let line = self.buf[..line_end].to_vec();
         self.buf.drain(..drain_through);
         self.scan_from = 0;
-        line
+        Ok(Some(line))
     }
 
     fn resolve_bom(&mut self) {

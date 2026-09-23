@@ -140,3 +140,17 @@ fn one_chunk_larger_than_the_bound_is_not_held_whole() {
     // after the first 64 KiB piece either way.
     assert!(started.elapsed() < Duration::from_secs(1));
 }
+
+#[test]
+fn a_completed_line_longer_than_the_bound_is_refused_too() {
+    let limits = Limits::default().with_max_line_bytes(8);
+    let mut parser = Parser::with_limits(limits);
+    // Within the bound: fine, whatever the terminator.
+    parser.feed(b"data: x\r\n\r\n").unwrap();
+    assert!(matches!(parser.next_frame(), Some(Frame::Message(_))));
+    // Nine bytes before the terminator, arriving in one piece.
+    assert_eq!(
+        parser.feed(b"data: yyy\n\n"),
+        Err(Overflow::Line { max: 8 })
+    );
+}
