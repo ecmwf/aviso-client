@@ -215,7 +215,11 @@ jobs:
 
   # ── Workflow files: syntax, and no unpinned or over-privileged steps ─
   # Runs on GitHub-hosted runners with no secrets. zizmor runs offline so
-  # it needs no token and its result does not depend on the network.
+  # it needs no token and its result does not depend on the network. The
+  # linters install from a hash-pinned requirements file, so this gate
+  # runs reviewed code only; bump the pins with
+  #   uv pip compile --generate-hashes --python-version 3.12 \
+  #     -o .github/ci/lint-requirements.txt .github/ci/lint-requirements.in
   workflows:
     name: workflow lint
     runs-on: ubuntu-latest
@@ -224,7 +228,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install the linters
-        run: pip install --quiet actionlint-py zizmor
+        run: pip install --quiet --require-hashes -r .github/ci/lint-requirements.txt
       - name: actionlint
         run: actionlint -color
       - name: zizmor
