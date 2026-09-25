@@ -321,6 +321,27 @@ impl PyAvisoClient {
         crate::triggers::wrap_listen(py, iterator, &spec.functions, false)
     }
 
+    /// Listens to several things at once; see `pyaviso._many`.
+    #[pyo3(signature = (listeners, *, start_from = None, mode = None, on_error = None))]
+    fn listen_many(
+        &self,
+        py: Python<'_>,
+        listeners: &Bound<'_, PyAny>,
+        start_from: Option<&Bound<'_, PyAny>>,
+        mode: Option<&str>,
+        on_error: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::many::listen_many(
+            py,
+            &self.inner,
+            listeners,
+            start_from,
+            mode,
+            on_error,
+            false,
+        )
+    }
+
     fn __repr__(&self) -> String {
         format!("AvisoClient(base_url={:?})", self.inner.display_base_url())
     }
@@ -578,6 +599,19 @@ impl PyAsyncAvisoClient {
             return Ok(iterator);
         }
         crate::triggers::wrap_listen(py, iterator, &spec.functions, true)
+    }
+
+    /// Listens to several things at once; see `pyaviso._many`.
+    #[pyo3(signature = (listeners, *, start_from = None, mode = None, on_error = None))]
+    fn listen_many(
+        &self,
+        py: Python<'_>,
+        listeners: &Bound<'_, PyAny>,
+        start_from: Option<&Bound<'_, PyAny>>,
+        mode: Option<&str>,
+        on_error: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::many::listen_many(py, &self.inner, listeners, start_from, mode, on_error, true)
     }
 
     fn __repr__(&self) -> String {

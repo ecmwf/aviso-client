@@ -16,7 +16,7 @@ from enum import Enum
 # reason: Notification payload and identifier/filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
 # at those positions deliberately.
-from typing import Any
+from typing import Any, Literal
 
 __version__: str
 VERSION: str
@@ -156,7 +156,8 @@ class Trigger:
         loop, where ``async def`` functions are awaited), one notification at
         a time, after the built-in triggers. ``retries`` calls it again when
         it raises. A required function that still fails raises
-        ``TriggerError``; an optional one is logged and skipped. ``timeout`` and ``fail_fast`` do
+        ``TriggerError``, or goes to ``on_error`` with ``listen_many``; an
+        optional one is logged and skipped. ``timeout`` and ``fail_fast`` do
         not apply to functions.
         """
         ...
@@ -528,6 +529,33 @@ class AvisoClient:
         the result is a ``FunctionTriggerIterator``: the same methods, calling
         the functions as each notification is read."""
         ...
+    def listen_many(
+        self,
+        listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
+        *,
+        start_from: int | str | None = None,
+        mode: WatchMode | str | None = None,
+        on_error: Literal["raise", "continue"]
+        | Callable[[str, BaseException], object]
+        | None = None,
+    ) -> MultiNotificationIterator:
+        """Listens to several things at once, through one loop.
+
+        ``listeners`` maps a name of your choosing to the ``listen()``
+        keywords for that listener (``event_type``, ``filter``,
+        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
+        ``start_from`` and ``mode`` given here apply to every dict entry that
+        does not set its own. The loop yields ``(name, notification)``.
+
+        ``on_error`` decides what a failure does. ``"raise"`` (also the
+        meaning of ``None``, the default) stops every listener and raises.
+        ``"continue"`` drops a failed listener, or skips the notification a
+        failed ``Trigger.function`` was called for, and keeps going. A
+        function is called with ``(name, error)`` and stops everything if it
+        raises. With ``"continue"`` or a function, if every listener fails
+        the loop raises ``AvisoError``.
+        """
+        ...
     def __enter__(self) -> AvisoClient: ...
     def __exit__(
         self,
@@ -637,6 +665,33 @@ class AsyncAvisoClient:
         """Opens a listener. With a ``Trigger.function`` among ``triggers``,
         the result is an ``AsyncFunctionTriggerIterator``: the same methods,
         calling (and awaiting) the functions as each notification is read."""
+        ...
+    def listen_many(
+        self,
+        listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
+        *,
+        start_from: int | str | None = None,
+        mode: WatchMode | str | None = None,
+        on_error: Literal["raise", "continue"]
+        | Callable[[str, BaseException], object]
+        | None = None,
+    ) -> AsyncMultiNotificationIterator:
+        """Listens to several things at once, through one loop.
+
+        ``listeners`` maps a name of your choosing to the ``listen()``
+        keywords for that listener (``event_type``, ``filter``,
+        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
+        ``start_from`` and ``mode`` given here apply to every dict entry that
+        does not set its own. The loop yields ``(name, notification)``.
+
+        ``on_error`` decides what a failure does. ``"raise"`` (also the
+        meaning of ``None``, the default) stops every listener and raises.
+        ``"continue"`` drops a failed listener, or skips the notification a
+        failed ``Trigger.function`` was called for, and keeps going. A
+        function is called with ``(name, error)`` and stops everything if it
+        raises. With ``"continue"`` or a function, if every listener fails
+        the loop raises ``AvisoError``.
+        """
         ...
 
 class AvisoError(Exception):
