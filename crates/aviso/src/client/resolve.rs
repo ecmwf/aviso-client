@@ -113,7 +113,7 @@ pub struct ResolvedSettings {
     /// The server address with any `user:password@` removed, or `None` when
     /// none of code, `AVISO_BASE_URL` and the config file supplied one.
     pub base_url: Option<Sourced<String>>,
-    /// Per-request timeout.
+    /// Timeout for ordinary requests; watches are not subject to it.
     pub timeout: Sourced<Option<Duration>>,
     /// Expected heartbeat interval on watch streams.
     pub heartbeat_interval: Sourced<Option<Duration>>,
@@ -202,7 +202,7 @@ impl std::fmt::Display for ResolvedSettings {
 pub struct CodeInputs {
     /// Server address.
     pub base_url: Option<String>,
-    /// Per-request timeout.
+    /// Timeout for ordinary requests; watches are not subject to it.
     pub timeout: Option<Duration>,
     /// Expected heartbeat interval.
     pub heartbeat_interval: Option<Duration>,

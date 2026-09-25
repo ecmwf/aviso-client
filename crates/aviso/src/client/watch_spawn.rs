@@ -25,7 +25,7 @@ impl AvisoClient {
     /// [`NotificationStream`].
     ///
     /// The call spawns a supervisor task on the ambient Tokio runtime that
-    /// owns its own HTTP connection and forwards [`crate::Notification`]s
+    /// runs on a pooled watch connection and forwards [`crate::Notification`]s
     /// to the returned stream. The stream is single-consumer; dropping it
     /// cancels the supervisor cooperatively.
     ///
@@ -72,7 +72,9 @@ impl AvisoClient {
         let (done_tx, done_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = tokio::sync::watch::channel(false);
         let parent_cancel = self.parent_drop.subscribe();
-        let http = self.http.clone();
+        // The supervisor owns the lease and frees its connection slot when
+        // the watch ends, however it ends.
+        let connection = self.watch_transport.acquire()?;
         let base_url = self.base_url.clone();
         let auth = self.auth.clone();
         let heartbeat_interval = self.heartbeat_interval;
@@ -90,7 +92,7 @@ impl AvisoClient {
         handle.spawn(
             run_supervisor(
                 request,
-                http,
+                connection,
                 base_url,
                 auth,
                 heartbeat_interval,
