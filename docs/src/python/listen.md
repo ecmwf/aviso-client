@@ -321,6 +321,11 @@ It cannot be combined with the event/filter/start/mode/trigger arguments used
 above. See [Builder pattern](./builder-pattern.md) for complete examples and
 [Triggers](./triggers.md) for actions attached to a listener.
 
+## Multiple listeners
+
+To receive notifications for several filters or event types through one loop,
+see [Multiple listeners](./listen-many.md).
+
 ## Async equivalent
 
 For an application using `asyncio`, use `AsyncAvisoClient`, `async with`, and

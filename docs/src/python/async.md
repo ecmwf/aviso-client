@@ -149,6 +149,12 @@ order. See
 [batch publishing](./publish.md#publishing-many-notifications-at-once)
 before retrying failures.
 
+## Multiple listeners
+
+`AsyncAvisoClient.listen_many()` delivers the notifications of several
+listeners through one `async for` loop; see
+[Multiple listeners](./listen-many.md#asynchronous-client).
+
 ## What stays the same
 
 The clients use the same constructor options, filters, value types and auth
