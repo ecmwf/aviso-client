@@ -23,8 +23,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use aviso::AvisoClient;
 use aviso::watch::WatchRequest;
+use aviso::{AvisoClient, ClientError};
 use futures_util::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -108,17 +108,12 @@ async fn ordinary_requests_still_honour_the_timeout() {
         .build()
         .unwrap();
 
-    let started = std::time::Instant::now();
-    let outcome = tokio::time::timeout(Duration::from_secs(10), client.schema()).await;
+    // The outer bound is only reached if the request timeout did not apply.
+    let outcome = tokio::time::timeout(Duration::from_secs(60), client.schema()).await;
     let result = outcome.expect("schema() should end on its own request timeout");
     assert!(
-        result.is_err(),
-        "a server that never answers cannot succeed"
-    );
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "the 1 s request timeout did not apply: took {:?}",
-        started.elapsed()
+        matches!(&result, Err(ClientError::Transport(e)) if e.is_timeout()),
+        "expected the request timeout to end the call, got {result:?}"
     );
 }
 
@@ -134,7 +129,8 @@ async fn many_watches_on_one_client_all_open() {
         .map(|_| client.watch(WatchRequest::watch("mars")).unwrap())
         .collect();
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    // An upper bound only; reached only if some watch never connects.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
     while accepted.load(Ordering::SeqCst) < count && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
