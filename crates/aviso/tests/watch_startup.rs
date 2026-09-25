@@ -311,10 +311,18 @@ async fn stalled_http_error_bodies_preserve_status_classification() -> TestResul
 
 #[tokio::test]
 async fn unconfirmed_openings_have_a_fixed_deadline() -> TestResult {
-    for response in [
-        String::new(),
-        streaming_response("event: heartbeat\ndata: {}\n\n"),
-        streaming_response("event: unrelated\ndata: {}\n\n"),
+    // A server that sends nothing is reported as silent; one that answers
+    // without an Aviso opening event is reported as possibly not Aviso.
+    for (response, expected) in [
+        (String::new(), "no response from the server within 10s"),
+        (
+            streaming_response("event: heartbeat\ndata: {}\n\n"),
+            "check base_url points to an Aviso server",
+        ),
+        (
+            streaming_response("event: unrelated\ndata: {}\n\n"),
+            "check base_url points to an Aviso server",
+        ),
     ] {
         let (url, sent, task) = held_connection(response).await?;
         let client = AvisoClient::builder().base_url(url).build()?;
@@ -323,10 +331,13 @@ async fn unconfirmed_openings_have_a_fixed_deadline() -> TestResult {
         tokio::time::pause();
         tokio::time::advance(Duration::from_secs(11)).await;
         let result = stream.recv().await;
-        assert!(matches!(
-            result,
-            Some(Err(ClientError::StreamProtocol { .. }))
-        ));
+        assert!(
+            matches!(
+                &result,
+                Some(Err(ClientError::StreamProtocol { message, .. })) if message.contains(expected)
+            ),
+            "expected '{expected}', got {result:?}"
+        );
         assert!(!*stream.subscribe_ready().borrow());
         tokio::time::resume();
         stream.close().await;
