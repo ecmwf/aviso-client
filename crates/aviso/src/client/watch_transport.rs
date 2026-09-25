@@ -204,10 +204,12 @@ fn build(factory: &Factory) -> Result<HttpClient, ClientError> {
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
-    reason = "test code: unwrap on known-good fixtures is the expected diagnostic"
+    clippy::expect_used,
+    reason = "test code: unwrap and expect on known-good fixtures are the expected diagnostics"
 )]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use super::*;
 
@@ -392,11 +394,17 @@ mod tests {
         (url, connections)
     }
 
-    /// Opens `watches` watches against a server allowing 2 streams per
-    /// connection, with at most `per_connection` watches on each of the
-    /// client's connections. Returns how many opened within a few seconds,
-    /// and how many connections the server saw.
-    async fn open_against_a_stream_limit(watches: usize, per_connection: usize) -> (usize, usize) {
+    /// Opens `watches` watches, one at a time, against a server allowing 2
+    /// streams per connection, with at most `per_connection` watches on each
+    /// of the client's connections. The first `expected_open` must confirm;
+    /// each is awaited before the next opens, so every client's connection
+    /// exists before it is reused and the connection count is exact. The
+    /// rest must not confirm. Returns the connections the server saw.
+    async fn open_against_a_stream_limit(
+        watches: usize,
+        per_connection: usize,
+        expected_open: usize,
+    ) -> usize {
         let (url, connections) = stream_limited_server(2).await;
         let mut client = crate::AvisoClient::builder()
             .base_url(&url)
@@ -407,29 +415,35 @@ mod tests {
             cap(per_connection),
         )
         .unwrap();
-        let streams: Vec<_> = (0..watches)
-            .map(|_| {
-                client
-                    .watch(crate::watch::WatchRequest::watch("mars"))
-                    .unwrap()
-            })
-            .collect();
-        let opened = futures_util::future::join_all(streams.iter().map(|s| {
-            let mut ready = s.subscribe_ready();
-            async move {
-                tokio::time::timeout(std::time::Duration::from_secs(3), ready.wait_for(|r| *r))
+        let mut streams = Vec::with_capacity(watches);
+        for index in 0..watches {
+            let stream = client
+                .watch(crate::watch::WatchRequest::watch("mars"))
+                .unwrap();
+            if index < expected_open {
+                // An upper bound only: it is reached only if the watch never
+                // confirms, which is a failure whatever the machine's speed.
+                let mut ready = stream.subscribe_ready();
+                tokio::time::timeout(Duration::from_secs(60), ready.wait_for(|r| *r))
                     .await
-                    .is_ok_and(|r| r.is_ok())
+                    .expect("the watch should confirm")
+                    .expect("the watch should confirm");
             }
-        }))
-        .await
-        .into_iter()
-        .filter(|opened| *opened)
-        .count();
+            streams.push(stream);
+        }
+        // The watches past the limit must not confirm. A short wait can only
+        // make this check miss a regression, never fail a correct build.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        for stream in &streams[expected_open..] {
+            assert!(
+                !*stream.subscribe_ready().borrow(),
+                "a watch past the stream limit confirmed"
+            );
+        }
         for stream in streams {
             stream.close().await;
         }
-        (opened, connections.load(Ordering::SeqCst))
+        connections.load(Ordering::SeqCst)
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -437,11 +451,11 @@ mod tests {
         // Five watches on one connection, which allows two: the other three
         // wait for a stream that never frees. This is the failure the
         // per-connection cap prevents.
-        assert_eq!(open_against_a_stream_limit(5, 5).await, (2, 1));
+        assert_eq!(open_against_a_stream_limit(5, 5, 2).await, 1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn capping_watches_per_connection_opens_them_all() {
-        assert_eq!(open_against_a_stream_limit(5, 2).await, (5, 3));
+        assert_eq!(open_against_a_stream_limit(5, 2, 5).await, 3);
     }
 }

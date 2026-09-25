@@ -201,6 +201,7 @@ impl PyAsyncNotificationIterator {
             let mut on_cancel = CloseOnDrop {
                 stream: stream.clone(),
                 closed: closed.clone(),
+                wake: wake.clone(),
                 armed: true,
             };
             let mut guard = stream.lock().await;
@@ -271,6 +272,7 @@ impl PyAsyncNotificationIterator {
 struct CloseOnDrop {
     stream: Arc<AsyncMutex<Option<NotificationStream>>>,
     closed: Arc<AtomicBool>,
+    wake: Arc<Notify>,
     armed: bool,
 }
 
@@ -280,9 +282,13 @@ impl Drop for CloseOnDrop {
             return;
         }
         self.closed.store(true, Ordering::Release);
+        // The dropped future released the lock before this guard ran, so a
+        // read may already hold it and be waiting on the stream, having seen
+        // the flag unset. Wake it, as aclose() does; it registered for the
+        // wake-up before checking the flag, so it cannot miss this one.
+        self.wake.notify_waiters();
         let stream = self.stream.clone();
-        // The lock is released as the dropped future unwinds; the close runs
-        // once it is free.
+        // The close runs once the lock is free.
         runtime().spawn(async move {
             if let Some(s) = stream.lock().await.take() {
                 s.close().await;

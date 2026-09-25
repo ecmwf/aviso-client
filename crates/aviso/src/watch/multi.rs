@@ -189,3 +189,60 @@ impl std::fmt::Debug for MultiNotificationStream {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: unwrap on known-good fixtures is the expected diagnostic"
+)]
+mod tests {
+    use futures_util::StreamExt;
+    use tokio::sync::{mpsc, oneshot, watch};
+
+    use super::*;
+
+    fn notification(sequence: u64) -> Notification {
+        Notification {
+            event_type: "mars".into(),
+            sequence,
+            identifier: std::collections::BTreeMap::new(),
+            payload: serde_json::Value::Null,
+            cloudevent: None,
+        }
+    }
+
+    type Sender = mpsc::Sender<Result<Notification, ClientError>>;
+
+    /// A watch whose items are already buffered: the channel is filled
+    /// before the stream is read, so nothing depends on timing. The sender
+    /// is returned so the caller keeps the stream open once it is drained.
+    fn buffered(items: u64) -> (NotificationStream, Sender) {
+        let (tx, rx) = mpsc::channel(128);
+        for sequence in 1..=items {
+            tx.try_send(Ok(notification(sequence))).unwrap();
+        }
+        let (cancel, _cancel_rx) = oneshot::channel();
+        let (_done, done_rx) = oneshot::channel();
+        let (_ready, ready_rx) = watch::channel(true);
+        (NotificationStream::new(rx, cancel, done_rx, ready_rx), tx)
+    }
+
+    #[tokio::test]
+    async fn a_busy_watch_does_not_starve_a_quiet_one() {
+        let (busy, _busy_tx) = buffered(50);
+        let (quiet, _quiet_tx) = buffered(1);
+        let mut stream = MultiNotificationStream::new(
+            vec![("busy".into(), busy), ("quiet".into(), quiet)],
+            ErrorPolicy::Stop,
+        );
+        let mut names = Vec::new();
+        for _ in 0..4 {
+            let (name, _) = stream.next().await.unwrap().unwrap();
+            names.push(name);
+        }
+        // Turns alternate while both have items; the quiet watch's one item
+        // comes second, not after the busy watch's fifty.
+        assert_eq!(names, ["busy", "quiet", "busy", "busy"]);
+    }
+}
