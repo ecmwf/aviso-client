@@ -45,6 +45,7 @@ mod config;
 mod error;
 mod error_test_helper;
 mod paths;
+mod requests;
 mod runtime;
 mod state_stores;
 mod streams;
