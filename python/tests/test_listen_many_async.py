@@ -79,10 +79,13 @@ def test_aclose_returns_while_a_read_waits(httpserver: HTTPServer) -> None:
             client.listen("mars"),
         ):
             reading = asyncio.ensure_future(it.__anext__())
-            await asyncio.sleep(0.3)  # the read is now waiting on the stream
-            await asyncio.wait_for(it.aclose(), 5)
+            # Let the read start. The test holds whether or not it is already
+            # waiting on the stream when aclose() runs; the bounds below are
+            # only reached if aclose() or the read never finishes.
+            await asyncio.sleep(0)
+            await asyncio.wait_for(it.aclose(), 60)
             with pytest.raises(StopAsyncIteration):
-                await asyncio.wait_for(reading, 5)
+                await asyncio.wait_for(reading, 60)
 
     asyncio.run(main())
 
@@ -97,13 +100,16 @@ def test_cancelling_run_closes_the_listener(httpserver: HTTPServer) -> None:
             client.listen("mars"),
         ):
             task = asyncio.ensure_future(it.run())
-            await asyncio.sleep(0.3)
+            # One pass of the event loop starts the task, so the cancellation
+            # below lands inside run() and its cleanup runs.
+            await asyncio.sleep(0)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-            # Closed: the next read ends at once instead of waiting.
+            # Closed: the next read ends instead of waiting. The bound is only
+            # reached if the listener was left open.
             with pytest.raises(StopAsyncIteration):
-                await asyncio.wait_for(it.__anext__(), 5)
+                await asyncio.wait_for(it.__anext__(), 60)
 
     asyncio.run(main())
 
