@@ -55,6 +55,7 @@ pub use sources::{
 };
 
 use policy::refuse_public_plaintext;
+pub(crate) use policy::unparseable_url;
 
 /// Environment variable that overrides the config-file path.
 pub const ENV_CONFIG_FILE: &str = "AVISO_CLIENT_CONFIG_FILE";

@@ -10,6 +10,22 @@ use crate::ClientError;
 
 pub(super) const OPENING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// The server accepted the request but sent no response within the opening
+/// deadline. That is not a sign of a wrong address, so the message does not
+/// suggest one: the usual causes are a slow or overloaded server, or a proxy
+/// that limits how many requests one connection may carry at once.
+pub(super) fn no_response() -> ClientError {
+    ClientError::StreamProtocol {
+        message: format!(
+            "no response from the server within {}s; it may be slow or \
+             overloaded, or a proxy may be limiting concurrent requests per \
+             connection",
+            OPENING_TIMEOUT.as_secs()
+        ),
+        request_id: None,
+    }
+}
+
 pub(super) fn protocol(message: &str) -> ClientError {
     ClientError::StreamProtocol {
         message: format!("{message}; check base_url points to an Aviso server"),

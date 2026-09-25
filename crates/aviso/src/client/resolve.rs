@@ -438,19 +438,17 @@ fn resolve_auth(
 /// The address as a dump shows it: parsed and re-serialised with any
 /// `user:password@` removed and the trailing slash the built client will
 /// have, so it reads the same however it was written. A value that does
-/// not parse is shown as a placeholder, since the part that broke it may
-/// sit next to a password.
+/// not parse is not echoed, since the part that broke it may sit next to a
+/// password; the parser's reason is shown instead, which never quotes the
+/// input.
 fn display_address(url: &str) -> String {
-    url::Url::parse(url).map_or_else(
-        |_| "<unparseable url>".to_string(),
-        |mut parsed| {
-            if !parsed.path().ends_with('/') {
-                let normalized = format!("{}/", parsed.path());
-                parsed.set_path(&normalized);
-            }
-            crate::client::display_url(&parsed)
-        },
-    )
+    url::Url::parse(url).map_or_else(crate::auth::unparseable_url, |mut parsed| {
+        if !parsed.path().ends_with('/') {
+            let normalized = format!("{}/", parsed.path());
+            parsed.set_path(&normalized);
+        }
+        crate::client::display_url(&parsed)
+    })
 }
 
 fn env_var(name: &str) -> crate::Result<Option<String>> {

@@ -347,3 +347,17 @@ fn from_file_without_an_address_does_not_mention_the_environment() -> TestResult
     assert!(error.to_string().contains("config file"), "got {error}");
     Ok(())
 }
+
+#[test]
+fn an_address_that_does_not_parse_is_reported_by_reason() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    write_config(dir.path(), "base_url: https://operator:hunter2@[bad\n");
+    let _sources = Sources::in_dir(dir.path());
+
+    let report = resolve_here(&CodeInputs::default());
+    let printed = report.to_string();
+    assert!(!printed.contains("hunter2"), "{printed}");
+    let shown = report.base_url.expect("set").value;
+    assert_eq!(shown, "<unparseable url: invalid IPv6 address>");
+    Ok(())
+}

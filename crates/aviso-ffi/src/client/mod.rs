@@ -24,7 +24,7 @@ mod auth;
 mod describe;
 
 /// Opaque client handle. Wraps the core client (cheap to clone, shares the
-/// connection pool and auth state).
+/// HTTP connections and auth state).
 pub struct AvisoClient {
     pub(crate) inner: aviso::AvisoClient,
 }

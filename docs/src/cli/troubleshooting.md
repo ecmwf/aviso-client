@@ -30,6 +30,14 @@ confirmation within ten seconds stops the listener with a protocol error.
 Check for a website URL, a login redirect, or a proxy routing the request to the
 wrong service. Rejected HTTP 200 bodies are not printed.
 
+If the error reads `no response from the server within 10s`, the server
+accepted the connection but did not answer at all. The server may be slow or
+overloaded, or a proxy in front of it may limit how many requests one
+connection carries at once. The client opens at most 64 listeners per
+connection; a proxy that allows fewer makes the listeners beyond its limit
+wait until this deadline. Ask the server operator about the proxy's
+concurrent-stream limit.
+
 For HTTP failures, `listen` omits unrecognized response bodies, including JSON
 objects from proxies. Recognized Aviso error codes with string messages or
 details retain only those fields, a request ID, and the configured event types

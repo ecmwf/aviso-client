@@ -41,6 +41,10 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["server", "http2"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 proptest = { workspace = true }
 static_assertions = { workspace = true }
 tempfile = { workspace = true }

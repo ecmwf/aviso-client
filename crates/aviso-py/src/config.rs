@@ -93,7 +93,7 @@ pub(crate) struct PyResolvedConfig {
     #[pyo3(get)]
     base_url: Option<Py<PySourcedValue>>,
     /// Timeout for ordinary requests in seconds (not applied to `listen`), or
-    /// `None` for the library default.
+    /// `None` for no limit.
     #[pyo3(get)]
     timeout: Py<PySourcedValue>,
     /// Expected heartbeat interval in seconds, or `None` for the default.

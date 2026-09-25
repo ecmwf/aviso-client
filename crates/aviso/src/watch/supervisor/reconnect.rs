@@ -64,20 +64,25 @@ pub(crate) async fn run_supervisor(
     // Frees the connection slot, then signals completion, on every way out
     // of this function (panics included). In that order, so a caller whose
     // `close()` has returned finds the slot free for its next watch.
-    struct DoneOnDrop(
-        Option<crate::client::watch_transport::Lease>,
-        Option<oneshot::Sender<()>>,
-    );
+    struct DoneOnDrop {
+        lease: Option<crate::client::watch_transport::Lease>,
+        done: Option<oneshot::Sender<()>>,
+    }
     impl Drop for DoneOnDrop {
         fn drop(&mut self) {
-            self.0.take();
-            if let Some(s) = self.1.take() {
-                let _ = s.send(());
+            drop(self.lease.take());
+            if let Some(done) = self.done.take() {
+                // reason: the receiver is gone when nobody waits in close();
+                // there is then no one to tell.
+                done.send(()).ok();
             }
         }
     }
     let http = connection.http().clone();
-    let _done_on_drop = DoneOnDrop(Some(connection), Some(done_signal));
+    let _done_on_drop = DoneOnDrop {
+        lease: Some(connection),
+        done: Some(done_signal),
+    };
     let startup_timeout = request.startup_timeout();
     let readiness = ready.subscribe();
     let error_tx = tx.clone();

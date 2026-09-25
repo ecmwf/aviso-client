@@ -9,7 +9,7 @@
 """Drain two test_polygon streams concurrently with asyncio.gather.
 
 Two separate listen calls, two separate async iterators, both running
-under a single asyncio loop on the shared HTTP connection pool. Each
+under a single asyncio loop on the client's shared HTTP connections. Each
 drain task tags its output with the polygon it matched so you can see
 the interleaving.
 

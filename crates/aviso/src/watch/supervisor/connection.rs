@@ -125,7 +125,7 @@ pub(super) async fn run_one_connection(
         biased;
         _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
         _ = &mut *cancel => return ConnectionOutcome::Cancelled,
-        () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)")),
+        () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::no_response()),
         r = builder.send() => r,
     };
     let mut response = match send_result {

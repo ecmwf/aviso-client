@@ -162,7 +162,7 @@ fn dump_does_not_show_credentials_embedded_in_the_base_url() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).into_owned();
-    assert!(stdout.contains("<unparseable url>"), "got: {stdout}");
+    assert!(stdout.contains("<unparseable url: "), "got: {stdout}");
     assert!(!stdout.contains("hunter2"), "got: {stdout}");
 }
 
