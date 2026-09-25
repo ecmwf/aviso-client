@@ -227,7 +227,7 @@ Every `AvisoError` has both attributes; they are `None` when not set.
 - `Trigger.post(url, *, retries=0, required=True, timeout=30.0, fail_fast=True)`
 - `Trigger.function(func, *, retries=0, required=True, label=None)`: calls
   `func(notification)` in the reading thread or event loop; see
-  [Triggers](./triggers.md)
+  [Function](./triggers.md#function)
 
 Chainable setters: `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
 `.fail_fast(on)`, `.label(name)`.

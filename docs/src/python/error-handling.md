@@ -136,7 +136,7 @@ existing saved cursor when one is configured; it does not override it. See
 ## `TriggerError` carries a kind and a sub-kind
 
 `trigger_kind` identifies the action: `echo`, `log`, `command`, `webhook`,
-`teams`, `post` or `unknown`. `error_kind` describes the failure:
+`teams`, `post`, `function` or `unknown`. `error_kind` describes the failure:
 
 | Error kind | Useful fields |
 |---|---|
@@ -146,6 +146,7 @@ existing saved cursor when one is configured; it does not override it. See
 | `template` | `context`, `field`, `template_kind` |
 | `io` | `path` for a log trigger; read the exception message |
 | `webhook_build` | `reason` |
+| `raised` | A `Trigger.function` raised; the original exception is `__cause__` |
 | `encode`, `unknown` | Read the exception message |
 
 Fields that do not apply are `None`. Required triggers stop the watch when their

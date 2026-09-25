@@ -71,6 +71,7 @@ reference to a file; the log trigger does not copy that file.
 | Send an HTTP request with your chosen body | `Trigger.webhook()` | [Webhook guide](../triggers/webhook.md) |
 | Send a card to a Teams workflow webhook | `Trigger.teams()` | [Teams guide](../triggers/teams.md) |
 | Forward the original CloudEvent | `Trigger.post()` | [Post guide](../triggers/post.md) |
+| Run your own Python function | `Trigger.function()` | [Below](#function) |
 
 ## The six kinds
 
@@ -166,6 +167,70 @@ envelope fields shown by `print(notification)`, including CloudEvent extensions.
 Use it when the receiver needs those fields rather than the smaller default
 webhook body.
 
+## Function
+
+`Trigger.function(func)` calls a Python function of yours with each
+notification. It is the way to run your own code without writing the loop:
+`run()` reads the stream to the end and closes it.
+
+```python
+import pyaviso
+from pyaviso import Trigger
+
+
+def save(notification):
+    print("save", notification.identifier)
+
+
+client = pyaviso.AvisoClient()
+try:
+    client.listen(
+        "mars",
+        filter={"class": "od"},
+        triggers=[Trigger.log("mars.log"), Trigger.function(save)],
+    ).run()
+except KeyboardInterrupt:
+    print("Stopped listening")
+```
+
+When an `od` notification is published, a line is appended to `mars.log` and
+the script prints:
+
+```text
+save {'class': 'od', 'step': '12'}
+```
+
+A function trigger differs from the six built-in kinds in where it runs. The
+built-in kinds run inside the library, before the notification reaches
+Python. A function runs in the application, in the thread that reads the
+notification (or on its event loop with `AsyncAvisoClient`), when the
+notification reaches it. Consequently:
+
+- The built-in triggers for a notification always run before its functions,
+  regardless of their order in the list.
+- Functions run one notification at a time, in arrival order. They need no
+  synchronisation and may call blocking code. A slow function delays the
+  listener; no notification is lost, because the client reads from the server
+  more slowly. On `AsyncAvisoClient`, a blocking call in a function blocks the
+  event loop, and with it every listener; use `async def` and awaitable calls
+  there.
+- With `AsyncAvisoClient`, a function may be defined with `async def`; it is
+  awaited. `AvisoClient.listen()` rejects such a function with a `TypeError`
+  when called, because nothing would await it.
+- The notification has already been received when a function runs. Unlike a
+  failed built-in trigger, a failed function therefore never holds back the
+  [saved position](./state-and-resume.md), whether or not the loop continues:
+  the notification may already be recorded as received, and is then not
+  delivered again after a restart. Record completed work separately when
+  every notification must be processed.
+
+The function receives the notification as its only argument. Bind further
+arguments with `functools.partial(save, folder="/data")` or a `lambda`.
+Several functions run in the order listed.
+
+To use a different function for each of several listeners, see
+[Multiple listeners](./listen-many.md#function-triggers-per-listener).
+
 ## Tunables
 
 By default, every trigger is required and has no retries. If a required action
@@ -198,6 +263,16 @@ extra attempts and a five-second timeout per request:
   request. Commands have no timeout by default; use `timeout` to set one in
   seconds. Echo and log do not accept a timeout keyword. Their `.timeout()`
   setter is ignored, as is `.fail_fast()`.
+- `Trigger.function` takes `retries`, `required` and `label`. A function that
+  raises counts as a failure: it is called again up to `retries` times, then a
+  required one raises `TriggerError` (with `trigger_kind == "function"` and the
+  original exception as its `__cause__`) and the functions after it are not
+  called for that notification; an optional one is logged and skipped.
+  `timeout` and `fail_fast` do not apply to functions and raise `ValueError`:
+  Python code cannot be interrupted safely.
+- A plain function that returns an awaitable is a programming error, not a
+  failure of one notification: it raises `TypeError`, whatever `required` and
+  `on_error` say.
 
 The [builder pattern](./builder-pattern.md) covers chainable setters and reusing
 triggers. See [error handling](./error-handling.md) for catching client errors.
@@ -205,5 +280,7 @@ triggers. See [error handling](./error-handling.md) for catching client errors.
 ## With `AsyncAvisoClient`
 
 Pass the same `triggers=[...]` list to `AsyncAvisoClient.listen()`. Actions
-still run before the notification reaches your `async for` loop. See
-[Async](./async.md) for a complete listener.
+still run before the notification reaches your `async for` loop, and
+`Trigger.function` may be given an `async def` function, which is awaited. Use
+`await iterator.run()` in place of `.run()`. See [Async](./async.md) for a
+complete listener.

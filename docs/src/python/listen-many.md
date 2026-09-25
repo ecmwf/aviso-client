@@ -152,7 +152,7 @@ Functions run in the calling thread, one notification at a time, in arrival
 order. They therefore need no synchronisation and may call blocking code. A
 slow function delays every listener; no notification is lost, because the
 client reads from the server more slowly. See
-[Triggers](./triggers.md) for `retries`, `required` and the
+[Triggers](./triggers.md#function) for `retries`, `required` and the
 interaction with built-in triggers, which always run first.
 
 ## Shared options
