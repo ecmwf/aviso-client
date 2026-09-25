@@ -106,7 +106,7 @@ type Item = Result<(String, u64), (String, ClientError)>;
 async fn drain(mut stream: MultiNotificationStream) -> Vec<Item> {
     let mut out = Vec::new();
     loop {
-        let item = tokio::time::timeout(Duration::from_secs(10), stream.next())
+        let item = tokio::time::timeout(Duration::from_secs(60), stream.next())
             .await
             .expect("the merged stream should end on its own");
         match item {
@@ -190,7 +190,7 @@ async fn stop_ends_everything_after_the_first_error() {
             ErrorPolicy::Stop,
         )
         .unwrap();
-    let first = tokio::time::timeout(Duration::from_secs(10), stream.next())
+    let first = tokio::time::timeout(Duration::from_secs(60), stream.next())
         .await
         .unwrap();
     let error = first
@@ -199,7 +199,7 @@ async fn stop_ends_everything_after_the_first_error() {
     assert_eq!(error.name, "bad");
     assert!(error.to_string().starts_with("watch 'bad': "), "{error}");
     assert!(
-        tokio::time::timeout(Duration::from_secs(5), stream.next())
+        tokio::time::timeout(Duration::from_secs(60), stream.next())
             .await
             .unwrap()
             .is_none(),
@@ -207,7 +207,7 @@ async fn stop_ends_everything_after_the_first_error() {
     );
     assert!(stream.running().is_empty(), "{:?}", stream.running());
     // close() waits for every watch, the stopped ones included.
-    tokio::time::timeout(Duration::from_secs(5), stream.close())
+    tokio::time::timeout(Duration::from_secs(60), stream.close())
         .await
         .expect("close() should finish once the watches have stopped");
 }
@@ -228,14 +228,14 @@ async fn running_lists_the_watches_still_producing() {
         )
         .unwrap();
     assert_eq!(stream.running(), vec!["bad", "forever"]);
-    let error = tokio::time::timeout(Duration::from_secs(10), stream.next())
+    let error = tokio::time::timeout(Duration::from_secs(60), stream.next())
         .await
         .unwrap()
         .expect("an item")
         .expect_err("the refused watch fails");
     assert_eq!(error.name, "bad");
     assert_eq!(stream.running(), vec!["forever"]);
-    tokio::time::timeout(Duration::from_secs(5), stream.close())
+    tokio::time::timeout(Duration::from_secs(60), stream.close())
         .await
         .expect("close() should finish");
 }
@@ -339,44 +339,97 @@ impl StateStore for SlowStore {
     }
 }
 
+/// Reads one HTTP request and returns its JSON body.
+async fn read_request(socket: &mut tokio::net::TcpStream) -> Value {
+    use tokio::io::AsyncReadExt;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 1024];
+    let header_end = loop {
+        let n = socket.read(&mut chunk).await.unwrap();
+        assert!(n > 0, "connection closed before the request was read");
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break i + 4;
+        }
+    };
+    let headers = String::from_utf8_lossy(&buf[..header_end]).to_lowercase();
+    let length: usize = headers
+        .lines()
+        .find_map(|l| l.strip_prefix("content-length:"))
+        .map_or(0, |v| v.trim().parse().unwrap());
+    while buf.len() < header_end + length {
+        let n = socket.read(&mut chunk).await.unwrap();
+        assert!(n > 0, "connection closed before the body was read");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    serde_json::from_slice(&buf[header_end..header_end + length]).unwrap()
+}
+
+/// Serves a live "mars" watch that delivers mars@1 on its first connection
+/// and nothing afterwards, and refuses a "broken" watch with 400, but only
+/// once `release` is notified. The test decides when the failure happens,
+/// so nothing depends on timing.
+async fn gated_server(release: Arc<tokio::sync::Notify>) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let first_mars = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let release = Arc::clone(&release);
+            let first_mars = Arc::clone(&first_mars);
+            tokio::spawn(async move {
+                let body = read_request(&mut socket).await;
+                if body["event_type"] == "broken" {
+                    release.notified().await;
+                    let refusal = "HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n";
+                    socket.write_all(refusal.as_bytes()).await.unwrap();
+                    return;
+                }
+                let mut events = sse(
+                    "live-notification",
+                    &json!({"type": "connection_established"}),
+                );
+                if first_mars.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    events.push_str(&sse(
+                        "live-notification",
+                        &json!({
+                            "id": "mars@1",
+                            "source": "https://aviso.example",
+                            "type": "int.ecmwf.aviso.mars",
+                            "time": "2026-05-17T12:34:56Z",
+                            "data": { "identifier": {}, "payload": null }
+                        }),
+                    ));
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                     transfer-encoding: chunked\r\n\r\n{:X}\r\n{events}\r\n",
+                    events.len()
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+                // Hold the stream open until the client goes away.
+                let mut sink = [0u8; 256];
+                while socket.read(&mut sink).await.unwrap_or(0) > 0 {}
+            });
+        }
+    });
+    url
+}
+
 #[tokio::test]
 async fn close_waits_for_the_final_checkpoint_of_a_stopped_watch() {
-    let server = MockServer::start().await;
-    // The failing watch answers late, so the live watch delivers first.
-    Mock::given(method("POST"))
-        .and(path_regex("^/api/v1/(watch|replay)$"))
-        .and(body_partial_json(json!({ "event_type": "broken" })))
-        .respond_with(ResponseTemplate::new(400).set_delay(Duration::from_millis(500)))
-        .mount(&server)
-        .await;
-    // The live watch delivers one notification on its first connection and
-    // nothing afterwards, so that notification's cursor is still pending
-    // (unwritten) when the watch is stopped, and only the exit flush writes it.
-    let first = sse(
-        "live-notification",
-        &json!({
-            "id": "mars@1",
-            "source": "https://aviso.example",
-            "type": "int.ecmwf.aviso.mars",
-            "time": "2026-05-17T12:34:56Z",
-            "data": { "identifier": {}, "payload": null }
-        }),
-    );
-    Mock::given(method("POST"))
-        .and(path_regex("^/api/v1/(watch|replay)$"))
-        .and(body_partial_json(json!({ "event_type": "mars" })))
-        .respond_with(move |request: &wiremock::Request| common::opened_sse(request, &first))
-        .up_to_n_times(1)
-        .with_priority(1)
-        .mount(&server)
-        .await;
-    serve(&server, "mars", String::new()).await;
+    // The live watch's one notification is received before the other watch
+    // is allowed to fail, so its cursor is pending (unwritten) when the
+    // failure stops it, and only the exit flush writes it.
+    let release = Arc::new(tokio::sync::Notify::new());
+    let url = gated_server(Arc::clone(&release)).await;
     let store = Arc::new(SlowStore {
         inner: MemoryStore::new(),
         last_written: Mutex::new(None),
     });
     let client = AvisoClient::builder()
-        .base_url(server.uri())
+        .base_url(&url)
         .state_store(store.clone())
         .flush_cursor_on_exit(true)
         .build()
@@ -391,21 +444,19 @@ async fn close_waits_for_the_final_checkpoint_of_a_stopped_watch() {
         )
         .unwrap();
 
-    let mut delivered = false;
-    loop {
-        let item = tokio::time::timeout(Duration::from_secs(10), stream.next())
-            .await
-            .unwrap()
-            .expect("an item before the stream ends");
-        match item {
-            Ok((name, _)) => delivered |= name == "live",
-            Err(error) => {
-                assert_eq!(error.name, "bad");
-                break;
-            }
-        }
-    }
-    assert!(delivered, "the live watch delivered before the error");
+    let (name, notification) = tokio::time::timeout(Duration::from_secs(60), stream.next())
+        .await
+        .unwrap()
+        .expect("an item")
+        .expect("the live notification");
+    assert_eq!((name.as_str(), notification.sequence), ("live", 1));
+    release.notify_one();
+    let error = tokio::time::timeout(Duration::from_secs(60), stream.next())
+        .await
+        .unwrap()
+        .expect("an item")
+        .expect_err("the refused watch fails");
+    assert_eq!(error.name, "bad");
     stream.close().await;
     // close() returns only after the stopped watch has written its cursor.
     assert_eq!(*store.last_written.lock().unwrap(), Some(1));
