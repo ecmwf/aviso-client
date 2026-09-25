@@ -7,13 +7,22 @@
 // does it submit to any jurisdiction.
 
 //! Turning `listen()` arguments into a watch request.
+//!
+//! Built-in triggers go into the core request; function triggers are kept
+//! aside for the iterator that delivers the notifications to call.
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::triggers::PyTrigger;
+use crate::triggers::{FunctionTrigger, PyTrigger, SplitTriggers};
 use crate::values::validate_identifier;
 use crate::watch::{PyWatchRequest, parse_resume_start};
+
+/// A core request and the function triggers that go with it.
+pub(crate) struct RequestSpec {
+    pub(crate) request: aviso::watch::WatchRequest,
+    pub(crate) functions: Vec<FunctionTrigger>,
+}
 
 pub(crate) fn build_watch_request(
     event_type: Option<String>,
@@ -22,7 +31,7 @@ pub(crate) fn build_watch_request(
     mode: Option<&str>,
     triggers: Option<&Bound<'_, PyAny>>,
     request: Option<PyRef<'_, PyWatchRequest>>,
-) -> PyResult<aviso::watch::WatchRequest> {
+) -> PyResult<RequestSpec> {
     if let Some(req) = request {
         if event_type.is_some() || filter.is_some() || start_from.is_some() {
             return Err(crate::error::AvisoError::new_err(
@@ -39,7 +48,7 @@ pub(crate) fn build_watch_request(
                 "triggers= cannot be combined with request=; add triggers to the WatchRequest instead",
             ));
         }
-        return Ok(req.clone().into_inner());
+        return Ok(req.clone().into_spec());
     }
     let event = event_type.ok_or_else(|| {
         crate::error::AvisoError::new_err(
@@ -78,16 +87,21 @@ pub(crate) fn build_watch_request(
         }
         req = req.with_filter(map);
     }
+    let mut functions = Vec::new();
     if let Some(triggers_value) = triggers {
-        let trigger_vec = extract_triggers(triggers_value)?;
-        if !trigger_vec.is_empty() {
-            req = req.with_triggers(trigger_vec);
+        let split = extract_triggers(triggers_value)?;
+        if !split.native.is_empty() {
+            req = req.with_triggers(split.native);
         }
+        functions = split.functions;
     }
-    Ok(req)
+    Ok(RequestSpec {
+        request: req,
+        functions,
+    })
 }
 
-fn extract_triggers(value: &Bound<'_, PyAny>) -> PyResult<Vec<aviso::watch::Trigger>> {
+fn extract_triggers(value: &Bound<'_, PyAny>) -> PyResult<SplitTriggers> {
     if value.is_instance_of::<PyTrigger>() {
         return Err(crate::error::AvisoError::new_err(
             "triggers= must be a sequence of Trigger; pass [trigger] for a single trigger",
@@ -105,7 +119,7 @@ fn extract_triggers(value: &Bound<'_, PyAny>) -> PyResult<Vec<aviso::watch::Trig
             "triggers= must be an iterable of Trigger instances (list or tuple)",
         )
     })?;
-    let mut out = Vec::new();
+    let mut out = SplitTriggers::default();
     for item in iter {
         let item = item?;
         let trigger: PyRef<'_, PyTrigger> = item.extract().map_err(|_| {
@@ -113,7 +127,7 @@ fn extract_triggers(value: &Bound<'_, PyAny>) -> PyResult<Vec<aviso::watch::Trig
                 "triggers= entries must be Trigger instances; got something else",
             )
         })?;
-        out.push(trigger.clone().into_inner());
+        out.push(&trigger);
     }
     Ok(out)
 }

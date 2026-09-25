@@ -10,7 +10,7 @@ Hand-written. Kept in sync with the runtime ``__all__`` via
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from enum import Enum
 
 # reason: Notification payload and identifier/filter values are JSON-shaped values
@@ -142,6 +142,24 @@ class Trigger:
         timeout: float = 30.0,
         fail_fast: bool = True,
     ) -> Trigger: ...
+    @staticmethod
+    def function(
+        func: Callable[[Notification], object],
+        *,
+        retries: int = 0,
+        required: bool = True,
+        label: str | None = None,
+    ) -> Trigger:
+        """Calls ``func`` with each notification.
+
+        It runs in the thread that reads the notification (or on its event
+        loop, where ``async def`` functions are awaited), one notification at
+        a time, after the built-in triggers. ``retries`` calls it again when
+        it raises. A required function that still fails raises
+        ``TriggerError``; an optional one is logged and skipped. ``timeout`` and ``fail_fast`` do
+        not apply to functions.
+        """
+        ...
     def retries(self, n: int) -> Trigger: ...
     def required(self, on: bool) -> Trigger: ...
     def timeout(self, seconds: float) -> Trigger: ...
@@ -227,6 +245,28 @@ class AsyncNotificationIterator:
         exc_value: BaseException | None,
         traceback: object | None,
     ) -> Awaitable[None]: ...
+
+class FunctionTriggerIterator:
+    """What ``AvisoClient.listen`` returns when its triggers include a
+    ``Trigger.function``. Same methods as ``NotificationIterator``."""
+
+    def __iter__(self) -> FunctionTriggerIterator: ...
+    def __next__(self) -> Notification: ...
+    def run(self) -> None: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> FunctionTriggerIterator: ...
+    def __exit__(self, *exc: object) -> bool: ...
+
+class AsyncFunctionTriggerIterator:
+    """What ``AsyncAvisoClient.listen`` returns when its triggers include a
+    ``Trigger.function``. Same methods as ``AsyncNotificationIterator``."""
+
+    def __aiter__(self) -> AsyncFunctionTriggerIterator: ...
+    async def __anext__(self) -> Notification: ...
+    async def run(self) -> None: ...
+    async def aclose(self) -> None: ...
+    async def __aenter__(self) -> AsyncFunctionTriggerIterator: ...
+    async def __aexit__(self, *exc: object) -> bool: ...
 
 class SourcedValue:
     """One resolved setting: its value and where it came from.
@@ -429,7 +469,11 @@ class AvisoClient:
         mode: WatchMode | str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> NotificationIterator: ...
+    ) -> NotificationIterator | FunctionTriggerIterator:
+        """Opens a listener. With a ``Trigger.function`` among ``triggers``,
+        the result is a ``FunctionTriggerIterator``: the same methods, calling
+        the functions as each notification is read."""
+        ...
     def __enter__(self) -> AvisoClient: ...
     def __exit__(
         self,
@@ -535,7 +579,11 @@ class AsyncAvisoClient:
         mode: WatchMode | str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> AsyncNotificationIterator: ...
+    ) -> AsyncNotificationIterator | AsyncFunctionTriggerIterator:
+        """Opens a listener. With a ``Trigger.function`` among ``triggers``,
+        the result is an ``AsyncFunctionTriggerIterator``: the same methods,
+        calling (and awaiting) the functions as each notification is read."""
+        ...
 
 class AvisoError(Exception):
     """Base class for every exception raised by the aviso library."""
@@ -599,6 +647,7 @@ __all__ = [
     "VERSION",
     "Anonymous",
     "AsyncAvisoClient",
+    "AsyncFunctionTriggerIterator",
     "AsyncNotificationIterator",
     "AuthError",
     "AuthProvider",
@@ -611,6 +660,7 @@ __all__ = [
     "ConfigFile",
     "DecodeError",
     "Env",
+    "FunctionTriggerIterator",
     "HistoryGapError",
     "HttpError",
     "HttpMethod",

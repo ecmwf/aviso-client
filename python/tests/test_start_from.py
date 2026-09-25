@@ -144,7 +144,9 @@ async def test_start_from_wire(
             stream = client.listen(request=method("mars", start_from=start_from))
         else:
             stream = client.listen("mars", start_from=start_from, mode=mode)
-        if isinstance(stream, pyaviso.AsyncNotificationIterator):
+        if isinstance(
+            stream, (pyaviso.AsyncNotificationIterator, pyaviso.AsyncFunctionTriggerIterator)
+        ):
             async with stream:
                 assert (await anext(stream)).sequence == sequence
                 if mode == "replay_only":

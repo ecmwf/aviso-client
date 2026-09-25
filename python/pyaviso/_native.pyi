@@ -12,7 +12,7 @@ package.
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 # reason: Notification payload and identifier/filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
@@ -131,6 +131,24 @@ class Trigger:
         timeout: float = 30.0,
         fail_fast: bool = True,
     ) -> Trigger: ...
+    @staticmethod
+    def function(
+        func: Callable[[Notification], object],
+        *,
+        retries: int = 0,
+        required: bool = True,
+        label: str | None = None,
+    ) -> Trigger:
+        """Calls ``func`` with each notification.
+
+        It runs in the thread that reads the notification (or on its event
+        loop, where ``async def`` functions are awaited), one notification at
+        a time, after the built-in triggers. ``retries`` calls it again when
+        it raises. A required function that still fails raises
+        ``TriggerError``; an optional one is logged and skipped. ``timeout`` and ``fail_fast`` do
+        not apply to functions.
+        """
+        ...
     def retries(self, n: int) -> Trigger: ...
     def required(self, on: bool) -> Trigger: ...
     def timeout(self, seconds: float) -> Trigger: ...
@@ -297,6 +315,8 @@ class AvisoClient:
     def wipe_stream(self, stream_name: str) -> None: ...
     def wipe_all(self) -> None: ...
     def delete_notification(self, notification_id: str) -> None: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
     def listen(
         self,
         event_type: str | None = None,
@@ -306,7 +326,7 @@ class AvisoClient:
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> NotificationIterator: ...
+    ) -> NotificationIterator | Any: ...
     def __enter__(self) -> AvisoClient: ...
     def __exit__(
         self,
@@ -363,6 +383,8 @@ class AsyncAvisoClient:
     def wipe_stream(self, stream_name: str) -> Awaitable[None]: ...
     def wipe_all(self) -> Awaitable[None]: ...
     def delete_notification(self, notification_id: str) -> Awaitable[None]: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
     def listen(
         self,
         event_type: str | None = None,
@@ -372,7 +394,7 @@ class AsyncAvisoClient:
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> AsyncNotificationIterator: ...
+    ) -> AsyncNotificationIterator | Any: ...
 
 class AvisoError(Exception): ...
 class TransportError(AvisoError): ...

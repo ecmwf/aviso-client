@@ -307,12 +307,18 @@ impl PyAvisoClient {
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
-    ) -> PyResult<PyNotificationIterator> {
-        let req = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
+    ) -> PyResult<Py<PyAny>> {
+        let spec = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
+        crate::triggers::refuse_async_functions(py, &spec.functions, None)?;
         let client = self.inner.clone();
+        let req = spec.request;
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
-        Ok(PyNotificationIterator::new(stream))
+        let iterator = Py::new(py, PyNotificationIterator::new(stream))?.into_any();
+        if spec.functions.is_empty() {
+            return Ok(iterator);
+        }
+        crate::triggers::wrap_listen(py, iterator, &spec.functions, false)
     }
 
     fn __repr__(&self) -> String {
@@ -561,12 +567,17 @@ impl PyAsyncAvisoClient {
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
-    ) -> PyResult<PyAsyncNotificationIterator> {
-        let req = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
+    ) -> PyResult<Py<PyAny>> {
+        let spec = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
         let client = self.inner.clone();
+        let req = spec.request;
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
-        Ok(PyAsyncNotificationIterator::new(stream))
+        let iterator = Py::new(py, PyAsyncNotificationIterator::new(stream))?.into_any();
+        if spec.functions.is_empty() {
+            return Ok(iterator);
+        }
+        crate::triggers::wrap_listen(py, iterator, &spec.functions, true)
     }
 
     fn __repr__(&self) -> String {
