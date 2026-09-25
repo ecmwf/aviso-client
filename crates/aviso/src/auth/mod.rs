@@ -28,6 +28,7 @@ pub use basic::Basic;
 pub use bearer::Bearer;
 pub use chain::Chain;
 pub use config_file::ConfigFile;
+pub(crate) use discover::unparseable_url;
 pub use discover::{
     CredentialSource, Discovered, DiscoveryPaths, ENV_CONFIG_FILE, ENV_CREDENTIALS_FILE,
     config_content_provider, config_file_provider, credentials_file_provider, discover,

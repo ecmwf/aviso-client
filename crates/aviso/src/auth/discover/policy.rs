@@ -44,19 +44,32 @@ pub(super) fn refuse_public_plaintext(
 ///
 /// A base URL may carry userinfo, so repeating it verbatim in an error would
 /// publish the very kind of secret this module exists to protect. An address
-/// that does not parse is reported as a placeholder rather than echoed.
+/// that does not parse is not echoed; the parser's reason is reported
+/// instead, which describes the problem without quoting the input.
+///
+/// Valid: `https://alice:hunter2@aviso.example.org` becomes
+/// `https://aviso.example.org/`. Invalid: `http://[bad` becomes
+/// `<unparseable url: invalid IPv6 address>`.
 #[must_use]
 pub fn url_without_userinfo(base_url: &str) -> String {
-    let Ok(mut parsed) = url::Url::parse(base_url) else {
-        return "<unparseable url>".to_string();
+    let mut parsed = match url::Url::parse(base_url) {
+        Ok(parsed) => parsed,
+        Err(e) => return unparseable_url(e),
     };
     if parsed.username().is_empty() && parsed.password().is_none() {
         return base_url.to_string();
     }
     if parsed.set_username("").is_err() || parsed.set_password(None).is_err() {
-        return "<unparseable url>".to_string();
+        return "<url whose credentials cannot be removed>".to_string();
     }
     parsed.to_string()
+}
+
+/// How an address that does not parse is shown. `url::ParseError` messages
+/// are fixed descriptions such as "empty host", so they never repeat the
+/// input.
+pub(crate) fn unparseable_url(error: url::ParseError) -> String {
+    format!("<unparseable url: {error}>")
 }
 
 /// True only for a plain `http` address that is not loopback: the one case
@@ -173,7 +186,13 @@ mod tests {
 
     #[test]
     fn an_unparseable_address_is_not_echoed_in_messages() {
-        assert_eq!(url_without_userinfo("not a url"), "<unparseable url>");
+        assert_eq!(
+            url_without_userinfo("not a url"),
+            "<unparseable url: relative URL without a base>"
+        );
+        let shown = url_without_userinfo("https://operator:hunter2@");
+        assert!(shown.starts_with("<unparseable url: "), "{shown}");
+        assert!(!shown.contains("hunter2"), "{shown}");
     }
 
     #[test]
