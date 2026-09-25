@@ -246,6 +246,26 @@ class AsyncNotificationIterator:
         traceback: object | None,
     ) -> Awaitable[None]: ...
 
+class ListenFailureKind(str, Enum):
+    """What failed: a listener, or a ``Trigger.function`` for one notification."""
+
+    LISTENER = "listener"
+    TRIGGER = "trigger"
+
+class ListenFailure:
+    """One failure seen by a ``listen_many`` iterator.
+
+    ``kind`` is ``ListenFailureKind.LISTENER`` when a listener stopped (a bad
+    filter, a missing permission, the replay limit), or
+    ``ListenFailureKind.TRIGGER`` when a ``Trigger.function`` raised for one
+    notification. Failures are also logged as warnings on the
+    ``pyaviso.listen`` logger, except when ``on_error`` is a function.
+    """
+
+    listener: str
+    kind: ListenFailureKind
+    error: BaseException
+
 class FunctionTriggerIterator:
     """What ``AvisoClient.listen`` returns when its triggers include a
     ``Trigger.function``. Same methods as ``NotificationIterator``."""
@@ -266,6 +286,40 @@ class AsyncFunctionTriggerIterator:
     async def run(self) -> None: ...
     async def aclose(self) -> None: ...
     async def __aenter__(self) -> AsyncFunctionTriggerIterator: ...
+    async def __aexit__(self, *exc: object) -> bool: ...
+
+class MultiNotificationIterator:
+    """Notifications from several listeners, as ``(name, notification)``."""
+
+    @property
+    def errors(self) -> list[ListenFailure]:
+        """Every failure so far, in order."""
+        ...
+    def __iter__(self) -> MultiNotificationIterator: ...
+    def __next__(self) -> tuple[str, Notification]: ...
+    def run(self) -> None:
+        """Reads every notification until all listeners end, calling their
+        triggers, then closes them."""
+        ...
+    def close(self) -> None: ...
+    def __enter__(self) -> MultiNotificationIterator: ...
+    def __exit__(self, *exc: object) -> bool: ...
+
+class AsyncMultiNotificationIterator:
+    """As ``MultiNotificationIterator``, for ``AsyncAvisoClient``."""
+
+    @property
+    def errors(self) -> list[ListenFailure]:
+        """Every failure so far, in order."""
+        ...
+    def __aiter__(self) -> AsyncMultiNotificationIterator: ...
+    async def __anext__(self) -> tuple[str, Notification]: ...
+    async def run(self) -> None:
+        """Reads every notification until all listeners end, calling (and
+        awaiting) their triggers, then closes them."""
+        ...
+    async def aclose(self) -> None: ...
+    async def __aenter__(self) -> AsyncMultiNotificationIterator: ...
     async def __aexit__(self, *exc: object) -> bool: ...
 
 class SourcedValue:
@@ -588,6 +642,13 @@ class AsyncAvisoClient:
 class AvisoError(Exception):
     """Base class for every exception raised by the aviso library."""
 
+    listener: str | None
+    """The listener the error came from, when raised by ``listen_many``;
+    otherwise ``None``."""
+    failures: list[ListenFailure] | None
+    """Every failure, on the error ``listen_many`` raises when all of its
+    listeners have failed; otherwise ``None``."""
+
 class TransportError(AvisoError):
     """Network-level failure before the server response begins."""
 
@@ -648,6 +709,7 @@ __all__ = [
     "Anonymous",
     "AsyncAvisoClient",
     "AsyncFunctionTriggerIterator",
+    "AsyncMultiNotificationIterator",
     "AsyncNotificationIterator",
     "AuthError",
     "AuthProvider",
@@ -665,8 +727,11 @@ __all__ = [
     "HttpError",
     "HttpMethod",
     "JsonFileStore",
+    "ListenFailure",
+    "ListenFailureKind",
     "MalformedEventError",
     "MemoryStore",
+    "MultiNotificationIterator",
     "Notification",
     "NotificationIterator",
     "NotifyResponse",

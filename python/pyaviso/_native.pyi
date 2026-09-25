@@ -396,7 +396,12 @@ class AsyncAvisoClient:
         request: WatchRequest | None = None,
     ) -> AsyncNotificationIterator | Any: ...
 
-class AvisoError(Exception): ...
+class AvisoError(Exception):
+    listener: str | None
+    # reason: the elements are pyaviso._many.ListenFailure, which this
+    # native stub does not import.
+    failures: list[Any] | None
+
 class TransportError(AvisoError): ...
 
 class HttpError(AvisoError):
