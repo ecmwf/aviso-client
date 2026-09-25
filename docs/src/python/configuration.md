@@ -5,11 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # Configuration
 
-A client needs a server address, and usually a credential. You can pass both
-in code, but on a machine that already runs the `aviso` command they are set
-up once, in the environment or in `~/.config/aviso/config.yaml`, and a script
-should not have to repeat them. So every constructor argument is optional, and
-what you leave out is looked up:
+A client needs a server address and, usually, a credential. Both can be
+passed in code. On a machine where the `aviso` command is already configured,
+they are defined once, in the environment or in `~/.config/aviso/config.yaml`,
+and scripts need not repeat them. Every constructor argument is therefore
+optional, and any argument that is omitted is looked up:
 
 ```python
 import pyaviso
@@ -18,12 +18,12 @@ client = pyaviso.AvisoClient()
 print(client.schema().event_types)
 ```
 
-This page says where each setting comes from, in what order, and how to see
-what a client ended up with.
+This page describes where each setting is read from, in which order, and how
+to inspect the configuration a client resolved.
 
-## Where settings come from
+## Order of precedence
 
-For each setting the client takes the first source that has a value:
+For each setting, the client uses the first source that provides a value:
 
 | Setting | 1. Code | 2. Environment | 3. Config file | 4. Otherwise |
 |---|---|---|---|---|
@@ -37,31 +37,31 @@ The config file is `~/.config/aviso/config.yaml`, or the file named by
 `AVISO_CLIENT_CONFIG_FILE`. The credentials file is
 `~/.config/aviso/credentials.yaml`, or `AVISO_CREDENTIALS_FILE`. A missing
 file sets nothing; a file that exists but cannot be read raises
-`pyaviso.ConfigError`. Sections the file has for the `aviso` command, such as
-`listeners`, are ignored here.
+`pyaviso.ConfigError`. Sections intended for the `aviso` command, such as
+`listeners`, are ignored.
 
-This is the same order the `aviso` command uses, minus its command-line flags,
-so a script and the command on the same machine talk to the same server with
-the same credential. Two consequences follow:
+The `aviso` command uses the same order, with its command-line options taking
+precedence, so a script and the command on the same machine use the same
+server and the same credential. Two consequences follow:
 
-- **The environment can redirect a script.** An `AVISO_BASE_URL` left in the
-  shell changes where `AvisoClient()` connects. If a script must always talk
-  to one server, pass `base_url=`.
-- **A found credential is protected.** A credential from the environment or a
-  file is not sent to a plain `http://` address unless it is loopback; the
-  client raises `pyaviso.AuthError` instead. You did not name the credential
-  in code, so a mistyped host would otherwise send it in the clear. Passing
-  `auth=` yourself lifts the rule. [Authentication](./auth.md) has the
-  details.
+- **The environment can change where a script connects.** An `AVISO_BASE_URL`
+  set in the shell determines where `AvisoClient()` connects. A script that
+  must always use one server should pass `base_url=`.
+- **A discovered credential is protected.** A credential read from the
+  environment or a file is not sent to a plain `http://` address unless the
+  host is loopback; the client raises `pyaviso.AuthError` instead. Because
+  the credential was not named in code, a mistyped host would otherwise
+  receive it unencrypted. Passing `auth=` explicitly removes this
+  restriction. See [Authentication](./auth.md) for details.
 
 `AvisoClient.from_file(path)` is the same lookup with a named config file in
 place of the default one; that path must exist. `AsyncAvisoClient` takes the
 same arguments and follows the same order.
 
-## See what a client resolved
+## Inspecting the resolved configuration
 
-When something does not connect, the first question is which server and which
-credential the client ended up with. Every client answers it:
+When a connection fails, the first question is which server and which
+credential the client is using. Every client reports this:
 
 ```python
 import pyaviso
@@ -81,12 +81,12 @@ ResolvedConfig(
 )
 ```
 
-Each line is a setting, its value, and where it came from. Nothing in it is a
-secret: the credential is described by its kind and source, never its value,
-and the address has any `user:password@` removed. The whole thing is written
-to be pasted into a ticket or a log.
+Each line shows a setting, its value and its source. The report contains no
+secrets: the credential is described by its kind and source, never by its
+value, and any `user:password@` is removed from the address. The report can
+therefore be included as it is in a support request or a log.
 
-The fields are objects too, so code can read them:
+The fields are also available as objects:
 
 ```python
 url = client.config.base_url
@@ -100,12 +100,13 @@ if client.config.auth is None:
 `source` is one of `code`, `environment <NAME>`, `config file <path>`,
 `credentials file <path>` or `default`. `auth` is `None` when no source had a
 credential; `auth=pyaviso.Anonymous()` is instead reported as kind
-`anonymous` from `code`, since that was a choice. `client.config.as_dict()`
-returns the same information as plain values, for a JSON log line.
+`anonymous` from `code`, since that was an explicit choice.
+`client.config.as_dict()` returns the same information as plain values, for
+structured logging.
 
-## Ask before building
+## Inspecting the configuration without a client
 
-`pyaviso.resolve_config()` produces the same report without building a
+`pyaviso.resolve_config()` produces the same report without creating a
 client. It takes the constructor arguments that take part in the lookup
 (`base_url`, `auth`, `timeout`, `heartbeat_interval` and
 `danger_accept_invalid_certs`; not `user_agent`, `state_store` or
@@ -124,9 +125,9 @@ else:
     print(config)
 ```
 
-The second case is the one that confuses people most: a token is set up, and
-`AvisoClient()` raises `AuthError` anyway. The report shows the credential
-and says why the client refuses to build with it, for example:
+The second case is a common source of confusion: a credential is configured,
+yet `AvisoClient()` raises `AuthError`. The report shows the credential and
+the reason the client refuses to use it, for example:
 
 ```text
     auth="bearer"                                    (config file /home/me/.config/aviso/config.yaml; refused: http://aviso.internal.example.org is plain http on a host that is not loopback, so the client will not be built. Use https, or name the credential in code to send it anyway.),
@@ -136,11 +137,11 @@ and says why the client refuses to build with it, for example:
 credentials file exists but cannot be read, and `pyaviso.AuthError` when a
 credential source is present but unusable, such as `AVISO_USERNAME` with no
 `AVISO_PASSWORD`; that is the same point at which `AvisoClient()` would
-fail. Everything else is reported in the object.
+fail. All other conditions are reported in the returned object.
 
-## Pin a setting in code
+## Setting values in code
 
-Anything passed to the constructor is taken as given and reported with the
+Any value passed to the constructor is used as given and reported with the
 source `code`:
 
 ```python
@@ -151,10 +152,10 @@ client = pyaviso.AvisoClient(
 )
 ```
 
-Here the address and credential are fixed whatever the machine has set up,
-while `heartbeat_interval` and the TLS settings still come from the file if
-it has them. To send no credential even though one is present on the machine,
-pass `auth=pyaviso.Anonymous()`.
+Here the address and credential are fixed regardless of the machine's
+configuration, while `heartbeat_interval` and the TLS settings are still read
+from the file if it sets them. To send no credential even when one is
+configured on the machine, pass `auth=pyaviso.Anonymous()`.
 
 ## The `aviso` command
 

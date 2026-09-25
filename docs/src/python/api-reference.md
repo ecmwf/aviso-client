@@ -95,7 +95,7 @@ response's request ID is not a notification ID.
 `SourcedValue` with `.value` and `.source`), `auth` (`ResolvedAuth | None`
 with `.kind`, `.source` and `.refused`), `config_file`, `credentials_file`,
 and `as_dict()`.
-See [Configuration](./configuration.md#see-what-a-client-resolved).
+See [Configuration](./configuration.md#inspecting-the-resolved-configuration).
 
 ### Constructor options and lifecycle
 

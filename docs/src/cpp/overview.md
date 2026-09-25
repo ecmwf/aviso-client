@@ -98,23 +98,23 @@ a later `base_url` call. Naming the credential with `bearer_auth` or
 
 ## Starting from the environment
 
-`from_environment` is `from_file` with one addition: the address may also
-come from `AVISO_BASE_URL`, which wins over the file. This is the same order
-the `aviso` command and the Python binding use, so a program that starts this
-way needs no arguments on a machine set up for either:
+`from_environment` behaves like `from_file`, except that the address may also
+come from `AVISO_BASE_URL`, which takes precedence over the file. The `aviso`
+command and the Python binding use the same order, so a program built this
+way needs no arguments on a machine configured for either:
 
 ```cpp
 aviso::Client client = aviso::ClientBuilder::from_environment().build();
 ```
 
-With no address in the environment or the file, `build()` throws a config
-error naming both places.
+If neither the environment nor the file provides an address, `build()` throws
+a configuration error that names both sources.
 
-## Seeing what a builder resolved
+## Inspecting the resolved configuration
 
-When something does not connect, the first question is which server and
-which credential the client ended up with. `describe()` answers it for any
-builder, without building:
+When a connection fails, the first question is which server and which
+credential the client is using. `describe()` reports this for any builder,
+without building a client:
 
 ```cpp
 aviso::ClientBuilder builder = aviso::ClientBuilder::from_environment();
@@ -130,13 +130,13 @@ ca_bundle                   none                                    (default)
 danger_accept_invalid_certs false                                   (default)
 ```
 
-One setting per line: the value, then its source in parentheses. Nothing in
-it is a secret. The credential is described by kind and source, never by
-value, and the address has any `user:password@` removed, so the text can go
-into a log or a ticket as it is. A found credential that `build()` would
-refuse is shown with the reason on its `auth` line. A builder from
-`ClientBuilder(url)` that named no credential and never called
-`discover_auth` reports `auth` as `anonymous`.
+Each line shows a setting, its value and, in parentheses, its source. The
+report contains no secrets: the credential is described by kind and source,
+never by value, and any `user:password@` is removed from the address. It can
+therefore be included as it is in a log or a support request. A discovered
+credential that `build()` would refuse is shown with the reason on its `auth`
+line. A builder created with `ClientBuilder(url)` that has no named credential
+and has not called `discover_auth` reports `auth` as `anonymous`.
 
 `describe()` throws `aviso::Error` for an error the builder already holds,
 such as a null address, or for a config file that exists but cannot be read.
@@ -222,9 +222,9 @@ cmake --build build/cpp
 AVISO_BASE_URL=http://localhost:8000 ./build/cpp/01_schema
 ```
 
-The examples connect through `from_environment()`, so on a machine that
-already uses the `aviso` command they need no setup, and `01_schema` prints
-what it resolved before its first request. The
+The examples connect through `from_environment()`, so they need no further
+setup on a machine where the `aviso` command is configured; `01_schema`
+prints the resolved configuration before its first request. The
 two CMake cache variables `AVISO_FFI_INCLUDE_DIR` and `AVISO_FFI_LIB_DIR`
 default to the in-tree locations; point them at a prebuilt drop to build
 against shipped artifacts with no Rust toolchain. The
