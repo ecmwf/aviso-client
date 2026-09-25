@@ -280,11 +280,12 @@ pub(super) async fn dispatch_webhook(
             if let Some(t) = timeout {
                 Err(TriggerError::Timeout(t))
             } else {
-                // Body-drain reported a timeout error without a per-trigger
-                // timeout configured: classify as a transport error so the
-                // dispatcher can retry it through the standard budget. This
-                // can happen if reqwest's pool connection deadline expires
-                // mid-body without the user setting Trigger::timeout.
+                // A timeout error with no per-trigger timeout set. The public
+                // constructors always give HTTP triggers a timeout (30s by
+                // default), and the HTTP clients triggers use set no timeout
+                // of their own, so this is not reached through the API. If it
+                // is, the error is classified as a transport failure so the
+                // dispatcher retries it within the trigger's retry budget.
                 Err(TriggerError::Webhook {
                     status: None,
                     body_tail: String::new(),
