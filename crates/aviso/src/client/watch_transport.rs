@@ -19,17 +19,24 @@
 //!
 //! So watches do not share the client's own connection. They lease one of
 //! a small set of `reqwest::Client`s, each with its own connection pool,
-//! and each carrying at most [`WATCHES_PER_CONNECTION`] watches. When all
-//! are full the next watch gets a new one; a lease is returned when its
-//! watch ends. Clones of an `AvisoClient` share the set, so the cap holds
-//! across them.
+//! and each carrying at most [`WATCHES_PER_CONNECTION`] watches. Here a
+//! "connection" means one of those clients: over HTTP/2 it is one TCP
+//! connection; over HTTP/1.1 each watch has its own TCP connection anyway,
+//! and the cap only groups them. When all are full the next watch gets a
+//! new client; a lease is returned when its watch ends, and clients left
+//! idle at the end of the set are released. Clones of an `AvisoClient`
+//! share the set, so the cap holds across them.
+//!
+//! A new client is built synchronously, on the thread that opens the watch,
+//! the first time the existing ones are full.
 //!
 //! These clients are built without the request timeout the caller may have
 //! set. That timeout bounds a whole request, body included, and a watch's
-//! body is meant to stay open: with it, every watch was cut and reconnected
-//! each time the timeout elapsed. Watches have their own opening deadline
-//! and heartbeat watchdog instead.
+//! body is meant to stay open: with it, every watch would be cut and
+//! reconnected each time the timeout elapsed. Watches have their own opening
+//! deadline and heartbeat watchdog instead.
 
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use reqwest::Client as HttpClient;
@@ -39,15 +46,17 @@ use crate::ClientError;
 /// Most watches one connection carries. Below the concurrent-request limits
 /// of common servers and proxies (nginx 128, `HAProxy` 100), leaving room on
 /// the same connection for the requests triggers make to that host, and for
-/// servers that advertise a lower limit than those.
-pub(crate) const WATCHES_PER_CONNECTION: usize = 64;
+/// servers that advertise a lower limit than those. The value is 64 (one
+/// plus 63, which a constant `NonZeroUsize` can express without a runtime
+/// check).
+pub(crate) const WATCHES_PER_CONNECTION: NonZeroUsize = NonZeroUsize::MIN.saturating_add(63);
 
 type Factory = dyn Fn() -> reqwest::Result<HttpClient> + Send + Sync;
 
 /// The set of HTTP clients watches lease from.
 pub(crate) struct WatchTransport {
     factory: Box<Factory>,
-    per_connection: usize,
+    per_connection: NonZeroUsize,
     slots: Mutex<Vec<Slot>>,
 }
 
@@ -68,12 +77,12 @@ impl WatchTransport {
     /// fails at `build()` rather than at the first watch.
     pub(crate) fn new(
         factory: Box<Factory>,
-        per_connection: usize,
+        per_connection: NonZeroUsize,
     ) -> Result<Arc<Self>, ClientError> {
         let first = build(&*factory)?;
         Ok(Arc::new(Self {
             factory,
-            per_connection: per_connection.max(1),
+            per_connection,
             slots: Mutex::new(vec![Slot {
                 http: first,
                 active: 0,
@@ -112,7 +121,7 @@ impl WatchTransport {
         let (index, slot) = slots
             .iter_mut()
             .enumerate()
-            .find(|(_, s)| s.active < self.per_connection)?;
+            .find(|(_, s)| s.active < self.per_connection.get())?;
         slot.active += 1;
         Some(Lease {
             transport: Arc::clone(self),
@@ -121,6 +130,10 @@ impl WatchTransport {
         })
     }
 
+    /// The slots. A panic elsewhere while the lock was held cannot leave
+    /// them half-updated: every change under it is one push or one counter
+    /// step. So a poisoned lock is still consistent and is used as is,
+    /// rather than failing every later watch of the client.
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Slot>> {
         self.slots.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -140,8 +153,15 @@ impl Lease {
 
 impl Drop for Lease {
     fn drop(&mut self) {
-        if let Some(slot) = self.transport.lock().get_mut(self.index) {
+        let mut slots = self.transport.lock();
+        if let Some(slot) = slots.get_mut(self.index) {
             slot.active = slot.active.saturating_sub(1);
+        }
+        // Release idle clients at the end of the set, keeping the first.
+        // Only trailing slots go, and only idle ones, so no live lease's
+        // index ever points past the end.
+        while slots.len() > 1 && slots.last().is_some_and(|s| s.active == 0) {
+            slots.pop();
         }
     }
 }
@@ -176,7 +196,9 @@ pub(crate) fn http_clients(
 }
 
 fn build(factory: &Factory) -> Result<HttpClient, ClientError> {
-    factory().map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))
+    factory().map_err(|e| {
+        ClientError::Config(format!("failed to build the HTTP client for a watch: {e}"))
+    })
 }
 
 #[cfg(test)]
@@ -189,6 +211,10 @@ mod tests {
 
     use super::*;
 
+    fn cap(n: usize) -> NonZeroUsize {
+        NonZeroUsize::new(n).unwrap()
+    }
+
     fn transport(per_connection: usize) -> (Arc<WatchTransport>, Arc<AtomicUsize>) {
         let built = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&built);
@@ -196,7 +222,10 @@ mod tests {
             counter.fetch_add(1, Ordering::SeqCst);
             HttpClient::builder().build()
         });
-        (WatchTransport::new(factory, per_connection).unwrap(), built)
+        (
+            WatchTransport::new(factory, cap(per_connection)).unwrap(),
+            built,
+        )
     }
 
     #[test]
@@ -229,11 +258,32 @@ mod tests {
 
     #[test]
     fn many_watches_spread_over_as_few_connections_as_the_cap_allows() {
-        let (t, _) = transport(WATCHES_PER_CONNECTION);
+        let (t, _) = transport(WATCHES_PER_CONNECTION.get());
         let leases: Vec<_> = (0..150).map(|_| t.acquire().unwrap()).collect();
         assert_eq!(t.active_per_connection(), vec![64, 64, 22]);
         drop(leases);
-        assert_eq!(t.active_per_connection(), vec![0, 0, 0]);
+        // Idle clients past the first are released.
+        assert_eq!(t.active_per_connection(), vec![0]);
+    }
+
+    #[test]
+    fn only_idle_clients_at_the_end_are_released() {
+        let (t, built) = transport(2);
+        let a = t.acquire().unwrap();
+        let b = t.acquire().unwrap();
+        let c = t.acquire().unwrap();
+        assert_eq!(t.active_per_connection(), vec![2, 1]);
+        // The first client goes idle, but a later one is still in use: the
+        // set keeps both, so the busy one's position is unchanged.
+        drop(a);
+        drop(b);
+        assert_eq!(t.active_per_connection(), vec![0, 1]);
+        drop(c);
+        assert_eq!(t.active_per_connection(), vec![0]);
+        // The next watch reuses the first client; nothing new is built.
+        let _d = t.acquire().unwrap();
+        assert_eq!(t.active_per_connection(), vec![1]);
+        assert_eq!(built.load(Ordering::SeqCst), 2);
     }
 
     /// Accepts connections and answers each with an opened, idle SSE stream.
@@ -273,7 +323,7 @@ mod tests {
             .base_url(&url)
             .build()
             .unwrap();
-        let streams: Vec<_> = (0..WATCHES_PER_CONNECTION + 6)
+        let streams: Vec<_> = (0..WATCHES_PER_CONNECTION.get() + 6)
             .map(|_| {
                 client
                     .watch(crate::watch::WatchRequest::watch("mars"))
@@ -282,28 +332,21 @@ mod tests {
             .collect();
         assert_eq!(
             client.watch_transport.active_per_connection(),
-            vec![WATCHES_PER_CONNECTION, 6]
+            vec![WATCHES_PER_CONNECTION.get(), 6]
         );
 
         for stream in streams {
             stream.close().await;
         }
-        // Once close() has returned, the slot is already free.
-        assert_eq!(client.watch_transport.active_per_connection(), vec![0, 0]);
+        // Once close() has returned, the slot is already free, and the idle
+        // second client has been released.
+        assert_eq!(client.watch_transport.active_per_connection(), vec![0]);
 
         let again = client
             .watch(crate::watch::WatchRequest::watch("mars"))
             .unwrap();
-        assert_eq!(client.watch_transport.active_per_connection(), vec![1, 0]);
+        assert_eq!(client.watch_transport.active_per_connection(), vec![1]);
         again.close().await;
-    }
-
-    #[test]
-    fn a_cap_of_zero_is_treated_as_one() {
-        let (t, _) = transport(0);
-        let _a = t.acquire().unwrap();
-        let _b = t.acquire().unwrap();
-        assert_eq!(t.active_per_connection(), vec![1, 1]);
     }
 
     /// An HTTP/2 server (cleartext) that allows `streams` concurrent requests
@@ -361,7 +404,7 @@ mod tests {
             .unwrap();
         client.watch_transport = WatchTransport::new(
             Box::new(|| HttpClient::builder().http2_prior_knowledge().build()),
-            per_connection,
+            cap(per_connection),
         )
         .unwrap();
         let streams: Vec<_> = (0..watches)
