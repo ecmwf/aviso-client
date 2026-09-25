@@ -44,7 +44,9 @@ mod clients;
 mod config;
 mod error;
 mod error_test_helper;
+mod many;
 mod paths;
+mod requests;
 mod runtime;
 mod state_stores;
 mod streams;
@@ -110,6 +112,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     triggers::register_triggers(m)?;
     watch::register_watch(m)?;
     streams::register_streams(m)?;
+    many::register(m)?;
     config::register(m)?;
     clients::register_clients(m)?;
     cli::register_cli(m)?;

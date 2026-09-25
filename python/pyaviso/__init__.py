@@ -26,6 +26,13 @@ from __future__ import annotations
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 
+from pyaviso._functions import AsyncFunctionTriggerIterator, FunctionTriggerIterator
+from pyaviso._many import (
+    AsyncMultiNotificationIterator,
+    ListenFailure,
+    ListenFailureKind,
+    MultiNotificationIterator,
+)
 from pyaviso._native import (
     VERSION,
     Anonymous,
@@ -95,6 +102,8 @@ __all__ = [
     "VERSION",
     "Anonymous",
     "AsyncAvisoClient",
+    "AsyncFunctionTriggerIterator",
+    "AsyncMultiNotificationIterator",
     "AsyncNotificationIterator",
     "AuthError",
     "AuthProvider",
@@ -107,12 +116,16 @@ __all__ = [
     "ConfigFile",
     "DecodeError",
     "Env",
+    "FunctionTriggerIterator",
     "HistoryGapError",
     "HttpError",
     "HttpMethod",
     "JsonFileStore",
+    "ListenFailure",
+    "ListenFailureKind",
     "MalformedEventError",
     "MemoryStore",
+    "MultiNotificationIterator",
     "Notification",
     "NotificationIterator",
     "NotifyResponse",

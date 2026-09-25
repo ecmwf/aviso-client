@@ -21,6 +21,8 @@ use crate::values::validate_identifier;
 #[derive(Clone)]
 pub(crate) struct PyWatchRequest {
     inner: WatchRequest,
+    /// Function triggers, which never reach the core; see `crate::triggers`.
+    functions: Vec<crate::triggers::FunctionTrigger>,
 }
 
 #[pymethods]
@@ -29,6 +31,7 @@ impl PyWatchRequest {
     fn watch(event_type: String) -> Self {
         Self {
             inner: WatchRequest::watch(event_type),
+            functions: Vec::new(),
         }
     }
 
@@ -38,6 +41,7 @@ impl PyWatchRequest {
         let resume = parse_resume_start(start_from)?;
         Ok(Self {
             inner: WatchRequest::watch_from(event_type, resume),
+            functions: Vec::new(),
         })
     }
 
@@ -47,6 +51,7 @@ impl PyWatchRequest {
         let resume = parse_resume_start(start_from)?;
         Ok(Self {
             inner: WatchRequest::replay_only(event_type, resume),
+            functions: Vec::new(),
         })
     }
 
@@ -60,6 +65,7 @@ impl PyWatchRequest {
         }
         Ok(Self {
             inner: self.inner.clone().with_filter(map),
+            functions: self.functions.clone(),
         })
     }
 
@@ -69,12 +75,13 @@ impl PyWatchRequest {
                   taking by value is the canonical pattern"
     )]
     fn with_triggers(&self, triggers: Vec<PyRef<'_, PyTrigger>>) -> Self {
-        let inner_triggers: Vec<_> = triggers
-            .iter()
-            .map(|t| <PyTrigger as Clone>::clone(t).into_inner())
-            .collect();
+        let mut split = crate::triggers::SplitTriggers::default();
+        for t in &triggers {
+            split.push(t);
+        }
         Self {
-            inner: self.inner.clone().with_triggers(inner_triggers),
+            inner: self.inner.clone().with_triggers(split.native),
+            functions: split.functions,
         }
     }
 
@@ -101,8 +108,11 @@ impl PyWatchRequest {
 }
 
 impl PyWatchRequest {
-    pub(crate) fn into_inner(self) -> WatchRequest {
-        self.inner
+    pub(crate) fn into_spec(self) -> crate::requests::RequestSpec {
+        crate::requests::RequestSpec {
+            request: self.inner,
+            functions: self.functions,
+        }
     }
 }
 

@@ -118,6 +118,13 @@ impl NotificationStream {
         self.ready.clone()
     }
 
+    /// Asks the supervisor to stop without waiting for it; [`Self::close`]
+    /// can still wait afterwards. Used by a merged stream that must stop
+    /// every watch at once and wait for them later.
+    pub(crate) fn cancel(&mut self) {
+        self.cancel.take();
+    }
+
     /// Cancel the supervisor cooperatively and wait for it to fully
     /// exit (including any post-loop work such as the
     /// [`AvisoClientBuilder::flush_cursor_on_exit`](crate::AvisoClientBuilder::flush_cursor_on_exit)

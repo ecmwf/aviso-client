@@ -41,7 +41,7 @@ then the aviso config file, then the default; see
 
 ### Receive notifications
 
-- `listen(event_type=None, *, filter=None, start_from=None, mode=None, triggers=None, request=None) -> NotificationIterator`
+- `listen(event_type=None, *, filter=None, start_from=None, mode=None, triggers=None, request=None) -> NotificationIterator | FunctionTriggerIterator`
   (mode defaults to `"watch"` when not specified; `triggers` is a
   `Sequence[Trigger]`; the returned iterator is also a context manager via
   `with` and supports `iterator.close()` for explicit teardown)
@@ -54,6 +54,21 @@ The value's type selects the meaning, so sequence numbers must be unquoted;
 see [Start from a specific position](./listen.md#start-from-a-specific-position).
 Use `mode="replay_only"` with a start position to end at the replay boundary.
 See [State and resume](./state-and-resume.md) for checkpoint limits.
+
+- `listen_many(listeners, *, start_from=None, mode=None, on_error=None) -> MultiNotificationIterator`
+
+`listeners` maps a name to a dict of `listen()` keywords (`event_type`,
+`filter`, `start_from`, `mode`, `triggers`) or to a `WatchRequest`. The
+`start_from` and `mode` given here apply to dict entries that set none. The
+loop yields `(name, notification)`. `on_error` is `"raise"` (or `None`, the
+default), `"continue"` or a function taking `(name, error)`; see
+[Error handling](./listen-many.md#error-handling). Arguments are checked
+before any listener opens, the shared `start_from` and `mode` included. A
+mistake in the structure of `listeners` (not a mapping, an empty or
+non-string name, an unknown key, a missing `event_type`) or an invalid
+`on_error` raises `TypeError` or `ValueError`. An invalid `listen()` argument
+inside an entry raises what `listen()` would. When the mistake belongs to one
+entry, the message names that listener.
 
 ### Publish notifications (providers)
 
@@ -181,10 +196,23 @@ Builders: `.with_filter(dict)`, `.with_triggers(list)`. Properties:
 `REPLAY_ONLY = "replay_only"`.
 
 `pyaviso.NotificationIterator` and `pyaviso.AsyncNotificationIterator`: returned
-by `listen`. The sync one implements `__iter__` / `__next__` / `close`; the
-async one implements `__aiter__` / `__anext__` / `aclose`. Both are iterator
-context managers: `with` closes the sync iterator; `async with` awaits async
-closure. A loop `break` alone does not close an iterator you still hold.
+by `listen`. The sync one implements `__iter__` / `__next__` / `run` / `close`;
+the async one implements `__aiter__` / `__anext__` / `run` / `aclose`. Both are
+iterator context managers: `with` closes the sync iterator; `async with` awaits
+async closure. A loop `break` alone does not close an iterator you still hold.
+`run()` (awaited on the async one) reads the stream to its end, running its
+triggers, then closes it. When the triggers include `Trigger.function`,
+`listen` returns a `pyaviso.FunctionTriggerIterator` (or
+`pyaviso.AsyncFunctionTriggerIterator`) with the same methods.
+
+`pyaviso.MultiNotificationIterator` and
+`pyaviso.AsyncMultiNotificationIterator`: returned by `listen_many`, with the
+same methods as above, yielding `(name, notification)`, plus `errors`: a list
+of `pyaviso.ListenFailure`, each with `listener` (the name), `kind` (a
+`pyaviso.ListenFailureKind`, `LISTENER` or `TRIGGER`) and `error`. A listener
+or function failure raised from the loop carries `error.listener`. When every
+listener has failed, the loop raises `AvisoError` with a `failures` list.
+Every `AvisoError` has both attributes; they are `None` when not set.
 
 ## Triggers
 
@@ -197,14 +225,18 @@ closure. A loop `break` alone does not close an iterator you still hold.
 - `Trigger.webhook(url, *, method=None, headers=None, body_template=None, retries=0, required=True, timeout=30.0, fail_fast=True)`
 - `Trigger.teams(url, *, retries=0, required=True, timeout=30.0, fail_fast=True)`
 - `Trigger.post(url, *, retries=0, required=True, timeout=30.0, fail_fast=True)`
+- `Trigger.function(func, *, retries=0, required=True, label=None)`: calls
+  `func(notification)` in the reading thread or event loop; see
+  [Function](./triggers.md#function)
 
 Chainable setters: `.retries(n)`, `.required(on)`, `.timeout(seconds)`,
 `.fail_fast(on)`, `.label(name)`.
 
 Setters return new values. Webhook `method=None` means POST. Timeout and
-fail-fast setters affect only command and HTTP triggers; label affects only
-echo. Echo and log output the smaller notification view, while post forwards
-the original CloudEvent. See [Triggers](./triggers.md).
+fail-fast setters affect only command and HTTP triggers, and raise
+`ValueError` on a function trigger; label affects echo and names a function
+trigger in its errors. Echo and log output the smaller notification view,
+while post forwards the original CloudEvent. See [Triggers](./triggers.md).
 
 `pyaviso.HttpMethod` is a `str + Enum` with members `POST`, `GET`, `PUT`,
 `PATCH`, `DELETE`.

@@ -254,6 +254,40 @@ The filter must include every identifier the event type's schema marks
 `400 Required field '<name>' missing for watch operation`. Run
 `aviso schema get <TYPE>` to see which fields are required.
 
+### Several watches through one stream
+
+`watch_many` opens one watch per named request and merges them. Each item
+carries the name, so one loop serves watches with different filters or event
+types:
+
+```rust,ignore
+use aviso::watch::{ErrorPolicy, WatchRequest};
+use futures_util::StreamExt;
+
+let od = WatchRequest::watch("mars")
+    .with_filter([("class".to_string(), serde_json::json!("od"))].into());
+let north = WatchRequest::watch("alerts")
+    .with_filter([("region".to_string(), serde_json::json!("north"))].into());
+
+let mut stream =
+    client.watch_many([("operational", od), ("alerts", north)], ErrorPolicy::Continue)?;
+while let Some(item) = stream.next().await {
+    match item {
+        Ok((name, notification)) => println!("{name}: seq {}", notification.sequence),
+        Err(failure) => eprintln!("{failure}"),
+    }
+}
+```
+
+Watches are read in turn, so a busy one cannot starve a quiet one, and the
+stream ends when every watch has ended. A failing watch yields one
+`EntryError` with its `name` and `error`. `ErrorPolicy::Stop` then ends the
+others; `ErrorPolicy::Continue` drops only that one. Every request is checked
+before any watch opens, and each keeps the resume position `watch()` would
+give it. `close().await` closes them all. `check_watch_request` performs the
+same check on one request without opening anything, for callers that build
+requests from their own input and want to report a mistake first.
+
 ### Numeric and enum constraints
 
 Use JSON objects in the filter map. With the `client` above connected to the

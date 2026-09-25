@@ -66,6 +66,12 @@ pub(crate) fn register_exceptions(py: Python<'_>, m: &Bound<'_, PyModule>) -> Py
     m.add("ConfigError", py.get_type::<ConfigError>())?;
     m.add("StateStoreError", py.get_type::<StateStoreError>())?;
     m.add("TriggerError", py.get_type::<TriggerError>())?;
+    // Declared on the base class so every error has them: `listen_many`
+    // sets `listener` on the errors it raises, and `failures` on the one it
+    // raises when every listener has failed. Elsewhere both stay None.
+    let base = py.get_type::<AvisoError>();
+    base.setattr("listener", py.None())?;
+    base.setattr("failures", py.None())?;
     Ok(())
 }
 

@@ -34,6 +34,7 @@ mod builder;
 mod helpers;
 pub mod resolve;
 mod settings;
+mod watch_many;
 mod watch_spawn;
 pub(crate) mod watch_transport;
 

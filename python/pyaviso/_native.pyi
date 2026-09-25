@@ -12,7 +12,7 @@ package.
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 # reason: Notification payload and identifier/filter values are JSON-shaped values
 # (dict, list, str, int, float, bool, or None), so the stubs use `Any`
@@ -131,6 +131,25 @@ class Trigger:
         timeout: float = 30.0,
         fail_fast: bool = True,
     ) -> Trigger: ...
+    @staticmethod
+    def function(
+        func: Callable[[Notification], object],
+        *,
+        retries: int = 0,
+        required: bool = True,
+        label: str | None = None,
+    ) -> Trigger:
+        """Calls ``func`` with each notification.
+
+        It runs in the thread that reads the notification (or on its event
+        loop, where ``async def`` functions are awaited), one notification at
+        a time, after the built-in triggers. ``retries`` calls it again when
+        it raises. A required function that still fails raises
+        ``TriggerError``, or goes to ``on_error`` with ``listen_many``; an
+        optional one is logged and skipped. ``timeout`` and ``fail_fast`` do
+        not apply to functions.
+        """
+        ...
     def retries(self, n: int) -> Trigger: ...
     def required(self, on: bool) -> Trigger: ...
     def timeout(self, seconds: float) -> Trigger: ...
@@ -178,6 +197,10 @@ class WatchRequest:
 class NotificationIterator:
     def __iter__(self) -> NotificationIterator: ...
     def __next__(self) -> Notification: ...
+    def run(self) -> None:
+        """Reads every notification until the stream ends, running its
+        triggers, then closes it."""
+        ...
     def close(self) -> None: ...
     def __enter__(self) -> NotificationIterator: ...
     def __exit__(
@@ -190,6 +213,10 @@ class NotificationIterator:
 class AsyncNotificationIterator:
     def __aiter__(self) -> AsyncNotificationIterator: ...
     def __anext__(self) -> Awaitable[Notification]: ...
+    def run(self) -> Awaitable[None]:
+        """Reads every notification until the stream ends, running its
+        triggers, then closes it."""
+        ...
     def aclose(self) -> Awaitable[None]: ...
     def __aenter__(self) -> Awaitable[AsyncNotificationIterator]: ...
     def __aexit__(
@@ -289,6 +316,8 @@ class AvisoClient:
     def wipe_stream(self, stream_name: str) -> None: ...
     def wipe_all(self) -> None: ...
     def delete_notification(self, notification_id: str) -> None: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
     def listen(
         self,
         event_type: str | None = None,
@@ -298,7 +327,33 @@ class AvisoClient:
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> NotificationIterator: ...
+    ) -> NotificationIterator | Any: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
+    def listen_many(
+        self,
+        listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
+        *,
+        start_from: int | str | None = None,
+        mode: str | None = None,
+        on_error: str | Callable[[str, BaseException], object] | None = None,
+    ) -> Any:
+        """Listens to several things at once, through one loop.
+
+        ``listeners`` maps a name of your choosing to the ``listen()``
+        keywords for that listener (``event_type``, ``filter``,
+        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
+        ``start_from`` and ``mode`` given here apply to every dict entry that
+        does not set its own. The loop yields ``(name, notification)``.
+
+        ``on_error`` decides what a failure does: ``"raise"`` stops every
+        listener and raises; ``"continue"`` drops a failed listener, or skips
+        the notification a failed ``Trigger.function`` was called for, and
+        keeps going; a function is called with ``(name, error)`` and stops
+        everything if it raises. If every listener fails, the loop raises
+        ``AvisoError``.
+        """
+        ...
     def __enter__(self) -> AvisoClient: ...
     def __exit__(
         self,
@@ -355,6 +410,8 @@ class AsyncAvisoClient:
     def wipe_stream(self, stream_name: str) -> Awaitable[None]: ...
     def wipe_all(self) -> Awaitable[None]: ...
     def delete_notification(self, notification_id: str) -> Awaitable[None]: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
     def listen(
         self,
         event_type: str | None = None,
@@ -364,9 +421,40 @@ class AsyncAvisoClient:
         mode: str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
-    ) -> AsyncNotificationIterator: ...
+    ) -> AsyncNotificationIterator | Any: ...
+    # reason: the wrapper types live in pyaviso._many, which this native stub
+    # does not import; pyaviso/__init__.pyi declares the public types.
+    def listen_many(
+        self,
+        listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
+        *,
+        start_from: int | str | None = None,
+        mode: str | None = None,
+        on_error: str | Callable[[str, BaseException], object] | None = None,
+    ) -> Any:
+        """Listens to several things at once, through one loop.
 
-class AvisoError(Exception): ...
+        ``listeners`` maps a name of your choosing to the ``listen()``
+        keywords for that listener (``event_type``, ``filter``,
+        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
+        ``start_from`` and ``mode`` given here apply to every dict entry that
+        does not set its own. The loop yields ``(name, notification)``.
+
+        ``on_error`` decides what a failure does: ``"raise"`` stops every
+        listener and raises; ``"continue"`` drops a failed listener, or skips
+        the notification a failed ``Trigger.function`` was called for, and
+        keeps going; a function is called with ``(name, error)`` and stops
+        everything if it raises. If every listener fails, the loop raises
+        ``AvisoError``.
+        """
+        ...
+
+class AvisoError(Exception):
+    listener: str | None
+    # reason: the elements are pyaviso._many.ListenFailure, which this
+    # native stub does not import.
+    failures: list[Any] | None
+
 class TransportError(AvisoError): ...
 
 class HttpError(AvisoError):
