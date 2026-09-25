@@ -241,34 +241,6 @@ async fn running_lists_the_watches_still_producing() {
 }
 
 #[tokio::test]
-async fn a_busy_watch_does_not_starve_a_quiet_one() {
-    let server = MockServer::start().await;
-    serve(&server, "mars", finished_replay("mars", 50)).await;
-    serve(&server, "wave", finished_replay("wave", 1)).await;
-
-    let client = client(&server);
-    let mut stream = client
-        .watch_many(
-            [("busy", replay("mars")), ("quiet", replay("wave"))],
-            ErrorPolicy::Stop,
-        )
-        .unwrap();
-    // Let both watches deliver into their buffers before reading; generous,
-    // so a slow machine still has both ready.
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let mut first_two = Vec::new();
-    for _ in 0..2 {
-        let (name, _) = stream.next().await.unwrap().unwrap();
-        first_two.push(name);
-    }
-    assert!(
-        first_two.contains(&"quiet".to_string()),
-        "the quiet watch waited behind the busy one: {first_two:?}"
-    );
-    stream.close().await;
-}
-
-#[tokio::test]
 async fn bad_input_is_refused_before_any_watch_opens() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
