@@ -32,6 +32,10 @@ assert_cmd = "2.2"
 async-trait = "0.1"
 atomicwrites = "0.4"
 base64 = "0.23"
+# Test-only (with http-body-util, hyper and hyper-util below): an HTTP/2
+# server with a concurrent-stream limit, for the watch connection tests.
+# All four are already in the tree through reqwest.
+bytes = "1.12"
 cbindgen = { version = "0.29", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 fd-lock = "4.0"
@@ -42,9 +46,12 @@ finesse = { version = "2.2.1", path = "crates/finesse" }
 futures-core = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3", default-features = false }
 hex = "0.4"
+http-body-util = "0.1"
 httpdate = "1.0"
 humantime = "2.4"
 humantime-serde = "1.1"
+hyper = { version = "1.11", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
 log = "0.4"
 predicates = "3.1"
 proptest = "1.11"

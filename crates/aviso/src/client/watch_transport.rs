@@ -305,4 +305,100 @@ mod tests {
         let _b = t.acquire().unwrap();
         assert_eq!(t.active_per_connection(), vec![1, 1]);
     }
+
+    /// An HTTP/2 server (cleartext) that allows `streams` concurrent requests
+    /// per connection, like a proxy's stream limit. It answers every request
+    /// with an opened SSE stream that stays open, and counts connections.
+    async fn stream_limited_server(streams: u32) -> (String, Arc<AtomicUsize>) {
+        use futures_util::StreamExt;
+        use http_body_util::StreamBody;
+        use hyper::body::Frame;
+        use hyper_util::rt::{TokioExecutor, TokioIo};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&connections);
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(|_request| async {
+                        let opening = bytes::Bytes::from_static(
+                            b"event: live-notification\ndata: {\"type\":\"connection_established\"}\n\n",
+                        );
+                        let frames =
+                            futures_util::stream::iter([Ok::<_, std::convert::Infallible>(
+                                Frame::data(opening),
+                            )])
+                            .chain(futures_util::stream::pending());
+                        hyper::Response::builder()
+                            .header("content-type", "text/event-stream")
+                            .body(StreamBody::new(frames))
+                    });
+                    // reason: the connection ends when the client goes away,
+                    // which is how every test here finishes.
+                    hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                        .max_concurrent_streams(streams)
+                        .serve_connection(TokioIo::new(socket), service)
+                        .await
+                        .ok();
+                });
+            }
+        });
+        (url, connections)
+    }
+
+    /// Opens `watches` watches against a server allowing 2 streams per
+    /// connection, with at most `per_connection` watches on each of the
+    /// client's connections. Returns how many opened within a few seconds,
+    /// and how many connections the server saw.
+    async fn open_against_a_stream_limit(watches: usize, per_connection: usize) -> (usize, usize) {
+        let (url, connections) = stream_limited_server(2).await;
+        let mut client = crate::AvisoClient::builder()
+            .base_url(&url)
+            .build()
+            .unwrap();
+        client.watch_transport = WatchTransport::new(
+            Box::new(|| HttpClient::builder().http2_prior_knowledge().build()),
+            per_connection,
+        )
+        .unwrap();
+        let streams: Vec<_> = (0..watches)
+            .map(|_| {
+                client
+                    .watch(crate::watch::WatchRequest::watch("mars"))
+                    .unwrap()
+            })
+            .collect();
+        let opened = futures_util::future::join_all(streams.iter().map(|s| {
+            let mut ready = s.subscribe_ready();
+            async move {
+                tokio::time::timeout(std::time::Duration::from_secs(3), ready.wait_for(|r| *r))
+                    .await
+                    .is_ok_and(|r| r.is_ok())
+            }
+        }))
+        .await
+        .into_iter()
+        .filter(|opened| *opened)
+        .count();
+        for stream in streams {
+            stream.close().await;
+        }
+        (opened, connections.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn watches_sharing_one_connection_stop_at_the_server_stream_limit() {
+        // Five watches on one connection, which allows two: the other three
+        // wait for a stream that never frees. This is the failure the
+        // per-connection cap prevents.
+        assert_eq!(open_against_a_stream_limit(5, 5).await, (2, 1));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn capping_watches_per_connection_opens_them_all() {
+        assert_eq!(open_against_a_stream_limit(5, 2).await, (5, 3));
+    }
 }
