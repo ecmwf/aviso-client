@@ -192,6 +192,28 @@ supervisor's commit-of-previous-notification is forced to happen before the
 consumer can pull the next one. The user-facing contract is "pulling item N+1
 implies item N is durable", and capacity 1 is what makes that true.
 
+## Watch connections
+
+A watch keeps one HTTP request open for as long as it runs. Over HTTP/2, all
+requests from one HTTP client to a server share a single TCP connection, and
+servers and proxies limit how many requests one connection may carry at once
+(nginx allows 128 by default, HAProxy 100). A watch past that limit is not
+refused: its request waits for a free stream, which never comes while the
+other watches stay open.
+
+The client therefore keeps two kinds of HTTP client. Ordinary requests
+(`notify`, `schema`, admin calls) use one, with the request timeout the caller
+configured. Watches use a small set of others, each carrying at most 64
+watches. When every client in the set is full, the next watch gets a new
+client and therefore a new connection; when a watch ends its slot is freed,
+and clients left idle at the end of the set are released. The watch clients
+have no request timeout, because a watch's response is meant to stay open;
+the ten-second opening deadline and the heartbeat watchdog bound a stalled
+watch instead. Clones of an `AvisoClient` share both.
+
+A proxy that allows fewer than 64 streams per connection makes the watches
+past its limit fail the opening deadline with "no response from the server".
+
 ## The state-store contract
 
 The store is strictly monotonic: a `put` whose sequence is at or below the

@@ -359,8 +359,9 @@ in listener files named `mars.yaml` and `observations.yaml`:
 aviso listen mars.yaml observations.yaml
 ```
 
-Each listener has its own connection, its own resume cursor, and its own
-triggers. A failure in one does not stop the others.
+Each listener has its own request, its own resume cursor, and its own
+triggers. A failure in one does not stop the others. Listeners share
+connections to the server, up to 64 on each.
 
 ## Worked example: weather constraints {#weather-constraints}
 

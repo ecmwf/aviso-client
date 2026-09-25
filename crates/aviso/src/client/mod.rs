@@ -8,9 +8,9 @@
 
 //! Public client type and builder.
 //!
-//! [`AvisoClient`] is the user-facing handle: it owns a `reqwest` HTTP client, the base URL of
-//! the `aviso-server`, and an optional [`AuthProvider`]. Construct it with
-//! [`AvisoClient::builder`].
+//! [`AvisoClient`] is the user-facing handle: it owns the HTTP clients for ordinary
+//! requests and for watches, the base URL of the `aviso-server`, and an optional
+//! [`AuthProvider`]. Construct it with [`AvisoClient::builder`].
 //!
 //! The base URL is normalized at build time to end with a `/`. That makes
 //! [`url::Url::join`] consistently treat endpoint paths (`api/v1/notification`, ...) as relative
@@ -141,8 +141,8 @@ impl RefreshCoordinator {
 
 /// Top-level handle to an `aviso-server`.
 ///
-/// Cheap to clone; cloned handles share the same underlying HTTP connection pool and auth
-/// provider behind reference counts. Marked `#[non_exhaustive]` so future fields (for example
+/// Cheap to clone; cloned handles share the same HTTP connections (for ordinary requests and
+/// for watches) and auth provider behind reference counts. Marked `#[non_exhaustive]` so future fields (for example
 /// per-request middleware) can be added without breaking downstream pattern matches.
 #[derive(Clone)]
 #[non_exhaustive]

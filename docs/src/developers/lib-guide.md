@@ -39,9 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 `display_base_url()`, which strips that part; the client's `Debug` output does
 the same.
 
-The client is `Clone`. Cloned handles share the same HTTP connection pool and
-the same authentication provider, so you can hand copies to multiple tasks
-without paying for extra sockets.
+The client is `Clone`. Cloned handles share the same HTTP connections and the
+same authentication provider, so you can hand copies to multiple tasks without
+paying for extra sockets. Watches use connections of their own, at most 64
+watches on each; see
+[Watch connections](./architecture.md#watch-connections).
 
 The builder normalises the base URL: a trailing slash is added if missing; a
 path prefix (`https://gw.example/aviso`) is preserved so the client works behind
