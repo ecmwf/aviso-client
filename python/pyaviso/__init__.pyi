@@ -267,7 +267,9 @@ class ResolvedConfig:
         ...
     @property
     def timeout(self) -> SourcedValue:
-        """Seconds, or ``None`` for the library default."""
+        """Seconds allowed for an ordinary request such as ``notify`` or
+        ``schema``, or ``None`` for no limit. It does not apply to ``listen``.
+        """
         ...
     @property
     def heartbeat_interval(self) -> SourcedValue:
