@@ -150,6 +150,11 @@ impl PyAsyncNotificationIterator {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
             let mut guard = stream.lock().await;
+            // Register for aclose()'s wake-up before checking the flag, so
+            // a close between the two cannot be missed.
+            let woken = wake.notified();
+            tokio::pin!(woken);
+            woken.as_mut().enable();
             if closed.load(Ordering::Acquire) {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
@@ -158,7 +163,7 @@ impl PyAsyncNotificationIterator {
             };
             tokio::select! {
                 biased;
-                () = wake.notified() => Err(PyStopAsyncIteration::new_err(())),
+                () = &mut woken => Err(PyStopAsyncIteration::new_err(())),
                 item = stream_ref.next() => match item {
                     Some(Ok(n)) => Ok(PyNotification::from_core(n)),
                     Some(Err(e)) => Err(Python::attach(|py| map_client_error(py, e))),
