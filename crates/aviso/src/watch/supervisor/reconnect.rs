@@ -47,7 +47,7 @@ const MIN_HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(
 )]
 pub(crate) async fn run_supervisor(
     request: WatchRequest,
-    http: reqwest::Client,
+    connection: crate::client::watch_transport::Lease,
     base_url: Url,
     auth: Option<Arc<dyn AuthProvider>>,
     heartbeat_interval: std::time::Duration,
@@ -61,15 +61,23 @@ pub(crate) async fn run_supervisor(
     done_signal: oneshot::Sender<()>,
     ready: watch::Sender<bool>,
 ) {
-    struct DoneOnDrop(Option<oneshot::Sender<()>>);
+    // Frees the connection slot, then signals completion, on every way out
+    // of this function (panics included). In that order, so a caller whose
+    // `close()` has returned finds the slot free for its next watch.
+    struct DoneOnDrop(
+        Option<crate::client::watch_transport::Lease>,
+        Option<oneshot::Sender<()>>,
+    );
     impl Drop for DoneOnDrop {
         fn drop(&mut self) {
-            if let Some(s) = self.0.take() {
+            self.0.take();
+            if let Some(s) = self.1.take() {
                 let _ = s.send(());
             }
         }
     }
-    let _done_on_drop = DoneOnDrop(Some(done_signal));
+    let http = connection.http().clone();
+    let _done_on_drop = DoneOnDrop(Some(connection), Some(done_signal));
     let startup_timeout = request.startup_timeout();
     let readiness = ready.subscribe();
     let error_tx = tx.clone();

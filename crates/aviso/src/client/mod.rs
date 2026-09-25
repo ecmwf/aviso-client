@@ -35,6 +35,7 @@ mod helpers;
 pub mod resolve;
 mod settings;
 mod watch_spawn;
+pub(crate) mod watch_transport;
 
 pub use builder::AvisoClientBuilder;
 pub(crate) use helpers::{
@@ -146,6 +147,9 @@ impl RefreshCoordinator {
 #[non_exhaustive]
 pub struct AvisoClient {
     pub(super) http: HttpClient,
+    /// The connections watches run on, separate from `http` and shared by
+    /// all clones; see [`watch_transport`] for why.
+    pub(super) watch_transport: Arc<watch_transport::WatchTransport>,
     pub(super) base_url: Url,
     pub(super) auth: Option<Arc<dyn AuthProvider>>,
     /// Single-flight coordinator shared by all clones; collapses a burst of

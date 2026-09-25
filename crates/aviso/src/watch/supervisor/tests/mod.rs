@@ -182,9 +182,16 @@ fn start_supervisor_full(
         usize,
     >::new()));
     let (done_tx, _done_rx) = tokio::sync::oneshot::channel();
+    let connection = crate::client::watch_transport::WatchTransport::new(
+        Box::new(move || Ok(http.clone())),
+        crate::client::watch_transport::WATCHES_PER_CONNECTION,
+    )
+    .expect("transport")
+    .acquire()
+    .expect("lease");
     let handle = tokio::spawn(run_supervisor(
         request,
-        http,
+        connection,
         base_url,
         no_auth,
         heartbeat_interval,

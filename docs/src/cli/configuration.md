@@ -88,9 +88,10 @@ listeners:
 To point at a config file in another location, use `--config <PATH>` or set
 `AVISO_CLIENT_CONFIG_FILE`.
 
-The optional YAML `timeout` is the total HTTP request timeout, including a
-stream's body. It is unset by default. Leave it unset for long-lived listeners;
-use `--startup-timeout` to bound startup without limiting a healthy stream.
+The optional YAML `timeout` is the total time allowed for an ordinary request,
+such as `notify`, `schema` or an admin command, response body included. It is
+unset by default. It does not apply to listeners, whose stream is meant to stay
+open; use `--startup-timeout` to bound how long a listener may take to start.
 
 ## Environment variables
 

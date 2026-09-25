@@ -111,7 +111,9 @@ See [shutdown behavior](./state-and-resume.md#flush-on-exit).
 `timeout` and `heartbeat_interval` are seconds. When `None`, each comes from
 the config file if it is set there; otherwise `timeout` imposes no request
 timeout and `heartbeat_interval` uses 30 seconds as the expected server
-heartbeat interval (it does not set the server's cadence).
+heartbeat interval (it does not set the server's cadence). `timeout` bounds
+ordinary requests such as `notify` and `schema`; it does not apply to
+`listen`, whose stream is meant to stay open.
 `user_agent=None` uses `aviso/<crate-version>`.
 `danger_accept_invalid_certs=None` keeps certificate validation enabled unless
 the config file's `tls:` block turns it off.

@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use reqwest::Client as HttpClient;
 use url::Url;
 
 use super::{AvisoClient, DropGuard, RefreshCoordinator};
@@ -242,8 +241,12 @@ impl AvisoClientBuilder {
         self
     }
 
-    /// Sets the per-request HTTP timeout. Optional; defaults to whatever `reqwest::Client`
-    /// itself defaults to (no timeout in current versions).
+    /// Sets the total time allowed for an ordinary request (`notify`,
+    /// `schema`, admin calls), response body included. Optional; unset means
+    /// no timeout.
+    ///
+    /// It does not apply to watches: their response is meant to stay open,
+    /// and they have their own opening deadline and heartbeat watchdog.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
@@ -431,25 +434,20 @@ impl AvisoClientBuilder {
         let user_agent = self
             .user_agent
             .unwrap_or_else(|| format!("aviso/{}", crate::VERSION));
-        let mut http_builder = HttpClient::builder().user_agent(user_agent);
-        if let Some(timeout) = self.timeout {
-            http_builder = http_builder.timeout(timeout);
-        }
-        for cert in self.extra_root_certs {
-            http_builder = http_builder.add_root_certificate(cert);
-        }
-        if self.danger_accept_invalid_certs {
-            http_builder = http_builder.danger_accept_invalid_certs(true);
-        }
-        let http = http_builder
-            .build()
-            .map_err(|e| ClientError::Config(format!("failed to build HTTP client: {e}")))?;
+        let danger_accept_invalid_certs = self.danger_accept_invalid_certs;
+        let (http, watch_transport) = super::watch_transport::http_clients(
+            user_agent,
+            self.extra_root_certs,
+            danger_accept_invalid_certs,
+            self.timeout,
+        )?;
         let (parent_drop, _initial_receiver) = DropGuard::new();
         let heartbeat_interval = self
             .heartbeat_interval
             .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL);
         Ok(AvisoClient {
             http,
+            watch_transport,
             base_url,
             auth: self.auth,
             refresh_coordinator: Arc::new(RefreshCoordinator::default()),
@@ -457,7 +455,7 @@ impl AvisoClientBuilder {
             heartbeat_interval,
             state_store: self.state_store,
             active_resume_keys: Arc::new(Mutex::new(HashMap::new())),
-            danger_accept_invalid_certs: self.danger_accept_invalid_certs,
+            danger_accept_invalid_certs,
             flush_cursor_on_exit: self.flush_cursor_on_exit,
         })
     }

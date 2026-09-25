@@ -55,7 +55,7 @@ use crate::ClientError;
 pub struct ClientSettings {
     /// Server address.
     pub base_url: Option<String>,
-    /// Per-request timeout.
+    /// Timeout for ordinary requests; watches are not subject to it.
     pub timeout: Option<Duration>,
     /// Expected heartbeat interval on watch streams.
     pub heartbeat_interval: Option<Duration>,
