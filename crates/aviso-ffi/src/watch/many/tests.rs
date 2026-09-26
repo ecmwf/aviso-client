@@ -29,10 +29,11 @@ use serde_json::{Value, json};
 use wiremock::matchers::{body_partial_json, method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::super::{
-    aviso_notification_sequence, aviso_watch_free, aviso_watch_request_new,
-    aviso_watch_request_replay_from_sequence, aviso_watch_request_set_filter_json,
-    aviso_watch_stop, aviso_watch_wait,
+use super::super::handle::{aviso_watch_free, aviso_watch_stop, aviso_watch_wait};
+use super::super::notification::aviso_notification_sequence;
+use super::super::request::{
+    aviso_watch_request_new, aviso_watch_request_replay_from_sequence,
+    aviso_watch_request_set_filter_json,
 };
 use super::*;
 use crate::AvisoErrorKind;
