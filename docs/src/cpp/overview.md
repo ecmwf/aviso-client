@@ -174,6 +174,13 @@ These calls must not run inside a listener or async callback (a runtime thread);
 doing so throws an `aviso::Error` with kind `AvisoErrorKind_InvalidUsage` rather
 than deadlocking. See [Listening](./watch.md) for the callback surface.
 
+Some objects are used up by the call that consumes them: a `ClientBuilder` by
+`build()`, a `WatchRequest` by the watch or `WatchSet` it is given to, a
+`Trigger` by `add_trigger`, and a `WatchSet` by `watch_many`. Moving from a
+`Client`, `Watch` or any of these leaves the source empty as well. Calling a
+method on a used-up or moved-from object throws an `aviso::Error` with kind
+`AvisoErrorKind_InvalidUsage`, whose message names the object.
+
 ## Reading an error
 
 `error.what()` is a message for humans. `error.error()` is the part to branch
@@ -205,7 +212,7 @@ out, such as identifier JSON that is not an object.
 ```
 
 [`examples/cpp/resilience/03_error_handling.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/resilience/03_error_handling.cpp)
-provokes six different errors on purpose and shows a branch for each.
+provokes seven different errors on purpose and shows a branch for each.
 
 ## Building against the library
 

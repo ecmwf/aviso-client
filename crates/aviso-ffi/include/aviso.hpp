@@ -341,18 +341,20 @@ class WatchSet;
 class Watch;
 
 // An RAII client. Move-only; the underlying handle is freed on destruction.
+// Every method of a moved-from client throws `aviso::Error`
+// (`AvisoErrorKind_InvalidUsage`), the async verbs before starting anything.
 class Client {
  public:
   // Fetches the schema catalog as a compact-JSON string, or throws
   // `aviso::Error`.
   [[nodiscard]] std::string schema() {
-    return take_string(aviso_client_schema(handle_.get()), "schema");
+    return take_string(aviso_client_schema(live()), "schema");
   }
 
   // Fetches the schema for one event type as a compact-JSON string, or throws
   // `aviso::Error`.
   [[nodiscard]] std::string schema_for(const std::string& event_type) {
-    return take_string(aviso_client_schema_for(handle_.get(), event_type.c_str()),
+    return take_string(aviso_client_schema_for(live(), event_type.c_str()),
                        "schema_for");
   }
 
@@ -371,7 +373,7 @@ class Client {
       identifier_ptr = identifier_json.c_str();
     }
     const char* payload_ptr = payload ? payload->c_str() : nullptr;
-    return take_string(aviso_client_notify(handle_.get(), event_type.c_str(),
+    return take_string(aviso_client_notify(live(), event_type.c_str(),
                                            identifier_ptr, payload_ptr),
                        "notify");
   }
@@ -383,7 +385,7 @@ class Client {
       const std::string& event_type, const std::string& identifier_json,
       const std::optional<std::string>& payload = std::nullopt) {
     const char* payload_ptr = payload ? payload->c_str() : nullptr;
-    return take_string(aviso_client_notify(handle_.get(), event_type.c_str(),
+    return take_string(aviso_client_notify(live(), event_type.c_str(),
                                            identifier_json.c_str(), payload_ptr),
                        "notify_json");
   }
@@ -396,7 +398,7 @@ class Client {
   [[nodiscard]] std::string notify_many(const std::string& notifications_json,
                                          std::size_t max_concurrency = 0) {
     return take_string(
-        aviso_client_notify_many(handle_.get(), notifications_json.c_str(),
+        aviso_client_notify_many(live(), notifications_json.c_str(),
                                  max_concurrency),
         "notify_many");
   }
@@ -405,19 +407,19 @@ class Client {
   // `aviso::Error`.
   void wipe_stream(const std::string& stream_name) {
     detail::check(
-        detail::OutcomePtr(aviso_client_wipe_stream(handle_.get(), stream_name.c_str())));
+        detail::OutcomePtr(aviso_client_wipe_stream(live(), stream_name.c_str())));
   }
 
   // Wipes every stream (operator-only), or throws `aviso::Error`.
   void wipe_all() {
-    detail::check(detail::OutcomePtr(aviso_client_wipe_all(handle_.get())));
+    detail::check(detail::OutcomePtr(aviso_client_wipe_all(live())));
   }
 
   // Deletes a single notification by its `<event_type>@<sequence>` id
   // (operator-only), or throws `aviso::Error`.
   void delete_notification(const std::string& notification_id) {
     detail::check(detail::OutcomePtr(
-        aviso_client_delete_notification(handle_.get(), notification_id.c_str())));
+        aviso_client_delete_notification(live(), notification_id.c_str())));
   }
 
   // Async forms of the blocking verbs. Each returns a std::future that becomes
@@ -428,6 +430,7 @@ class Client {
       const std::string& event_type,
       const std::map<std::string, std::string>& identifier = {},
       const std::optional<std::string>& payload = std::nullopt) {
+    AvisoClient* client = live();
     std::string identifier_json;
     const char* identifier_ptr = nullptr;
     if (!identifier.empty()) {
@@ -437,7 +440,7 @@ class Client {
     const char* payload_ptr = payload ? payload->c_str() : nullptr;
     auto promise = std::make_unique<std::promise<std::string>>();
     std::future<std::string> future = promise->get_future();
-    aviso_client_notify_async(handle_.get(), event_type.c_str(), identifier_ptr,
+    aviso_client_notify_async(client, event_type.c_str(), identifier_ptr,
                               payload_ptr, detail::async_complete_string,
                               promise.release());
     return future;
@@ -447,28 +450,31 @@ class Client {
   [[nodiscard]] std::future<std::string> notify_json_async(
       const std::string& event_type, const std::string& identifier_json,
       const std::optional<std::string>& payload = std::nullopt) {
+    AvisoClient* client = live();
     const char* payload_ptr = payload ? payload->c_str() : nullptr;
     auto promise = std::make_unique<std::promise<std::string>>();
     std::future<std::string> future = promise->get_future();
-    aviso_client_notify_async(handle_.get(), event_type.c_str(),
+    aviso_client_notify_async(client, event_type.c_str(),
                               identifier_json.c_str(), payload_ptr,
                               detail::async_complete_string, promise.release());
     return future;
   }
 
   [[nodiscard]] std::future<std::string> schema_async() {
+    AvisoClient* client = live();
     auto promise = std::make_unique<std::promise<std::string>>();
     std::future<std::string> future = promise->get_future();
-    aviso_client_schema_async(handle_.get(), detail::async_complete_string,
+    aviso_client_schema_async(client, detail::async_complete_string,
                               promise.release());
     return future;
   }
 
   [[nodiscard]] std::future<std::string> schema_for_async(
       const std::string& event_type) {
+    AvisoClient* client = live();
     auto promise = std::make_unique<std::promise<std::string>>();
     std::future<std::string> future = promise->get_future();
-    aviso_client_schema_for_async(handle_.get(), event_type.c_str(),
+    aviso_client_schema_for_async(client, event_type.c_str(),
                                   detail::async_complete_string,
                                   promise.release());
     return future;
@@ -476,27 +482,30 @@ class Client {
 
   [[nodiscard]] std::future<void> wipe_stream_async(
       const std::string& stream_name) {
+    AvisoClient* client = live();
     auto promise = std::make_unique<std::promise<void>>();
     std::future<void> future = promise->get_future();
-    aviso_client_wipe_stream_async(handle_.get(), stream_name.c_str(),
+    aviso_client_wipe_stream_async(client, stream_name.c_str(),
                                    detail::async_complete_void,
                                    promise.release());
     return future;
   }
 
   [[nodiscard]] std::future<void> wipe_all_async() {
+    AvisoClient* client = live();
     auto promise = std::make_unique<std::promise<void>>();
     std::future<void> future = promise->get_future();
-    aviso_client_wipe_all_async(handle_.get(), detail::async_complete_void,
+    aviso_client_wipe_all_async(client, detail::async_complete_void,
                                 promise.release());
     return future;
   }
 
   [[nodiscard]] std::future<void> delete_notification_async(
       const std::string& notification_id) {
+    AvisoClient* client = live();
     auto promise = std::make_unique<std::promise<void>>();
     std::future<void> future = promise->get_future();
-    aviso_client_delete_notification_async(handle_.get(),
+    aviso_client_delete_notification_async(client,
                                            notification_id.c_str(),
                                            detail::async_complete_void,
                                            promise.release());
@@ -534,6 +543,15 @@ class Client {
                              " succeeded but returned no value");
     }
     return std::string(text.get());
+  }
+
+  // The handle, or throws if this client was moved from. The async verbs
+  // call it before creating their promise, so a throw leaves nothing behind.
+  [[nodiscard]] AvisoClient* live() const {
+    if (!handle_) {
+      detail::throw_usage("aviso: this Client was moved from");
+    }
+    return handle_.get();
   }
 
   detail::ClientPtr handle_;
@@ -579,20 +597,20 @@ class ClientBuilder {
   // `aviso::Error` for an error the builder already holds, or a config
   // file that cannot be read.
   [[nodiscard]] std::string describe() const {
-    return Client::take_string(aviso_client_builder_describe(handle_.get()),
+    return Client::take_string(aviso_client_builder_describe(live()),
                                "describe");
   }
 
   // Sets or replaces the server address. After `from_file()` this overrides
   // the file, or supplies an address the file did not have.
   ClientBuilder& base_url(const std::string& url) {
-    aviso_client_builder_base_url(handle_.get(), url.c_str());
+    aviso_client_builder_base_url(live(), url.c_str());
     return *this;
   }
 
   ClientBuilder& basic_auth(const std::string& username,
                             const std::string& password) {
-    aviso_client_builder_basic_auth(handle_.get(), username.c_str(),
+    aviso_client_builder_basic_auth(live(), username.c_str(),
                                     password.c_str());
     return *this;
   }
@@ -600,7 +618,7 @@ class ClientBuilder {
   // Sends `token` as a Bearer credential. An empty token throws from
   // `build()`.
   ClientBuilder& bearer_auth(const std::string& token) {
-    aviso_client_builder_bearer_auth(handle_.get(), token.c_str());
+    aviso_client_builder_bearer_auth(live(), token.c_str());
     return *this;
   }
 
@@ -613,13 +631,15 @@ class ClientBuilder {
   // it is loopback; `build()` throws instead. Name it with `bearer_auth` or
   // `basic_auth` when you hold it and the address is deliberate.
   ClientBuilder& discover_auth() {
-    aviso_client_builder_discover_auth(handle_.get());
+    aviso_client_builder_discover_auth(live());
     return *this;
   }
 
   // Builds the client, consuming this builder's handle, or throws
-  // `aviso::Error`.
+  // `aviso::Error`. After `build()` the builder is used up: calling any method
+  // on it throws `aviso::Error` (`AvisoErrorKind_InvalidUsage`).
   [[nodiscard]] Client build() {
+    static_cast<void>(live());
     AvisoClientBuilder* raw = handle_.release();
     detail::OutcomePtr outcome =
         detail::check(detail::OutcomePtr(aviso_client_builder_build(&raw)));
@@ -635,6 +655,15 @@ class ClientBuilder {
     if (!handle_) {
       detail::throw_internal("aviso: failed to allocate a client builder");
     }
+  }
+
+  // The handle, or throws if this builder was already built or moved from.
+  [[nodiscard]] AvisoClientBuilder* live() const {
+    if (!handle_) {
+      detail::throw_usage(
+          "aviso: this ClientBuilder was already used (built or moved from)");
+    }
+    return handle_.get();
   }
 
   detail::BuilderPtr handle_;
@@ -970,6 +999,8 @@ class WatchSet {
 
 // An RAII watch. Move-only. The destructor stops the watch and waits for it to
 // finish (so the handler's `on_end` has returned) before releasing the handle.
+// `stop()` and `wait()` on a moved-from watch throw `aviso::Error`
+// (`AvisoErrorKind_InvalidUsage`).
 class Watch {
  public:
   Watch(Watch&&) = default;
@@ -995,31 +1026,39 @@ class Watch {
     }
   }
 
-  // Requests a graceful stop. Nonblocking and idempotent.
-  void stop() { aviso_watch_stop(handle_.get()); }
+  // Requests a graceful stop. Nonblocking and idempotent. Throws
+  // `aviso::Error` (`AvisoErrorKind_InvalidUsage`) on a moved-from `Watch`.
+  void stop() { aviso_watch_stop(live()); }
 
   // Blocks until the watch has ended and the handler's `on_end` has returned.
-  // Throws `aviso::Error` if called from inside a callback.
-  void wait() { detail::check(detail::OutcomePtr(aviso_watch_wait(handle_.get()))); }
+  // Throws `aviso::Error` (`AvisoErrorKind_InvalidUsage`) if called from inside
+  // a callback or on a moved-from `Watch`.
+  void wait() { detail::check(detail::OutcomePtr(aviso_watch_wait(live()))); }
 
  private:
   friend class Client;
   Watch(AvisoWatch* handle, std::unique_ptr<detail::WatchState> state)
       : handle_(handle), state_(std::move(state)) {}
 
+  // The handle, or throws if this watch was moved from.
+  [[nodiscard]] AvisoWatch* live() const {
+    if (!handle_) {
+      detail::throw_usage("aviso: this Watch was moved from");
+    }
+    return handle_.get();
+  }
+
   detail::WatchPtr handle_;
   std::unique_ptr<detail::WatchState> state_;
 };
 
 inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) {
-  if (!handle_) {
-    detail::throw_usage("aviso: this Client was moved from");
-  }
+  AvisoClient* client = live();
   static_cast<void>(request.live());
   auto state = std::make_unique<detail::WatchState>();
   state->handler = &handler;
   AvisoWatchRequest* raw_request = request.release();
-  AvisoWatch* watch = aviso_client_watch(handle_.get(), &raw_request,
+  AvisoWatch* watch = aviso_client_watch(client, &raw_request,
                                          detail::watch_on_notification,
                                          detail::watch_on_end, state.get());
   if (watch == nullptr) {
@@ -1030,9 +1069,7 @@ inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) 
 
 inline Watch Client::watch_many(WatchSet& watches,
                                MultiNotificationHandler& handler) {
-  if (!handle_) {
-    detail::throw_usage("aviso: this Client was moved from");
-  }
+  AvisoClient* client = live();
   if (!watches.handle_) {
     detail::throw_usage("aviso: this WatchSet was already used by watch_many");
   }
@@ -1040,7 +1077,7 @@ inline Watch Client::watch_many(WatchSet& watches,
   state->multi_handler = &handler;
   AvisoWatchList* raw_list = watches.release();
   AvisoWatch* watch = aviso_client_watch_many(
-      handle_.get(), &raw_list, detail::watch_many_on_notification,
+      client, &raw_list, detail::watch_many_on_notification,
       detail::watch_many_on_error, detail::watch_many_on_end, state.get());
   if (watch == nullptr) {
     detail::throw_internal("aviso: failed to start the watch");

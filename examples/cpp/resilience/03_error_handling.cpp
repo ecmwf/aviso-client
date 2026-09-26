@@ -15,12 +15,12 @@
 // after the credential was refreshed. None of them is worth a retry.
 //
 // Some mistakes never reach the server. A WatchRequest is used up by the
-// watch it starts; using it again throws invalid usage, which is a bug in the
-// calling code, like invalid input.
+// watch it starts, and a ClientBuilder by build(); using either again throws
+// invalid usage, which is a bug in the calling code, like invalid input.
 //
-// This example provokes six errors on purpose against a working server.
+// This example provokes seven errors on purpose against a working server.
 //
-// Expect: six labelled errors, none of them fatal to the program. If one of
+// Expect: seven labelled errors, none of them fatal to the program. If one of
 // the attempts succeeds, or fails with a different kind than this file
 // says, the example exits 1, because then the server is not behaving the
 // way this file describes.
@@ -139,6 +139,15 @@ int main() {
               aviso::WatchRequest request(example::kEventType);
               { aviso::Watch first = c.watch(request, handler); }
               aviso::Watch second = c.watch(request, handler);
+            },
+            client, AvisoErrorKind_InvalidUsage);
+
+    // A builder is used up by build(). Configure a new one for another client.
+    all_failed &= attempt("client builder used after build()",
+            [](aviso::Client&) {
+              aviso::ClientBuilder builder = example::configure();
+              aviso::Client built = builder.build();
+              builder.base_url("http://localhost:8000");
             },
             client, AvisoErrorKind_InvalidUsage);
     return all_failed ? 0 : 1;
