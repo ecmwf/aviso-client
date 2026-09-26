@@ -29,15 +29,15 @@ use serde_json::{Value, json};
 use wiremock::matchers::{body_partial_json, method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use super::*;
-use crate::AvisoErrorKind;
-use crate::client::{aviso_client_builder_build, aviso_client_builder_new, aviso_client_free};
-use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
-use crate::watch::{
+use super::super::{
     aviso_notification_sequence, aviso_watch_free, aviso_watch_request_new,
     aviso_watch_request_replay_from_sequence, aviso_watch_request_set_filter_json,
     aviso_watch_stop, aviso_watch_wait,
 };
+use super::*;
+use crate::AvisoErrorKind;
+use crate::client::{aviso_client_builder_build, aviso_client_builder_new, aviso_client_free};
+use crate::outcome::{aviso_outcome_error, aviso_outcome_free, aviso_outcome_take_client};
 
 /// How a test's `on_end` saw the watch finish: `None` for success, else the
 /// error kind and message.

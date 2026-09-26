@@ -36,6 +36,10 @@ use crate::send::{SendOutcome, SendPtr};
 use crate::triggers::AvisoTrigger;
 use crate::{guard, guard_outcome, reject_blocking_on_runtime, runtime};
 
+mod many;
+
+pub use many::AvisoWatchList;
+
 /// C callback invoked once per notification. Returning `false` requests a
 /// graceful stop; the borrowed `notification` is valid only for the call.
 type OnNotification =
