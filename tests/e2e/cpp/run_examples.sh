@@ -81,6 +81,14 @@ for name in 03_listen 05_filter 04_stop_from_outside 01_echo 02_log 03_command 0
   drive "$name"
 done
 
+# Each publish matches both watches of 07_watch_many, so both names must
+# appear: the merged watch delivers every watch, not only the first.
+echo "== 07_watch_many =="
+drive 07_watch_many
+for name in all january; do
+  grep -q "^$name  #" "$work/07_watch_many.out" || { echo "FAIL: 07_watch_many printed nothing for '$name'" >&2; exit 1; }
+done
+
 # A listener whose watch fails must say so through its exit code. Without
 # this check a handler that ignored on_end() would pass every run above.
 # Both halves of the pair are set to something the server has never heard
