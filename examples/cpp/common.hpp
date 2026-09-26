@@ -132,8 +132,25 @@ class Handler : public aviso::NotificationHandler {
   std::optional<aviso::ErrorInfo> failure_;
 };
 
-// Waits for a watch to end and turns the outcome into an exit code.
-inline int finish(aviso::Watch& watch, const Handler& handler) {
+// The same for a merged watch (Client::watch_many): derive from this and
+// override on_notification(), and on_error() to keep going past a failed
+// watch.
+class MultiHandler : public aviso::MultiNotificationHandler {
+ public:
+  void on_end(const std::optional<aviso::ErrorInfo>& error) override {
+    failure_ = error;
+  }
+
+  const std::optional<aviso::ErrorInfo>& failure() const { return failure_; }
+
+ private:
+  std::optional<aviso::ErrorInfo> failure_;
+};
+
+// Waits for a watch to end and turns the outcome into an exit code. Works
+// with Handler and MultiHandler alike.
+template <typename H>
+int finish(aviso::Watch& watch, const H& handler) {
   watch.wait();
   if (handler.failure()) {
     std::cerr << "watch ended with an error\n";

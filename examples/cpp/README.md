@@ -62,10 +62,11 @@ password. Against your own server, change `kEventType` in `common.hpp` to a
 stream that exists there and adjust the identifier fields in the publishing
 examples to match; the shape of every call stays the same.
 
-`common.hpp` also carries two small helpers the listeners share. `Handler`
-remembers the error `on_end()` receives, and `finish()` waits for the watch and
-turns that error into the exit code. Without them a failed watch would look like
-a clean exit, which is the one mistake every first listener makes.
+`common.hpp` also carries small helpers the listeners share. `Handler`, and
+`MultiHandler` for `watch_many()`, remember the error `on_end()` receives, and
+`finish()` waits for the watch and turns that error into the exit code.
+Without them a failed watch would look like a clean exit, which is the one
+mistake every first listener makes.
 
 ## What is here
 
@@ -83,6 +84,7 @@ when you run it.
 | `04_publish_many.cpp` | Publish a batch concurrently; see a per-item failure reported instead of thrown. |
 | `05_filter.cpp` | Receive only the notifications whose identifier matches a filter. |
 | `06_publish_polygon.cpp` | Publish a spatial identifier and a required payload with `notify_json()`. |
+| `07_watch_many.cpp` | Listen with two named watches through one handler with `watch_many()`; stop after three from each. |
 
 ### `resilience/`: the patterns you need on top of listen
 
@@ -133,7 +135,7 @@ shows that with Ctrl+C and a timer.
 ## Testing
 
 [`tests/e2e/cpp/run_examples.sh`](../../tests/e2e/cpp/run_examples.sh) runs
-all seventeen against the e2e stack. The request-only ones run directly. The
+all eighteen against the e2e stack. The request-only ones run directly. The
 listeners are driven by publishes until they stop. The resume example runs
 twice to check that the second run picks up where the first stopped, and one
 listener runs with a bad credential to check that a failed watch exits 1. CI
