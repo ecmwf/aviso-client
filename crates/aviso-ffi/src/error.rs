@@ -131,10 +131,16 @@ impl OutcomeError {
     /// A fresh copy with its own buffers. Not `Clone`: the view points into
     /// this value's buffers, so a bitwise copy would alias them.
     pub(crate) fn duplicate(&self) -> Self {
+        self.with_message(self.message_string())
+    }
+
+    /// A fresh copy, as [`Self::duplicate`], with `message` in place of the
+    /// original message. Every other field is kept.
+    pub(crate) fn with_message(&self, message: String) -> Self {
         Self::build(
             self.kind(),
             self.http_status(),
-            self.message_string(),
+            message,
             self.request_id_string(),
             self.trigger_kind
                 .as_ref()

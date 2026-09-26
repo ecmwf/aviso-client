@@ -147,6 +147,14 @@ typedef struct AvisoTrigger AvisoTrigger;
 typedef struct AvisoWatch AvisoWatch;
 
 /**
+ * Opaque list of named watch requests for `aviso_client_watch_many`. The
+ * first bad argument is remembered and surfaced through `on_end` when the
+ * watch starts. Consumed by `aviso_client_watch_many` (which nulls the
+ * caller's pointer) or freed with `aviso_watch_list_free`.
+ */
+typedef struct AvisoWatchList AvisoWatchList;
+
+/**
  * Opaque builder for a watch request. Setters mutate it in place; the first
  * bad argument is remembered and surfaced through `on_end` when the watch
  * starts. Consumed by `aviso_client_watch` (which nulls the caller's pointer)
@@ -1034,7 +1042,8 @@ AvisoWatch *aviso_client_watch(const AvisoClient *client,
  *
  * # Safety
  *
- * `watch`, when non-null, must be a live handle from `aviso_client_watch`.
+ * `watch`, when non-null, must be a live handle from `aviso_client_watch` or
+ * `aviso_client_watch_many`.
  */
 void aviso_watch_stop(const AvisoWatch *watch);
 
@@ -1046,7 +1055,8 @@ void aviso_watch_stop(const AvisoWatch *watch);
  *
  * # Safety
  *
- * `watch` must be a live handle from `aviso_client_watch`.
+ * `watch` must be a live handle from `aviso_client_watch` or
+ * `aviso_client_watch_many`.
  */
 AvisoOutcome *aviso_watch_wait(const AvisoWatch *watch);
 
@@ -1058,10 +1068,91 @@ AvisoOutcome *aviso_watch_wait(const AvisoWatch *watch);
  *
  * # Safety
  *
- * `watch`, when non-null, must be a live handle from `aviso_client_watch` that
- * was not already freed.
+ * `watch`, when non-null, must be a live handle from `aviso_client_watch` or
+ * `aviso_client_watch_many` that was not already freed.
  */
 void aviso_watch_free(AvisoWatch *watch);
+
+/**
+ * Creates an empty watch list. Returns null only if an internal panic is
+ * trapped. Free an abandoned list with `aviso_watch_list_free`.
+ */
+AvisoWatchList *aviso_watch_list_new(void);
+
+/**
+ * Adds the request `*request` to the list under `name`, consuming it: the
+ * caller's pointer is nulled, even when the list is null or the call is
+ * rejected. A null or non-UTF-8 `name`, a null request, or an error
+ * remembered on the request is remembered on the list and surfaced when the
+ * watch starts; later additions are then ignored. Empty and repeated names
+ * are reported the same way when the watch starts.
+ *
+ * # Safety
+ *
+ * `list`, when non-null, must be a live handle from `aviso_watch_list_new`.
+ * `name`, when non-null, must be a NUL-terminated C string. `request`, when
+ * non-null, must point to a request-handle pointer; `*request`, when
+ * non-null, must be a live handle from `aviso_watch_request_new`.
+ */
+void aviso_watch_list_add(AvisoWatchList *list, const char *name, AvisoWatchRequest **request);
+
+/**
+ * Frees a watch list that was not handed to `aviso_client_watch_many`,
+ * with the requests it holds. A null pointer is a no-op.
+ *
+ * # Safety
+ *
+ * `list`, when non-null, must be a live handle from `aviso_watch_list_new`
+ * that was not already freed or consumed.
+ */
+void aviso_watch_list_free(AvisoWatchList *list);
+
+/**
+ * Starts a merged watch over every request in the list, consuming the list.
+ * It runs on the global runtime and returns at once.
+ *
+ * - `on_notification` fires per notification with the name of its watch.
+ *   Returning `false` stops every watch.
+ * - `on_error` fires when one watch fails, with its name and error; the
+ *   message begins with `watch '<name>': `. Returning `true` drops that
+ *   watch and keeps reading the others; returning `false` stops every watch
+ *   and `on_end` then receives the same error.
+ * - `on_end` fires exactly once and takes ownership of the outcome. It
+ *   receives success when every watch has ended, including after failures
+ *   `on_error` chose to continue past, or after a stop. It receives an error
+ *   when the list was invalid (no requests, an empty or repeated name, a
+ *   bad request), when `on_error` returned `false`, or when every watch
+ *   failed; the last carries the kind of the last failure and a message
+ *   listing each one.
+ *
+ * Watches are read in turn, so a busy watch cannot delay a quiet one. The
+ * callbacks run on a runtime thread, one at a time for this watch, so they
+ * must be thread-safe, must not unwind across the boundary, and must not
+ * make blocking aviso calls. Stop, wait for and free the returned handle
+ * with `aviso_watch_stop`, `aviso_watch_wait` and `aviso_watch_free`; they
+ * act on every watch.
+ *
+ * Returns null when `client`, the list, or a callback is null (no watch
+ * starts), or if an internal panic is trapped. On entry the list is taken
+ * and the caller's pointer is nulled, so a later free is a safe no-op.
+ *
+ * # Safety
+ *
+ * `client` must be a live handle from a successful build. `list` must point
+ * to a list-handle pointer; `*list`, when non-null, must be a live handle
+ * from `aviso_watch_list_new`. `ctx` is passed verbatim to the callbacks and
+ * must stay valid until `on_end` has returned.
+ */
+AvisoWatch *aviso_client_watch_many(const AvisoClient *client,
+                                    AvisoWatchList **list,
+                                    bool (*on_notification)(void *ctx,
+                                                            const char *name,
+                                                            const AvisoNotification *notification),
+                                    bool (*on_error)(void *ctx,
+                                                     const char *name,
+                                                     const AvisoError *error),
+                                    void (*on_end)(void *ctx, AvisoOutcome *outcome),
+                                    void *ctx);
 
 #ifdef __cplusplus
 }  // extern "C"

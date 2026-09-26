@@ -674,7 +674,8 @@ pub unsafe extern "C" fn aviso_client_watch(
 ///
 /// # Safety
 ///
-/// `watch`, when non-null, must be a live handle from `aviso_client_watch`.
+/// `watch`, when non-null, must be a live handle from `aviso_client_watch` or
+/// `aviso_client_watch_many`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_watch_stop(watch: *const AvisoWatch) {
     guard((), || {
@@ -695,7 +696,8 @@ pub unsafe extern "C" fn aviso_watch_stop(watch: *const AvisoWatch) {
 ///
 /// # Safety
 ///
-/// `watch` must be a live handle from `aviso_client_watch`.
+/// `watch` must be a live handle from `aviso_client_watch` or
+/// `aviso_client_watch_many`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_watch_wait(watch: *const AvisoWatch) -> *mut AvisoOutcome {
     guard_outcome(|| {
@@ -740,8 +742,8 @@ pub unsafe extern "C" fn aviso_watch_wait(watch: *const AvisoWatch) -> *mut Avis
 ///
 /// # Safety
 ///
-/// `watch`, when non-null, must be a live handle from `aviso_client_watch` that
-/// was not already freed.
+/// `watch`, when non-null, must be a live handle from `aviso_client_watch` or
+/// `aviso_client_watch_many` that was not already freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aviso_watch_free(watch: *mut AvisoWatch) {
     if watch.is_null() {
