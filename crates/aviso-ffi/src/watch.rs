@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::{CString, c_char, c_void};
+use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::Arc;
@@ -42,18 +43,18 @@ type OnNotification =
 
 /// C callback invoked exactly once when the watch ends or fails. It takes
 /// ownership of `outcome` and must free it with `aviso_outcome_free`.
-type OnEnd = extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome);
+pub(crate) type OnEnd = extern "C" fn(ctx: *mut c_void, outcome: *mut AvisoOutcome);
 
 /// Opaque builder for a watch request. Setters mutate it in place; the first
 /// bad argument is remembered and surfaced through `on_end` when the watch
 /// starts. Consumed by `aviso_client_watch` (which nulls the caller's pointer)
 /// or freed with `aviso_watch_request_free`.
 pub struct AvisoWatchRequest {
-    spec: Option<RequestSpec>,
-    error: Option<OutcomeError>,
+    pub(crate) spec: Option<RequestSpec>,
+    pub(crate) error: Option<OutcomeError>,
 }
 
-struct RequestSpec {
+pub(crate) struct RequestSpec {
     event_type: String,
     filter: Option<BTreeMap<String, Value>>,
     mode: Mode,
@@ -67,7 +68,7 @@ enum Mode {
 }
 
 impl RequestSpec {
-    fn into_request(self) -> WatchRequest {
+    pub(crate) fn into_request(self) -> WatchRequest {
         let mut request = match self.mode {
             Mode::Watch => WatchRequest::watch(self.event_type),
             Mode::WatchFrom(start) => WatchRequest::watch_from(self.event_type, start),
@@ -381,7 +382,7 @@ pub struct AvisoNotification {
 }
 
 impl AvisoNotification {
-    fn from_core(notification: &Notification) -> Self {
+    pub(crate) fn from_core(notification: &Notification) -> Self {
         let identifier_json =
             serde_json::to_string(&notification.identifier).unwrap_or_else(|_| "{}".to_string());
         let payload_json =
@@ -476,9 +477,28 @@ pub unsafe extern "C" fn aviso_notification_payload_json(
 }
 
 /// Cooperative stop signal shared by the watch handle and its task.
-struct StopSignal {
-    flag: AtomicBool,
-    notify: Notify,
+pub(crate) struct StopSignal {
+    pub(crate) flag: AtomicBool,
+    pub(crate) notify: Notify,
+}
+
+/// Spawns a watch task on the global runtime and returns its handle. `task`
+/// receives the stop signal that `aviso_watch_stop` and `aviso_watch_free`
+/// raise, and must end soon after it is raised.
+pub(crate) fn spawn_watch<F, Fut>(task: F) -> *mut AvisoWatch
+where
+    F: FnOnce(Arc<StopSignal>) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let stop = Arc::new(StopSignal {
+        flag: AtomicBool::new(false),
+        notify: Notify::new(),
+    });
+    let join = runtime().spawn(task(Arc::clone(&stop)));
+    Box::into_raw(Box::new(AvisoWatch {
+        stop,
+        join: std::sync::Mutex::new(Some(join)),
+    }))
 }
 
 /// Opaque handle to a running watch. Stop it with `aviso_watch_stop`, block for
@@ -547,9 +567,15 @@ async fn run_watch(
 
 /// Hands `outcome` to `on_end`, trapping any Rust unwind so it never crosses
 /// back into the runtime. `on_end` takes ownership and the C side frees it.
-fn deliver_end(on_end: OnEnd, ctx: SendPtr, outcome: AvisoOutcome) {
-    let raw = outcome.into_raw();
-    let _ = catch_unwind(AssertUnwindSafe(|| on_end(ctx.0, raw)));
+pub(crate) fn deliver_end(on_end: OnEnd, ctx: SendPtr, outcome: AvisoOutcome) {
+    deliver_raw_end(on_end, ctx, outcome.into_raw());
+}
+
+/// As [`deliver_end`], for an outcome already handed out as a raw pointer.
+pub(crate) fn deliver_raw_end(on_end: OnEnd, ctx: SendPtr, outcome: *mut AvisoOutcome) {
+    // reason: on_end returns nothing, so a trapped unwind has no one to be
+    // reported to; trapping it keeps it from crossing into the runtime.
+    catch_unwind(AssertUnwindSafe(|| on_end(ctx.0, outcome))).ok();
 }
 
 /// Starts a watch, consuming the request. The watch runs on the global runtime
@@ -625,31 +651,20 @@ pub unsafe extern "C" fn aviso_client_watch(
         };
 
         let client = client.inner.clone();
-        let stop = Arc::new(StopSignal {
-            flag: AtomicBool::new(false),
-            notify: Notify::new(),
-        });
-        let task_stop = Arc::clone(&stop);
         let send_ctx = SendPtr(ctx);
 
-        let join = runtime().spawn(async move {
+        spawn_watch(move |stop| async move {
             let send_ctx = send_ctx;
             let request = match built {
                 Ok(request) => request,
                 Err(send_outcome) => {
-                    let raw = send_outcome.0;
-                    let _ = catch_unwind(AssertUnwindSafe(|| on_end(send_ctx.0, raw)));
+                    deliver_raw_end(on_end, send_ctx, send_outcome.0);
                     return;
                 }
             };
-            let outcome = run_watch(client, request, on_notification, send_ctx, &task_stop).await;
+            let outcome = run_watch(client, request, on_notification, send_ctx, &stop).await;
             deliver_end(on_end, send_ctx, outcome);
-        });
-
-        Box::into_raw(Box::new(AvisoWatch {
-            stop,
-            join: std::sync::Mutex::new(Some(join)),
-        }))
+        })
     })
 }
 
