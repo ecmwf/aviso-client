@@ -1003,28 +1003,23 @@ class WatchSet {
 // (`AvisoErrorKind_InvalidUsage`).
 class Watch {
  public:
-  Watch(Watch&&) = default;
-  Watch& operator=(Watch&&) = default;
+  Watch(Watch&&) noexcept = default;
   Watch(const Watch&) = delete;
   Watch& operator=(const Watch&) = delete;
 
-  ~Watch() {
-    if (handle_) {
-      aviso_watch_stop(handle_.get());
-      detail::OutcomePtr drained(aviso_watch_wait(handle_.get()));
-      // Only an InvalidUsage outcome means wait was refused (destroyed on a
-      // runtime/callback thread) and the task may still call on_end with `ctx`;
-      // leak the state then rather than free it out from under a live task. Any
-      // other outcome (ok, or a task panic) means the task has ended, so the
-      // normal path frees the state.
-      if (drained != nullptr && !aviso_outcome_is_ok(drained.get())) {
-        const AvisoError* error = aviso_outcome_error(drained.get());
-        if (error != nullptr && error->kind == AvisoErrorKind_InvalidUsage) {
-          static_cast<void>(state_.release());
-        }
-      }
+  // Stops and finishes the watch this object holds, as the destructor does,
+  // then takes over `other`'s. The old watch's `on_end` has returned before
+  // its state is released, so assigning over a running watch is safe.
+  Watch& operator=(Watch&& other) noexcept {
+    if (this != &other) {
+      finish();
+      handle_ = std::move(other.handle_);
+      state_ = std::move(other.state_);
     }
+    return *this;
   }
+
+  ~Watch() { finish(); }
 
   // Requests a graceful stop. Nonblocking and idempotent. Throws
   // `aviso::Error` (`AvisoErrorKind_InvalidUsage`) on a moved-from `Watch`.
@@ -1039,6 +1034,29 @@ class Watch {
   friend class Client;
   Watch(AvisoWatch* handle, std::unique_ptr<detail::WatchState> state)
       : handle_(handle), state_(std::move(state)) {}
+
+  // Stops the watch, waits until its `on_end` has returned, and releases the
+  // handle and the state the callbacks use. A no-op on a moved-from watch.
+  void finish() noexcept {
+    if (!handle_) {
+      return;
+    }
+    aviso_watch_stop(handle_.get());
+    detail::OutcomePtr drained(aviso_watch_wait(handle_.get()));
+    // Only an InvalidUsage outcome means wait was refused (called on a
+    // runtime/callback thread) and the task may still call on_end with `ctx`;
+    // leak the state then rather than free it out from under a live task. Any
+    // other outcome (ok, or a task panic) means the task has ended, so the
+    // state is freed.
+    if (drained != nullptr && !aviso_outcome_is_ok(drained.get())) {
+      const AvisoError* error = aviso_outcome_error(drained.get());
+      if (error != nullptr && error->kind == AvisoErrorKind_InvalidUsage) {
+        static_cast<void>(state_.release());
+      }
+    }
+    handle_.reset();
+    state_.reset();
+  }
 
   // The handle, or throws if this watch was moved from.
   [[nodiscard]] AvisoWatch* live() const {
