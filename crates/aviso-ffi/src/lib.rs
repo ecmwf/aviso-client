@@ -42,14 +42,12 @@ mod outcome;
 mod send;
 mod triggers;
 mod watch;
-mod watch_many;
 
 pub use client::{AvisoClient, AvisoClientBuilder};
 pub use error::{AvisoError, AvisoErrorKind};
 pub use outcome::AvisoOutcome;
 pub use triggers::{AvisoHttpMethod, AvisoTrigger};
-pub use watch::{AvisoNotification, AvisoWatch, AvisoWatchRequest};
-pub use watch_many::AvisoWatchList;
+pub use watch::{AvisoNotification, AvisoWatch, AvisoWatchList, AvisoWatchRequest};
 
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};

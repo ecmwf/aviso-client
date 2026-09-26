@@ -56,6 +56,9 @@ accessors return owned `std::string`s, so copy out anything you want to keep.
 Build a `WatchRequest`, then call `client.watch`. It returns a `Watch` whose
 destructor stops the listener and waits for it, so you cannot leave one
 running by accident. The handler you pass must outlive the `Watch`.
+`client.watch` consumes the request: calling a setter on it afterwards, or
+passing it to another watch, throws an `aviso::Error` of kind
+`AvisoErrorKind_InvalidUsage`. Build a new request for each watch.
 
 ```cpp
 Handler handler;
