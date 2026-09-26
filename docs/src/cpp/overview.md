@@ -205,7 +205,7 @@ out, such as identifier JSON that is not an object.
 ```
 
 [`examples/cpp/resilience/03_error_handling.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/resilience/03_error_handling.cpp)
-provokes five different errors on purpose and shows a branch for each.
+provokes six different errors on purpose and shows a branch for each.
 
 ## Building against the library
 

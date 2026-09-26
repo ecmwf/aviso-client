@@ -55,6 +55,9 @@ hook.method(aviso::HttpMethod::Post)
 request.add_trigger(std::move(hook));
 ```
 
+After `add_trigger`, `hook` is used up. Calling a setter on it, or attaching
+it again, throws an `aviso::Error` of kind `AvisoErrorKind_InvalidUsage`.
+
 ## Reliability
 
 Every trigger has `retries` (default 0), `required` (default true), a

@@ -505,7 +505,9 @@ class Client {
 
   // Starts a watch, consuming `request`. Notifications are delivered to
   // `handler` on a runtime thread; the returned RAII `Watch` stops and waits in
-  // its destructor. `handler` must outlive the returned `Watch`.
+  // its destructor. `handler` must outlive the returned `Watch`. Throws
+  // `aviso::Error` (`AvisoErrorKind_InvalidUsage`) if `request` was already
+  // used.
   [[nodiscard]] Watch watch(WatchRequest& request, NotificationHandler& handler);
 
   // Starts one watch per request in `watches`, consuming the set, and
@@ -787,7 +789,9 @@ enum class HttpMethod {
 // A per-notification side effect, built by a static factory and tuned with the
 // chainable setters, then attached to a WatchRequest with `add_trigger`. A
 // setter that does not apply to the trigger's kind is ignored. A bad argument
-// is reported through the watch's on_end when it starts.
+// is reported through the watch's on_end when it starts. Once attached (or
+// moved from), the trigger is used up: calling a setter on it, or attaching it
+// again, throws `aviso::Error` (`AvisoErrorKind_InvalidUsage`).
 class Trigger {
  public:
   static Trigger echo() { return Trigger(aviso_trigger_echo()); }
@@ -808,44 +812,44 @@ class Trigger {
   }
 
   Trigger& label(const std::string& name) {
-    aviso_trigger_set_label(handle_.get(), name.c_str());
+    aviso_trigger_set_label(live(), name.c_str());
     return *this;
   }
   Trigger& retries(std::uint32_t retries) {
-    aviso_trigger_set_retries(handle_.get(), retries);
+    aviso_trigger_set_retries(live(), retries);
     return *this;
   }
   Trigger& required(bool required) {
-    aviso_trigger_set_required(handle_.get(), required);
+    aviso_trigger_set_required(live(), required);
     return *this;
   }
   Trigger& timeout_secs(std::uint64_t seconds) {
-    aviso_trigger_set_timeout_secs(handle_.get(), seconds);
+    aviso_trigger_set_timeout_secs(live(), seconds);
     return *this;
   }
   Trigger& fail_fast(bool on) {
-    aviso_trigger_set_fail_fast(handle_.get(), on);
+    aviso_trigger_set_fail_fast(live(), on);
     return *this;
   }
   Trigger& method(HttpMethod method) {
-    aviso_trigger_set_method(handle_.get(),
+    aviso_trigger_set_method(live(),
                              static_cast<std::uint32_t>(method));
     return *this;
   }
   Trigger& header(const std::string& name, const std::string& value) {
-    aviso_trigger_set_header(handle_.get(), name.c_str(), value.c_str());
+    aviso_trigger_set_header(live(), name.c_str(), value.c_str());
     return *this;
   }
   Trigger& body_template(const std::string& body) {
-    aviso_trigger_set_body_template(handle_.get(), body.c_str());
+    aviso_trigger_set_body_template(live(), body.c_str());
     return *this;
   }
   Trigger& env(const std::string& key, const std::string& value) {
-    aviso_trigger_set_env(handle_.get(), key.c_str(), value.c_str());
+    aviso_trigger_set_env(live(), key.c_str(), value.c_str());
     return *this;
   }
   Trigger& working_dir(const std::string& dir) {
-    aviso_trigger_set_working_dir(handle_.get(), dir.c_str());
+    aviso_trigger_set_working_dir(live(), dir.c_str());
     return *this;
   }
 
@@ -856,12 +860,25 @@ class Trigger {
       detail::throw_internal("aviso: failed to allocate a trigger");
     }
   }
+  // The handle, or throws if this trigger was already attached to a request
+  // or moved from.
+  [[nodiscard]] AvisoTrigger* live() const {
+    if (!handle_) {
+      detail::throw_usage(
+          "aviso: this Trigger was already used (added to a request or moved "
+          "from)");
+    }
+    return handle_.get();
+  }
   AvisoTrigger* release() { return handle_.release(); }
   detail::TriggerPtr handle_;
 };
 
 // Fluent builder for a watch request. Defaults to a live watch of `event_type`;
-// the `*_from_*` setters add a resume position or switch to replay-only.
+// the `*_from_*` setters add a resume position or switch to replay-only. Once
+// consumed by `Client::watch` or `WatchSet::add` (or moved from), the request
+// is used up: calling a setter or using it again throws `aviso::Error`
+// (`AvisoErrorKind_InvalidUsage`).
 class WatchRequest {
  public:
   explicit WatchRequest(const std::string& event_type)
@@ -872,36 +889,48 @@ class WatchRequest {
   }
 
   WatchRequest& filter_json(const std::string& json) {
-    aviso_watch_request_set_filter_json(handle_.get(), json.c_str());
+    aviso_watch_request_set_filter_json(live(), json.c_str());
     return *this;
   }
   WatchRequest& watch_from_sequence(std::uint64_t sequence) {
-    aviso_watch_request_watch_from_sequence(handle_.get(), sequence);
+    aviso_watch_request_watch_from_sequence(live(), sequence);
     return *this;
   }
   WatchRequest& watch_from_date(const std::string& date) {
-    aviso_watch_request_watch_from_date(handle_.get(), date.c_str());
+    aviso_watch_request_watch_from_date(live(), date.c_str());
     return *this;
   }
   WatchRequest& replay_from_sequence(std::uint64_t sequence) {
-    aviso_watch_request_replay_from_sequence(handle_.get(), sequence);
+    aviso_watch_request_replay_from_sequence(live(), sequence);
     return *this;
   }
   WatchRequest& replay_from_date(const std::string& date) {
-    aviso_watch_request_replay_from_date(handle_.get(), date.c_str());
+    aviso_watch_request_replay_from_date(live(), date.c_str());
     return *this;
   }
 
   // Attaches a trigger, consuming it.
   WatchRequest& add_trigger(Trigger trigger) {
+    AvisoWatchRequest* request = live();
+    static_cast<void>(trigger.live());
     AvisoTrigger* raw = trigger.release();
-    aviso_watch_request_add_trigger(handle_.get(), &raw);
+    aviso_watch_request_add_trigger(request, &raw);
     return *this;
   }
 
  private:
   friend class Client;
   friend class WatchSet;
+  // The handle, or throws if this request was already consumed by a watch or
+  // a WatchSet, or moved from.
+  [[nodiscard]] AvisoWatchRequest* live() const {
+    if (!handle_) {
+      detail::throw_usage(
+          "aviso: this WatchRequest was already used (consumed by a watch or a "
+          "WatchSet, or moved from)");
+    }
+    return handle_.get();
+  }
   AvisoWatchRequest* release() { return handle_.release(); }
   detail::WatchRequestPtr handle_;
 };
@@ -983,6 +1012,10 @@ class Watch {
 };
 
 inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) {
+  if (!handle_) {
+    detail::throw_usage("aviso: this Client was moved from");
+  }
+  static_cast<void>(request.live());
   auto state = std::make_unique<detail::WatchState>();
   state->handler = &handler;
   AvisoWatchRequest* raw_request = request.release();
@@ -997,6 +1030,9 @@ inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) 
 
 inline Watch Client::watch_many(WatchSet& watches,
                                MultiNotificationHandler& handler) {
+  if (!handle_) {
+    detail::throw_usage("aviso: this Client was moved from");
+  }
   if (!watches.handle_) {
     detail::throw_usage("aviso: this WatchSet was already used by watch_many");
   }
