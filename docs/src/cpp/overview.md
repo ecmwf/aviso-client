@@ -21,6 +21,8 @@ under C++17 and needs no Rust toolchain in the consumer's build.
 - Publish notifications with `notify`; see [Publishing](./publish.md).
 - Listen to a stream with a callback handler, with filtering and replay; see
   [Listening](./watch.md).
+- Listen with several watches through one handler, each with its own filter;
+  see [Several watches at once](./watch.md#several-watches-at-once).
 - Attach triggers (echo, log, command, webhook, Teams, post) to a listener; see
   [Triggers](./triggers.md).
 - Read schemas with `schema` and `schema_for`, and run the operator-only admin
@@ -207,7 +209,7 @@ provokes five different errors on purpose and shows a branch for each.
 
 ## Building against the library
 
-Seventeen worked, tested examples live in
+Eighteen worked, tested examples live in
 [`examples/cpp`](https://github.com/ecmwf/aviso-client/tree/main/examples/cpp),
 grouped by purpose: `basics/`, `resilience/`, `triggers/` and `async/`. Each
 one links the library and compiles the facade through CMake, the way your own

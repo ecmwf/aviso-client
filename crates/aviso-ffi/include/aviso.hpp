@@ -130,6 +130,13 @@ inline std::string to_identifier_json(
   throw Error(std::move(info));
 }
 
+[[noreturn]] inline void throw_usage(std::string message) {
+  ErrorInfo info;
+  info.kind = AvisoErrorKind_InvalidUsage;
+  info.message = std::move(message);
+  throw Error(std::move(info));
+}
+
 inline ErrorInfo to_error_info(const AvisoError* error) {
   ErrorInfo info;
   if (error == nullptr) {
@@ -278,8 +285,10 @@ class Notification {
 
 // A receiver for watch notifications, subclassed by the caller. Both callbacks
 // run on a watch (runtime) thread, so they must be thread-safe and must not
-// make blocking aviso calls; an exception thrown out of either is caught at the
-// boundary (and `on_notification` then requests a graceful stop).
+// make blocking aviso calls. An exception thrown out of `on_notification` is
+// caught at the boundary and stops the watch; `on_end` then receives an
+// `AvisoErrorKind_Internal` error whose message names the exception. An
+// exception thrown out of `on_end` is caught and dropped.
 class NotificationHandler {
  public:
   virtual ~NotificationHandler() = default;
@@ -292,8 +301,43 @@ class NotificationHandler {
   virtual void on_end(const std::optional<ErrorInfo>& error) { (void)error; }
 };
 
+// A receiver for a merged watch (`Client::watch_many`), subclassed by the
+// caller. Each callback receives the name the watch was given in the
+// `WatchSet`. The callbacks run on a watch (runtime) thread, one at a time,
+// so they must be thread-safe and must not make blocking aviso calls. An
+// exception thrown out of `on_notification` or `on_error` is caught at the
+// boundary and stops every watch; `on_end` then receives an
+// `AvisoErrorKind_Internal` error whose message names the exception. An
+// exception thrown out of `on_end` is caught and dropped.
+class MultiNotificationHandler {
+ public:
+  virtual ~MultiNotificationHandler() = default;
+
+  // Called once per notification, with the name of its watch. Return `false`
+  // to stop every watch.
+  virtual bool on_notification(const std::string& name,
+                               const Notification& notification) = 0;
+
+  // Called when the watch `name` fails; the message begins with
+  // `watch '<name>': `. Return `true` to drop that watch and keep reading the
+  // others, or `false` to stop every watch, in which case `on_end` receives
+  // the same error. The default stops.
+  virtual bool on_error(const std::string& name, const ErrorInfo& error) {
+    (void)name;
+    (void)error;
+    return false;
+  }
+
+  // Called once when the merged watch ends. `error` is empty when every watch
+  // ended, including after failures `on_error` chose to continue past, or
+  // after a stop. It is set when the set was invalid, when `on_error`
+  // returned `false`, or when every watch failed.
+  virtual void on_end(const std::optional<ErrorInfo>& error) { (void)error; }
+};
+
 class ClientBuilder;
 class WatchRequest;
+class WatchSet;
 class Watch;
 
 // An RAII client. Move-only; the underlying handle is freed on destruction.
@@ -464,6 +508,15 @@ class Client {
   // its destructor. `handler` must outlive the returned `Watch`.
   [[nodiscard]] Watch watch(WatchRequest& request, NotificationHandler& handler);
 
+  // Starts one watch per request in `watches`, consuming the set, and
+  // delivers their notifications to `handler` with the name of each watch.
+  // Watches are read in turn, so a busy watch cannot delay a quiet one. The
+  // returned RAII `Watch` stops and waits for every watch in its destructor.
+  // `handler` must outlive the returned `Watch`. Throws `aviso::Error`
+  // (`AvisoErrorKind_InvalidUsage`) if `watches` was already used.
+  [[nodiscard]] Watch watch_many(WatchSet& watches,
+                                 MultiNotificationHandler& handler);
+
  private:
   friend class ClientBuilder;
   explicit Client(AvisoClient* handle) : handle_(handle) {}
@@ -606,12 +659,48 @@ struct WatchDeleter {
 };
 using WatchPtr = std::unique_ptr<AvisoWatch, WatchDeleter>;
 
+struct WatchListDeleter {
+  void operator()(AvisoWatchList* list) const noexcept {
+    aviso_watch_list_free(list);
+  }
+};
+using WatchListPtr = std::unique_ptr<AvisoWatchList, WatchListDeleter>;
+
 // Shared between a Watch and the C callbacks via the watch's `ctx`. It outlives
 // the watch task (the Watch keeps it alive until after stop+wait), so the
-// callbacks can dereference it safely.
+// callbacks can dereference it safely. A single watch sets `handler`; a merged
+// watch sets `multi_handler`. The callbacks of one watch never run at the
+// same time, so `callback_error` needs no lock.
 struct WatchState {
   NotificationHandler* handler = nullptr;
+  MultiNotificationHandler* multi_handler = nullptr;
+  // Set when a handler callback threw; reported to `on_end` in place of the
+  // outcome, since the exception is why the watch stopped.
+  std::optional<ErrorInfo> callback_error;
 };
+
+// Records the exception being handled as the watch's error. Call only from a
+// catch block.
+inline void record_callback_error(WatchState& state,
+                                  const char* callback) noexcept {
+  try {
+    std::string what = "an exception not derived from std::exception";
+    try {
+      throw;
+    } catch (const std::exception& error) {
+      what = error.what();
+    } catch (...) {
+      // reason: the type is unknown, so the default description stands.
+    }
+    ErrorInfo info;
+    info.kind = AvisoErrorKind_Internal;
+    info.message = std::string("the handler's ") + callback + " threw: " + what;
+    state.callback_error = std::move(info);
+  } catch (...) {
+    // reason: building the message failed (out of memory); the watch still
+    // stops, and on_end reports the outcome without the description.
+  }
+}
 
 // C-ABI trampolines. They translate the C callbacks into virtual calls and
 // stop any C++ exception from unwinding across the boundary into Rust.
@@ -621,20 +710,66 @@ extern "C" inline bool watch_on_notification(void* ctx,
   try {
     return state->handler->on_notification(Notification(notification));
   } catch (...) {
+    record_callback_error(*state, "on_notification");
     return false;
   }
 }
 
+// The error an ended watch reports, if any: a handler exception first, else
+// the outcome's error. Takes ownership of `outcome`.
+inline std::optional<ErrorInfo> end_error(const WatchState& state,
+                                          AvisoOutcome* outcome) {
+  OutcomePtr owned(outcome);
+  if (state.callback_error) {
+    return state.callback_error;
+  }
+  if (owned && !aviso_outcome_is_ok(owned.get())) {
+    return to_error_info(aviso_outcome_error(owned.get()));
+  }
+  return std::nullopt;
+}
+
 extern "C" inline void watch_on_end(void* ctx, AvisoOutcome* outcome) {
   auto* state = static_cast<WatchState*>(ctx);
-  OutcomePtr owned(outcome);
-  std::optional<ErrorInfo> error;
-  if (owned && !aviso_outcome_is_ok(owned.get())) {
-    error = to_error_info(aviso_outcome_error(owned.get()));
-  }
   try {
-    state->handler->on_end(error);
+    state->handler->on_end(end_error(*state, outcome));
   } catch (...) {
+    // reason: on_end is the last callback; nothing runs after it that could
+    // report the exception.
+  }
+}
+
+extern "C" inline bool watch_many_on_notification(
+    void* ctx, const char* name, const AvisoNotification* notification) {
+  auto* state = static_cast<WatchState*>(ctx);
+  try {
+    return state->multi_handler->on_notification(std::string(name),
+                                                  Notification(notification));
+  } catch (...) {
+    record_callback_error(*state, "on_notification");
+    return false;
+  }
+}
+
+extern "C" inline bool watch_many_on_error(void* ctx, const char* name,
+                                           const AvisoError* error) {
+  auto* state = static_cast<WatchState*>(ctx);
+  try {
+    return state->multi_handler->on_error(std::string(name),
+                                          to_error_info(error));
+  } catch (...) {
+    record_callback_error(*state, "on_error");
+    return false;
+  }
+}
+
+extern "C" inline void watch_many_on_end(void* ctx, AvisoOutcome* outcome) {
+  auto* state = static_cast<WatchState*>(ctx);
+  try {
+    state->multi_handler->on_end(end_error(*state, outcome));
+  } catch (...) {
+    // reason: on_end is the last callback; nothing runs after it that could
+    // report the exception.
   }
 }
 
@@ -766,8 +901,42 @@ class WatchRequest {
 
  private:
   friend class Client;
+  friend class WatchSet;
   AvisoWatchRequest* release() { return handle_.release(); }
   detail::WatchRequestPtr handle_;
+};
+
+// Named watch requests for `Client::watch_many`. Move-only.
+class WatchSet {
+ public:
+  WatchSet() : handle_(aviso_watch_list_new()) {
+    if (!handle_) {
+      detail::throw_internal("aviso: failed to allocate a watch set");
+    }
+  }
+
+  // Adds `request` under `name`, consuming it. Names must be non-empty and
+  // unique. A mistake, here or in the request, is reported through the
+  // handler's `on_end` when the watch starts, and no watch opens. Throws
+  // `aviso::Error` (`AvisoErrorKind_InvalidUsage`) if this set was already
+  // passed to `Client::watch_many` or `request` was already used.
+  WatchSet& add(const std::string& name, WatchRequest& request) {
+    if (!handle_) {
+      detail::throw_usage("aviso: this WatchSet was already used by watch_many");
+    }
+    if (!request.handle_) {
+      detail::throw_usage("aviso: the WatchRequest for '" + name +
+                          "' was already used");
+    }
+    AvisoWatchRequest* raw_request = request.release();
+    aviso_watch_list_add(handle_.get(), name.c_str(), &raw_request);
+    return *this;
+  }
+
+ private:
+  friend class Client;
+  AvisoWatchList* release() { return handle_.release(); }
+  detail::WatchListPtr handle_;
 };
 
 // An RAII watch. Move-only. The destructor stops the watch and waits for it to
@@ -820,6 +989,23 @@ inline Watch Client::watch(WatchRequest& request, NotificationHandler& handler) 
   AvisoWatch* watch = aviso_client_watch(handle_.get(), &raw_request,
                                          detail::watch_on_notification,
                                          detail::watch_on_end, state.get());
+  if (watch == nullptr) {
+    detail::throw_internal("aviso: failed to start the watch");
+  }
+  return Watch(watch, std::move(state));
+}
+
+inline Watch Client::watch_many(WatchSet& watches,
+                               MultiNotificationHandler& handler) {
+  if (!watches.handle_) {
+    detail::throw_usage("aviso: this WatchSet was already used by watch_many");
+  }
+  auto state = std::make_unique<detail::WatchState>();
+  state->multi_handler = &handler;
+  AvisoWatchList* raw_list = watches.release();
+  AvisoWatch* watch = aviso_client_watch_many(
+      handle_.get(), &raw_list, detail::watch_many_on_notification,
+      detail::watch_many_on_error, detail::watch_many_on_end, state.get());
   if (watch == nullptr) {
     detail::throw_internal("aviso: failed to start the watch");
   }

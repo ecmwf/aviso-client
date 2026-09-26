@@ -172,10 +172,12 @@ version = "2.2.2"
 dependencies = [
  "aviso",
  "cbindgen",
+ "futures-util",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "wiremock",
 ]
 
 [[package]]
