@@ -278,8 +278,10 @@ class Notification {
 
 // A receiver for watch notifications, subclassed by the caller. Both callbacks
 // run on a watch (runtime) thread, so they must be thread-safe and must not
-// make blocking aviso calls; an exception thrown out of either is caught at the
-// boundary (and `on_notification` then requests a graceful stop).
+// make blocking aviso calls. An exception thrown out of `on_notification` is
+// caught at the boundary and stops the watch; `on_end` then receives an
+// `AvisoErrorKind_Internal` error whose message names the exception. An
+// exception thrown out of `on_end` is caught and dropped.
 class NotificationHandler {
  public:
   virtual ~NotificationHandler() = default;
@@ -608,10 +610,37 @@ using WatchPtr = std::unique_ptr<AvisoWatch, WatchDeleter>;
 
 // Shared between a Watch and the C callbacks via the watch's `ctx`. It outlives
 // the watch task (the Watch keeps it alive until after stop+wait), so the
-// callbacks can dereference it safely.
+// callbacks can dereference it safely. The callbacks of one watch never run
+// at the same time, so `callback_error` needs no lock.
 struct WatchState {
   NotificationHandler* handler = nullptr;
+  // Set when a handler callback threw; reported to `on_end` in place of the
+  // outcome, since the exception is why the watch stopped.
+  std::optional<ErrorInfo> callback_error;
 };
+
+// Records the exception being handled as the watch's error. Call only from a
+// catch block.
+inline void record_callback_error(WatchState& state,
+                                  const char* callback) noexcept {
+  try {
+    std::string what = "an exception not derived from std::exception";
+    try {
+      throw;
+    } catch (const std::exception& error) {
+      what = error.what();
+    } catch (...) {
+      // reason: the type is unknown, so the default description stands.
+    }
+    ErrorInfo info;
+    info.kind = AvisoErrorKind_Internal;
+    info.message = std::string("the handler's ") + callback + " threw: " + what;
+    state.callback_error = std::move(info);
+  } catch (...) {
+    // reason: building the message failed (out of memory); the watch still
+    // stops, and on_end reports the outcome without the description.
+  }
+}
 
 // C-ABI trampolines. They translate the C callbacks into virtual calls and
 // stop any C++ exception from unwinding across the boundary into Rust.
@@ -621,20 +650,32 @@ extern "C" inline bool watch_on_notification(void* ctx,
   try {
     return state->handler->on_notification(Notification(notification));
   } catch (...) {
+    record_callback_error(*state, "on_notification");
     return false;
   }
 }
 
+// The error an ended watch reports, if any: a handler exception first, else
+// the outcome's error. Takes ownership of `outcome`.
+inline std::optional<ErrorInfo> end_error(const WatchState& state,
+                                          AvisoOutcome* outcome) {
+  OutcomePtr owned(outcome);
+  if (state.callback_error) {
+    return state.callback_error;
+  }
+  if (owned && !aviso_outcome_is_ok(owned.get())) {
+    return to_error_info(aviso_outcome_error(owned.get()));
+  }
+  return std::nullopt;
+}
+
 extern "C" inline void watch_on_end(void* ctx, AvisoOutcome* outcome) {
   auto* state = static_cast<WatchState*>(ctx);
-  OutcomePtr owned(outcome);
-  std::optional<ErrorInfo> error;
-  if (owned && !aviso_outcome_is_ok(owned.get())) {
-    error = to_error_info(aviso_outcome_error(owned.get()));
-  }
   try {
-    state->handler->on_end(error);
+    state->handler->on_end(end_error(*state, outcome));
   } catch (...) {
+    // reason: on_end is the last callback; nothing runs after it that could
+    // report the exception.
   }
 }
 

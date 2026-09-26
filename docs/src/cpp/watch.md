@@ -35,6 +35,9 @@ class Handler : public aviso::NotificationHandler {
 ```
 
 Do not leave `on_end` empty. It is the only place a failed watch is reported.
+An exception thrown out of `on_notification` also ends up there: it stops the
+watch, and `on_end` receives an `AvisoErrorKind_Internal` error whose message
+names the exception.
 `wait()` returns normally whether the watch ended because your handler said so
 or because the connection was refused, so a handler that ignores `on_end`
 turns every failure into a quiet exit. The examples keep a small base class in
