@@ -1,0 +1,53 @@
+version: 1.0.0
+logging:
+  level: info
+  format: console
+auth:
+  timeout_in_ms: 3000
+providers:
+- name: destine
+  type: openid-offline
+  realm: desp
+  public_client_id: polytope-api-public
+  private_client_id: polytope-api-bearer
+  private_client_secret: ${DESP_PRIVATE_CLIENT_SECRET}
+  cert_uri: https://auth.destine.eu/realms/desp/protocol/openid-connect/certs
+  iam_url: https://auth.destine.eu
+- name: ecmwf-api
+  type: ecmwf-api
+  realm: ecmwf
+  uri: https://api.ecmwf.int/v1
+- name: plain-provider
+  type: plain
+  realm: localrealm
+  users:
+  - username: demo-operator
+    password: ${DEMO_OPERATOR_PASSWORD}
+augmenters:
+- name: ecmwf-roles
+  type: plain_advanced
+  realm: ecmwf
+  match:
+    username:
+    - <ecmwf-usernames-of-the-demo-team>
+  augment:
+    roles:
+    - demo-operator
+    - aviso-admin
+- name: local-roles
+  type: plain
+  realm: localrealm
+  roles:
+    demo-operator:
+    - demo-operator
+    aviso-admin:
+    - demo-operator
+store:
+  enabled: false
+services: []
+jwt:
+  exp: 3600
+  iss: authotron-destine-meeting
+  aud: authotron-destine-meeting
+  secret: ${JWT_SECRET}
+bind_address: 0.0.0.0:8080

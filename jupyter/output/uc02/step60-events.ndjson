@@ -1,0 +1,2 @@
+{"event_type":"extreme_event","sequence":39,"identifier":{"anomaly":"42.5","polygon":[[52.5,13.4],[52.6,13.5],[52.5,13.6],[52.4,13.5],[52.5,13.4]],"region":"north","run_time":"1200","severity":"6"},"payload":{"note":"uc2-step60-demo-153603","severity_published":"6"}}
+{"event_type":"extreme_event","sequence":41,"identifier":{"anomaly":"42.5","polygon":[[52.5,13.4],[52.6,13.5],[52.5,13.6],[52.4,13.5],[52.5,13.4]],"region":"north","run_time":"1200","severity":"6"},"payload":{"note":"uc2-step60-demo-153707","severity_published":"6"}}

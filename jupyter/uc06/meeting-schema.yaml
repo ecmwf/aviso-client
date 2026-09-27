@@ -1,0 +1,256 @@
+notification_schema:
+  data:
+    topic:
+      base: de-data
+      key_order:
+      - class
+      - expver
+      - stream
+      - type
+      - levtype
+      - date
+      - time
+      - step
+    identifier:
+      class:
+        type: StringHandler
+        max_length: 2
+        required: true
+      date:
+        type: DateHandler
+        required: false
+      time:
+        type: TimeHandler
+        required: false
+      expver:
+        type: ExpverHandler
+        required: false
+      domain:
+        type: EnumHandler
+        values:
+        - g
+        required: false
+      stream:
+        type: EnumHandler
+        values:
+        - oper
+        - wave
+        required: false
+      type:
+        type: StringHandler
+        max_length: 2
+        required: false
+      levtype:
+        type: EnumHandler
+        values:
+        - sfc
+        - pl
+        - hl
+        required: false
+      step:
+        type: IntHandler
+        range:
+        - 0
+        - 10000
+        required: false
+    payload:
+      required: false
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+      write_roles:
+        ecmwf:
+        - demo-operator
+        localrealm:
+        - demo-operator
+    storage_policy:
+      retention_time: 10d
+      max_messages: 200000
+      max_size: 1Gi
+      allow_duplicates: true
+  de-scm-data:
+    topic:
+      base: de-scm
+      key_order:
+      - experiment
+      - date
+      - time
+    identifier:
+      experiment:
+        type: StringHandler
+        max_length: 10
+        required: true
+      date:
+        type: DateHandler
+        required: false
+      time:
+        type: TimeHandler
+        required: false
+    payload:
+      required: true
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+      write_roles:
+        ecmwf:
+        - demo-operator
+        localrealm:
+        - demo-operator
+    storage_policy:
+      retention_time: 10d
+      max_messages: 200000
+      max_size: 1Gi
+      allow_duplicates: true
+  de-scm-data-points:
+    topic:
+      base: de-scm-points
+      key_order:
+      - experiment
+      - date
+      - time
+    identifier:
+      experiment:
+        type: StringHandler
+        max_length: 10
+        required: true
+      date:
+        type: DateHandler
+        required: false
+      time:
+        type: TimeHandler
+        required: false
+      point_cloud:
+        type: PointCloudHandler
+        max_points: 10000
+        required: true
+        description: Publishers send [[lat, lon], ...]; subscribers send a closed
+          polygon instead.
+    payload:
+      required: false
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+      write_roles:
+        ecmwf:
+        - demo-operator
+        localrealm:
+        - demo-operator
+    storage_policy:
+      retention_time: 10d
+      max_messages: 200000
+      max_size: 1Gi
+      allow_duplicates: true
+  extreme_event:
+    topic:
+      base: de-extreme
+      key_order:
+      - region
+      - run_time
+      - severity
+    identifier:
+      region:
+        type: EnumHandler
+        values:
+        - north
+        - south
+        - east
+        - west
+        required: true
+      run_time:
+        type: TimeHandler
+        required: true
+      severity:
+        type: IntHandler
+        range:
+        - 1
+        - 7
+        required: true
+      anomaly:
+        type: FloatHandler
+        range:
+        - 0.0
+        - 100.0
+        required: false
+      polygon:
+        type: PolygonHandler
+        required: true
+    payload:
+      required: false
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+      write_roles:
+        ecmwf:
+        - demo-operator
+        localrealm:
+        - demo-operator
+    storage_policy:
+      retention_time: 10d
+      max_messages: 200000
+      max_size: 1Gi
+      allow_duplicates: true
+  destine-demo:
+    topic:
+      base: de-demo
+      key_order:
+      - team
+      - date
+      - time
+    identifier:
+      team:
+        type: StringHandler
+        max_length: 20
+        required: true
+      date:
+        type: DateHandler
+        required: false
+      time:
+        type: TimeHandler
+        required: false
+    payload:
+      required: true
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+      write_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+        localrealm:
+        - '*'
+    storage_policy:
+      retention_time: 2d
+      max_messages: 50000
+      max_size: 256Mi
+      allow_duplicates: true

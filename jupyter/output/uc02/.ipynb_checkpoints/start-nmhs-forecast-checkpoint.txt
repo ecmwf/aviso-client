@@ -1,0 +1,1 @@
+START LAM for run 1200Z (severity=6) seq=39

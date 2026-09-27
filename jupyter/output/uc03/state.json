@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "key_format_version": 1,
+  "checkpoints": {
+    "8d95ec885acf8e28009f012b723c698fe0d151ee0a33993e51cd9cb9b617b2c9": {
+      "last_committed_sequence": 139690,
+      "last_event_id": "data@139690"
+    }
+  }
+}

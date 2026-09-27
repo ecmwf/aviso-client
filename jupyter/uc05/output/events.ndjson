@@ -1,0 +1,3 @@
+{"event_type":"data","sequence":138530,"identifier":{"class":"d1","date":"20260913","domain":"g","expver":"0001","levtype":"sfc","step":"0","stream":"oper","time":"0000","type":"fc"},"payload":null}
+{"event_type":"data","sequence":138913,"identifier":{"class":"d1","date":"20260914","domain":"g","expver":"0001","levtype":"sfc","step":"0","stream":"oper","time":"0000","type":"fc"},"payload":null}
+{"event_type":"data","sequence":139312,"identifier":{"class":"d1","date":"20260915","domain":"g","expver":"0001","levtype":"sfc","step":"0","stream":"oper","time":"0000","type":"fc"},"payload":null}

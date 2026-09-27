@@ -1,0 +1,90 @@
+auth:
+  enabled: true
+  mode: direct
+  auth_o_tron_url: http://auth-o-tron-svc:8080
+  jwt_secret: <shared with auth-o-tron jwt.secret>
+  admin_roles:
+    ecmwf:
+    - aviso-admin
+    desp:
+    - aviso-admin
+notification_schema:
+  data:
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+      write_roles:
+        ecmwf:
+        - ecpds-producer
+        - dt-ingest
+        desp:
+        - dt-operator
+  dissemination:
+    auth:
+      required: true
+      read_roles:
+        ecmwf:
+        - '*'
+        desp:
+        - '*'
+      write_roles:
+        ecmwf:
+        - ecpds-producer
+      plugins:
+      - ecpds
+  de-scm-data:
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+      write_roles:
+        desp:
+        - scm-operator
+        ecmwf:
+        - scm-operator
+  de-scm-data-points:
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+      write_roles:
+        desp:
+        - scm-operator
+        ecmwf:
+        - scm-operator
+  extreme_event:
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+      write_roles:
+        desp:
+        - deode-producer
+        ecmwf:
+        - deode-producer
+  destine-test:
+    auth:
+      required: true
+      read_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'
+      write_roles:
+        desp:
+        - '*'
+        ecmwf:
+        - '*'

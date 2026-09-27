@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "key_format_version": 1,
+  "checkpoints": {
+    "5141940b8c9f41db0ee4345320a9212c0f5f77e1c1a1c4709beec0dece8895e5": {
+      "last_committed_sequence": 41,
+      "last_event_id": "extreme_event@41"
+    }
+  }
+}

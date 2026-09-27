@@ -1,0 +1,29 @@
+listeners:
+  - name: extremes-dt-sfc-step0
+    event: data
+    identifiers:
+      class: d1
+      stream: oper
+      type: fc
+      levtype: sfc
+      step: 0
+    triggers:
+      - type: echo
+      - type: log
+        path: /Users/mauf/Git/aviso/jupyter/use-cases/uc05/output/events.ndjson
+      - type: command
+        command: >-
+          exec /opt/homebrew/Caskroom/mambaforge/base/envs/aviso/bin/python /Users/mauf/Git/aviso/jupyter/use-cases/uc05/on_event.py
+          --date {{ notification.identifier.date }}
+          --time {{ notification.identifier.time }}
+          --step {{ notification.identifier.step }}
+          --stream {{ notification.identifier.stream }}
+          --levtype {{ notification.identifier.levtype }}
+          --param 167 --area 72/-25/30/45 --domain Europe --to ulrike.falk@ecmwf.int
+          --out-dir /Users/mauf/Git/aviso/jupyter/use-cases/uc05/output
+          --sequence {{ notification.sequence }}
+          >> /Users/mauf/Git/aviso/jupyter/use-cases/uc05/output/on_event.stdout 2>&1
+        working_dir: /Users/mauf/Git/aviso/jupyter/use-cases/uc05
+        timeout: 10m
+        required: false
+        retries: 0

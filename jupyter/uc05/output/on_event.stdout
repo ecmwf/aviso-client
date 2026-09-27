@@ -1,0 +1,151 @@
+2026-09-24 17:49:42 - INFO - Key read from /Users/mauf/.polytopeapirc
+2026-09-24 17:49:42 - INFO - Sending request...
+{'request': 'area:\n'
+            '- 72.0\n'
+            '- -25.0\n'
+            '- 30.0\n'
+            '- 45.0\n'
+            'class: d1\n'
+            'dataset: extremes-dt\n'
+            "date: '20260913'\n"
+            "expver: '0001'\n"
+            'levtype: sfc\n'
+            "param: '167'\n"
+            "step: '0'\n"
+            'stream: oper\n'
+            "time: '0000'\n"
+            'type: fc\n',
+ 'verb': 'retrieve'}
+2026-09-24 17:49:42 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:49:47 - INFO - Request accepted. Please poll ./01ejwrk983830hc00btpkf2eh5 for status
+2026-09-24 17:49:47 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:49:47 - INFO - Checking request status (01ejwrk983830hc00btpkf2eh5)...
+2026-09-24 17:49:53 - INFO - The current status of the request is 'processed'
+01ejwrk983830hc00btpkf2eh5.grib:   0%|          | 0.00/2.25M [00:00<?, ?B/s]01ejwrk983830hc00btpkf2eh5.grib:  45%|████▍     | 1.00M/2.25M [00:00<00:01, 1.22MB/s]01ejwrk983830hc00btpkf2eh5.grib:  89%|████████▉ | 2.00M/2.25M [00:01<00:00, 1.63MB/s]01ejwrk983830hc00btpkf2eh5.grib: 100%|██████████| 2.25M/2.25M [00:01<00:00, 1.66MB/s]                                                                                     ECCODES ERROR   :  grid_spec: Buffer too small for gridSpec. It is 13898 bytes long (len=1025)
+retrieved 2 metre temperature (2301 kB GRIB) -> oper_sfc_167_20260913_0000_step0_area72_m25_30_45.grib, oper_sfc_167_20260913_0000_step0_area72_m25_30_45_Europe.png in 29.9s
+EMAIL_DRY_RUN=1 -> not sending. Message (headers + text part):
+  From: ulrike.falk@ecmwf.int
+  To: ulrike.falk@ecmwf.int
+  Subject: [Aviso] Extremes-DT oper/sfc 20260913 0000Z step 0 available
+  Date: Thu, 24 Sep 2026 17:50:10 +0200
+  Aviso 'data' notification (sequence 138530) from the LUMI data bridge.
+  
+  identifier:
+    class    d1
+    stream   oper
+    type     fc
+    levtype  sfc
+    date     20260913
+    time     0000
+    step     0
+  
+  Polytope request:
+    {"class": "d1", "dataset": "extremes-dt", "expver": "0001", "stream": "oper", "type": "fc", "levtype": "sfc", "date": "20260913", "time": "0000", "step": "0", "param": "167", "area": [72.0, -25.0, 30.0, 45.0]}
+  
+  Map attached: oper_sfc_167_20260913_0000_step0_area72_m25_30_45_Europe.png
+  
+  sent by on_event.py at 2026-09-24 15:50:10 UTC
+  
+  attachments: ['oper_sfc_167_20260913_0000_step0_area72_m25_30_45_Europe.png']
+email -> ulrike.falk@ecmwf.int via dry-run
+2026-09-24 17:50:13 - INFO - Key read from /Users/mauf/.polytopeapirc
+2026-09-24 17:50:13 - INFO - Sending request...
+{'request': 'area:\n'
+            '- 72.0\n'
+            '- -25.0\n'
+            '- 30.0\n'
+            '- 45.0\n'
+            'class: d1\n'
+            'dataset: extremes-dt\n'
+            "date: '20260914'\n"
+            "expver: '0001'\n"
+            'levtype: sfc\n'
+            "param: '167'\n"
+            "step: '0'\n"
+            'stream: oper\n'
+            "time: '0000'\n"
+            'type: fc\n',
+ 'verb': 'retrieve'}
+2026-09-24 17:50:13 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:50:13 - INFO - Request accepted. Please poll ./01ejwrk983830ka00b7zmee0rw for status
+2026-09-24 17:50:13 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:50:13 - INFO - Checking request status (01ejwrk983830ka00b7zmee0rw)...
+2026-09-24 17:50:15 - INFO - The current status of the request is 'processed'
+01ejwrk983830ka00b7zmee0rw.grib:   0%|          | 0.00/2.25M [00:00<?, ?B/s]01ejwrk983830ka00b7zmee0rw.grib:  44%|████▍     | 1.00M/2.25M [00:00<00:01, 1.21MB/s]01ejwrk983830ka00b7zmee0rw.grib:  89%|████████▉ | 2.00M/2.25M [00:01<00:00, 1.56MB/s]                                                                                     ECCODES ERROR   :  grid_spec: Buffer too small for gridSpec. It is 13898 bytes long (len=1025)
+retrieved 2 metre temperature (2303 kB GRIB) -> oper_sfc_167_20260914_0000_step0_area72_m25_30_45.grib, oper_sfc_167_20260914_0000_step0_area72_m25_30_45_Europe.png in 23.5s
+EMAIL_DRY_RUN=1 -> not sending. Message (headers + text part):
+  From: ulrike.falk@ecmwf.int
+  To: ulrike.falk@ecmwf.int
+  Subject: [Aviso] Extremes-DT oper/sfc 20260914 0000Z step 0 available
+  Date: Thu, 24 Sep 2026 17:50:34 +0200
+  Aviso 'data' notification (sequence 138913) from the LUMI data bridge.
+  
+  identifier:
+    class    d1
+    stream   oper
+    type     fc
+    levtype  sfc
+    date     20260914
+    time     0000
+    step     0
+  
+  Polytope request:
+    {"class": "d1", "dataset": "extremes-dt", "expver": "0001", "stream": "oper", "type": "fc", "levtype": "sfc", "date": "20260914", "time": "0000", "step": "0", "param": "167", "area": [72.0, -25.0, 30.0, 45.0]}
+  
+  Map attached: oper_sfc_167_20260914_0000_step0_area72_m25_30_45_Europe.png
+  
+  sent by on_event.py at 2026-09-24 15:50:34 UTC
+  
+  attachments: ['oper_sfc_167_20260914_0000_step0_area72_m25_30_45_Europe.png']
+email -> ulrike.falk@ecmwf.int via dry-run
+2026-09-24 17:50:37 - INFO - Key read from /Users/mauf/.polytopeapirc
+2026-09-24 17:50:37 - INFO - Sending request...
+{'request': 'area:\n'
+            '- 72.0\n'
+            '- -25.0\n'
+            '- 30.0\n'
+            '- 45.0\n'
+            'class: d1\n'
+            'dataset: extremes-dt\n'
+            "date: '20260915'\n"
+            "expver: '0001'\n"
+            'levtype: sfc\n'
+            "param: '167'\n"
+            "step: '0'\n"
+            'stream: oper\n'
+            "time: '0000'\n"
+            'type: fc\n',
+ 'verb': 'retrieve'}
+2026-09-24 17:50:37 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:50:52 - INFO - Request accepted. Please poll ./01ejwrk983830mt00bsf6bn68w for status
+2026-09-24 17:50:52 - INFO - Polytope user key found in session cache for user mauf
+2026-09-24 17:50:52 - INFO - Checking request status (01ejwrk983830mt00bsf6bn68w)...
+2026-09-24 17:51:03 - INFO - The current status of the request is 'processing'
+2026-09-24 17:51:05 - INFO - The current status of the request is 'processed'
+01ejwrk983830mt00bsf6bn68w.grib:   0%|          | 0.00/2.26M [00:00<?, ?B/s]01ejwrk983830mt00bsf6bn68w.grib:  44%|████▍     | 1.00M/2.26M [00:00<00:00, 1.81MB/s]                                                                                     ECCODES ERROR   :  grid_spec: Buffer too small for gridSpec. It is 13898 bytes long (len=1025)
+retrieved 2 metre temperature (2314 kB GRIB) -> oper_sfc_167_20260915_0000_step0_area72_m25_30_45.grib, oper_sfc_167_20260915_0000_step0_area72_m25_30_45_Europe.png in 48.6s
+EMAIL_DRY_RUN=1 -> not sending. Message (headers + text part):
+  From: ulrike.falk@ecmwf.int
+  To: ulrike.falk@ecmwf.int
+  Subject: [Aviso] Extremes-DT oper/sfc 20260915 0000Z step 0 available
+  Date: Thu, 24 Sep 2026 17:51:23 +0200
+  Aviso 'data' notification (sequence 139312) from the LUMI data bridge.
+  
+  identifier:
+    class    d1
+    stream   oper
+    type     fc
+    levtype  sfc
+    date     20260915
+    time     0000
+    step     0
+  
+  Polytope request:
+    {"class": "d1", "dataset": "extremes-dt", "expver": "0001", "stream": "oper", "type": "fc", "levtype": "sfc", "date": "20260915", "time": "0000", "step": "0", "param": "167", "area": [72.0, -25.0, 30.0, 45.0]}
+  
+  Map attached: oper_sfc_167_20260915_0000_step0_area72_m25_30_45_Europe.png
+  
+  sent by on_event.py at 2026-09-24 15:51:23 UTC
+  
+  attachments: ['oper_sfc_167_20260915_0000_step0_area72_m25_30_45_Europe.png']
+email -> ulrike.falk@ecmwf.int via dry-run

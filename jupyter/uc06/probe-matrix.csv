@@ -1,0 +1,7 @@
+server,token,schema,replay,notify
+lumi,(anonymous),200 data,HTTP 401 UNAUTHORIZED,HTTP 401 UNAUTHORIZED
+lumi,DESP offline token,(same),200 read OK,HTTP 403 FORBIDDEN
+lumi,ECMWF API key,(same),200 read OK,HTTP 400 INVALID_NOTIFICATION_REQUEST -> write allowed (inferred)
+playground,(anonymous),"200 cleareo_app1_data_available,cleareo_app1_extreme_rainfall,de-scm-data,de-scm-data-points,dissemination,extreme_event,mars",HTTP 401 UNAUTHORIZED,HTTP 401 UNAUTHORIZED
+playground,DESP offline token,(same),AuthError,HTTP 401 UNAUTHORIZED
+playground,ECMWF API key,(same),200 read OK,success write OK
