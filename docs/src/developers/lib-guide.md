@@ -347,12 +347,12 @@ Same supervisor, same behaviour. Pick the shape that fits your code.
 
 ## Building a watch request
 
-Three constructors prevent invalid combinations:
+Four constructors prevent invalid combinations:
 
 ```rust,ignore
 use std::collections::BTreeMap;
 use serde_json::json;
-use aviso::watch::{ResumeStart, WatchRequest};
+use aviso::watch::{ReplayEnd, ResumeStart, WatchRequest};
 
 // Live: stream new notifications as they arrive.
 let live = WatchRequest::watch("mars");
@@ -363,7 +363,14 @@ let historical = WatchRequest::watch_from("mars", ResumeStart::AfterSequence(41)
 // Replay only: replay from a date, then close cleanly.
 let replay = WatchRequest::replay_only("mars", ResumeStart::Date("2026-01-01T00:00:00Z".into()));
 
-println!("{live:?}\n{historical:?}\n{replay:?}");
+// Replay a range: sequences 11 to 20, then close cleanly.
+let range = WatchRequest::replay_range(
+    "mars",
+    ResumeStart::AfterSequence(10),
+    ReplayEnd::Sequence(20),
+);
+
+println!("{live:?}\n{historical:?}\n{replay:?}\n{range:?}");
 
 // Add a filter. Values are JSON, so spatial filters fit too.
 let mut filter = BTreeMap::new();
@@ -376,6 +383,16 @@ let req = WatchRequest::watch("observations").with_filter(filter);
 `ResumeStart::AfterSequence(n)` reads as "I already have everything up to n;
 give me n+1 onward". The supervisor sends `from_id = (n + 1).to_string()` on the
 wire.
+
+`ReplayEnd` is the end point of a replay, and it is inclusive:
+`ReplayEnd::Sequence(n)` delivers sequence n and then ends, and
+`ReplayEnd::Date` ends with the last notification published at or before that
+time. It goes on the wire as `to_id` or `to_date`, which aviso-server accepts
+from 0.13.0. A sequence end that is not after a sequence start is refused with
+`ClientError::Config` before anything is sent. The server reports the end it
+resolved in `replay_started`; the supervisor sends that sequence on every
+reconnect, so a date end cannot move, and ends the stream without reconnecting
+once the notification at the end has been delivered.
 
 ## Triggers from the library
 
