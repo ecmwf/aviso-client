@@ -240,6 +240,10 @@ order:
 sequence id 20260601, not 1 June 2026. To pass a date, use the dashed form
 (`2026-06-01`).
 
+`aviso replay --until <VALUE>` accepts the same forms. There, a sequence id is
+the last one delivered, inclusive; see
+[Stop at an end point](./replay.md#stop-at-an-end-point).
+
 ### How `--from` interacts with the state file
 
 On `aviso listen`, when you pass `--from <VALUE>` *and* the state file already
