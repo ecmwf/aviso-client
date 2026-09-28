@@ -207,7 +207,9 @@ class WatchRequest:
     @staticmethod
     def watch_from(event_type: str, start_from: int | str) -> WatchRequest: ...
     @staticmethod
-    def replay_only(event_type: str, start_from: int | str) -> WatchRequest: ...
+    def replay_only(
+        event_type: str, start_from: int | str, *, until: int | str | None = None
+    ) -> WatchRequest: ...
     def with_filter(self, filter: dict[str, Any]) -> WatchRequest: ...
     def with_triggers(self, triggers: list[Trigger]) -> WatchRequest: ...
     @property
@@ -521,6 +523,7 @@ class AvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         start_from: int | str | None = None,
+        until: int | str | None = None,
         mode: WatchMode | str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
@@ -534,6 +537,7 @@ class AvisoClient:
         listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
         *,
         start_from: int | str | None = None,
+        until: int | str | None = None,
         mode: WatchMode | str | None = None,
         on_error: Literal["raise", "continue"]
         | Callable[[str, BaseException], object]
@@ -543,9 +547,10 @@ class AvisoClient:
 
         ``listeners`` maps a name of your choosing to the ``listen()``
         keywords for that listener (``event_type``, ``filter``,
-        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
-        ``start_from`` and ``mode`` given here apply to every dict entry that
-        does not set its own. The loop yields ``(name, notification)``.
+        ``start_from``, ``until``, ``mode``, ``triggers``), or to a
+        ``WatchRequest``. ``start_from``, ``until`` and ``mode`` given here
+        apply to every dict entry that does not set its own. The loop yields
+        ``(name, notification)``.
 
         ``on_error`` decides what a failure does. ``"raise"`` (also the
         meaning of ``None``, the default) stops every listener and raises.
@@ -658,6 +663,7 @@ class AsyncAvisoClient:
         *,
         filter: dict[str, Any] | None = None,
         start_from: int | str | None = None,
+        until: int | str | None = None,
         mode: WatchMode | str | None = None,
         triggers: Sequence[Trigger] | None = None,
         request: WatchRequest | None = None,
@@ -671,6 +677,7 @@ class AsyncAvisoClient:
         listeners: Mapping[str, Mapping[str, Any] | WatchRequest],
         *,
         start_from: int | str | None = None,
+        until: int | str | None = None,
         mode: WatchMode | str | None = None,
         on_error: Literal["raise", "continue"]
         | Callable[[str, BaseException], object]
@@ -680,9 +687,10 @@ class AsyncAvisoClient:
 
         ``listeners`` maps a name of your choosing to the ``listen()``
         keywords for that listener (``event_type``, ``filter``,
-        ``start_from``, ``mode``, ``triggers``), or to a ``WatchRequest``.
-        ``start_from`` and ``mode`` given here apply to every dict entry that
-        does not set its own. The loop yields ``(name, notification)``.
+        ``start_from``, ``until``, ``mode``, ``triggers``), or to a
+        ``WatchRequest``. ``start_from``, ``until`` and ``mode`` given here
+        apply to every dict entry that does not set its own. The loop yields
+        ``(name, notification)``.
 
         ``on_error`` decides what a failure does. ``"raise"`` (also the
         meaning of ``None``, the default) stops every listener and raises.

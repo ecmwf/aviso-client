@@ -16,7 +16,7 @@ use pyo3::types::PyDict;
 
 use crate::triggers::{FunctionTrigger, PyTrigger, SplitTriggers};
 use crate::values::validate_identifier;
-use crate::watch::{PyWatchRequest, parse_resume_start};
+use crate::watch::{PyWatchRequest, parse_replay_end, parse_resume_start};
 
 /// A core request and the function triggers that go with it.
 pub(crate) struct RequestSpec {
@@ -28,14 +28,15 @@ pub(crate) fn build_watch_request(
     event_type: Option<String>,
     filter: Option<&Bound<'_, PyDict>>,
     start_from: Option<&Bound<'_, PyAny>>,
+    until: Option<&Bound<'_, PyAny>>,
     mode: Option<&str>,
     triggers: Option<&Bound<'_, PyAny>>,
     request: Option<PyRef<'_, PyWatchRequest>>,
 ) -> PyResult<RequestSpec> {
     if let Some(req) = request {
-        if event_type.is_some() || filter.is_some() || start_from.is_some() {
+        if event_type.is_some() || filter.is_some() || start_from.is_some() || until.is_some() {
             return Err(crate::error::AvisoError::new_err(
-                "request is mutually exclusive with event_type, filter, and start_from",
+                "request is mutually exclusive with event_type, filter, start_from and until",
             ));
         }
         if mode.is_some() {
@@ -55,18 +56,39 @@ pub(crate) fn build_watch_request(
             "listen() requires either event_type=<str> or request=<WatchRequest>",
         )
     })?;
-    let effective_mode = mode.unwrap_or("watch");
-    let mut req = match (effective_mode, start_from) {
-        ("watch", None) => aviso::watch::WatchRequest::watch(event),
-        ("watch", Some(from_obj)) => {
+    // An end point only makes sense for a replay, so `until` alone selects
+    // replay-only mode.
+    let effective_mode = match (mode, until) {
+        (Some(mode), _) => mode,
+        (None, Some(_)) => "replay_only",
+        (None, None) => "watch",
+    };
+    let mut req = match (effective_mode, start_from, until) {
+        ("watch", _, Some(_)) => {
+            return Err(crate::error::AvisoError::new_err(
+                "until= ends a replay, so it needs mode='replay_only'; a live listener has no \
+                 end",
+            ));
+        }
+        ("watch", None, None) => aviso::watch::WatchRequest::watch(event),
+        ("watch", Some(from_obj), None) => {
             let resume = parse_resume_start(from_obj)?;
             aviso::watch::WatchRequest::watch_from(event, resume)
         }
-        ("replay_only", Some(from_obj)) => {
+        ("replay_only", Some(from_obj), None) => {
             let resume = parse_resume_start(from_obj)?;
             aviso::watch::WatchRequest::replay_only(event, resume)
         }
-        ("replay_only", None) => {
+        ("replay_only", Some(from_obj), Some(until)) => {
+            let resume = parse_resume_start(from_obj)?;
+            aviso::watch::WatchRequest::replay_range(event, resume, parse_replay_end(until)?)
+        }
+        ("replay_only", None, Some(_)) if mode.is_none() => {
+            return Err(crate::error::AvisoError::new_err(
+                "until= ends a replay, which also needs start_from=<int sequence or date string>",
+            ));
+        }
+        ("replay_only", None, _) => {
             return Err(crate::error::AvisoError::new_err(
                 "replay_only mode requires start_from=<int sequence or date string>",
             ));

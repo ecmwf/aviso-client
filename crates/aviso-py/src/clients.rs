@@ -296,7 +296,7 @@ impl PyAvisoClient {
         result.map_err(|e| map_client_error(py, e))
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, mode = None, triggers = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, until = None, mode = None, triggers = None, request = None))]
     #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
@@ -304,11 +304,14 @@ impl PyAvisoClient {
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
         start_from: Option<&Bound<'_, PyAny>>,
+        until: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<Py<PyAny>> {
-        let spec = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
+        let spec = build_watch_request(
+            event_type, filter, start_from, until, mode, triggers, request,
+        )?;
         crate::triggers::refuse_async_functions(py, &spec.functions, None)?;
         let client = self.inner.clone();
         let req = spec.request;
@@ -322,24 +325,22 @@ impl PyAvisoClient {
     }
 
     /// Listens to several things at once; see `pyaviso._many`.
-    #[pyo3(signature = (listeners, *, start_from = None, mode = None, on_error = None))]
+    #[pyo3(signature = (listeners, *, start_from = None, until = None, mode = None, on_error = None))]
     fn listen_many(
         &self,
         py: Python<'_>,
         listeners: &Bound<'_, PyAny>,
         start_from: Option<&Bound<'_, PyAny>>,
+        until: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         on_error: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        crate::many::listen_many(
-            py,
-            &self.inner,
-            listeners,
+        let shared = crate::many::SharedOptions {
             start_from,
+            until,
             mode,
-            on_error,
-            false,
-        )
+        };
+        crate::many::listen_many(py, &self.inner, listeners, &shared, on_error, false)
     }
 
     fn __repr__(&self) -> String {
@@ -577,7 +578,7 @@ impl PyAsyncAvisoClient {
         })
     }
 
-    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, mode = None, triggers = None, request = None))]
+    #[pyo3(signature = (event_type = None, *, filter = None, start_from = None, until = None, mode = None, triggers = None, request = None))]
     #[allow(clippy::too_many_arguments)]
     fn listen(
         &self,
@@ -585,11 +586,14 @@ impl PyAsyncAvisoClient {
         event_type: Option<String>,
         filter: Option<&Bound<'_, PyDict>>,
         start_from: Option<&Bound<'_, PyAny>>,
+        until: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         triggers: Option<&Bound<'_, PyAny>>,
         request: Option<PyRef<'_, PyWatchRequest>>,
     ) -> PyResult<Py<PyAny>> {
-        let spec = build_watch_request(event_type, filter, start_from, mode, triggers, request)?;
+        let spec = build_watch_request(
+            event_type, filter, start_from, until, mode, triggers, request,
+        )?;
         let client = self.inner.clone();
         let req = spec.request;
         let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
@@ -602,16 +606,22 @@ impl PyAsyncAvisoClient {
     }
 
     /// Listens to several things at once; see `pyaviso._many`.
-    #[pyo3(signature = (listeners, *, start_from = None, mode = None, on_error = None))]
+    #[pyo3(signature = (listeners, *, start_from = None, until = None, mode = None, on_error = None))]
     fn listen_many(
         &self,
         py: Python<'_>,
         listeners: &Bound<'_, PyAny>,
         start_from: Option<&Bound<'_, PyAny>>,
+        until: Option<&Bound<'_, PyAny>>,
         mode: Option<&str>,
         on_error: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        crate::many::listen_many(py, &self.inner, listeners, start_from, mode, on_error, true)
+        let shared = crate::many::SharedOptions {
+            start_from,
+            until,
+            mode,
+        };
+        crate::many::listen_many(py, &self.inner, listeners, &shared, on_error, true)
     }
 
     fn __repr__(&self) -> String {

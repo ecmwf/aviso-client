@@ -11,6 +11,7 @@ checks and stopping."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import pathlib
@@ -266,3 +267,21 @@ def test_failure_kinds_are_an_enum(httpserver: HTTPServer, client: pyaviso.Aviso
     [failure] = it.errors
     assert failure.kind is pyaviso.ListenFailureKind.LISTENER
     assert failure.kind == "listener"
+
+
+@pytest.mark.parametrize("client_type", [pyaviso.AvisoClient, pyaviso.AsyncAvisoClient])
+def test_entry_keys_are_the_listen_keywords(
+    client_type: type[pyaviso.AvisoClient] | type[pyaviso.AsyncAvisoClient],
+) -> None:
+    """A listener dict takes the listen() keywords, except request=, which a
+    WatchRequest entry replaces."""
+    client = client_type(base_url="http://127.0.0.1:1")
+    with pytest.raises(ValueError, match="expected one of") as raised:
+        client.listen_many({"a": {"event_type": "mars", "bogus": 1}})
+    accepted = str(raised.value).split("expected one of ", 1)[1].split(", ")
+    keywords = [
+        name
+        for name in inspect.signature(client_type.listen).parameters
+        if name not in ("self", "request")
+    ]
+    assert accepted == keywords

@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use aviso::watch::{ResumeStart, WatchMode, WatchRequest};
+use aviso::watch::{ReplayEnd, ResumeStart, WatchMode, WatchRequest};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyInt};
 
@@ -46,11 +46,19 @@ impl PyWatchRequest {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (event_type, start_from))]
-    fn replay_only(event_type: String, start_from: &Bound<'_, PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (event_type, start_from, *, until = None))]
+    fn replay_only(
+        event_type: String,
+        start_from: &Bound<'_, PyAny>,
+        until: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
         let resume = parse_resume_start(start_from)?;
+        let inner = match until {
+            None => WatchRequest::replay_only(event_type, resume),
+            Some(until) => WatchRequest::replay_range(event_type, resume, parse_replay_end(until)?),
+        };
         Ok(Self {
-            inner: WatchRequest::replay_only(event_type, resume),
+            inner,
             functions: Vec::new(),
         })
     }
@@ -116,38 +124,65 @@ impl PyWatchRequest {
     }
 }
 
-pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeStart> {
+/// A position argument, `start_from` or `until`: an int sequence or a date
+/// string.
+enum Position {
+    Sequence(u64),
+    Date(String),
+}
+
+/// Parses a position argument. `field` names it in errors.
+///
+/// Examples: `0`, `42` and `"2026-09-01T00:00:00Z"` are valid; `-1`, `True`
+/// and `1.5` are not.
+fn parse_position(value: &Bound<'_, PyAny>, field: &str) -> PyResult<Position> {
     if let Ok(b) = value.extract::<bool>() {
         return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "start_from must be an int sequence or a string date, got bool ({b})"
+            "{field} must be an int sequence or a string date, got bool ({b})"
         )));
     }
     if value.is_instance_of::<PyInt>() {
         if let Ok(n) = value.extract::<u64>() {
-            return Ok(ResumeStart::AfterSequence(n));
+            return Ok(Position::Sequence(n));
         }
         if let Ok(n) = value.extract::<i128>() {
             if n < 0 {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "start_from sequence must be non-negative",
-                ));
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "{field} sequence must be non-negative"
+                )));
             }
-            return u64::try_from(n)
-                .map(ResumeStart::AfterSequence)
-                .map_err(|_| {
-                    pyo3::exceptions::PyValueError::new_err("start_from sequence exceeds u64::MAX")
-                });
+            return u64::try_from(n).map(Position::Sequence).map_err(|_| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "{field} sequence exceeds u64::MAX"
+                ))
+            });
         }
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "start_from sequence is too large; must fit in u64 (0..=18446744073709551615)",
-        ));
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "{field} sequence is too large; must fit in u64 (0..=18446744073709551615)"
+        )));
     }
     if let Ok(s) = value.extract::<String>() {
-        return Ok(ResumeStart::Date(s));
+        return Ok(Position::Date(s));
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
-        "start_from must be an int sequence or a string date",
-    ))
+    Err(pyo3::exceptions::PyTypeError::new_err(format!(
+        "{field} must be an int sequence or a string date"
+    )))
+}
+
+/// Parses `start_from`: a sequence to start after, or a date.
+pub(crate) fn parse_resume_start(value: &Bound<'_, PyAny>) -> PyResult<ResumeStart> {
+    Ok(match parse_position(value, "start_from")? {
+        Position::Sequence(n) => ResumeStart::AfterSequence(n),
+        Position::Date(s) => ResumeStart::Date(s),
+    })
+}
+
+/// Parses `until`: the last sequence to deliver, inclusive, or a date.
+pub(crate) fn parse_replay_end(value: &Bound<'_, PyAny>) -> PyResult<ReplayEnd> {
+    Ok(match parse_position(value, "until")? {
+        Position::Sequence(n) => ReplayEnd::Sequence(n),
+        Position::Date(s) => ReplayEnd::Date(s),
+    })
 }
 
 pub(crate) fn register_watch(m: &Bound<'_, PyModule>) -> PyResult<()> {
