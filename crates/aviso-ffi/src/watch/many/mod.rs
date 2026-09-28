@@ -28,15 +28,15 @@ use std::ptr;
 use aviso::watch::{EntryError, ErrorPolicy, WatchRequest};
 use futures_util::StreamExt;
 
+use super::{
+    AvisoNotification, AvisoWatch, AvisoWatchRequest, StopSignal, deliver_end, deliver_raw_end,
+    spawn_watch,
+};
 use crate::client::{AvisoClient, cstr_opt};
 use crate::error::{self, AvisoError, OutcomeError};
 use crate::guard;
 use crate::outcome::AvisoOutcome;
 use crate::send::{SendOutcome, SendPtr};
-use crate::watch::{
-    AvisoNotification, AvisoWatch, AvisoWatchRequest, StopSignal, deliver_end, deliver_raw_end,
-    spawn_watch,
-};
 
 #[cfg(test)]
 mod tests;
