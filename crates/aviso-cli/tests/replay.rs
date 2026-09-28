@@ -18,9 +18,10 @@ mod common;
 
 use std::io::Write as _;
 
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use tempfile::NamedTempFile;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use common::aviso;
@@ -192,4 +193,100 @@ fn replay_invalid_identifiers_json_exits_2() {
         .assert()
         .failure()
         .code(2);
+}
+
+#[tokio::test]
+async fn replay_until_sends_the_end_point_and_names_it_in_the_banner() {
+    let server = MockServer::start().await;
+    let body = concat!(
+        "event: replay-control\ndata: {\"type\":\"replay_started\",\"end_sequence\":20}\n\n",
+        "event: replay-control\n",
+        "data: {\"type\":\"replay_completed\",\"timestamp\":\"2026-05-17T13:00:00Z\",\"topic\":\"mars\"}\n\n",
+        "event: connection-closing\n",
+        "data: {\"reason\":\"end_of_stream\",\"timestamp\":\"2026-05-17T13:00:00Z\",\"message\":\"\",\"topic\":\"mars\",\"request_id\":\"r\"}\n\n",
+    );
+    // Only a request with the expected end point is answered.
+    for (until, wire) in [
+        ("20", serde_json::json!({"from_id": "11", "to_id": "20"})),
+        (
+            "2026-05-18",
+            serde_json::json!({"from_id": "11", "to_date": "2026-05-18T00:00:00.000000Z"}),
+        ),
+    ] {
+        server.reset().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/replay"))
+            .and(body_partial_json(wire))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/event-stream"))
+            .mount(&server)
+            .await;
+        let banner = if until == "20" {
+            "from sequence #10 until sequence #20."
+        } else {
+            "from sequence #10 until 2026-05-18."
+        };
+        aviso()
+            .args([
+                "--base-url",
+                &server.uri(),
+                "replay",
+                "--event",
+                "mars",
+                "--identifier",
+                "class=od",
+                "--from",
+                "10",
+                "--until",
+                until,
+            ])
+            .timeout(std::time::Duration::from_secs(60))
+            .assert()
+            .success()
+            .stderr(contains(banner))
+            .stderr(contains("Replay complete."));
+    }
+}
+
+#[test]
+fn replay_with_bad_until_value_exits_2() {
+    aviso()
+        .args([
+            "--base-url",
+            "http://unused",
+            "replay",
+            "--from",
+            "10",
+            "--until",
+            "tomorrow",
+            "--listener",
+            "x",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("--until value `tomorrow`"));
+}
+
+#[test]
+fn replay_with_an_until_not_after_from_is_a_usage_error() {
+    aviso()
+        .args([
+            "--base-url",
+            "http://127.0.0.1:1",
+            "replay",
+            "--event",
+            "mars",
+            "--identifier",
+            "class=od",
+            "--from",
+            "10",
+            "--until",
+            "10",
+        ])
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("--until 10 is not after --from 10"))
+        .stderr(contains("Replaying").not());
 }

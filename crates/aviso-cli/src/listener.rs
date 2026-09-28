@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use aviso::watch::{EchoConfig, ResumeStart, TriggerConfig, WatchRequest};
+use aviso::watch::{EchoConfig, ReplayEnd, ResumeStart, TriggerConfig, WatchRequest};
 use aviso::{AvisoClient, ClientError};
 use tokio::sync::watch;
 
@@ -57,9 +57,16 @@ pub(crate) fn build_watch_request(spec: &ListenerSpec) -> Result<WatchRequest> {
 }
 
 /// Builds a [`WatchRequest`] configured for replay-only delivery
-/// from the supplied cursor.
-pub(crate) fn build_replay_request(spec: &ListenerSpec, cursor: ResumeStart) -> WatchRequest {
-    let req = WatchRequest::replay_only(spec.event.clone(), cursor);
+/// from the supplied cursor, up to `until` when one is given.
+pub(crate) fn build_replay_request(
+    spec: &ListenerSpec,
+    cursor: ResumeStart,
+    until: Option<ReplayEnd>,
+) -> WatchRequest {
+    let req = match until {
+        None => WatchRequest::replay_only(spec.event.clone(), cursor),
+        Some(until) => WatchRequest::replay_range(spec.event.clone(), cursor, until),
+    };
     let req = req.with_filter(spec.identifiers.clone().into_iter().collect());
     let triggers = triggers_for_listener(spec);
     req.with_triggers(triggers)
