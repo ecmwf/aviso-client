@@ -13,6 +13,7 @@ use url::Url;
 
 use super::connection::run_one_connection;
 use super::exit_flush;
+use super::replay_end;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
 use crate::state::{ResumeKey, StateStore};
@@ -170,6 +171,9 @@ pub(crate) async fn run_supervisor(
             ResumeStart::Date(_) => None,
         });
         let mut pending_commit: Option<PendingCommit> = None;
+        // The end the server resolved on the first connection; see
+        // `replay_end`.
+        let mut resolved_end: Option<u64> = None;
         let mut refreshed_for_current_attempt: bool = false;
         let mut retry_cause = String::new();
         let mut last_retry_log: Option<tokio::time::Instant> = None;
@@ -186,6 +190,17 @@ pub(crate) async fn run_supervisor(
 
         loop {
             if state.is_terminal() {
+                break;
+            }
+
+            // Checked before any backoff, so a finished replay neither waits
+            // nor logs a retry; see `replay_end`.
+            let wire_until = replay_end::effective(resolved_end, request.until());
+            if replay_end::reached(wire_until.as_ref(), pending_commit.as_ref(), commit_cursor) {
+                tracing::debug!(
+                    event.name = "client.replay.end_reached",
+                    "replay already delivered up to its end point; not reconnecting"
+                );
                 break;
             }
 
@@ -316,6 +331,8 @@ pub(crate) async fn run_supervisor(
                 &mut last_reconnect_policy,
                 &request,
                 wire_from.as_ref(),
+                wire_until.as_ref(),
+                &mut resolved_end,
                 &mut commit_cursor,
                 &mut pending_commit,
                 state_store.as_ref(),

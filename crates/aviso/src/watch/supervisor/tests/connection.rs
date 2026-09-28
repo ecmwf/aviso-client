@@ -28,6 +28,7 @@ async fn eof_resets_backoff_only_after_a_validated_handshake() {
         let request = WatchRequest::watch("mars");
         let mut state = crate::watch::WatchState::watch(None);
         let mut policy = None;
+        let mut resolved_end = None;
         let mut cursor = None;
         let mut pending = None;
         let mut retries = 4;
@@ -40,6 +41,8 @@ async fn eof_resets_backoff_only_after_a_validated_handshake() {
             &mut policy,
             &request,
             None,
+            None,
+            &mut resolved_end,
             &mut cursor,
             &mut pending,
             None,
