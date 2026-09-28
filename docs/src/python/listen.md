@@ -211,6 +211,38 @@ server truncates replay at its cap, the client raises `pyaviso.HistoryGapError`;
 a failed run is not proof of full catch-up. See
 [historical replay limits](https://sites.ecmwf.int/docs/aviso-server/main/streaming-semantics.html#historical-replay-limits).
 
+### Stop at an end point
+
+`until` ends the replay at an end point instead of at the last stored
+notification. An integer is the last sequence to deliver, inclusive; a UTC
+date string ends with the last notification published at or before that time.
+`until` implies `mode="replay_only"`:
+
+```python
+with client.listen(
+    "mars",
+    filter={"class": "od"},
+    start_from="2026-06-01T00:00:00Z",
+    until="2026-06-02T00:00:00Z",
+) as notifications:
+    for notification in notifications:
+        print(notification.sequence, notification.identifier)
+```
+
+The script prints the matching notifications published from midnight UTC on 1
+June 2026 up to and including midnight UTC on 2 June, then exits. Both dates are
+inclusive. An integer start is exclusive and an integer end inclusive:
+`start_from=10, until=20` delivers the matching notifications with sequences 11
+to 20. A replay also stops at the last notification stored when it starts, so an
+end point in the future ends there. Like `start_from`, a date refers to
+publication time, and the value's type selects its meaning.
+
+An integer `until` that is not greater than an integer `start_from` raises
+`pyaviso.ConfigError`, since the replay would deliver nothing. If the connection
+drops during the replay, the client resumes up to the same end point. An end
+point needs aviso-server 0.13.0 or later; an older server rejects the request
+with `pyaviso.HttpError` status 400.
+
 Errors can arise when opening or iterating the listener. For example, a rejected
 filter can raise `pyaviso.HttpError`; inspect its `status` and `body`.
 Connection losses and retryable server failures normally trigger reconnection.
@@ -317,8 +349,8 @@ every buffered notification. Without a saved cursor, a fresh run starts live.
 ## Reusing a watch request
 
 For reusable listener settings, use `WatchRequest` and pass it as `request=`.
-It cannot be combined with the event/filter/start/mode/trigger arguments used
-above. See [Builder pattern](./builder-pattern.md) for complete examples and
+It cannot be combined with the event/filter/start/until/mode/trigger arguments
+used above. See [Builder pattern](./builder-pattern.md) for complete examples and
 [Triggers](./triggers.md) for actions attached to a listener.
 
 ## Multiple listeners

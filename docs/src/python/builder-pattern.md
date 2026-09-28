@@ -71,8 +71,8 @@ Press Ctrl+C to stop. You do not need publishing permission to listen. For a
 local trial with provider credentials, run the
 [publish script](./publish.md#a-complete-publish-script) in another terminal.
 
-`request=` cannot be combined with `event_type`, `filter`, `start_from`, `mode`
-or `triggers`. Put those settings on the request instead.
+`request=` cannot be combined with `event_type`, `filter`, `start_from`,
+`until`, `mode` or `triggers`. Put those settings on the request instead.
 
 ## Replay history and exit
 
@@ -91,7 +91,8 @@ An integer start position is exclusive: `0` means everything retained after
 sequence zero, not every notification ever published. To read after sequence
 1024 and then keep listening, use `WatchRequest.watch_from("mars", 1024)`.
 Both start-position factories also accept a UTC timestamp string such as
-`"2026-06-01T00:00:00Z"`. See
+`"2026-06-01T00:00:00Z"`. `replay_only` also takes an end point:
+`WatchRequest.replay_only("mars", 0, until=100)` ends with sequence 100. See
 [start positions](./listen.md#start-from-a-specific-position)
 and [State and resume](./state-and-resume.md).
 
