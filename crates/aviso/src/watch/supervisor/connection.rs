@@ -93,8 +93,12 @@ pub(super) async fn run_one_connection(
             )));
         }
     };
-    let body = match WireWatchRequest::from_parts(request.event_type(), request.filter(), wire_from)
-    {
+    let body = match WireWatchRequest::from_parts(
+        request.event_type(),
+        request.filter(),
+        wire_from,
+        request.until(),
+    ) {
         Ok(b) => b,
         Err(e) => return ConnectionOutcome::Fatal(e),
     };

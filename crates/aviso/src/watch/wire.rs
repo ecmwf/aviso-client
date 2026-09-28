@@ -20,15 +20,16 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ResumeStart, WatchRequest};
+use super::{ReplayEnd, ResumeStart, WatchRequest};
 use crate::ClientError;
 
 /// Body for `POST /api/v1/watch` and `POST /api/v1/replay`.
 ///
 /// `from_id` is a JSON string on the wire (the server parses it back to
 /// `u64`); `from_date` is a free-form date string. Server-side validation
-/// rejects requests that set both. `event_type` and `identifier` are always
-/// present even when the identifier is empty.
+/// rejects requests that set both. `to_id` and `to_date` are the end point
+/// in the same forms; only `/api/v1/replay` accepts them. `event_type` and
+/// `identifier` are always present even when the identifier is empty.
 #[derive(Debug, Serialize)]
 pub(crate) struct WireWatchRequest<'a> {
     pub(crate) event_type: &'a str,
@@ -37,6 +38,10 @@ pub(crate) struct WireWatchRequest<'a> {
     pub(crate) from_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) from_date: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) to_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) to_date: Option<&'a str>,
 }
 
 impl<'a> WireWatchRequest<'a> {
@@ -46,20 +51,37 @@ impl<'a> WireWatchRequest<'a> {
     /// the client has already committed everything up to and including `n`,
     /// so the next event to fetch is `n + 1`. Saturation at `u64::MAX` is
     /// rejected with [`ClientError::Config`] rather than wrapping silently.
+    ///
+    /// A sequence end point must come after a sequence start, or the replay
+    /// could deliver nothing: `AfterSequence(10)` with `Sequence(11)` is
+    /// valid, with `Sequence(10)` it is refused with [`ClientError::Config`].
+    /// The server refuses the same request; checking here reports it in the
+    /// client's terms before anything is sent.
     pub(crate) fn from_public(req: &'a WatchRequest) -> Result<Self, ClientError> {
-        Self::from_parts(req.event_type(), req.filter(), req.from())
+        if let (Some(ResumeStart::AfterSequence(start)), Some(ReplayEnd::Sequence(end))) =
+            (req.from(), req.until())
+            && end <= start
+        {
+            return Err(ClientError::Config(format!(
+                "the replay end sequence {end} is not after its start (after sequence {start}), \
+                 so it would deliver nothing"
+            )));
+        }
+        Self::from_parts(req.event_type(), req.filter(), req.from(), req.until())
     }
 
     /// Build a wire request from the parts the watch supervisor's outer
     /// reconnect loop has to hand: the event type and filter from the
-    /// original `WatchRequest`, plus the supervisor's CURRENT cursor
-    /// (which differs from `request.from()` after the first commit).
+    /// original `WatchRequest`, the supervisor's CURRENT cursor (which
+    /// differs from `request.from()` after the first commit), and the end
+    /// point to send.
     ///
     /// Same overflow handling as [`Self::from_public`].
     pub(crate) fn from_parts(
         event_type: &'a str,
         filter: &'a BTreeMap<String, serde_json::Value>,
         from: Option<&'a ResumeStart>,
+        until: Option<&'a ReplayEnd>,
     ) -> Result<Self, ClientError> {
         let (from_id, from_date) = match from {
             None => (None, None),
@@ -73,11 +95,18 @@ impl<'a> WireWatchRequest<'a> {
             }
             Some(ResumeStart::Date(s)) => (None, Some(s.as_str())),
         };
+        let (to_id, to_date) = match until {
+            None => (None, None),
+            Some(ReplayEnd::Sequence(n)) => (Some(n.to_string()), None),
+            Some(ReplayEnd::Date(s)) => (None, Some(s.as_str())),
+        };
         Ok(WireWatchRequest {
             event_type,
             identifier: filter,
             from_id,
             from_date,
+            to_id,
+            to_date,
         })
     }
 }
@@ -180,7 +209,10 @@ mod tests {
         WatchRequest, WireCloudEvent, WireConnectionClosing, WireConnectionEstablished,
         WireErrorEvent, WireReplayControl, WireWatchRequest,
     };
-    use crate::{ClientError, watch::ResumeStart};
+    use crate::{
+        ClientError,
+        watch::{ReplayEnd, ResumeStart},
+    };
 
     #[test]
     fn from_public_emits_from_id_as_string_with_next_sequence() {
@@ -232,6 +264,68 @@ mod tests {
                 "from_id": "1",
             })
         );
+    }
+
+    #[test]
+    fn from_public_sends_the_end_point_as_to_id_or_to_date() {
+        let req = WatchRequest::replay_range(
+            "mars",
+            ResumeStart::AfterSequence(10),
+            ReplayEnd::Sequence(20),
+        );
+        let json = serde_json::to_value(WireWatchRequest::from_public(&req).unwrap()).unwrap();
+        assert_eq!(
+            json,
+            json!({"event_type": "mars", "identifier": {}, "from_id": "11", "to_id": "20"})
+        );
+
+        let req = WatchRequest::replay_range(
+            "mars",
+            ResumeStart::Date("2026-09-01T00:00:00Z".into()),
+            ReplayEnd::Date("2026-09-02T00:00:00Z".into()),
+        );
+        let json = serde_json::to_value(WireWatchRequest::from_public(&req).unwrap()).unwrap();
+        assert_eq!(
+            json,
+            json!({"event_type": "mars", "identifier": {},
+                   "from_date": "2026-09-01T00:00:00Z", "to_date": "2026-09-02T00:00:00Z"})
+        );
+    }
+
+    #[test]
+    fn from_public_refuses_a_sequence_end_that_is_not_after_the_start() {
+        // The start is exclusive and the end inclusive: after 10 up to 11 is
+        // one notification, after 10 up to 10 is none.
+        let valid = WatchRequest::replay_range(
+            "mars",
+            ResumeStart::AfterSequence(10),
+            ReplayEnd::Sequence(11),
+        );
+        assert!(WireWatchRequest::from_public(&valid).is_ok());
+        for end in [10, 3] {
+            let req = WatchRequest::replay_range(
+                "mars",
+                ResumeStart::AfterSequence(10),
+                ReplayEnd::Sequence(end),
+            );
+            match WireWatchRequest::from_public(&req) {
+                Err(ClientError::Config(message)) => assert_eq!(
+                    message,
+                    format!(
+                        "the replay end sequence {end} is not after its start (after sequence \
+                         10), so it would deliver nothing"
+                    )
+                ),
+                other => panic!("expected a config error, got {other:?}"),
+            }
+        }
+        // Ends and starts of different kinds are not compared.
+        let mixed = WatchRequest::replay_range(
+            "mars",
+            ResumeStart::Date("2030-01-01T00:00:00Z".into()),
+            ReplayEnd::Sequence(1),
+        );
+        assert!(WireWatchRequest::from_public(&mixed).is_ok());
     }
 
     #[test]

@@ -14,16 +14,18 @@
 //! HTTP endpoint from [`WatchMode`] and serialises the rest as the
 //! server-side request body.
 //!
-//! Three constructors make the impossible state ("replay-only without a
-//! resume position") unrepresentable by construction: [`Self::watch`] for
-//! live-only, [`Self::watch_from`] for historical-then-live, and
-//! [`Self::replay_only`] for replay-and-terminate. The pattern mirrors
+//! The constructors make the impossible states ("replay-only without a
+//! resume position", "an end point on a live watch") unrepresentable by
+//! construction: [`Self::watch`] for live-only, [`Self::watch_from`] for
+//! historical-then-live, [`Self::replay_only`] for replay-and-terminate, and
+//! [`Self::replay_range`] for a replay that also stops at an end point. The
+//! pattern mirrors
 //! [`crate::watch::WatchState::watch`] and
 //! [`crate::watch::WatchState::replay_only`].
 
 use std::collections::BTreeMap;
 
-use super::{ResumeStart, Trigger, WatchMode};
+use super::{ReplayEnd, ResumeStart, Trigger, WatchMode};
 
 /// Subscription parameters for a single watch session.
 ///
@@ -63,6 +65,9 @@ pub struct WatchRequest {
     event_type: String,
     filter: BTreeMap<String, serde_json::Value>,
     from: Option<ResumeStart>,
+    /// Set only by [`Self::replay_range`], so only replay-only requests
+    /// carry an end point.
+    until: Option<ReplayEnd>,
     mode: WatchMode,
     triggers: Vec<Trigger>,
     startup_timeout: Option<std::time::Duration>,
@@ -80,6 +85,7 @@ impl WatchRequest {
             event_type: event_type.into(),
             filter: BTreeMap::new(),
             from: None,
+            until: None,
             mode: WatchMode::Watch,
             triggers: Vec::new(),
             startup_timeout: None,
@@ -99,6 +105,7 @@ impl WatchRequest {
             event_type: event_type.into(),
             filter: BTreeMap::new(),
             from: Some(from),
+            until: None,
             mode: WatchMode::Watch,
             triggers: Vec::new(),
             startup_timeout: None,
@@ -122,9 +129,45 @@ impl WatchRequest {
             event_type: event_type.into(),
             filter: BTreeMap::new(),
             from: Some(from),
+            until: None,
             mode: WatchMode::ReplayOnly,
             triggers: Vec::new(),
             startup_timeout: None,
+        }
+    }
+
+    /// Build a replay-only watch on `event_type` that starts from `from` and
+    /// ends at `until`, inclusive.
+    ///
+    /// As [`Self::replay_only`], but the server stops at the earlier of the
+    /// end point and the last notification stored when the replay starts. A
+    /// sequence start is exclusive and the end inclusive: `AfterSequence(10)`
+    /// to `Sequence(20)` delivers the matching notifications with sequences
+    /// 11 to 20. A date start includes a notification stored exactly at that
+    /// time. A sequence end
+    /// that is not after a sequence start is refused when the watch starts,
+    /// with [`crate::ClientError::Config`].
+    ///
+    /// ```
+    /// use aviso::watch::{ReplayEnd, ResumeStart, WatchMode, WatchRequest};
+    ///
+    /// let req = WatchRequest::replay_range(
+    ///     "mars",
+    ///     ResumeStart::Date("2026-09-01T00:00:00Z".into()),
+    ///     ReplayEnd::Date("2026-09-02T00:00:00Z".into()),
+    /// );
+    /// assert_eq!(req.mode(), WatchMode::ReplayOnly);
+    /// assert!(matches!(req.until(), Some(ReplayEnd::Date(_))));
+    /// ```
+    #[must_use]
+    pub fn replay_range(
+        event_type: impl Into<String>,
+        from: ResumeStart,
+        until: ReplayEnd,
+    ) -> Self {
+        Self {
+            until: Some(until),
+            ..Self::replay_only(event_type, from)
         }
     }
 
@@ -161,6 +204,13 @@ impl WatchRequest {
     #[must_use]
     pub fn from(&self) -> Option<&ResumeStart> {
         self.from.as_ref()
+    }
+
+    /// Borrow the configured end point, if any. Only a request built with
+    /// [`Self::replay_range`] has one.
+    #[must_use]
+    pub fn until(&self) -> Option<&ReplayEnd> {
+        self.until.as_ref()
     }
 
     /// Return the configured session mode.
@@ -217,7 +267,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{ResumeStart, WatchMode, WatchRequest};
+    use super::{ReplayEnd, ResumeStart, WatchMode, WatchRequest};
 
     #[test]
     fn watch_constructor_defaults_to_live_watch_mode_with_no_resume() {
@@ -250,6 +300,25 @@ mod tests {
         let req = WatchRequest::replay_only("mars", ResumeStart::AfterSequence(10));
         assert_eq!(req.mode(), WatchMode::ReplayOnly);
         assert_eq!(req.from(), Some(&ResumeStart::AfterSequence(10)));
+    }
+
+    #[test]
+    fn replay_range_is_replay_only_with_an_end_point() {
+        let req = WatchRequest::replay_range(
+            "mars",
+            ResumeStart::AfterSequence(10),
+            ReplayEnd::Sequence(20),
+        );
+        assert_eq!(req.mode(), WatchMode::ReplayOnly);
+        assert_eq!(req.from(), Some(&ResumeStart::AfterSequence(10)));
+        assert_eq!(req.until(), Some(&ReplayEnd::Sequence(20)));
+        for req in [
+            WatchRequest::watch("mars"),
+            WatchRequest::watch_from("mars", ResumeStart::AfterSequence(1)),
+            WatchRequest::replay_only("mars", ResumeStart::AfterSequence(1)),
+        ] {
+            assert_eq!(req.until(), None);
+        }
     }
 
     #[test]
