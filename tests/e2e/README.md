@@ -5,15 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # End-to-end tests
 
-E2E tests run against a real three-service stack: `aviso-server` + `auth-o-tron` + JetStream-backed NATS, all pulled from public registries and pinned by manifest-index digest for reproducibility:
+E2E tests run against a real three-service stack: `aviso-server` + `auth-o-tron` + JetStream-backed NATS, all pulled from public registries and pinned by manifest-index digest for reproducibility. The `image:` lines in [`docker-compose.yml`](./docker-compose.yml) are the only record of the pinned versions.
 
-```text
-eccr.ecmwf.int/aviso/aviso_server:0.6.2@sha256:2c2607d1ba4d9b4bf55e52bf9b08793d8ca1959843a3efaa3d6f6922d5fdc60c
-eccr.ecmwf.int/auth-o-tron/auth-o-tron:0.3.3@sha256:380afb697e086fd8f6d64ab2cdcb0583d1603a2e29bccd8e950f90bbaf9bfe66
-nats:2.12.4-alpine@sha256:31c6ed3b2da61645aaa3ad9217b5a52b34b6ebd555ecb71259cd7723c59ae1ea
-```
-
-The tag (e.g. `0.6.2`) is a human-readable label; the digest is what Docker resolves and verifies. A re-published tag cannot silently change CI or local runs because the digest will no longer match.
+Each image is pinned as `<tag>@<digest>`. The tag is a human-readable label; the digest is what Docker resolves and verifies. A re-published tag cannot silently change CI or local runs because the digest will no longer match.
 
 The stack mirrors ECMWF's production deployment patterns (sourced from [`ecmwf/aviso-chart`](https://github.com/ecmwf/aviso-chart) and [`ecmwf/aviso-config`](https://github.com/ecmwf/aviso-config)):
 
@@ -96,7 +90,7 @@ AVISO_SERVER_HOST_PORT=8102 AUTH_O_TRON_HOST_PORT=8182 NATS_HOST_PORT=4323 NATS_
    ```
 
    Use the top-level `Digest:` value (the multi-arch OCI index digest), not a per-platform manifest digest. Pinning the index keeps the image portable across `linux/amd64` and `linux/arm64`.
-3. Update the `image:` line in [`docker-compose.yml`](./docker-compose.yml) and the reference block at the top of this file to `<TAG>@<DIGEST>`.
+3. Update the `image:` line in [`docker-compose.yml`](./docker-compose.yml) to `<TAG>@<DIGEST>`.
 4. Run the e2e suite locally to confirm.
 5. Open a PR with the bump in its own commit.
 
