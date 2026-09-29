@@ -204,6 +204,32 @@ the rest, and repeat until the watch ends without an error.
 does exactly that: it reads everything since a date in as many batches as the
 cap requires, then exits with a count.
 
+### Stopping at an end point
+
+`replay_until_sequence` and `replay_until_date` end the replay at an end point
+instead of at the last stored notification. A sequence is the last one
+delivered, inclusive; a date ends with the last notification published at or
+before that time. Combine either with a `replay_from_*` setter, in any order:
+
+```cpp
+aviso::WatchRequest request("test_event");
+request.replay_from_date("2026-01-01T00:00:00Z")
+    .replay_until_date("2026-01-02T00:00:00Z");  // one day, then end
+```
+
+The start is exclusive and the end inclusive for sequences:
+`replay_from_sequence(10)` with `replay_until_sequence(20)` delivers the
+matching notifications with sequences 11 to 20. An end point in the future ends
+at the last stored notification. If the connection drops, the watch resumes up
+to the same end point.
+
+An end point without a `replay_from_*` setter makes `on_end` report
+`AvisoErrorKind_InvalidInput` when the watch starts, since a live watch has no
+end. A sequence end that is not after a sequence start is reported as
+`AvisoErrorKind_Config`. An end point needs aviso-server 0.13.0 or later; an
+older server rejects the request with an `AvisoErrorKind_Http` error, status
+400.
+
 ## Filtering
 
 `filter_json` narrows the stream to notifications whose identifier matches a

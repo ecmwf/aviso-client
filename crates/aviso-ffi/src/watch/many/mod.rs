@@ -152,7 +152,13 @@ pub unsafe extern "C" fn aviso_watch_list_add(
                 let message = named_message(name, &err.message_string());
                 list.error = Some(err.with_message(message));
             }
-            (None, Some(spec)) => list.entries.push((name.to_string(), spec.into_request())),
+            (None, Some(spec)) => match spec.into_request() {
+                Ok(request) => list.entries.push((name.to_string(), request)),
+                Err(err) => {
+                    let message = named_message(name, &err.message_string());
+                    list.error = Some(err.with_message(message));
+                }
+            },
             (None, None) => {
                 list.error = Some(error::internal(&named_message(
                     name,

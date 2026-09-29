@@ -12,9 +12,11 @@ use tokio::sync::{mpsc, oneshot, watch};
 use url::Url;
 
 use super::connection::run_one_connection;
+use super::exit_flush;
+use super::replay_end;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
-use crate::state::{Checkpoint, ResumeKey, StateStore};
+use crate::state::{ResumeKey, StateStore};
 use crate::watch::backoff;
 use crate::watch::{
     ConnectionLossReason, ConnectionStatus, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent,
@@ -169,6 +171,9 @@ pub(crate) async fn run_supervisor(
             ResumeStart::Date(_) => None,
         });
         let mut pending_commit: Option<PendingCommit> = None;
+        // The end the server resolved on the first connection; see
+        // `replay_end`.
+        let mut resolved_end: Option<u64> = None;
         let mut refreshed_for_current_attempt: bool = false;
         let mut retry_cause = String::new();
         let mut last_retry_log: Option<tokio::time::Instant> = None;
@@ -185,6 +190,17 @@ pub(crate) async fn run_supervisor(
 
         loop {
             if state.is_terminal() {
+                break;
+            }
+
+            // Checked before any backoff, so a finished replay neither waits
+            // nor logs a retry; see `replay_end`.
+            let wire_until = replay_end::effective(resolved_end, request.until());
+            if replay_end::reached(wire_until.as_ref(), pending_commit.as_ref(), commit_cursor) {
+                tracing::debug!(
+                    event.name = "client.replay.end_reached",
+                    "replay already delivered up to its end point; not reconnecting"
+                );
                 break;
             }
 
@@ -315,6 +331,8 @@ pub(crate) async fn run_supervisor(
                 &mut last_reconnect_policy,
                 &request,
                 wire_from.as_ref(),
+                wire_until.as_ref(),
+                &mut resolved_end,
                 &mut commit_cursor,
                 &mut pending_commit,
                 state_store.as_ref(),
@@ -475,31 +493,8 @@ pub(crate) async fn run_supervisor(
             }
         }
 
-        if flush_cursor_on_exit
-            && let (Some(pending), Some(store)) = (pending_commit.as_ref(), state_store.as_ref())
-        {
-            let checkpoint = Checkpoint::new(pending.sequence, Some(pending.event_id.clone()));
-            match store.put(&resume_key, checkpoint).await {
-                Ok(()) => {
-                    tracing::debug!(
-                        event.name = "client.resume.flushed_on_exit",
-                        resume_key = %resume_key.as_hex(),
-                        sequence = pending.sequence,
-                        event_id = %pending.event_id,
-                        "flushed pending commit to state store on supervisor exit",
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        event.name = "client.resume.flush_on_exit_failed",
-                        resume_key = %resume_key.as_hex(),
-                        sequence = pending.sequence,
-                        error = %e,
-                        "failed to flush pending commit on supervisor exit; the next run may redeliver this notification",
-                    );
-                }
-            }
-        }
+        let (store, pending) = (state_store.as_ref(), pending_commit.as_ref());
+        exit_flush::flush_pending(flush_cursor_on_exit, store, &resume_key, pending).await;
     };
     super::opening::with_startup_budget(run, startup_timeout, readiness, error_tx).await;
 }

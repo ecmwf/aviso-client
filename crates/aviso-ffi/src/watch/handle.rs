@@ -205,7 +205,9 @@ pub unsafe extern "C" fn aviso_client_watch(
         // AvisoError view's borrowed pointers and is not Send.
         let built: Result<WatchRequest, SendOutcome> = match (owned.error, owned.spec) {
             (Some(err), _) => Err(SendOutcome(AvisoOutcome::error(err).into_raw())),
-            (None, Some(spec)) => Ok(spec.into_request()),
+            (None, Some(spec)) => spec
+                .into_request()
+                .map_err(|err| SendOutcome(AvisoOutcome::error(err).into_raw())),
             (None, None) => Err(SendOutcome(
                 AvisoOutcome::error(error::internal("watch request was already consumed"))
                     .into_raw(),

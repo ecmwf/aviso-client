@@ -146,7 +146,7 @@ pub use event::{ServerCloseReason, WatchEvent};
 pub use mode::WatchMode;
 pub use multi::{EntryError, ErrorPolicy, MultiNotificationStream};
 pub use outcome::{ReconnectPolicy, WatchOutcome};
-pub use phase::{CloseReason, FatalKind, GapReason, ReplayPhase, ResumeStart};
+pub use phase::{CloseReason, FatalKind, GapReason, ReplayEnd, ReplayPhase, ResumeStart};
 pub use request::WatchRequest;
 pub use state::WatchState;
 pub use stream::NotificationStream;

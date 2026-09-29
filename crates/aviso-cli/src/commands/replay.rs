@@ -26,7 +26,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use aviso::watch::{ResumeStart, Trigger};
+use aviso::watch::{ReplayEnd, ResumeStart, Trigger};
 
 use crate::cancel;
 use crate::client_builder;
@@ -37,21 +37,52 @@ use crate::listener;
 use crate::listener_file;
 use crate::output;
 
+/// Where `aviso replay` starts and, optionally, where it ends.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ReplayWindow {
+    /// Required cursor. Accepts a u64 sequence id OR one of
+    /// six date forms; see the '`--from` value formats' section
+    /// at <https://github.com/ecmwf/aviso-client/blob/main/docs/src/cli/configuration.md>
+    /// for the full list and the pure-digit-always-id ambiguity rule.
+    #[arg(long, value_name = "VALUE", required = true)]
+    pub(crate) from: String,
+
+    /// Optional end point, inclusive. A u64 sequence id is the
+    /// last one delivered; a date ends with the last notification
+    /// stored at or before it. Accepts the same forms as `--from`.
+    /// Needs aviso-server 0.13.0 or later.
+    #[arg(long, value_name = "VALUE")]
+    pub(crate) until: Option<String>,
+}
+
 /// Runs the `aviso replay` subcommand.
 pub(crate) async fn run(
     resolved: &Resolved,
     listener_files: &[PathBuf],
     listener_name: Option<&str>,
     inline: Option<ListenerSpec>,
-    from: &str,
+    window: &ReplayWindow,
 ) -> Result<()> {
+    let from = window.from.as_str();
+    let until = window.until.as_deref();
     let cursor: ResumeStart = from_value::parse(from)?;
+    let end = until.map(from_value::parse_until).transpose()?;
+    // A window that cannot deliver anything is a mistake in the command
+    // line, so it is reported as one before the banner.
+    if let (ResumeStart::AfterSequence(start), Some(ReplayEnd::Sequence(end))) = (&cursor, &end)
+        && end <= start
+    {
+        return Err(usage_error(format!(
+            "parameter parse: --until {end} is not after --from {start}; the replay starts \
+             after sequence {start}, so it would deliver nothing"
+        )));
+    }
     let spec = resolve_listener(resolved, listener_files, listener_name, inline)?;
     let listener_label = spec.name.clone().unwrap_or_else(|| spec.event.clone());
 
-    print_replay_banner(&spec, from);
+    print_replay_banner(&spec, from, until);
 
-    let req = listener::build_replay_request(&spec, cursor);
+    let req = listener::build_replay_request(&spec, cursor, end);
     let triggers = collect_triggers(&spec);
     let req = req.with_triggers(triggers);
 
@@ -126,7 +157,7 @@ pub(crate) async fn run(
 /// (no `-v`); it replaces what would otherwise be silent output until
 /// the first notification arrived, which on an empty filter could look
 /// like the command had hung.
-fn print_replay_banner(spec: &ListenerSpec, from: &str) {
+fn print_replay_banner(spec: &ListenerSpec, from: &str, until: Option<&str>) {
     let name = spec.name.as_deref().unwrap_or(&spec.event);
     let filters = if spec.identifiers.is_empty() {
         String::new()
@@ -139,8 +170,11 @@ fn print_replay_banner(spec: &ListenerSpec, from: &str) {
         parts.sort();
         format!(" ({})", parts.join(", "))
     };
+    let until = until
+        .map(|value| format!(" until {}", render_from_value(value)))
+        .unwrap_or_default();
     let _ = output::write_stderr_line(&format!(
-        "Replaying {name} [{}]{filters} from {}. Press Ctrl+C to stop.",
+        "Replaying {name} [{}]{filters} from {}{until}. Press Ctrl+C to stop.",
         spec.event,
         render_from_value(from),
     ));

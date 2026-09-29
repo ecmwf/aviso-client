@@ -30,12 +30,27 @@ use crate::error::map_client_error;
 use crate::requests::{RequestSpec, build_watch_request};
 use crate::runtime::runtime;
 use crate::values::PyNotification;
-use crate::watch::{PyWatchRequest, parse_resume_start};
+use crate::watch::{PyWatchRequest, parse_replay_end, parse_resume_start};
 
 const SYNC_RECV_POLL: Duration = Duration::from_millis(100);
 
 /// Keys an entry dict may have; anything else is a typo and is refused.
-const ENTRY_KEYS: [&str; 5] = ["event_type", "filter", "start_from", "mode", "triggers"];
+const ENTRY_KEYS: [&str; 6] = [
+    "event_type",
+    "filter",
+    "start_from",
+    "until",
+    "mode",
+    "triggers",
+];
+
+/// The `listen_many` options that apply to every dict entry that does not
+/// set its own.
+pub(crate) struct SharedOptions<'a, 'py> {
+    pub(crate) start_from: Option<&'a Bound<'py, PyAny>>,
+    pub(crate) until: Option<&'a Bound<'py, PyAny>>,
+    pub(crate) mode: Option<&'a str>,
+}
 
 type Shared = Arc<AsyncMutex<Option<MultiNotificationStream>>>;
 
@@ -273,8 +288,7 @@ fn entry_spec(
     py: Python<'_>,
     name: &str,
     entry: &Bound<'_, PyAny>,
-    start_from: Option<&Bound<'_, PyAny>>,
-    mode: Option<&str>,
+    shared: &SharedOptions<'_, '_>,
 ) -> PyResult<RequestSpec> {
     if let Ok(request) = entry.extract::<PyRef<'_, PyWatchRequest>>() {
         return Ok(request.clone().into_spec());
@@ -309,6 +323,7 @@ fn entry_spec(
         _ => None,
     };
     let own_start = dict.get_item("start_from")?.filter(|v| !v.is_none());
+    let own_until = dict.get_item("until")?.filter(|v| !v.is_none());
     // A `WatchMode` member is a str subclass, so extracting it yields its
     // value ("replay_only"); `str()` of it would give "WatchMode.REPLAY_ONLY".
     let own_mode: Option<String> = match dict.get_item("mode")? {
@@ -320,12 +335,14 @@ fn entry_spec(
         _ => None,
     };
     let triggers = dict.get_item("triggers")?.filter(|v| !v.is_none());
-    let start = own_start.as_ref().or(start_from);
-    let entry_mode = own_mode.as_deref().or(mode);
+    let start = own_start.as_ref().or(shared.start_from);
+    let until = own_until.as_ref().or(shared.until);
+    let entry_mode = own_mode.as_deref().or(shared.mode);
     build_watch_request(
         Some(event_type),
         filter.as_ref(),
         start,
+        until,
         entry_mode,
         triggers.as_ref(),
         None,
@@ -339,8 +356,7 @@ pub(crate) fn listen_many(
     py: Python<'_>,
     client: &aviso::AvisoClient,
     listeners: &Bound<'_, PyAny>,
-    start_from: Option<&Bound<'_, PyAny>>,
-    mode: Option<&str>,
+    shared: &SharedOptions<'_, '_>,
     on_error: Option<&Bound<'_, PyAny>>,
     asynchronous: bool,
 ) -> PyResult<Py<PyAny>> {
@@ -365,7 +381,7 @@ pub(crate) fn listen_many(
     }
     // The shared options are checked even when every entry sets its own, so
     // a mistake in them is reported rather than silently unused.
-    if let Some(m) = mode
+    if let Some(m) = shared.mode
         && m != "watch"
         && m != "replay_only"
     {
@@ -373,8 +389,11 @@ pub(crate) fn listen_many(
             "mode must be 'watch' or 'replay_only', not '{m}'"
         )));
     }
-    if let Some(value) = start_from {
+    if let Some(value) = shared.start_from {
         parse_resume_start(value)?;
+    }
+    if let Some(value) = shared.until {
+        parse_replay_end(value)?;
     }
     let mut requests = Vec::with_capacity(listeners.len());
     let functions = PyDict::new(py);
@@ -385,7 +404,7 @@ pub(crate) fn listen_many(
         if name.is_empty() {
             return Err(PyValueError::new_err("listener names must not be empty"));
         }
-        let spec = entry_spec(py, &name, &entry, start_from, mode)?;
+        let spec = entry_spec(py, &name, &entry, shared)?;
         // The core checks each request again before opening it; checking
         // here first names the listener the way every other argument error
         // does.

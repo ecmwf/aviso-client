@@ -938,6 +938,35 @@ void aviso_watch_request_replay_from_sequence(AvisoWatchRequest *request, uint64
 void aviso_watch_request_replay_from_date(AvisoWatchRequest *request, const char *date);
 
 /**
+ * Sets the end point of a replay-only request: the replay ends with the
+ * notification at `sequence`, inclusive. The request must also be made
+ * replay-only with `aviso_watch_request_replay_from_sequence` or
+ * `aviso_watch_request_replay_from_date`, in either order; otherwise the
+ * watch reports `AvisoErrorKind_InvalidInput` through `on_end` when it
+ * starts. A sequence end not after a sequence start is reported through
+ * `on_end` as `AvisoErrorKind_Config`, since the replay would deliver
+ * nothing.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`.
+ */
+void aviso_watch_request_replay_until_sequence(AvisoWatchRequest *request, uint64_t sequence);
+
+/**
+ * Sets the end point of a replay-only request: the replay ends with the
+ * last notification stored at or before `date`, inclusive. `date` takes the
+ * same formats as the replay start date. The request must also be made
+ * replay-only, as for `aviso_watch_request_replay_until_sequence`.
+ *
+ * # Safety
+ *
+ * `request` must be a live handle from `aviso_watch_request_new`. `date`, when
+ * non-null, must be a NUL-terminated C string.
+ */
+void aviso_watch_request_replay_until_date(AvisoWatchRequest *request, const char *date);
+
+/**
  * Attaches a trigger to the request, consuming the trigger handle: on entry
  * the trigger is taken and the caller's pointer is nulled (so a later free is
  * a safe no-op). A trigger built from a bad argument is remembered on the

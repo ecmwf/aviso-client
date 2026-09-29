@@ -7,8 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 `aviso replay` re-reads past notifications and runs them through your triggers,
 just like `aviso listen` does for live ones. The difference: replay always
-starts from a cursor you supply, ends at a fixed history boundary, and never
-touches the state file.
+starts from a cursor you supply, ends at a fixed history boundary or at an end
+point you supply with `--until`, and never touches the state file.
 
 Use it when:
 
@@ -99,6 +99,30 @@ selected. If a file defines several listeners, select one by name:
 aviso replay --from 0 --listener mars-od my-listeners.yaml
 ```
 
+## Stop at an end point
+
+`--until` ends the replay at an end point instead of at the history boundary.
+It takes the same forms as `--from`: a sequence id is the last one delivered,
+inclusive, and a date ends with the last notification published at or before
+that time.
+
+```bash
+aviso replay --event mars --identifiers '{"class":"od"}' \
+  --from 2026-05-01 --until 2026-05-02
+```
+
+This prints the matching notifications published from midnight UTC on 1 May 2026
+up to and including midnight UTC on 2 May, and stops. A date without a time
+means midnight UTC. The start is exclusive and the end inclusive for sequence
+ids: `--from 10 --until 20` prints the matching notifications with sequences 11
+to 20. The banner shows both ends. A replay also stops at the history boundary,
+so an end point in the future ends there.
+
+A sequence `--until` that is not greater than a sequence `--from` is refused
+before anything is sent, with exit code 2, since the replay would print
+nothing. `--until` needs aviso-server 0.13.0 or
+later; an older server rejects the request with HTTP 400.
+
 ## Repeated identifiers
 
 For shell scripts, pass each identifier as a separate argument:
@@ -185,8 +209,9 @@ commands.
 | Behavior | Listen | Replay |
 |---|---|---|
 | Starts from | The state file, or `--from` if you set it | `--from` (required) |
+| Ends at | Does not end on its own | The history boundary, or `--until` if you set it |
 | Writes the state file? | Yes, unless disabled | No |
-| After catching up | Stays open for new notifications | Stops at the fixed history boundary |
+| After catching up | Stays open for new notifications | Stops at its end: the history boundary or `--until` |
 | Reconnect on routine server close? | Yes | Yes |
 
 ## When you want both

@@ -62,10 +62,10 @@ except KeyboardInterrupt:
 ```
 
 The dictionary maps each listener name to the keyword arguments `listen()`
-accepts: `event_type`, `filter`, `start_from`, `mode` and `triggers`. The
-script waits for new notifications. With three notifications published from
-another terminal (`class=od` at step 12, `class=rd` at step 6, and `class=rd`
-at step 0), the output is:
+accepts: `event_type`, `filter`, `start_from`, `until`, `mode` and `triggers`.
+The script waits for new notifications. With three notifications published from
+another terminal (`class=od` at step 12, `class=rd` at step 6, and `class=rd` at
+step 0), the output is:
 
 ```text
 operational {'class': 'od', 'step': '12'}
@@ -157,9 +157,9 @@ interaction with built-in triggers, which always run first.
 
 ## Shared options
 
-`start_from` and `mode` passed to `listen_many` apply to every listener that
-does not set its own. The following replays the retained history and then
-returns:
+`start_from`, `until` and `mode` passed to `listen_many` apply to every
+listener that does not set its own. The following replays the retained history
+and then returns:
 
 ```python
 listeners = {
@@ -270,8 +270,8 @@ With `"continue"` or a function, if every listener fails, the loop raises
 therefore cannot finish silently when every listener has failed. After the
 loop has stopped, for any reason, further iteration ends immediately.
 
-Shared `start_from` and `mode` values are checked even when every listener
-sets its own.
+Shared `start_from`, `until` and `mode` values are checked even when every
+listener sets its own.
 
 Arguments are validated before any listener opens. An unknown key such as
 `filtre`, a missing `event_type` or an invalid `on_error` raises immediately,

@@ -310,12 +310,8 @@ enum Commands {
         #[command(flatten)]
         inline: identifiers::InlineListenerArgs,
 
-        /// Required cursor. Accepts a u64 sequence id OR one of
-        /// six date forms; see the '`--from` value formats' section
-        /// at <https://github.com/ecmwf/aviso-client/blob/main/docs/src/cli/configuration.md>
-        /// for the full list and the pure-digit-always-id ambiguity rule.
-        #[arg(long, value_name = "VALUE", required = true)]
-        from: String,
+        #[command(flatten)]
+        window: commands::replay::ReplayWindow,
 
         /// Listener YAML files. Same resolution semantics as
         /// `aviso listen`.
@@ -527,7 +523,7 @@ async fn dispatch_configured(cli: Cli) -> Result<()> {
         Commands::Replay {
             listener,
             inline,
-            from,
+            window,
             listener_files,
         } => {
             commands::replay::run(
@@ -535,7 +531,7 @@ async fn dispatch_configured(cli: Cli) -> Result<()> {
                 &listener_files,
                 listener.as_deref(),
                 inline.resolve()?,
-                &from,
+                &window,
             )
             .await
         }

@@ -39,6 +39,25 @@ pub enum ResumeStart {
     Date(String),
 }
 
+/// Where a replay-only watch stops: its end point.
+///
+/// Unlike [`ResumeStart::AfterSequence`], which is exclusive, a sequence end
+/// is inclusive: the replay delivers the notification with that sequence and
+/// then ends. The server also stops at the last notification stored when the
+/// replay starts, so an end point in the future ends there.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ReplayEnd {
+    /// End with the notification at this sequence, inclusive. Sent as
+    /// `to_id`.
+    Sequence(u64),
+
+    /// End with the last notification stored at or before this time,
+    /// inclusive. Sent verbatim as `to_date`, in any format the server
+    /// accepts for `from_date`.
+    Date(String),
+}
+
 /// Replay-or-live phase of the watch.
 ///
 /// Quoted directly from D2:

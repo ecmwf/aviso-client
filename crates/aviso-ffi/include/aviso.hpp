@@ -904,7 +904,8 @@ class Trigger {
 };
 
 // Fluent builder for a watch request. Defaults to a live watch of `event_type`;
-// the `*_from_*` setters add a resume position or switch to replay-only. Once
+// the `*_from_*` setters add a resume position or switch to replay-only, and
+// the `replay_until_*` setters end a replay at an end point. Once
 // consumed by `Client::watch` or `WatchSet::add` (or moved from), the request
 // is used up: calling a setter or using it again throws `aviso::Error`
 // (`AvisoErrorKind_InvalidUsage`).
@@ -935,6 +936,24 @@ class WatchRequest {
   }
   WatchRequest& replay_from_date(const std::string& date) {
     aviso_watch_request_replay_from_date(live(), date.c_str());
+    return *this;
+  }
+
+  // Sets the end point of a replay: the replay ends with the notification at
+  // `sequence`, inclusive. Combine it with `replay_from_sequence` or
+  // `replay_from_date`, in either order. Without one, or with a sequence end
+  // that is not after a sequence start, the watch reports
+  // `AvisoErrorKind_InvalidInput` or `AvisoErrorKind_Config` through `on_end`
+  // when it starts.
+  WatchRequest& replay_until_sequence(std::uint64_t sequence) {
+    aviso_watch_request_replay_until_sequence(live(), sequence);
+    return *this;
+  }
+
+  // As `replay_until_sequence`, ending with the last notification stored at
+  // or before `date`, inclusive, in the same formats as `replay_from_date`.
+  WatchRequest& replay_until_date(const std::string& date) {
+    aviso_watch_request_replay_until_date(live(), date.c_str());
     return *this;
   }
 

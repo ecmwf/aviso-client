@@ -123,7 +123,7 @@ cargo test --locked -p aviso-e2e -- --include-ignored --test-threads=1
 bash tests/e2e/shared/stack.sh down  # when done, or `restart` to wipe JetStream between runs
 ```
 
-Every `#[test]` function in `tests/e2e/rust/` carries `#[ignore = "requires e2e compose stack"]`, so the default `cargo test --workspace` invocation compiles the crate but skips running the tests. The `--include-ignored` flag opts in; `--test-threads=1` keeps publishers and listeners from racing each other in the shared JetStream stream. The CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects the `aviso` binary to exist at `target/debug/aviso`, hence the `cargo build -p aviso-cli` step. See `bash tests/e2e/shared/stack.sh` (no args) for the full subcommand list (`up`, `down`, `restart`, `logs`, `status`).
+Every `#[test]` function in `tests/e2e/rust/` that needs the stack carries `#[ignore = "requires e2e compose stack"]`, so the default `cargo test --workspace` invocation compiles the crate but skips running them. The exception is `cli_from_value_docs.rs`, which checks the CLI configuration guide against the `aviso` binary without a server and runs by default. The `--include-ignored` flag opts in; `--test-threads=1` keeps publishers and listeners from racing each other in the shared JetStream stream. The CLI tests use `assert_cmd::Command::cargo_bin("aviso")` which expects the `aviso` binary to exist at `target/debug/aviso`, hence the `cargo build -p aviso-cli` step. See `bash tests/e2e/shared/stack.sh` (no args) for the full subcommand list (`up`, `down`, `restart`, `logs`, `status`).
 
 ## Releasing
 

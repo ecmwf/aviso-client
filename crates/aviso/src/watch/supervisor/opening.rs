@@ -52,12 +52,22 @@ pub(super) fn validate_content_type(
     }
 }
 
+/// What the opening control event says about the stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Opening {
+    /// The last sequence a replay can deliver, from `replay_started`, when
+    /// the request set an end point. `None` for live streams and for
+    /// replays without an end point.
+    pub(super) end_sequence: Option<u64>,
+}
+
 /// Consume only opening frames, leaving all subsequent data for the normal
 /// dispatcher. A heartbeat or unknown event cannot confirm an Aviso stream.
+/// Returns `None` while the opening frame has not arrived yet.
 pub(super) fn confirmed(
     parser: &mut finesse::Parser,
     historical: bool,
-) -> Result<bool, ClientError> {
+) -> Result<Option<Opening>, ClientError> {
     while let Some(frame) = parser.next_frame() {
         let finesse::Frame::Message(message) = frame else {
             continue;
@@ -79,7 +89,15 @@ pub(super) fn confirmed(
                 if message.event == expected_event
                     && value.get("type").and_then(serde_json::Value::as_str) == Some(expected)
                 {
-                    return Ok(true);
+                    // Absent or null means the request set no end point; any
+                    // other value that is not a sequence is a malformed event.
+                    let end_sequence = match value.get("end_sequence") {
+                        None | Some(serde_json::Value::Null) => None,
+                        Some(end) => Some(end.as_u64().ok_or_else(|| {
+                            protocol("invalid end_sequence in Aviso opening control event")
+                        })?),
+                    };
+                    return Ok(Some(Opening { end_sequence }));
                 }
                 return Err(protocol(
                     "unexpected event before required Aviso opening control",
@@ -101,7 +119,7 @@ pub(super) fn confirmed(
             _ => {}
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
 pub(super) async fn with_startup_budget(

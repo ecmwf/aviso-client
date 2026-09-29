@@ -6,11 +6,13 @@
 // granted to it by virtue of its status as an intergovernmental organisation nor
 // does it submit to any jurisdiction.
 
-//! `--from <VALUE>` parser per Amendment H.
+//! `--from <VALUE>` and `--until <VALUE>` parser per Amendment H.
 //!
-//! Accepts seven input forms, tried in this order:
+//! Both flags accept the same seven input forms, tried in this order:
 //!
-//! 1. Pure-digit `u64` -> [`ResumeStart::AfterSequence`]. Always
+//! 1. Pure-digit `u64` -> a sequence: [`ResumeStart::AfterSequence`] for
+//!    `--from` (exclusive) and [`ReplayEnd::Sequence`] for `--until`
+//!    (inclusive). Always
 //!    wins for digit-only input; compact `YYYYMMDD` is therefore
 //!    NOT supported as a date (operators write dates with dashes).
 //! 2. `YYYY-MM-DD` -> midnight UTC.
@@ -38,7 +40,7 @@
 
 use std::fmt;
 
-use aviso::watch::ResumeStart;
+use aviso::watch::{ReplayEnd, ResumeStart};
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 
 use crate::exit::usage_error;
@@ -60,17 +62,24 @@ const ACCEPTED_FORMS: &str = "accepted forms: pure-digit sequence id (e.g. 42); 
                               YYYY-MM-DDTHH:MM:SSZ; \
                               YYYY-MM-DDTHH:MM:SS.ffffffZ";
 
-/// Parses `value` into a [`ResumeStart`].
+/// A parsed position: a sequence id or a normalised date.
+enum Position {
+    Sequence(u64),
+    Date(String),
+}
+
+/// Parses `value` given to the flag `flag` (`--from` or `--until`).
 ///
 /// Returns a usage error tagged via [`crate::exit::usage_error`]
 /// when `value` matches none of the seven accepted forms; the
-/// error message names the value and lists the accepted forms.
-pub(crate) fn parse(value: &str) -> anyhow::Result<ResumeStart> {
+/// error message names the flag and the value and lists the
+/// accepted forms.
+fn parse_position(value: &str, flag: &str) -> anyhow::Result<Position> {
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
         return match value.parse::<u64>() {
-            Ok(seq) => Ok(ResumeStart::AfterSequence(seq)),
+            Ok(seq) => Ok(Position::Sequence(seq)),
             Err(_) => Err(usage_error(format!(
-                "parameter parse: --from value `{value}` is digit-only but does not fit in a 64-bit unsigned integer (max {}). Pass a smaller sequence id, or use one of the date forms. {ACCEPTED_FORMS}",
+                "parameter parse: {flag} value `{value}` is digit-only but does not fit in a 64-bit unsigned integer (max {}). Pass a smaller sequence id, or use one of the date forms. {ACCEPTED_FORMS}",
                 u64::MAX
             ))),
         };
@@ -79,16 +88,35 @@ pub(crate) fn parse(value: &str) -> anyhow::Result<ResumeStart> {
         let dt = date
             .and_hms_opt(0, 0, 0)
             .ok_or_else(|| usage_error("invalid date: midnight construction failed"))?;
-        return Ok(ResumeStart::Date(format_utc_six_micros(dt)));
+        return Ok(Position::Date(format_utc_six_micros(dt)));
     }
     for fmt in TIME_FORMATS {
         if let Ok(dt) = NaiveDateTime::parse_from_str(value, fmt) {
-            return Ok(ResumeStart::Date(format_utc_six_micros(dt)));
+            return Ok(Position::Date(format_utc_six_micros(dt)));
         }
     }
     Err(usage_error(format!(
-        "parameter parse: --from value `{value}` did not match any accepted form. {ACCEPTED_FORMS}"
+        "parameter parse: {flag} value `{value}` did not match any accepted form. {ACCEPTED_FORMS}"
     )))
+}
+
+/// Parses a `--from` value into a [`ResumeStart`]: a sequence id is the
+/// last one already seen, so the replay starts after it.
+pub(crate) fn parse(value: &str) -> anyhow::Result<ResumeStart> {
+    Ok(match parse_position(value, "--from")? {
+        Position::Sequence(seq) => ResumeStart::AfterSequence(seq),
+        Position::Date(date) => ResumeStart::Date(date),
+    })
+}
+
+/// Parses an `--until` value into a [`ReplayEnd`]: a sequence id is the
+/// last one to deliver, inclusive, and a date ends with the last
+/// notification stored at or before it.
+pub(crate) fn parse_until(value: &str) -> anyhow::Result<ReplayEnd> {
+    Ok(match parse_position(value, "--until")? {
+        Position::Sequence(seq) => ReplayEnd::Sequence(seq),
+        Position::Date(date) => ReplayEnd::Date(date),
+    })
 }
 
 /// Returns the wire-format string `YYYY-MM-DDTHH:MM:SS.ffffffZ`.
@@ -252,5 +280,64 @@ mod tests {
             msg.contains("does not fit") && msg.contains("64-bit"),
             "error should report u64 overflow, not generic 'did not match any accepted form': {msg}"
         );
+    }
+
+    #[test]
+    fn until_digits_are_an_inclusive_sequence_end() {
+        assert_eq!(parse_until("20").unwrap(), ReplayEnd::Sequence(20));
+    }
+
+    #[test]
+    fn until_accepts_the_from_date_forms() {
+        assert_eq!(
+            parse_until("2026-05-18").unwrap(),
+            ReplayEnd::Date("2026-05-18T00:00:00.000000Z".into())
+        );
+        assert_eq!(
+            parse_until("2026-05-18 12:30").unwrap(),
+            ReplayEnd::Date("2026-05-18T12:30:00.000000Z".into())
+        );
+    }
+
+    #[test]
+    fn until_errors_name_the_until_flag() {
+        let error = parse_until("tomorrow").unwrap_err().to_string();
+        assert!(error.contains("--until value `tomorrow`"), "{error}");
+        assert!(!error.contains("--from"), "{error}");
+    }
+
+    /// Fills a listed date form with a concrete value.
+    fn fill(form: &str) -> String {
+        form.replacen("YYYY-MM-DD", "2026-05-01", 1)
+            .replacen("HH", "14", 1)
+            .replacen("MM", "30", 1)
+            .replacen("SS", "15", 1)
+            .replacen("ffffff", "123456", 1)
+    }
+
+    #[test]
+    fn every_accepted_form_parses_for_both_flags() {
+        let forms: Vec<&str> = ACCEPTED_FORMS
+            .trim_start_matches("accepted forms: ")
+            .split("; ")
+            .collect();
+        assert_eq!(forms.len(), 7, "{forms:?}");
+        assert_eq!(forms[0], "pure-digit sequence id (e.g. 42)");
+        assert!(matches!(parse_ok("42"), ResumeStart::AfterSequence(42)));
+        assert!(matches!(
+            parse_until("42").unwrap(),
+            ReplayEnd::Sequence(42)
+        ));
+        for form in &forms[1..] {
+            let value = fill(
+                form.trim_end_matches(" (quotes required)")
+                    .trim_matches('"'),
+            );
+            assert!(matches!(parse_ok(&value), ResumeStart::Date(_)), "{value}");
+            assert!(
+                matches!(parse_until(&value).unwrap(), ReplayEnd::Date(_)),
+                "{value}"
+            );
+        }
     }
 }

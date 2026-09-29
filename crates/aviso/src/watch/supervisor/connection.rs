@@ -23,8 +23,8 @@ use crate::state::{ResumeKey, StateStore};
 use crate::watch::retry_after;
 use crate::watch::wire::WireWatchRequest;
 use crate::watch::{
-    ConnectionLossReason, FatalKind, ReconnectPolicy, ResumeStart, WatchEvent, WatchMode,
-    WatchRequest, WatchState,
+    ConnectionLossReason, FatalKind, ReconnectPolicy, ReplayEnd, ResumeStart, WatchEvent,
+    WatchMode, WatchRequest, WatchState,
 };
 use crate::{ClientError, Notification};
 
@@ -65,6 +65,8 @@ pub(super) async fn run_one_connection(
     last_reconnect_policy: &mut Option<ReconnectPolicy>,
     request: &WatchRequest,
     wire_from: Option<&ResumeStart>,
+    wire_until: Option<&ReplayEnd>,
+    resolved_end: &mut Option<u64>,
     commit_cursor: &mut Option<u64>,
     pending_commit: &mut Option<PendingCommit>,
     state_store: Option<&Arc<dyn StateStore>>,
@@ -93,8 +95,12 @@ pub(super) async fn run_one_connection(
             )));
         }
     };
-    let body = match WireWatchRequest::from_parts(request.event_type(), request.filter(), wire_from)
-    {
+    let body = match WireWatchRequest::from_parts(
+        request.event_type(),
+        request.filter(),
+        wire_from,
+        wire_until,
+    ) {
         Ok(b) => b,
         Err(e) => return ConnectionOutcome::Fatal(e),
     };
@@ -234,8 +240,22 @@ pub(super) async fn run_one_connection(
         };
         if !confirmed {
             match opening::confirmed(&mut parser, wire_from.is_some()) {
-                Ok(true) => {
+                Ok(Some(opening)) => {
                     confirmed = true;
+                    // The first end the server resolves is kept for every
+                    // later connection of this replay. Only a request with
+                    // an end point has one to keep.
+                    if resolved_end.is_none()
+                        && request.until().is_some()
+                        && let Some(end) = opening.end_sequence
+                    {
+                        *resolved_end = Some(end);
+                        tracing::debug!(
+                            event.name = "client.replay.end_resolved",
+                            end_sequence = end,
+                            "replay end point resolved"
+                        );
+                    }
                     *retry_counter = 0;
                     apply_outcome(
                         last_reconnect_policy,
@@ -251,8 +271,8 @@ pub(super) async fn run_one_connection(
                 // has stopped on an overflow, in which case there is
                 // nothing more to wait for and the error below must be
                 // reported.
-                Ok(false) if !eof && overflow.is_none() => continue,
-                Ok(false) => {}
+                Ok(None) if !eof && overflow.is_none() => continue,
+                Ok(None) => {}
                 Err(error) => return ConnectionOutcome::Fatal(error),
             }
         }

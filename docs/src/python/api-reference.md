@@ -41,10 +41,11 @@ then the aviso config file, then the default; see
 
 ### Receive notifications
 
-- `listen(event_type=None, *, filter=None, start_from=None, mode=None, triggers=None, request=None) -> NotificationIterator | FunctionTriggerIterator`
-  (mode defaults to `"watch"` when not specified; `triggers` is a
-  `Sequence[Trigger]`; the returned iterator is also a context manager via
-  `with` and supports `iterator.close()` for explicit teardown)
+- `listen(event_type=None, *, filter=None, start_from=None, until=None, mode=None, triggers=None, request=None) -> NotificationIterator | FunctionTriggerIterator`
+  (without `mode`, the listener stays live, unless `until` is given, which ends
+  it like `mode="replay_only"`; `triggers` is a `Sequence[Trigger]`; the
+  returned iterator is also a context manager via `with` and supports
+  `iterator.close()` for explicit teardown)
 
 `start_from` is `int | str | None`. Integers are exclusive sequence positions;
 `0` requests retained history after zero. A UTC string such as
@@ -55,15 +56,22 @@ see [Start from a specific position](./listen.md#start-from-a-specific-position)
 Use `mode="replay_only"` with a start position to end at the replay boundary.
 See [State and resume](./state-and-resume.md) for checkpoint limits.
 
-- `listen_many(listeners, *, start_from=None, mode=None, on_error=None) -> MultiNotificationIterator`
+`until` is `int | str | None`: the end point of a replay. An integer is the last
+sequence to deliver, inclusive; a UTC string ends with the last notification
+published at or before that time. `until` implies `mode="replay_only"` and needs
+`start_from`. See [Stop at an end point](./listen.md#stop-at-an-end-point).
+
+- `listen_many(listeners, *, start_from=None, until=None, mode=None, on_error=None) -> MultiNotificationIterator`
 
 `listeners` maps a name to a dict of `listen()` keywords (`event_type`,
-`filter`, `start_from`, `mode`, `triggers`) or to a `WatchRequest`. The
-`start_from` and `mode` given here apply to dict entries that set none. The
+`filter`, `start_from`, `until`, `mode`, `triggers`) or to a `WatchRequest`.
+The `start_from`, `until` and `mode` given here apply to dict entries that set
+none. The
 loop yields `(name, notification)`. `on_error` is `"raise"` (or `None`, the
 default), `"continue"` or a function taking `(name, error)`; see
 [Error handling](./listen-many.md#error-handling). Arguments are checked
-before any listener opens, the shared `start_from` and `mode` included. A
+before any listener opens, the shared `start_from`, `until` and `mode`
+included. A
 mistake in the structure of `listeners` (not a mapping, an empty or
 non-string name, an unknown key, a missing `event_type`) or an invalid
 `on_error` raises `TypeError` or `ValueError`. An invalid `listen()` argument
@@ -187,7 +195,7 @@ Constructors:
 
 - `WatchRequest.watch(event_type)`
 - `WatchRequest.watch_from(event_type, start_from)`
-- `WatchRequest.replay_only(event_type, start_from)`
+- `WatchRequest.replay_only(event_type, start_from, *, until=None)`
 
 Builders: `.with_filter(dict)`, `.with_triggers(list)`. Properties:
 `event_type`, `mode`.

@@ -68,7 +68,7 @@ Run one or more listeners against `/api/v1/watch`.
 Returns 0 on a clean Ctrl+C, 1 if any listener task errored, 2 on no listeners
 resolved.
 
-## `aviso replay --from <VALUE> [LISTENER_FILES]...`
+## `aviso replay --from <VALUE> [--until <VALUE>] [LISTENER_FILES]...`
 
 Replay historical notifications from a cursor.
 
@@ -80,6 +80,7 @@ Replay historical notifications from a cursor.
 | `--identifiers <JSON>` | Inline ad-hoc replay: identifiers filter as a JSON object whose values may have any JSON shape. Requires `--event`. |
 | `--identifier <KEY=VALUE>` | Repeatable exact string (`key=value`) or typed JSON (`key:=JSON`). Requires `--event`; conflicts with `--identifiers`. |
 | `--from <VALUE>` | **Required.** Sequence id or date to start replay from. |
+| `--until <VALUE>` | Sequence id or date to end replay at, inclusive. Same forms as `--from`. Needs aviso-server 0.13.0 or later. |
 
 Replay never touches the state file. Returns 0 on completion, 1 on error.
 

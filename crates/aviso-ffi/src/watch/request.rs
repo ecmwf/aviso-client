@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::ffi::c_char;
 use std::ptr;
 
-use aviso::watch::{ResumeStart, Trigger, WatchRequest};
+use aviso::watch::{ReplayEnd, ResumeStart, Trigger, WatchRequest};
 use serde_json::Value;
 
 use crate::client::{cstr_nullable, cstr_opt};
@@ -34,6 +34,9 @@ pub(crate) struct RequestSpec {
     event_type: String,
     filter: Option<BTreeMap<String, Value>>,
     mode: Mode,
+    /// Kept apart from `mode` so the setters can be called in any order; a
+    /// request with an end point must be replay-only when it is built.
+    until: Option<ReplayEnd>,
     triggers: Vec<Trigger>,
 }
 
@@ -44,11 +47,22 @@ enum Mode {
 }
 
 impl RequestSpec {
-    pub(crate) fn into_request(self) -> WatchRequest {
-        let mut request = match self.mode {
-            Mode::Watch => WatchRequest::watch(self.event_type),
-            Mode::WatchFrom(start) => WatchRequest::watch_from(self.event_type, start),
-            Mode::ReplayOnly(start) => WatchRequest::replay_only(self.event_type, start),
+    /// Builds the core request. An end point on a request that is not
+    /// replay-only is refused, since only a replay can end.
+    pub(crate) fn into_request(self) -> Result<WatchRequest, OutcomeError> {
+        let mut request = match (self.mode, self.until) {
+            (Mode::ReplayOnly(start), Some(until)) => {
+                WatchRequest::replay_range(self.event_type, start, until)
+            }
+            (_, Some(_)) => {
+                return Err(error::invalid_input(
+                    "an end point (replay_until_*) needs a replay-only request \
+                     (replay_from_*); a live watch has no end",
+                ));
+            }
+            (Mode::Watch, None) => WatchRequest::watch(self.event_type),
+            (Mode::WatchFrom(start), None) => WatchRequest::watch_from(self.event_type, start),
+            (Mode::ReplayOnly(start), None) => WatchRequest::replay_only(self.event_type, start),
         };
         if let Some(filter) = self.filter {
             request = request.with_filter(filter);
@@ -56,7 +70,7 @@ impl RequestSpec {
         if !self.triggers.is_empty() {
             request = request.with_triggers(self.triggers);
         }
-        request
+        Ok(request)
     }
 }
 
@@ -108,6 +122,7 @@ pub unsafe extern "C" fn aviso_watch_request_new(
                     event_type: event_type.to_string(),
                     filter: None,
                     mode: Mode::Watch,
+                    until: None,
                     triggers: Vec::new(),
                 });
             }
@@ -268,6 +283,72 @@ pub unsafe extern "C" fn aviso_watch_request_replay_from_date(
         match unsafe { cstr_opt(date) } {
             Some(date) => request.with_spec(|spec| {
                 spec.mode = Mode::ReplayOnly(ResumeStart::Date(date.to_string()));
+            }),
+            None => {
+                request.error = Some(error::invalid_input(
+                    "date must be non-null and valid UTF-8",
+                ));
+            }
+        }
+    });
+}
+
+/// Sets the end point of a replay-only request: the replay ends with the
+/// notification at `sequence`, inclusive. The request must also be made
+/// replay-only with `aviso_watch_request_replay_from_sequence` or
+/// `aviso_watch_request_replay_from_date`, in either order; otherwise the
+/// watch reports `AvisoErrorKind_InvalidInput` through `on_end` when it
+/// starts. A sequence end not after a sequence start is reported through
+/// `on_end` as `AvisoErrorKind_Config`, since the replay would deliver
+/// nothing.
+///
+/// # Safety
+///
+/// `request` must be a live handle from `aviso_watch_request_new`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_watch_request_replay_until_sequence(
+    request: *mut AvisoWatchRequest,
+    sequence: u64,
+) {
+    guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
+        if let Some(request) = unsafe { request.as_mut() } {
+            request.with_spec(|spec| spec.until = Some(ReplayEnd::Sequence(sequence)));
+        }
+    });
+}
+
+/// Sets the end point of a replay-only request: the replay ends with the
+/// last notification stored at or before `date`, inclusive. `date` takes the
+/// same formats as the replay start date. The request must also be made
+/// replay-only, as for `aviso_watch_request_replay_until_sequence`.
+///
+/// # Safety
+///
+/// `request` must be a live handle from `aviso_watch_request_new`. `date`, when
+/// non-null, must be a NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aviso_watch_request_replay_until_date(
+    request: *mut AvisoWatchRequest,
+    date: *const c_char,
+) {
+    guard((), || {
+        // SAFETY: the handle is null or one this library handed out and the
+        // caller has not freed, per this function's # Safety; as_ref/as_mut
+        // return None for null.
+        let Some(request) = (unsafe { request.as_mut() }) else {
+            return;
+        };
+        if request.error.is_some() {
+            return;
+        }
+        // SAFETY: each string argument is null or a NUL-terminated C string
+        // that stays valid for this call, per this function's # Safety.
+        match unsafe { cstr_opt(date) } {
+            Some(date) => request.with_spec(|spec| {
+                spec.until = Some(ReplayEnd::Date(date.to_string()));
             }),
             None => {
                 request.error = Some(error::invalid_input(
