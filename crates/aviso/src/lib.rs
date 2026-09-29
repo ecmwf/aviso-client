@@ -9,9 +9,6 @@
 //! Core client library for [`aviso-server`], ECMWF's notification service for
 //! data-driven workflows.
 //!
-//! The public surface grows as features land; the design rationale for each
-//! choice lives in `plans/decisions.md` and is referenced by stable ADR id.
-//!
 //! [`aviso-server`]: https://github.com/ecmwf/aviso-server
 
 #![forbid(unsafe_code)]

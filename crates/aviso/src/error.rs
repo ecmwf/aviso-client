@@ -51,8 +51,8 @@ pub enum ClientError {
     #[error("decode: {0}")]
     Decode(#[from] serde_json::Error),
 
-    /// `CloudEvent` envelope contained a malformed event id. Terminal per D9 to avoid reconnect
-    /// livelock on a poisoned server stream.
+    /// `CloudEvent` envelope contained a malformed event id. Terminal: reconnecting would
+    /// receive the same event again, so the watch would never make progress.
     #[error("malformed CloudEvent id: {0}")]
     MalformedEvent(String),
 

@@ -9,8 +9,8 @@
 //! Notification types and `CloudEvent` id parsing.
 //!
 //! The aviso server speaks `CloudEvents` on the wire; client users see [`Notification`]
-//! (received) and [`NotificationRequest`] (sent). The `CloudEvent` envelope itself is
-//! intentionally hidden per D9.
+//! (received) and [`NotificationRequest`] (sent). The envelope is not modelled as a type;
+//! [`Notification::cloudevent`] keeps it as raw JSON for callers that need it.
 //!
 //! The `CloudEvent` `id` field is structured as `<event_type>@<sequence>` and is parsed via
 //! [`parse_cloudevent_id`]. A malformed id is a terminal [`crate::ClientError::MalformedEvent`]
@@ -113,9 +113,9 @@ impl NotificationRequest {
 
 /// A notification received from the server.
 ///
-/// Constructed from the wire-format `CloudEvent` envelope, which is hidden per D9. New envelope
-/// fields will appear here as the streaming surface lands; the type is `#[non_exhaustive]` so
-/// additions do not break downstream code.
+/// Built from the `CloudEvent` envelope the server sends. The typed fields carry what callers
+/// need; the raw envelope is kept in [`Self::cloudevent`]. The type is `#[non_exhaustive]` so
+/// new fields do not break downstream code.
 ///
 /// `Serialize` is derived so trigger dispatchers (and any downstream consumer) can render the
 /// notification as JSON without bespoke serialisation code. The wire shape on serialisation is
@@ -153,9 +153,9 @@ pub struct Notification {
     /// Triggers needing the exact server-emitted envelope (post trigger,
     /// any future `CloudEvent`-aware forwarder) MUST read this field rather
     /// than reconstructing one from the other fields, because the lib
-    /// otherwise discards envelope metadata (D9: `CloudEvent` envelope
-    /// hidden) and a reconstruction would synthesise values for `time`,
-    /// `source`, `type` that do not match the server's actual emission.
+    /// otherwise discards envelope metadata and a reconstruction would
+    /// synthesise values for `time`, `source`, `type` that do not match
+    /// the server's actual emission.
     ///
     /// The field is `#[serde(skip)]` so the published serialisation of
     /// `Notification` (echo trigger output, log trigger lines, default
@@ -168,7 +168,7 @@ pub struct Notification {
     pub cloudevent: Option<Value>,
 }
 
-/// Parses a `CloudEvent` `id` field of the form `<event_type>@<sequence>` per D9.
+/// Parses a `CloudEvent` `id` field of the form `<event_type>@<sequence>`.
 ///
 /// Returns the event type and the sequence number. A missing `@`, an empty event type, or a
 /// sequence part that does not parse as a `u64` produces [`ClientError::MalformedEvent`] with the

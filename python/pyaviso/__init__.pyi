@@ -729,10 +729,18 @@ class DecodeError(AvisoError):
     """Response body could not be decoded as the expected JSON shape."""
 
 class MalformedEventError(AvisoError):
-    """CloudEvent id field did not parse per <event_type>@<sequence>. Terminal per D9."""
+    """A notification id did not have the form <event_type>@<sequence>.
+
+    Terminal: reconnecting would receive the same notification again.
+    """
 
 class HistoryGapError(AvisoError):
-    """A gap was detected in the watch stream. Terminal per D2."""
+    """Part of the requested history cannot be delivered. Terminal.
+
+    `reason` is "replay_limit_reached" when more notifications match than the
+    server replays at once (see `max_allowed`), or "sequence_jump" when the
+    stream skipped sequence numbers (see `expected` and `observed`).
+    """
 
     reason: str
     max_allowed: int | None
@@ -752,7 +760,10 @@ class StateStoreError(AvisoError):
     """Persistent state-store operation failed. Terminal during watch sessions."""
 
 class TriggerError(AvisoError):
-    """A required trigger failed after all retries. Terminal per D11."""
+    """A required trigger failed, either immediately or after exhausting its retries.
+
+    Listening stops, except in `listen_many`, where `on_error` decides.
+    """
 
     trigger_kind: str
     error_kind: str

@@ -45,29 +45,28 @@ SPDX-License-Identifier: Apache-2.0
 - For parser/format-sensitive code, include at least one valid and one invalid example in comments.
 
 ## Time-bound references
-- Phase numbers (`Phase 0`, `Phase 5+`, …), roadmap dates, and "lands in Phase N" remarks MUST NOT appear in code, docstrings, configuration files, commit messages of merged work, or user-facing docs. They belong to `plans/` only.
+- Phase numbers (`Phase 0`, `Phase 5+`, …), roadmap dates, and "lands in Phase N" remarks MUST NOT appear in code, docstrings, configuration files, commit messages of merged work, or user-facing docs. They do not belong in the repository.
 - The repo describes what currently is, not what phase produced it. Phase references in code and docs become stale artifacts the moment a phase ships and silently mislead readers who arrive months later.
-- If you find yourself writing "Phase N scaffold" or "comes in Phase M" anywhere outside `plans/`, the correct action is one of:
-  1. describe the current state in terms of what exists today,
-  2. mark the entry as a draft chapter (or delete the page) until it has real content, or
-  3. move the reference into `plans/`.
+- If you find yourself writing "Phase N scaffold" or "comes in Phase M", the correct action is one of:
+  1. describe the current state in terms of what exists today, or
+  2. mark the entry as a draft chapter (or delete the page) until it has real content.
 - The same rule applies to TODO-style status banners such as `> Status: Phase 0 placeholder.` and to scaffold/preview markers in module docs and config comments.
 
 ## Process-meta references
 - The public record MUST describe **what changed and why**, never the machinery that produced it. This covers shipped code, docstrings, configuration files, commit messages, PR titles and descriptions, PR review replies, and user-facing docs. Keep it to the work.
 - In plain terms, do not name the development process in any of those places: the assistant tools or AI agents used while building; automated, AI, or external code reviewers; review cycles, rounds, or passes; or development phases and "lands later" staging. A reader months from now cares about the design and the behaviour, not which tool touched a file or how many review cycles preceded the merge.
-- Such references are only acceptable in the project's own process-description files (`plans/`, this `AGENTS.md`, `CONTRIBUTING.md`, and dotfile tooling configs) and in ephemeral conversation transcripts. `plans/` is where the process story is told.
+- Such references are only acceptable in the project's own process-description files (this `AGENTS.md`, `CONTRIBUTING.md`, and dotfile tooling configs) and in ephemeral conversation transcripts.
 - When you would naturally write something like "the reviewer flagged X" or "after the second pass we settled Y", rewrite it as the substance instead: "X is required because <reason>", or "the auth flow uses Y because Z". Drop the meta.
 - Reference real pull requests by `#NUMBER` or a user-meaningful description, never by an internal plan id.
-- **Write commit and PR messages in a developer's voice, never an assistant's.** A PR body describes the change; it does not hand out chores, advice, or reassurance to its reader. Banned patterns: side-channel housekeeping notes ("the X environment can be deleted in Settings by an admin"), offers and invitations ("feel free to...", "let me know if..."), and narrating what the reader could do next. If an out-of-band follow-up genuinely matters, it goes in `plans/` or an issue, not the PR body. Test: if a sentence would sound odd coming from the colleague who wrote the diff, cut it.
-- **ADR ids are not process-meta.** Stable architectural-decision references defined in `plans/decisions.md` (the `D1`..`Dn` series) are part of the project's vocabulary and may appear anywhere they help. They are stable cross-references, not review-cycle counters.
-- The fix when you find a violation: describe the current state in terms of what exists today, or move the meta into `plans/`.
+- **Write commit and PR messages in a developer's voice, never an assistant's.** A PR body describes the change; it does not hand out chores, advice, or reassurance to its reader. Banned patterns: side-channel housekeeping notes ("the X environment can be deleted in Settings by an admin"), offers and invitations ("feel free to...", "let me know if..."), and narrating what the reader could do next. If an out-of-band follow-up genuinely matters, it goes in an issue, not the PR body. Test: if a sentence would sound odd coming from the colleague who wrote the diff, cut it.
+- **No decision ids.** Do not cite a design decision by an id or by a planning document. Where code or docs rely on a decision, state the rule and, if it helps, the reason, in place.
+- The fix when you find a violation: describe the current state in terms of what exists today.
 
 ## Writing style
 - **No em dashes.** ASCII hyphens stay for compound words and CLI flags only. Replace any U+2014 with comma, colon, period, parentheses, or restructure the sentence. Same goes for en dashes (U+2013) used as punctuation; ASCII ranges (`0-9`) are fine.
 - **Humanize user-facing prose.** Short sentences. Plain words. Avoid list-of-three flourishes (`X, Y, and Z`), reflexive intensifiers like `notably` or `importantly`, and the `X is the Y that does Z` pattern. If you cannot picture saying the sentence aloud to a colleague, rewrite it.
 - **Diagrams use mermaid.** Architecture, flow, sequence, and relationship diagrams go in ` ```mermaid ` blocks. Do not draw them in ASCII. Plain preformatted text (file trees, error-message samples, JSON output, log lines) stays in ` ```text ` blocks. The `mdbook-mermaid` preprocessor renders them in the book's active theme (light or dark, switched automatically with the book's theme picker) and the project CSS centers them. Authors do not pick mermaid theme variables by hand; the auto-switching handles both modes.
-- Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, planning docs under `plans/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
+- Scope: every file the repo ships or surfaces publicly. `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, the mdBook under `docs/`, examples, `pyproject.toml` and `Cargo.toml` descriptions, all Rust and Python comments and docstrings, and commit messages of merged work.
 
 ## Documentation formatting
 
@@ -80,7 +79,7 @@ These rules govern the mdBook sources under `docs/`. They keep the book easy to 
 ## Commit conventions
 - Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit subject is `<type>(<scope>): <description>`, lowercase, imperative mood, ≤72 chars, no trailing period.
 - Recognised types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `meta`, `style`, `revert`. Pick the narrowest one that fits; do not invent new types without a reason in the body.
-- Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(plans): …`, `ci(deny): …`, `test(e2e): …`).
+- Scope is optional but encouraged. Use the affected crate, module, or area (`fix(cargo): …`, `docs(watch): …`, `ci(deny): …`, `test(e2e): …`).
 - Breaking changes append `!` after the type/scope and explain in the body: `feat(api)!: rename AvisoClient::watch`. Add a `BREAKING CHANGE:` footer when downstream callers must act.
 - **One concern per commit.** A commit is a bugfix, a feature, a refactor, a test pass, or a doc update; not a mix. If the subject would naturally use "and", split.
 - **Reasonably sized, clean, easy to follow.** A reviewer should be able to read the diff top-to-bottom and understand the change without a map. Aim for the smallest commit that still leaves the tree green. A 5-file commit that does one thing is better than a 40-file commit that does ten. As a rule of thumb, a commit whose `git diff --stat` covers more than ~15 files or ~500 added lines (pure file renames excluded) is a smell and should split; if you cannot summarise the change in one sentence without "and", split.

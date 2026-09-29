@@ -12,7 +12,7 @@ use std::time::Duration;
 
 /// Transport-level state of the watch's SSE connection.
 ///
-/// Quoted from D2. One of the two axes of [`super::ReplayPhase`] x
+/// One of the two axes of [`super::ReplayPhase`] x
 /// `ConnectionStatus`. Connection-level events modify only this axis;
 /// they never advance the replay phase.
 #[non_exhaustive]
@@ -40,8 +40,8 @@ pub enum ConnectionStatus {
 /// Why a connection was lost.
 ///
 /// Used as the payload of [`super::WatchEvent::ConnectionLost`]. Both
-/// variants drive the same reducer behaviour (exponential backoff per
-/// D2); the distinction is preserved so the supervisor can attach
+/// variants drive the same reducer behaviour (exponential backoff);
+/// the distinction is preserved so the supervisor can attach
 /// distinct telemetry.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

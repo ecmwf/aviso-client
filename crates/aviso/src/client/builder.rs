@@ -261,7 +261,7 @@ impl AvisoClientBuilder {
     /// Sets the expected SSE heartbeat cadence on the watch endpoint.
     ///
     /// The watch supervisor uses this to compute its heartbeat-starvation
-    /// budget per D2: a stream is declared silent (and reconnected with
+    /// budget: a stream is declared silent (and reconnected with
     /// exponential backoff) if no SSE event of any kind arrives within
     /// `max(3 * interval, interval + 30s)`. Defaults to 30 seconds, which
     /// matches the default `aviso-server` configuration.

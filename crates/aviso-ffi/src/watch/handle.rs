@@ -117,7 +117,7 @@ async fn run_watch(
     };
 
     // Close (rather than drop) so the supervisor's final cursor flush lands
-    // before the task returns; close also runs the D19 drop-to-cancel path.
+    // before the task returns; close also cancels the supervisor, as a drop would.
     stream.close().await;
 
     match reason {

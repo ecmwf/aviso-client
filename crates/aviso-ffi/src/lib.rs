@@ -13,8 +13,7 @@
 //! This crate is a peer consumer of the core `aviso` crate: it depends on
 //! `aviso` and never the reverse, and the core carries no FFI machinery. The
 //! generated C header is `include/aviso.h`; regenerate it with the
-//! `gen-header` feature (see the crate README). The design rationale lives in
-//! `plans/decisions.md` (ADR D21).
+//! `gen-header` feature (see the crate README).
 //!
 //! # Boundary contract
 //!

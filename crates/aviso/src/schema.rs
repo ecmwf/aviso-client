@@ -8,8 +8,9 @@
 
 //! Schema discovery: `GET /api/v1/schema` and `GET /api/v1/schema/{event_type}`.
 //!
-//! Per D7 the client does not validate notifications against schemas; this module is a pure
-//! discovery pass-through for tooling such as the `aviso schema list/get` CLI subcommands.
+//! The client does not validate notifications against schemas; the server does. This module is
+//! a pure discovery pass-through for tooling such as the `aviso schema list/get` CLI
+//! subcommands.
 //!
 //! Schemas are deserialized into permissive maps backed by [`serde_json::Value`], so the client
 //! survives the server adding new identifier-rule fields or payload-config fields without a
@@ -51,9 +52,9 @@ pub struct SchemaResponse {
 
 /// A single stream's schema as the server reports it.
 ///
-/// Permissive by design per D7. Identifier rules and payload configuration are stored as
-/// [`serde_json::Value`] so the client passes new server-side fields through without a code
-/// change here. Use the keys you know about and ignore the rest.
+/// Permissive by design, because validation is the server's job. Identifier rules and payload
+/// configuration are stored as [`serde_json::Value`] so the client passes new server-side fields
+/// through without a code change here. Use the keys you know about and ignore the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[non_exhaustive]
 pub struct StreamSchema {

@@ -9,13 +9,13 @@
 //! Table-driven transition coverage for [`aviso::watch::WatchState`].
 //!
 //! Each test corresponds to one row of the canonical transition table
-//! specified by D2 (and reproduced in the commit message that
-//! introduced `crates/aviso/src/watch/state.rs`). The basic happy
+//! (reproduced in the commit message that introduced
+//! `crates/aviso/src/watch/state.rs`). The basic happy
 //! paths are covered by unit tests inside that file; this file
 //! exercises mode-specific branches, sub-cases (rows 6a-d, 15a-d),
 //! and idempotence/no-op paths that the unit tests omit.
 //!
-//! Tests use the public surface only (D15: fields are private; tests
+//! Tests use the public surface only (fields are private; tests
 //! drive the state machine through events, not field mutation).
 
 #![allow(

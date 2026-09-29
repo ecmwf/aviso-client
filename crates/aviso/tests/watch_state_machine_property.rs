@@ -10,9 +10,8 @@
 //!
 //! Generates random sequences of [`WatchEvent`]s and asserts the
 //! reducer's spec-correctness invariants for every step. Invariants
-//! trace back to ADR D2 (reconnect-as-norm, reconnect classifier,
-//! at-least-once delivery), which hardened the reducer surface
-//! before implementation. The invariant numbering is local to this
+//! follow the watch design rules (reconnecting is normal, the
+//! reconnect classifier, at-least-once delivery). The invariant numbering is local to this
 //! file and reused in the commit message that introduced it.
 //!
 //! The invariants checked here are:
@@ -32,7 +31,7 @@
 //! 7. Once `GapDetected`, the next phase is either `GapDetected`
 //!    again or `Closed`; never `Replaying` or `Live`.
 //! 8. Event-to-Reconnect bijection: the reducer produces a
-//!    `Reconnect` outcome with the D2-mandated policy iff the
+//!    `Reconnect` outcome with the specified policy iff the
 //!    `(event, mode, prior_phase)` triple is one the spec assigns a
 //!    reconnect to. Forward direction catches wrong-policy bugs;
 //!    reverse direction catches silently-swallowed reconnects.

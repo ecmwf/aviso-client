@@ -16,12 +16,10 @@ SPDX-License-Identifier: Apache-2.0
 ## Planning & tracking
 
 - **GitHub Issues + milestones** are the durable source of truth for in-flight work.
-- **`plans/`** holds the project's planning documents (overall plan, roadmap, follow-ups). Phase numbers and roadmap dates live there and nowhere else (see [`AGENTS.md`](AGENTS.md#time-bound-references)).
-- **`plans/decisions.md`** is the ADR log. Architectural decisions land there before code that depends on them.
 
 ## Branch & commit conventions
 
-- Branches: `<topic>/<slug>`, where `<topic>` is `feat`, `fix`, `refactor`, `docs`, `chore`, or `meta`. Branches do not encode plan ids or dates; plans live under [`plans/`](plans/).
+- Branches: `<topic>/<slug>`, where `<topic>` is `feat`, `fix`, `refactor`, `docs`, `chore`, or `meta`. Branches do not encode plan ids or dates.
 - **Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).** The full ruleset lives in [`AGENTS.md`](AGENTS.md#commit-conventions); in short: `<type>(<scope>): <description>`, imperative, ≤72 chars, no period; one concern per commit, sensibly sized, every commit must build and pass the full check set; explain the *why* in the body.
 
 ## Running the checks locally

@@ -57,7 +57,7 @@ impl AuthProvider for Bearer {
         let mut value = HeaderValue::from_str(&header)
             .map_err(|e| ClientError::Auth(format!("invalid Bearer header value: {e}")))?;
         // Mark as sensitive so reqwest, hyper, and any downstream debug/log path redacts the
-        // header value (D8: "Token contents are never logged").
+        // header value: token contents are never logged.
         value.set_sensitive(true);
         Ok(value)
     }

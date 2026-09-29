@@ -12,7 +12,7 @@
 //! [`tokio::signal::ctrl_c`] in a loop. The FIRST signal flips the
 //! returned [`tokio::sync::watch::Sender<bool>`] to `true`; subcommand
 //! handlers select on `.changed()` and drain gracefully (the
-//! supervisor's existing drop cascade per D19 / D20 closes the watch
+//! supervisor's existing drop cascade closes the watch
 //! and lands pending commits). A SECOND signal received within
 //! 5 seconds of the first calls [`std::process::exit`] with code
 //! `130` (`128 + SIGINT`) immediately, bypassing the cooperative

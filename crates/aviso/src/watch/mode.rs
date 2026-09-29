@@ -12,7 +12,7 @@
 ///
 /// The mode is fixed for the lifetime of a session and feeds into the
 /// reducer's handling of `end_of_stream` and `replay_completed` events
-/// (D2: replay-only terminates on `end_of_stream` after
+/// (replay-only terminates on `end_of_stream` after
 /// `replay_completed`; watch reconnects on `end_of_stream` at any
 /// time).
 #[non_exhaustive]

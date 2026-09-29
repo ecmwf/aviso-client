@@ -17,7 +17,7 @@ use crate::ClientError;
 use crate::auth::{AuthProvider, Basic, Bearer};
 
 /// Environment variable holding a Bearer (JWT or opaque) token. Matches the legacy `pyaviso`
-/// convention per D8.
+/// convention.
 pub const ENV_TOKEN: &str = "AVISO_TOKEN";
 
 /// Environment variable holding the Basic-auth username.

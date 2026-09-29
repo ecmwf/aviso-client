@@ -8,14 +8,12 @@
 
 //! [`WatchState`]: the orthogonal-product reducer for the watch session.
 //!
-//! The reducer implements the transition rules specified by D2 (the
-//! reconnect classifier and state-machine sketch in
-//! `plans/decisions.md`). Each match arm carries a row
+//! The reducer implements the watch transition rules, including the
+//! reconnect classifier. Each match arm carries a row
 //! number; the row numbers match the canonical transition table in
 //! the commit message that introduced this file, kept here as a
-//! traceable audit trail for spec conformance. D15 constrains the
-//! public surface: fields are private and callers use the accessor
-//! methods.
+//! traceable audit trail for spec conformance. Fields are private and
+//! callers use the accessor methods.
 
 use super::{
     CloseReason, ConnectionStatus, FatalKind, GapReason, ReconnectPolicy, ReplayPhase, ResumeStart,
@@ -31,11 +29,11 @@ use super::{
 /// [`WatchOutcome`] telling the supervisor what to do next.
 ///
 /// The reducer is sync, push-based, and owns no resources. It does not
-/// track checkpoint state (see D17); the supervisor handles cursor
+/// track checkpoint state; the supervisor handles cursor
 /// bookkeeping in response to [`WatchEvent::NotificationReceived`] and
 /// trigger completion.
 ///
-/// All fields are private (D15); use [`Self::watch`] / [`Self::replay_only`]
+/// All fields are private; use [`Self::watch`] / [`Self::replay_only`]
 /// to construct and the accessor methods to read. The struct is also
 /// `#[non_exhaustive]` so a future public field cannot become a
 /// breaking change for downstream callers.
@@ -139,7 +137,7 @@ impl WatchState {
 
             // Rows 2, 3, and 13: transport-bucket reconnects (transport
             // error, unexpected EOF, heartbeat starvation) all use
-            // exponential backoff per D2.
+            // exponential backoff.
             WatchEvent::ConnectionLost { .. } | WatchEvent::HeartbeatStarvation => {
                 self.connection_status = ConnectionStatus::Reconnecting;
                 WatchOutcome::Reconnect {
