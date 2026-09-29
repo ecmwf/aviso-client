@@ -190,6 +190,7 @@ pub(crate) enum DrainOutcome {
 
 mod connection;
 mod drain;
+mod exit_flush;
 mod guards;
 mod opening;
 mod reconnect;
