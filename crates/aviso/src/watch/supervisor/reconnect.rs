@@ -109,7 +109,7 @@ pub(crate) async fn run_supervisor(
                 };
                 match get_result {
                     Ok(Some(cp)) => {
-                        // INFO level per D2 (plans/decisions.md): a successful
+                        // INFO level: a successful
                         // resume from stored state is operator-visible
                         // information. The no-checkpoint-found path stays
                         // silent because starting fresh is the default.
@@ -261,7 +261,7 @@ pub(crate) async fn run_supervisor(
             // Auth refresh step: when the reducer is in `RefreshingAuth` the
             // previous iteration emitted `WatchEvent::AuthRejected` after a 401
             // and the supervisor now drives `AuthProvider::refresh()` before
-            // attempting the next connection. D8's refresh-then-retry-once
+            // attempting the next connection. The refresh-then-retry-once
             // contract is enforced by `refreshed_for_current_attempt`: the
             // flag is set after a successful refresh and reset on any
             // non-401 outcome, so a second 401 within the same attempt cycle
@@ -313,12 +313,12 @@ pub(crate) async fn run_supervisor(
             //      but the commit-on-next-send promotion has not run yet).
             //      Without this fallback, a `Date` initial cursor would be
             //      reused on reconnect even after one notification had been
-            //      sent, contradicting D17's "from_date is bootstrap-only"
+            //      sent, contradicting the "from_date is bootstrap-only"
             //      contract and weakening cross-reconnect gap detection
             //      (the `GapGuard` would start without an expected next
             //      sequence and tolerate any starting value).
-            //   3. The initial cursor (which may be a `Date` per D17
-            //      bootstrap, valid only for the very first connection).
+            //   3. The initial cursor (which may be a `Date`), used until
+            //      a sequence cursor is available.
             let wire_from: Option<ResumeStart> = match (commit_cursor, pending_commit.as_ref()) {
                 (Some(n), _) => Some(ResumeStart::AfterSequence(n)),
                 (None, Some(p)) => Some(ResumeStart::AfterSequence(p.sequence)),

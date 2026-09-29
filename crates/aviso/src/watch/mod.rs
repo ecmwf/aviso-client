@@ -9,7 +9,7 @@
 //! Watch state machine.
 //!
 //! This module contains the pure-logic state machine that drives a
-//! watch session, as specified by ADRs D2 and D15. The state is the
+//! watch session. The state is the
 //! orthogonal product of two axes,
 //! [`ReplayPhase`] x [`ConnectionStatus`], and is advanced through a
 //! single reducer. The reducer owns no I/O, no async runtime, and no
@@ -113,15 +113,16 @@
 //! assert!(state.is_terminal());
 //! ```
 //!
-//! # Cross-references
+//! # Design rules
 //!
-//! - D2 (`plans/decisions.md`): reconnect-as-norm,
-//!   at-least-once delivery, state-machine sketch, reconnect classifier.
-//! - D15: state machine is the orthogonal product `ReplayPhase x
-//!   ConnectionStatus`, single reducer, fields private.
-//! - D9: a malformed `CloudEvent` id is terminal; surfaces here through
+//! - Reconnecting is normal, not an error: the server closes streams
+//!   routinely, and delivery is at least once.
+//! - The state is the orthogonal product `ReplayPhase x
+//!   ConnectionStatus`, advanced by a single reducer; its fields are
+//!   private.
+//! - A malformed `CloudEvent` id is terminal; it surfaces here through
 //!   [`WatchEvent::Fatal`] with [`FatalKind::MalformedEvent`].
-//! - D17: `from_date` is bootstrap-only and converts to a sequence
+//! - `from_date` is bootstrap-only and converts to a sequence
 //!   cursor after the first commit. The reducer does not own that
 //!   bookkeeping; the supervisor advances its own checkpoint state in
 //!   response to [`WatchEvent::NotificationReceived`].

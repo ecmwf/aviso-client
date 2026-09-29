@@ -115,8 +115,8 @@ impl<'a> WireWatchRequest<'a> {
 ///
 /// The full envelope is documented at
 /// `aviso-server/src/cloudevents/mod.rs`; this client decodes only the
-/// fields it needs (`id` and `data`) and lets serde discard the rest (per
-/// the `CloudEvent`-envelope-hidden ADR).
+/// fields it needs (`id` and `data`) and lets serde discard the rest. The
+/// raw envelope reaches callers as JSON in `Notification::cloudevent`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct WireCloudEvent {
     pub(crate) id: String,

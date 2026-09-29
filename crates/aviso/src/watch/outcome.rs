@@ -12,7 +12,7 @@ use super::{CloseReason, GapReason};
 
 /// Reconnect strategy advised by the reducer.
 ///
-/// Maps directly to D2's reconnect classifier. The variant tells the
+/// The reconnect classifier's verdict. The variant tells the
 /// supervisor whether to backoff and, if so, with which schedule; the
 /// supervisor still owns the retry counter and the actual `Duration`.
 #[non_exhaustive]
@@ -23,12 +23,12 @@ pub enum ReconnectPolicy {
     /// `end_of_stream` in replay-only before `replay_completed`).
     Immediate,
 
-    /// Reconnect after a short backoff (single-digit seconds per D2).
+    /// Reconnect after a short backoff (a few seconds).
     /// Used for `server_shutdown`.
     ShortBackoff,
 
-    /// Reconnect after jittered exponential backoff (250 ms to 30 s
-    /// cap per D2). Used for transport errors and heartbeat
+    /// Reconnect after exponential backoff with full jitter (250 ms
+    /// base window, capped at 30 s). Used for transport errors and heartbeat
     /// starvation.
     ExponentialBackoff,
 }
@@ -36,8 +36,7 @@ pub enum ReconnectPolicy {
 /// The reducer's reply to a [`super::WatchEvent`].
 ///
 /// `#[must_use]`: the design depends on the supervisor acting on the
-/// outcome. Ignoring the outcome silently breaks D2's reconnect
-/// classifier.
+/// outcome. Ignoring it silently breaks reconnection.
 #[must_use = "the watch supervisor must act on the outcome (reconnect, refresh auth, surface a gap, or stop)"]
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +47,7 @@ pub enum WatchOutcome {
     /// Supervisor should reconnect; the `policy` tells it which
     /// backoff schedule to apply (if any).
     Reconnect {
-        /// The reconnect policy classified by D2's reconnect rules.
+        /// The backoff schedule for this reconnect.
         policy: ReconnectPolicy,
     },
 

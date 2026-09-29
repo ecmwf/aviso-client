@@ -13,11 +13,11 @@
 //! and an `AtomicU64` that stir the jitter source across calls. The
 //! watch supervisor consumes this from inside its outer reconnect loop.
 //!
-//! D2 specifies the policy semantics:
+//! The policies:
 //! - `Immediate` returns zero (routine `max_duration_reached` closes,
 //!   `end_of_stream` in watch mode).
-//! - `ShortBackoff` returns a fixed five seconds (single-digit per D2;
-//!   used for `server_shutdown`).
+//! - `ShortBackoff` returns a fixed five seconds (used for
+//!   `server_shutdown`, giving the server time to come back).
 //! - `ExponentialBackoff` returns a uniformly distributed value in
 //!   `[0, min(BASE_DELAY_MS * 2^attempt, MAX_DELAY))` (half-open;
 //!   modulo arithmetic gives an exclusive upper bound), AWS-style
@@ -40,11 +40,10 @@ use super::ReconnectPolicy;
 /// Base delay in milliseconds for the exponential schedule.
 const BASE_DELAY_MS: u64 = 250;
 
-/// Hard cap on any computed exponential backoff (D2).
+/// Hard cap on any computed exponential backoff.
 const MAX_DELAY: Duration = Duration::from_secs(30);
 
-/// Fixed delay for `ShortBackoff` (D2: single-digit seconds for
-/// `server_shutdown`).
+/// Fixed delay for `ShortBackoff`, used for `server_shutdown`.
 const SHORT_BACKOFF: Duration = Duration::from_secs(5);
 
 /// Compute the next reconnect delay.

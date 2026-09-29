@@ -15,7 +15,7 @@ use super::{ConnectionLossReason, FatalKind, GapReason};
 /// Server-emitted close reason.
 ///
 /// Carried by [`WatchEvent::ServerClose`]. These map to the
-/// `connection-closing` SSE event's `reason` field on the wire (D2).
+/// `connection-closing` SSE event's `reason` field on the wire.
 /// `MaxDurationReached` and `ServerShutdown` are routine; only
 /// `EndOfStream` can terminate the session, and only in
 /// [`super::WatchMode::ReplayOnly`] after `replay_completed`.
@@ -24,17 +24,16 @@ use super::{ConnectionLossReason, FatalKind, GapReason};
 pub enum ServerCloseReason {
     /// `connection-closing.reason = max_duration_reached`: the server's
     /// `connection_max_duration_sec` elapsed. Always routine;
-    /// immediate reconnect, no backoff (D2).
+    /// immediate reconnect, no backoff.
     MaxDurationReached,
 
     /// `connection-closing.reason = server_shutdown`: the server is
-    /// going down. Short backoff before the next reconnect (D2).
+    /// going down. Short backoff before the next reconnect.
     ServerShutdown,
 
     /// `connection-closing.reason = end_of_stream`: in watch the
     /// reducer reconnects; in replay-only the reducer terminates if
-    /// `replay_completed` was already true, otherwise it reconnects
-    /// (D2 reconnect classifier).
+    /// `replay_completed` was already true, otherwise it reconnects.
     EndOfStream,
 }
 
@@ -95,13 +94,13 @@ pub enum WatchEvent {
     HeartbeatReceived,
 
     /// No SSE traffic of any kind for `max(3 * interval, interval + 30s)`
-    /// since the last frame (D2). Treated the same as a transport-level
+    /// since the last frame. Treated the same as a transport-level
     /// connection loss: reconnect with exponential backoff.
     HeartbeatStarvation,
 
     /// A notification successfully decoded. The reducer does NOT
     /// advance any cursor on this event; the supervisor handles
-    /// checkpoint advancement after triggers per D2.
+    /// checkpoint advancement after triggers, so delivery is at least once.
     NotificationReceived {
         /// Sequence number from the `CloudEvent` `id`.
         sequence: u64,

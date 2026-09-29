@@ -10,7 +10,7 @@
 //!
 //! The replay phase is one of the two axes of [`super::WatchMode`]-aware
 //! watch state, alongside [`super::ConnectionStatus`]. It tracks where
-//! the stream is in its replay-or-live lifecycle (D2, D15).
+//! the stream is in its replay-or-live lifecycle.
 
 /// Initial resume position the watch was started from.
 ///
@@ -19,7 +19,7 @@
 /// the reducer has no `Head` / `Live` variant because a live-only watch
 /// starts directly in [`ReplayPhase::Live`] (no replay to do).
 ///
-/// D17 caveat: a `Date` start is opaque to the reducer. The supervisor
+/// A `Date` start is opaque to the reducer, and used only to bootstrap. The supervisor
 /// converts it to a sequence cursor after the first committed
 /// notification; the reducer does not own checkpoint state.
 #[non_exhaustive]
@@ -34,8 +34,7 @@ pub enum ResumeStart {
 
     /// Bootstrap from a user-supplied date string. The reducer stores
     /// it verbatim; the supervisor sends `from_date` on the wire and
-    /// transitions to sequence-based resume after the first commit
-    /// (D17).
+    /// transitions to sequence-based resume after the first commit.
     Date(String),
 }
 
@@ -60,7 +59,6 @@ pub enum ReplayEnd {
 
 /// Replay-or-live phase of the watch.
 ///
-/// Quoted directly from D2:
 /// `Replaying { start, replay_completed: false }` is the initial phase
 /// when constructed with a resume position; `Live` is the initial phase
 /// when constructed without one. The reducer transitions to `Live`
@@ -109,7 +107,7 @@ pub enum ReplayPhase {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GapReason {
-    /// The server reported `notification_replay_limit_reached` (D2):
+    /// The server reported `notification_replay_limit_reached`:
     /// the client asked to replay more notifications than the server's
     /// configured cap, so some of the requested backlog will not be
     /// delivered.
@@ -133,13 +131,13 @@ pub enum GapReason {
 ///
 /// The reducer enters [`ReplayPhase::Closed`] with one of these
 /// reasons. `max_duration_reached` and `server_shutdown` are NOT close
-/// reasons; per D2 they are routine reconnect triggers that mutate
+/// reasons; they are routine reconnect triggers that mutate
 /// only [`super::ConnectionStatus`].
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloseReason {
     /// Replay-only session ended naturally on the server's
-    /// `end_of_stream` after `replay_completed` (D2).
+    /// `end_of_stream` after `replay_completed`.
     EndOfStream,
 
     /// Non-recoverable error; [`FatalKind`] carries the kind.
@@ -160,16 +158,16 @@ pub enum CloseReason {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FatalKind {
-    /// A `CloudEvent` `id` field could not be parsed per D9. Terminal
-    /// to avoid livelock on a poisoned server stream.
+    /// A `CloudEvent` `id` field could not be parsed. Terminal:
+    /// reconnecting would receive the same event again.
     MalformedEvent,
 
     /// A 401 was still returned after a credential refresh. The
     /// supervisor has nothing left to try.
     AuthenticationRejectedAfterRefresh,
 
-    /// Transport-level retries hit the cap (default 30 s exponential
-    /// backoff per D2 without success).
+    /// Transport-level retries hit the cap (exponential backoff capped
+    /// at 30 s, without success).
     TransportRetriesExhausted,
 
     /// A wire-level protocol violation the supervisor cannot recover

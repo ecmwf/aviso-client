@@ -24,7 +24,7 @@
 //!   `401`/`429`, and any status outside the 2xx success class that the
 //!   classifier does not retry).
 //! - A second 401 within a single attempt cycle, surfaced as
-//!   [`ClientError::Auth`] per D8.
+//!   [`ClientError::Auth`].
 //! - A persistent `StateStore` failure, surfaced as
 //!   [`ClientError::StateStore`].
 //! - A wire-level fatal (server `error` event, malformed `CloudEvent` id,
@@ -114,7 +114,7 @@ pub(crate) enum ConnectionOutcome {
     Cancelled,
 }
 
-/// Heartbeat-starvation budget per D2: `max(3 * interval, interval + 30s)`.
+/// Heartbeat-starvation budget: `max(3 * interval, interval + 30s)`.
 /// At the default 30 s interval the budget is 90 s; lower intervals
 /// produce smaller budgets but with a 30 s absolute floor so transient
 /// network slowness does not trip the watchdog.
