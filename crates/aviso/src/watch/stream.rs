@@ -45,6 +45,10 @@ use crate::{ClientError, Notification};
 /// event-loop tick. No buffered notifications are lost from the consumer's
 /// perspective because the consumer has already moved on.
 ///
+/// Dropping the last clone of the [`crate::AvisoClient`] that opened the
+/// stream cancels it too. The stream then yields `None`, exactly as when it
+/// finishes, so the client must outlive the stream.
+///
 /// # Backpressure
 ///
 /// The internal channel is bounded at a fixed capacity of 128. A slow

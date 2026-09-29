@@ -26,6 +26,9 @@ impl AvisoClient {
     /// example when each was opened in replay-only mode. `policy` decides
     /// what a failing watch does to the others; see [`ErrorPolicy`].
     ///
+    /// As with [`Self::watch`], the stream ends without an error once the
+    /// last clone of this `AvisoClient` is dropped.
+    ///
     /// Every request is checked before any watch is opened, so a mistake in
     /// one never leaves the others running. Each watch keeps its own resume
     /// position in the state store, the same one [`Self::watch`] would use
