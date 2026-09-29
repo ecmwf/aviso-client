@@ -39,7 +39,7 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 aviso = { path = "../aviso", version = "=2.4.1" }
-# The Python wheel bundles the `aviso` CLI as a console command (see ADR D1):
+# The Python wheel bundles the `aviso` CLI as a console command:
 # the extension calls the CLI library's `run` entry point in-process so a
 # single wheel ships both `import pyaviso` and the `aviso` command.
 aviso-cli = { path = "../aviso-cli", version = "=2.4.1" }

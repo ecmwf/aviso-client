@@ -25,8 +25,6 @@
 //! `JsonFileStore`), and the exception hierarchy rooted at `AvisoError`.
 //! The `_provoke_error` test helper is registered but kept off the
 //! documented surface (used only by the python test suite).
-//!
-//! Architectural decisions live in `plans/decisions.md`.
 
 #![forbid(unsafe_code)]
 

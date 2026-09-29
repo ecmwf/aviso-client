@@ -14,7 +14,7 @@
 //! item and `on_end` exactly once when the stream ends or fails. The task is
 //! driven by the synchronous `watch()` plus `recv()`, not the core's
 //! handler-shaped `watch_with_handler`, so the C `on_notification` can request
-//! a graceful stop by returning `false` (per ADR D21).
+//! a graceful stop by returning `false`.
 
 // The declarations are in source order, not sorted: cbindgen writes the C
 // header in this order, so it groups the request, the notification and the
