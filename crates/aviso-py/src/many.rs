@@ -14,6 +14,9 @@
 //! do with them (call function triggers, apply `on_error`, `run()`) lives in
 //! `pyaviso._many`, in Python, because it calls back into the caller's code:
 //! functions that may be coroutines, and an `on_error` that may raise.
+//!
+//! The merged stream is kept in an [`Open`], next to a clone of the client,
+//! for the reason given in `streams`.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,6 +32,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify};
 use crate::error::map_client_error;
 use crate::requests::{RequestSpec, build_watch_request};
 use crate::runtime::runtime;
+use crate::streams::Open;
 use crate::values::PyNotification;
 use crate::watch::{PyWatchRequest, parse_replay_end, parse_resume_start};
 
@@ -52,7 +56,7 @@ pub(crate) struct SharedOptions<'a, 'py> {
     pub(crate) mode: Option<&'a str>,
 }
 
-type Shared = Arc<AsyncMutex<Option<MultiNotificationStream>>>;
+type Shared = Arc<AsyncMutex<Option<Open<MultiNotificationStream>>>>;
 
 /// One merged item as Python sees it.
 fn to_python(
@@ -101,7 +105,7 @@ impl PyRawMultiIterator {
             let outcome = py.detach(|| {
                 runtime().block_on(async move {
                     let mut guard = stream.lock().await;
-                    let Some(s) = guard.as_mut() else {
+                    let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
                         return Poll::Ended;
                     };
                     match tokio::time::timeout(SYNC_RECV_POLL, s.next()).await {
@@ -126,7 +130,7 @@ impl PyRawMultiIterator {
         py.detach(|| {
             runtime().block_on(async move {
                 if let Some(s) = stream.lock().await.take() {
-                    s.close().await;
+                    s.stream.close().await;
                 }
             });
         });
@@ -168,7 +172,7 @@ impl PyRawAsyncMultiIterator {
             if closed.load(Ordering::Acquire) {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
-            let Some(s) = guard.as_mut() else {
+            let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
                 return Err(PyStopAsyncIteration::new_err(()));
             };
             tokio::select! {
@@ -190,7 +194,7 @@ impl PyRawAsyncMultiIterator {
             closed.store(true, Ordering::Release);
             wake.notify_waiters();
             if let Some(s) = stream.lock().await.take() {
-                s.close().await;
+                s.stream.close().await;
             }
             Ok(())
         })
@@ -419,11 +423,9 @@ pub(crate) fn listen_many(
     }
     let client = client.clone();
     let stream = py
-        .detach(|| {
-            runtime().block_on(async move { client.watch_many(requests, ErrorPolicy::Continue) })
-        })
+        .detach(|| runtime().block_on(async { client.watch_many(requests, ErrorPolicy::Continue) }))
         .map_err(|e| map_client_error(py, e))?;
-    let shared: Shared = Arc::new(AsyncMutex::new(Some(stream)));
+    let shared: Shared = Arc::new(AsyncMutex::new(Some(Open::new(stream, client))));
     let module = py.import("pyaviso._many")?;
     let (raw, class): (Py<PyAny>, &str) = if asynchronous {
         let raw = PyRawAsyncMultiIterator {

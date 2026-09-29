@@ -315,9 +315,9 @@ impl PyAvisoClient {
         crate::triggers::refuse_async_functions(py, &spec.functions, None)?;
         let client = self.inner.clone();
         let req = spec.request;
-        let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
+        let stream = py.detach(|| runtime().block_on(async { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
-        let iterator = Py::new(py, PyNotificationIterator::new(stream))?.into_any();
+        let iterator = Py::new(py, PyNotificationIterator::new(stream, client))?.into_any();
         if spec.functions.is_empty() {
             return Ok(iterator);
         }
@@ -596,9 +596,9 @@ impl PyAsyncAvisoClient {
         )?;
         let client = self.inner.clone();
         let req = spec.request;
-        let stream = py.detach(|| runtime().block_on(async move { client.watch(req) }));
+        let stream = py.detach(|| runtime().block_on(async { client.watch(req) }));
         let stream = stream.map_err(|e| map_client_error(py, e))?;
-        let iterator = Py::new(py, PyAsyncNotificationIterator::new(stream))?.into_any();
+        let iterator = Py::new(py, PyAsyncNotificationIterator::new(stream, client))?.into_any();
         if spec.functions.is_empty() {
             return Ok(iterator);
         }

@@ -17,11 +17,19 @@
 //! The async iterator uses `future_into_py` to expose the recv as a
 //! Python awaitable; asyncio's standard signal handling delivers
 //! `KeyboardInterrupt` to the awaiting task.
+//!
+//! Each iterator keeps the stream in an [`Open`], next to a clone of the
+//! client that opened it. The core ends every stream once the last clone of
+//! its client is dropped, and Python frees an unreferenced client as soon as
+//! `listen` returns, as in `AvisoClient(...).listen(...)`. Keeping the clone
+//! with the stream, rather than on the iterator, also covers the awaitables
+//! of the async iterator, which may outlive it.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use aviso::AvisoClient;
 use aviso::watch::NotificationStream;
 use futures_util::StreamExt;
 use pyo3::exceptions::{PyStopAsyncIteration, PyStopIteration};
@@ -34,13 +42,31 @@ use crate::values::PyNotification;
 
 const SYNC_RECV_POLL: Duration = Duration::from_millis(100);
 
+/// An open stream and a clone of the client that opened it; see the module
+/// docs. Closing takes the stream out, and the clone goes with it.
+pub(crate) struct Open<S> {
+    pub(crate) stream: S,
+    _client: AvisoClient,
+}
+
+impl<S> Open<S> {
+    pub(crate) fn new(stream: S, client: AvisoClient) -> Self {
+        Self {
+            stream,
+            _client: client,
+        }
+    }
+}
+
+type Shared = Arc<AsyncMutex<Option<Open<NotificationStream>>>>;
+
 #[pyclass(
     name = "NotificationIterator",
     module = "pyaviso._native",
     skip_from_py_object
 )]
 pub(crate) struct PyNotificationIterator {
-    inner: Arc<AsyncMutex<Option<NotificationStream>>>,
+    inner: Shared,
 }
 
 #[pymethods]
@@ -55,7 +81,7 @@ impl PyNotificationIterator {
             let outcome: PollOutcome = py.detach(|| {
                 runtime().block_on(async move {
                     let mut guard = stream.lock().await;
-                    let Some(stream_ref) = guard.as_mut() else {
+                    let Some(stream_ref) = guard.as_mut().map(|o| &mut o.stream) else {
                         return PollOutcome::Closed;
                     };
                     match tokio::time::timeout(SYNC_RECV_POLL, stream_ref.next()).await {
@@ -98,7 +124,7 @@ impl PyNotificationIterator {
             runtime().block_on(async move {
                 let mut guard = stream.lock().await;
                 if let Some(s) = guard.take() {
-                    s.close().await;
+                    s.stream.close().await;
                 }
             });
         });
@@ -123,9 +149,9 @@ impl PyNotificationIterator {
 }
 
 impl PyNotificationIterator {
-    pub(crate) fn new(stream: NotificationStream) -> Self {
+    pub(crate) fn new(stream: NotificationStream, client: AvisoClient) -> Self {
         Self {
-            inner: Arc::new(AsyncMutex::new(Some(stream))),
+            inner: Arc::new(AsyncMutex::new(Some(Open::new(stream, client)))),
         }
     }
 }
@@ -144,7 +170,7 @@ enum PollOutcome {
     skip_from_py_object
 )]
 pub(crate) struct PyAsyncNotificationIterator {
-    inner: Arc<AsyncMutex<Option<NotificationStream>>>,
+    inner: Shared,
     closed: Arc<AtomicBool>,
     wake: Arc<Notify>,
 }
@@ -172,7 +198,7 @@ impl PyAsyncNotificationIterator {
             if closed.load(Ordering::Acquire) {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
-            let Some(stream_ref) = guard.as_mut() else {
+            let Some(stream_ref) = guard.as_mut().map(|o| &mut o.stream) else {
                 return Err(PyStopAsyncIteration::new_err(()));
             };
             tokio::select! {
@@ -212,7 +238,7 @@ impl PyAsyncNotificationIterator {
                 if closed.load(Ordering::Acquire) {
                     break Ok(());
                 }
-                let Some(s) = guard.as_mut() else {
+                let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
                     break Ok(());
                 };
                 tokio::select! {
@@ -227,7 +253,7 @@ impl PyAsyncNotificationIterator {
             };
             closed.store(true, Ordering::Release);
             if let Some(s) = guard.take() {
-                s.close().await;
+                s.stream.close().await;
             }
             on_cancel.armed = false;
             result
@@ -243,7 +269,7 @@ impl PyAsyncNotificationIterator {
             wake.notify_waiters();
             let mut guard = stream.lock().await;
             if let Some(s) = guard.take() {
-                s.close().await;
+                s.stream.close().await;
             }
             Ok(())
         })
@@ -270,7 +296,7 @@ impl PyAsyncNotificationIterator {
 /// Closes an async iterator's stream when the future reading it is dropped
 /// before finishing, as happens when the awaiting task is cancelled.
 struct CloseOnDrop {
-    stream: Arc<AsyncMutex<Option<NotificationStream>>>,
+    stream: Shared,
     closed: Arc<AtomicBool>,
     wake: Arc<Notify>,
     armed: bool,
@@ -291,16 +317,16 @@ impl Drop for CloseOnDrop {
         // The close runs once the lock is free.
         runtime().spawn(async move {
             if let Some(s) = stream.lock().await.take() {
-                s.close().await;
+                s.stream.close().await;
             }
         });
     }
 }
 
 impl PyAsyncNotificationIterator {
-    pub(crate) fn new(stream: NotificationStream) -> Self {
+    pub(crate) fn new(stream: NotificationStream, client: AvisoClient) -> Self {
         Self {
-            inner: Arc::new(AsyncMutex::new(Some(stream))),
+            inner: Arc::new(AsyncMutex::new(Some(Open::new(stream, client)))),
             closed: Arc::new(AtomicBool::new(false)),
             wake: Arc::new(Notify::new()),
         }
