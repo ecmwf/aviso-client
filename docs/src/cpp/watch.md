@@ -88,74 +88,84 @@ runs until Ctrl+C or a timer, and stops the way a real listener would.
 
 ## Several watches at once
 
-To listen with several watch requests through one handler, put them in a
-`WatchSet` under a name each and call `client.watch_many`. The handler derives
-from `aviso::MultiNotificationHandler`, and every callback receives the name of
-the watch concerned:
+To listen to several things through one handler, give each `WatchRequest` a
+name in a `WatchSet` and call `client.watch_many`. The handler derives from
+`aviso::MultiNotificationHandler`. It works like the single-watch handler, and
+`on_notification` also receives the name of the watch:
 
 ```cpp
 class Printer : public aviso::MultiNotificationHandler {
  public:
   bool on_notification(const std::string& name,
                        const aviso::Notification& n) override {
-    std::cout << name << " #" << n.sequence() << '\n';
+    std::cout << name << ": " << n.identifier_json() << '\n';
     return true;
-  }
-  bool on_error(const std::string& name,
-                const aviso::ErrorInfo& error) override {
-    std::cerr << name << ": " << error.message << '\n';
-    return true;  // drop this watch, keep the others
   }
   void on_end(const std::optional<aviso::ErrorInfo>& error) override {
     if (error) {
-      std::cerr << "watch failed: " << error->message << '\n';
+      std::cerr << "listening failed: " << error->message << '\n';
     }
   }
 };
 
-aviso::WatchRequest all("test_event");
-aviso::WatchRequest january("test_event");
-january.filter_json(R"({"date": "20260101"})");
+aviso::WatchRequest operational("mars");
+operational.filter_json(R"({"class": "od"})");
+aviso::WatchRequest research("mars");
+research.filter_json(R"({"class": "rd", "step": 0})");
 
 aviso::WatchSet watches;
-watches.add("all", all).add("january", january);
+watches.add("operational", operational).add("research", research);
 
 Printer printer;
 aviso::Watch watch = client.watch_many(watches, printer);
 watch.wait();
 ```
 
-Each request keeps its own filter, start position and triggers, and the
-requests may use different event types. The watches are read in turn, so a
-busy watch cannot delay a quiet one. The callbacks run on a runtime thread, as
-for a single watch, and never run at the same time as each other, so the
-handler needs no lock for its own state.
+Each line shows which watch delivered the notification:
 
-When a watch fails, `on_error` receives its name and the error, whose message
-begins with the name, as in `watch 'january': http 400: ...`. Its return value
-decides what happens next:
+```text
+operational: {"class":"od","step":"6"}
+research: {"class":"rd","step":"0"}
+operational: {"class":"od","step":"12"}
+```
 
-| `on_error` returns | Effect |
-|---|---|
-| `false` (the default) | Every watch stops, and `on_end` receives the same error. |
-| `true` | That watch is dropped and the others continue. |
+- Each request keeps its own event type, filter, start position and triggers.
+- The watches are read in turn, so a busy watch cannot starve a quiet one.
+- The callbacks never run at the same time, so the handler needs no lock for
+  its own state.
+- The returned `Watch` works as for a single watch: `stop()`, `wait()` and the
+  destructor act on every watch in the set.
+- `watch_many` consumes the `WatchSet`, and `add` consumes each
+  `WatchRequest`. Using either again throws an `aviso::Error` of kind
+  `AvisoErrorKind_InvalidUsage`.
 
-`on_end` runs once. Its error is empty when every watch has ended, including
-after failures that `on_error` continued past, or after a stop. It is set
-when the set was invalid (no requests, an empty or repeated name, or a bad
-request), when `on_error` returned `false`, or when every watch failed. In the
-last case, the error keeps the kind of the last failure and its message lists
-each one, so a program whose watches all failed cannot end quietly.
+### When one watch fails
 
-The returned `Watch` is the same RAII handle as for a single watch: `stop()`,
-`wait()` and the destructor act on every watch in the set. An exception thrown
-from `on_notification` or `on_error` stops every watch, and `on_end` receives
-an `AvisoErrorKind_Internal` error whose message names the exception. A
-`WatchSet` is consumed by `watch_many`, and a `WatchRequest` by `add`; using
-either again throws an `aviso::Error` of kind `AvisoErrorKind_InvalidUsage`.
+By default, one failing watch stops them all, and `on_end` receives its error.
+The message begins with the name of the watch:
+
+```text
+listening failed: watch 'research': http 400: ... Unknown field 'stepp' ...
+```
+
+To drop only the failing watch and keep the others, override `on_error`, which
+also receives the name, and return `true`:
+
+```cpp
+bool on_error(const std::string& name,
+              const aviso::ErrorInfo& error) override {
+  std::cerr << name << " dropped: " << error.message << '\n';
+  return true;
+}
+```
+
+`on_end` still receives an error if every watch fails, so the program cannot
+end quietly with nothing running. An exception thrown from `on_notification`
+or `on_error` stops every watch, and `on_end` receives an
+`AvisoErrorKind_Internal` error whose message names the exception.
 
 [`examples/cpp/basics/07_watch_many.cpp`](https://github.com/ecmwf/aviso-client/blob/main/examples/cpp/basics/07_watch_many.cpp)
-runs two watches, one of them filtered, and stops once each has delivered
+is a complete program: it runs two watches and stops once each has delivered
 three notifications.
 
 ## Resuming where you left off
