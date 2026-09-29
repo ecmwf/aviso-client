@@ -171,7 +171,9 @@ aviso is cooperative everywhere. There are three cancellation paths:
 - **Per-stream**: dropping the `NotificationStream` drops a oneshot sender; the
   supervisor's `select!` notices and exits.
 - **Parent-cascade**: dropping the last `AvisoClient` clone trips a
-  `tokio::sync::watch` flip that every child supervisor observes.
+  `tokio::sync::watch` flip that every child supervisor observes. The stream
+  then ends without an error. The Python and C bindings therefore keep a clone
+  for each open stream, so a stream outlives the client object it came from.
 - **Ctrl+C in the CLI**: a signal handler triggers a graceful drain via the same
   per-stream mechanism for every active listener.
 

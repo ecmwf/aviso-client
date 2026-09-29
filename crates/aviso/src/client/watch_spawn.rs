@@ -29,6 +29,10 @@ impl AvisoClient {
     /// to the returned stream. The stream is single-consumer; dropping it
     /// cancels the supervisor cooperatively.
     ///
+    /// The stream depends on the client: once the last clone of this
+    /// `AvisoClient` is dropped, the stream ends without an error, as a
+    /// finished stream does. Keep a clone for as long as the stream is read.
+    ///
     /// # Errors
     ///
     /// - [`ClientError::Config`] when no Tokio runtime is entered (this
