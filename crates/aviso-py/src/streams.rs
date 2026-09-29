@@ -81,10 +81,10 @@ impl PyNotificationIterator {
             let outcome: PollOutcome = py.detach(|| {
                 runtime().block_on(async move {
                     let mut guard = stream.lock().await;
-                    let Some(stream_ref) = guard.as_mut().map(|o| &mut o.stream) else {
+                    let Some(open) = guard.as_mut() else {
                         return PollOutcome::Closed;
                     };
-                    match tokio::time::timeout(SYNC_RECV_POLL, stream_ref.next()).await {
+                    match tokio::time::timeout(SYNC_RECV_POLL, open.stream.next()).await {
                         Ok(Some(Ok(n))) => PollOutcome::Received(n),
                         Ok(Some(Err(e))) => PollOutcome::Error(e),
                         Ok(None) => PollOutcome::Exhausted,
@@ -198,13 +198,13 @@ impl PyAsyncNotificationIterator {
             if closed.load(Ordering::Acquire) {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
-            let Some(stream_ref) = guard.as_mut().map(|o| &mut o.stream) else {
+            let Some(open) = guard.as_mut() else {
                 return Err(PyStopAsyncIteration::new_err(()));
             };
             tokio::select! {
                 biased;
                 () = &mut woken => Err(PyStopAsyncIteration::new_err(())),
-                item = stream_ref.next() => match item {
+                item = open.stream.next() => match item {
                     Some(Ok(n)) => Ok(PyNotification::from_core(n)),
                     Some(Err(e)) => Err(Python::attach(|py| map_client_error(py, e))),
                     None => Err(PyStopAsyncIteration::new_err(())),
@@ -238,13 +238,13 @@ impl PyAsyncNotificationIterator {
                 if closed.load(Ordering::Acquire) {
                     break Ok(());
                 }
-                let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
+                let Some(open) = guard.as_mut() else {
                     break Ok(());
                 };
                 tokio::select! {
                     biased;
                     () = &mut woken => break Ok(()),
-                    item = s.next() => match item {
+                    item = open.stream.next() => match item {
                         Some(Ok(_)) => {}
                         Some(Err(e)) => break Err(Python::attach(|py| map_client_error(py, e))),
                         None => break Ok(()),

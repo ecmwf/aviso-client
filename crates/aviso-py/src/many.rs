@@ -105,10 +105,10 @@ impl PyRawMultiIterator {
             let outcome = py.detach(|| {
                 runtime().block_on(async move {
                     let mut guard = stream.lock().await;
-                    let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
+                    let Some(open) = guard.as_mut() else {
                         return Poll::Ended;
                     };
-                    match tokio::time::timeout(SYNC_RECV_POLL, s.next()).await {
+                    match tokio::time::timeout(SYNC_RECV_POLL, open.stream.next()).await {
                         Ok(Some(item)) => Poll::Item(item),
                         Ok(None) => Poll::Ended,
                         Err(_) => Poll::Timeout,
@@ -172,13 +172,13 @@ impl PyRawAsyncMultiIterator {
             if closed.load(Ordering::Acquire) {
                 return Err(PyStopAsyncIteration::new_err(()));
             }
-            let Some(s) = guard.as_mut().map(|o| &mut o.stream) else {
+            let Some(open) = guard.as_mut() else {
                 return Err(PyStopAsyncIteration::new_err(()));
             };
             tokio::select! {
                 biased;
                 () = &mut woken => Err(PyStopAsyncIteration::new_err(())),
-                item = s.next() => match item {
+                item = open.stream.next() => match item {
                     Some(item) => Python::attach(|py| to_python(py, item)),
                     None => Err(PyStopAsyncIteration::new_err(())),
                 },
