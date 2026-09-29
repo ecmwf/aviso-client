@@ -25,7 +25,6 @@ import gc
 import json
 import re
 import threading
-from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
@@ -79,15 +78,10 @@ def _serve_after(httpserver: HTTPServer) -> _Gate:
     return gate
 
 
-def _sync(httpserver: HTTPServer, open_stream: Callable[[str], T]) -> tuple[_Gate, T]:
-    gate = _serve_after(httpserver)
-    return gate, gate.release(open_stream(httpserver.url_for("/")))
-
-
 def test_listen_outlives_its_client(httpserver: HTTPServer) -> None:
-    gate, stream = _sync(
-        httpserver,
-        lambda url: pyaviso.AvisoClient(base_url=url).listen(
+    gate = _serve_after(httpserver)
+    stream = gate.release(
+        pyaviso.AvisoClient(base_url=httpserver.url_for("/")).listen(
             "mars", start_from=START, mode="replay_only"
         ),
     )
@@ -97,9 +91,11 @@ def test_listen_outlives_its_client(httpserver: HTTPServer) -> None:
 
 
 def test_listen_many_outlives_its_client(httpserver: HTTPServer) -> None:
-    gate, stream = _sync(
-        httpserver,
-        lambda url: pyaviso.AvisoClient(base_url=url).listen_many({"surface": entry("mars")}),
+    gate = _serve_after(httpserver)
+    stream = gate.release(
+        pyaviso.AvisoClient(base_url=httpserver.url_for("/")).listen_many(
+            {"surface": entry("mars")}
+        ),
     )
     with stream:
         assert [n.identifier["n"] for _, n in stream] == ["1", "2", "3"]
