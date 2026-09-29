@@ -41,7 +41,7 @@
 //!   lockfile).
 //!
 //! Resume keys are derived from a base URL, an event type, the watch
-//! filter body, and an optional schema fingerprint (D3 in the ADR log).
+//! filter body, and an optional schema fingerprint.
 //! The hash deliberately excludes any server-side resume position; the
 //! same logical subscription always computes the same key.
 

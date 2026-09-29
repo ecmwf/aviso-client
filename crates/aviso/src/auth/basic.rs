@@ -74,7 +74,7 @@ impl AuthProvider for Basic {
         let mut value = HeaderValue::from_str(&header)
             .map_err(|e| ClientError::Auth(format!("invalid Basic header value: {e}")))?;
         // Mark as sensitive so reqwest, hyper, and any downstream debug/log path redacts the
-        // header value (D8: "Token contents are never logged").
+        // header value: credentials are never logged.
         value.set_sensitive(true);
         Ok(value)
     }

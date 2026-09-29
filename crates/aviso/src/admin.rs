@@ -50,7 +50,7 @@ impl AvisoClient {
     /// Deletes a single notification via `DELETE /api/v1/admin/notification/{notification_id}`.
     ///
     /// `notification_id` is the full `<event_type>@<sequence>` id the server emits in
-    /// `CloudEvents` (per D9). The `@` character is preserved verbatim in the URL because the
+    /// `CloudEvents`. The `@` character is preserved verbatim in the URL because the
     /// server-side route matches on the literal `@`-joined id. Identifiers containing `/` are
     /// invalid (the server never emits them) and will be rejected by the server with `400` or
     /// `404`.

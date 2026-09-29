@@ -298,7 +298,7 @@ impl AvisoClient {
         }
     }
 
-    /// Sends a request with the shared `401 -> refresh -> retry once` contract per D8.
+    /// Sends a request with the shared `401 -> refresh -> retry once` contract.
     ///
     /// The caller supplies a closure that builds a fresh `RequestBuilder` each time it is called.
     /// The closure runs at most twice: once for the initial attempt, and again only if the first

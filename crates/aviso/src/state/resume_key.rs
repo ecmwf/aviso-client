@@ -27,7 +27,7 @@ pub(crate) const KEY_FORMAT_VERSION: u32 = 1;
 /// Same server + same event type + same filter = same key, regardless of
 /// which `AvisoClient` instance computed it. The hash deliberately
 /// excludes any server-side resume position (`from_id`, `from_date`):
-/// those are not subscription identity (see D3 in the ADR log).
+/// those say where to resume, not which subscription this is.
 ///
 /// The key is a SHA-256 digest plus the `key_format_version` of the
 /// hash input. Two keys with the same digest but different format

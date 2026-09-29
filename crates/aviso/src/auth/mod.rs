@@ -6,7 +6,7 @@
 // granted to it by virtue of its status as an intergovernmental organisation nor
 // does it submit to any jurisdiction.
 
-//! Authentication providers per D8.
+//! Authentication providers.
 //!
 //! [`AuthProvider`] is the async trait the client invokes before each request to obtain the
 //! `Authorization` header value. Five providers ship: [`Basic`], [`Bearer`], [`Env`],
@@ -50,8 +50,9 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     ///
     /// Implementations carrying real credentials must mark the returned [`HeaderValue`] as
     /// sensitive via [`HeaderValue::set_sensitive`] so downstream log and debug paths (in
-    /// `reqwest`, `hyper`, and elsewhere) redact the value per D8. The shipped providers
-    /// (`Basic`, `Bearer`, and the ones that wrap them) do this; custom providers must too.
+    /// `reqwest`, `hyper`, and elsewhere) redact the value: credentials are never logged.
+    /// The shipped providers (`Basic`, `Bearer`, and the ones that wrap them) do this;
+    /// custom providers must too.
     ///
     /// # Errors
     ///
@@ -59,7 +60,7 @@ pub trait AuthProvider: Send + Sync + std::fmt::Debug {
     /// token, refresh failure, encoding error, and so on).
     async fn authorization_header(&self) -> crate::Result<HeaderValue>;
 
-    /// Refreshes credentials after a `401 Unauthorized` response per D8.
+    /// Refreshes credentials after a `401 Unauthorized` response.
     ///
     /// The aviso client calls this method when an authenticated request comes back with
     /// `401`, then retries the request once. The default implementation is a no-op, which is

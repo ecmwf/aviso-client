@@ -27,7 +27,7 @@
 //!
 //! [`ConfigFile::refresh`] re-reads the file when the provider was built via
 //! [`ConfigFile::from_path`], so a user-side credential rewrite is reflected on the next
-//! `Authorization` header lookup. The supervisor's refresh-then-retry-once contract (D8) honours
+//! `Authorization` header lookup. The supervisor's refresh-then-retry-once contract honours
 //! the new credential automatically.
 
 use std::path::{Path, PathBuf};

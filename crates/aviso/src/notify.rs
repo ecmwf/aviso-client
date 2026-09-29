@@ -12,13 +12,13 @@
 //!
 //! - POST to `api/v1/notification` with a JSON-serialized [`NotificationRequest`].
 //! - `Authorization` header sourced from the optional [`AuthProvider`].
-//! - On `401 Unauthorized`: call [`AuthProvider::refresh`] once and retry the request once. Per
-//!   D8 ("refresh on 401, retry once"). On a second `401`, surface the error verbatim; do not
-//!   loop.
+//! - On `401 Unauthorized`: call [`AuthProvider::refresh`] once and retry the request once. On
+//!   a second `401`, surface the error verbatim; do not loop.
 //! - On any other non-success status: surface [`ClientError::Http`] with the verbatim response
-//!   body and the server's `X-Request-ID` header, per D7.
-//! - On ambiguous transport failure (request body sent but no response received): do not retry
-//!   per D16.
+//!   body and the server's `X-Request-ID` header, so the server's own validation message
+//!   reaches the caller unchanged.
+//! - On ambiguous transport failure (request body sent but no response received): do not retry,
+//!   because the server may already have stored the notification.
 
 use futures_util::stream::{self, StreamExt};
 
@@ -45,8 +45,8 @@ impl AvisoClient {
     /// # Errors
     ///
     /// - [`crate::ClientError::Transport`] for network-level failures before the response begins
-    ///   (DNS, connect, TLS). Per D16, transport errors after the request body has been sent are
-    ///   not retried because the server may have processed the publish.
+    ///   (DNS, connect, TLS). Transport errors after the request body has been sent are not
+    ///   retried because the server may have processed the publish.
     /// - [`crate::ClientError::Http`] for any non-success status, carrying the verbatim body and
     ///   `X-Request-ID` for support correlation.
     /// - [`crate::ClientError::Decode`] when the server returned `200`/`201` but the body did not
