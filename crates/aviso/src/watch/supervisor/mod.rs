@@ -209,6 +209,7 @@ mod connection;
 mod drain;
 mod exit_flush;
 mod guards;
+mod initial_cursor;
 mod opening;
 mod reconnect;
 mod replay_end;

@@ -13,6 +13,7 @@ use url::Url;
 
 use super::connection::run_one_connection;
 use super::exit_flush;
+use super::initial_cursor::{self, InitialCursor};
 use super::replay_end;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
@@ -93,49 +94,21 @@ pub(crate) async fn run_supervisor(
             active: active_resume_keys.clone(),
             key: resume_key.clone(),
         };
-        // Resolve initial cursor. User-supplied `request.from()` wins; if
-        // absent and a state store is configured, query the store and resume
-        // from its checkpoint. A store I/O failure surfaces as the first
-        // stream item via `Err(ClientError::StateStore(_))`. The store read
-        // is cancel-safe per `tokio::select!`.
-        let initial_cursor: Option<ResumeStart> = match (request.from(), state_store.as_ref()) {
-            (Some(_), _) => request.from().cloned(),
-            (None, Some(store)) => {
-                let get_result = tokio::select! {
-                    biased;
-                    _ = parent_cancel.changed() => return,
-                    _ = &mut cancel => return,
-                    r = store.get(&resume_key) => r,
-                };
-                match get_result {
-                    Ok(Some(cp)) => {
-                        // INFO level: a successful
-                        // resume from stored state is operator-visible
-                        // information. The no-checkpoint-found path stays
-                        // silent because starting fresh is the default.
-                        tracing::info!(
-                            event.name = "client.resume.applied",
-                            resume_key = %resume_key.as_hex(),
-                            sequence = cp.last_committed_sequence,
-                            event_id = cp.last_event_id.as_deref(),
-                            "resumed watch from stored checkpoint",
-                        );
-                        Some(ResumeStart::AfterSequence(cp.last_committed_sequence))
-                    }
-                    Ok(None) => None,
-                    Err(e) => {
-                        let _ = send_or_cancel(
-                            &tx,
-                            Err(ClientError::from(e)),
-                            &mut cancel,
-                            &mut parent_cancel,
-                        )
-                        .await;
-                        return;
-                    }
-                }
+        let initial_cursor = match initial_cursor::resolve(
+            &request,
+            state_store.as_ref(),
+            &resume_key,
+            &mut cancel,
+            &mut parent_cancel,
+        )
+        .await
+        {
+            InitialCursor::Resolved(cursor) => cursor,
+            InitialCursor::Cancelled => return,
+            InitialCursor::Failed(e) => {
+                let _ = send_or_cancel(&tx, Err(e), &mut cancel, &mut parent_cancel).await;
+                return;
             }
-            (None, None) => None,
         };
 
         // Build the reducer state from the resolved cursor (overriding the
