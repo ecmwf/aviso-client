@@ -43,7 +43,9 @@ Cancellation can end startup without an error.
 budget across retries. `None` or zero disables that budget, which is the library
 default. It does not limit stream lifetime. Independently, each connection must
 provide SSE headers and its Aviso opening event within ten seconds. Invalid
-responses and expired opening deadlines yield `ClientError::StreamProtocol`.
+responses yield `ClientError::StreamProtocol`, and so does an expired opening
+deadline before the first handshake. Once the watch has been confirmed, a
+reconnect that misses the deadline is retried with backoff.
 Unsupported base URL schemes fail at build time with `ClientError::Config`.
 
 ## Building docs locally

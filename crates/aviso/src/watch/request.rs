@@ -246,8 +246,10 @@ impl WatchRequest {
 
     /// Limit startup across retries until the first validated Aviso handshake.
     /// `None` or zero disables this budget (the library default). Every
-    /// connection still has a separate ten-second opening deadline. This is
-    /// not a timeout on a healthy stream or on later reconnect cycles.
+    /// connection still has a separate ten-second opening deadline, which
+    /// ends the watch only before the first handshake; a reconnect that
+    /// misses it is retried. This is not a timeout on a healthy stream or on
+    /// later reconnect cycles.
     #[must_use]
     pub fn with_startup_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
         self.startup_timeout = timeout.filter(|duration| !duration.is_zero());

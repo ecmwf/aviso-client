@@ -33,7 +33,8 @@
 //!   or parent drop (the last `AvisoClient` clone was dropped).
 //!
 //! All other failure modes (transport errors, EOF without close frame,
-//! heartbeat starvation, 429/503 with or without `Retry-After`, other
+//! heartbeat starvation, an expired opening deadline once the watch has
+//! been confirmed, 429/503 with or without `Retry-After`, other
 //! 5xx, and 401 in the first-cycle path) reconnect with exponential
 //! backoff (or the `Retry-After` override) and do not surface to the
 //! consumer.
@@ -120,6 +121,21 @@ pub(crate) enum ConnectionOutcome {
     /// (NAT idle timeout, server-side application hang behind a healthy
     /// reverse proxy, half-open sockets after network change).
     HeartbeatStarved,
+    /// The opening deadline expired on a reconnect of a watch that was
+    /// confirmed before: the server sent no response, or no Aviso opening
+    /// event, within ten seconds. A confirmed watch has shown that the
+    /// address is an Aviso server, so this is usually a slow, paused or
+    /// briefly unreachable server. It can also be a proxy that limits
+    /// concurrent streams and gave this watch's slot to another while it
+    /// reconnected. Either way the outer supervisor reconnects with
+    /// exponential backoff, which recovers once the server answers or a
+    /// slot frees, where ending the watch would make the loss permanent;
+    /// each retry is logged at INFO with its cause (`client.connection.retrying`,
+    /// which the CLI and Python logging show). Before the first
+    /// confirmation the same expiry is [`ConnectionOutcome::Fatal`], so a
+    /// wrong address or a proxy that holds the request fails fast. Carries
+    /// the error for the log.
+    OpeningTimedOut(ClientError),
     /// The wire delivered a frame the supervisor must surface as a
     /// typed error: malformed `CloudEvent` id, server `error` event,
     /// unknown `connection-closing` reason, or gap detected. The

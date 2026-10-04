@@ -438,6 +438,22 @@ pub(crate) async fn run_supervisor(
                     retry_counter = retry_counter.saturating_add(1);
                     refreshed_for_current_attempt = false;
                 }
+                ConnectionOutcome::OpeningTimedOut(e) => {
+                    retry_cause = "no response within the opening deadline".into();
+                    let lost = state.transition(WatchEvent::ConnectionLost {
+                        reason: ConnectionLossReason::TransportError,
+                    });
+                    apply_outcome(&mut last_reconnect_policy, lost);
+                    tracing::debug!(
+                        event.name = "client.connection.lost",
+                        reason = "opening_timeout",
+                        error = %e,
+                        retry_attempt = retry_counter,
+                        "no opening within the deadline on a confirmed watch; will reconnect with exponential backoff"
+                    );
+                    retry_counter = retry_counter.saturating_add(1);
+                    refreshed_for_current_attempt = false;
+                }
                 ConnectionOutcome::HeartbeatStarved => {
                     retry_cause = "heartbeat timeout".into();
                     tracing::debug!(

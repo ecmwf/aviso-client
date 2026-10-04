@@ -38,6 +38,11 @@ connection; a proxy that allows fewer makes the listeners beyond its limit
 wait until this deadline. Ask the server operator about the proxy's
 concurrent-stream limit.
 
+This error stops a listener only before it shows `Listening`. Once listening,
+a reconnect that gets no answer is retried, and each retry is reported with the
+cause `no response within the opening deadline`. If that cause keeps repeating,
+the server is still unreachable, or a proxy limit is keeping this listener out.
+
 For HTTP failures, `listen` omits unrecognized response bodies, including JSON
 objects from proxies. Recognized Aviso error codes with string messages or
 details retain only those fields, a request ID, and the configured event types
