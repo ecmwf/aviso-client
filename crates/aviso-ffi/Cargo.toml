@@ -57,7 +57,7 @@ asset = [
 ]
 
 [dependencies]
-aviso = { path = "../aviso", version = "=2.4.1" }
+aviso = { path = "../aviso", version = "=2.4.2" }
 futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
