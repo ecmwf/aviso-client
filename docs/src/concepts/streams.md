@@ -29,6 +29,12 @@ also makes the request historical. Every reconnect validates its own opening.
 
 Headers and confirmation share a ten-second deadline per connection. Heartbeats
 and unknown SSE events cannot extend that deadline or mark the listener ready.
+Until the listener has been confirmed once, a missed deadline stops it with a
+protocol error, so a wrong address or a proxy that holds the request fails
+fast. After that, a reconnect that misses the deadline is retried with backoff
+like any other lost connection: the server may be slow or briefly unreachable,
+or a proxy that limits concurrent streams may have given the slot to another
+listener. The CLI and Python logging report each retry with its cause.
 For non-200 responses, a diagnostic body that exceeds the deadline is omitted;
 the HTTP status still determines whether to retry or stop.
 Retry backoff resets only after confirmation. Once confirmed, the normal
@@ -89,9 +95,11 @@ recoverable failures and reports errors it cannot recover from.
 
 ## Resume after a reconnect
 
-After progress has been recorded, reconnecting requests notifications after
-that sequence. The running listener keeps this position in memory even without
-a state file. Saved state lets a later run use it too.
+A reconnect requests the notifications after the highest sequence already
+delivered to your code, so it does not deliver that notification again. The
+listener keeps this position in memory even without a state file. Saved state
+lets a later run resume too, from the saved position described in
+[Resume and state](./resume-and-state.md).
 
 Recovery depends on history still being available on the server. A saved
 position does not prove your application finished processing every notification

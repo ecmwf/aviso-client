@@ -50,7 +50,6 @@ def test_listener_survives_max_duration_reached_cut(
                 remaining = max(deadline - time.monotonic(), 0.5)
                 received.append(receive_within(iterator, timeout=remaining).payload["seq"])
 
-    assert set(received) >= expected, f"missing items: {expected - set(received)}"
-    assert len(received) <= len(expected) + 1, (
-        f"at-least-once delivery should produce at most one duplicate per cut; got {received}"
-    )
+    # The reconnect resumes after the last notification delivered, so the
+    # cut neither loses nor repeats one.
+    assert received == [1, 2, 3, 4], f"expected each item once, in order; got {received}"

@@ -148,6 +148,8 @@ The connection runner validates HTTP 200 and the SSE media type before decoding
 the body. An opening gate consumes frames until the expected Aviso control
 arrives: `connection_established` for live-only or `replay_started` for a
 resolved historical cursor. Headers and opening share a ten-second deadline.
+Before the first handshake an expired deadline is fatal; on a reconnect of a
+confirmed watch it is a lost connection, retried with backoff.
 Only then does it transition to `Connected`, reset backoff, and publish
 readiness.
 

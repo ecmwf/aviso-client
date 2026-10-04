@@ -39,8 +39,7 @@ pub(super) fn reached(
     let Some(ReplayEnd::Sequence(end)) = end else {
         return false;
     };
-    let delivered = pending.map(|pending| pending.sequence).or(committed);
-    delivered.is_some_and(|delivered| delivered >= *end)
+    super::last_delivered(pending, committed).is_some_and(|delivered| delivered >= *end)
 }
 
 #[cfg(test)]

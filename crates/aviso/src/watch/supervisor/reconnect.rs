@@ -13,6 +13,7 @@ use url::Url;
 
 use super::connection::run_one_connection;
 use super::exit_flush;
+use super::initial_cursor::{self, InitialCursor};
 use super::replay_end;
 use super::{ActiveKeyGuard, ConnectionOutcome, PendingCommit, apply_outcome, send_or_cancel};
 use crate::auth::AuthProvider;
@@ -93,49 +94,21 @@ pub(crate) async fn run_supervisor(
             active: active_resume_keys.clone(),
             key: resume_key.clone(),
         };
-        // Resolve initial cursor. User-supplied `request.from()` wins; if
-        // absent and a state store is configured, query the store and resume
-        // from its checkpoint. A store I/O failure surfaces as the first
-        // stream item via `Err(ClientError::StateStore(_))`. The store read
-        // is cancel-safe per `tokio::select!`.
-        let initial_cursor: Option<ResumeStart> = match (request.from(), state_store.as_ref()) {
-            (Some(_), _) => request.from().cloned(),
-            (None, Some(store)) => {
-                let get_result = tokio::select! {
-                    biased;
-                    _ = parent_cancel.changed() => return,
-                    _ = &mut cancel => return,
-                    r = store.get(&resume_key) => r,
-                };
-                match get_result {
-                    Ok(Some(cp)) => {
-                        // INFO level: a successful
-                        // resume from stored state is operator-visible
-                        // information. The no-checkpoint-found path stays
-                        // silent because starting fresh is the default.
-                        tracing::info!(
-                            event.name = "client.resume.applied",
-                            resume_key = %resume_key.as_hex(),
-                            sequence = cp.last_committed_sequence,
-                            event_id = cp.last_event_id.as_deref(),
-                            "resumed watch from stored checkpoint",
-                        );
-                        Some(ResumeStart::AfterSequence(cp.last_committed_sequence))
-                    }
-                    Ok(None) => None,
-                    Err(e) => {
-                        let _ = send_or_cancel(
-                            &tx,
-                            Err(ClientError::from(e)),
-                            &mut cancel,
-                            &mut parent_cancel,
-                        )
-                        .await;
-                        return;
-                    }
-                }
+        let initial_cursor = match initial_cursor::resolve(
+            &request,
+            state_store.as_ref(),
+            &resume_key,
+            &mut cancel,
+            &mut parent_cancel,
+        )
+        .await
+        {
+            InitialCursor::Resolved(cursor) => cursor,
+            InitialCursor::Cancelled => return,
+            InitialCursor::Failed(e) => {
+                let _ = send_or_cancel(&tx, Err(e), &mut cancel, &mut parent_cancel).await;
+                return;
             }
-            (None, None) => None,
         };
 
         // Build the reducer state from the resolved cursor (overriding the
@@ -305,25 +278,15 @@ pub(crate) async fn run_supervisor(
                 }
             }
 
-            // Build the wire-request cursor with this precedence:
-            //   1. The persisted commit cursor (`commit_cursor`), once any
-            //      notification has been committed.
-            //   2. The highest successfully sent sequence in
-            //      `pending_commit` (the supervisor sent it to the channel
-            //      but the commit-on-next-send promotion has not run yet).
-            //      Without this fallback, a `Date` initial cursor would be
-            //      reused on reconnect even after one notification had been
-            //      sent, contradicting the "from_date is bootstrap-only"
-            //      contract and weakening cross-reconnect gap detection
-            //      (the `GapGuard` would start without an expected next
-            //      sequence and tolerate any starting value).
-            //   3. The initial cursor (which may be a `Date`), used until
-            //      a sequence cursor is available.
-            let wire_from: Option<ResumeStart> = match (commit_cursor, pending_commit.as_ref()) {
-                (Some(n), _) => Some(ResumeStart::AfterSequence(n)),
-                (None, Some(p)) => Some(ResumeStart::AfterSequence(p.sequence)),
-                (None, None) => initial_cursor.clone(),
-            };
+            // Resume after the last notification delivered in this process
+            // (see `last_delivered`), so a reconnect delivers nothing twice.
+            // Before any delivery, the initial cursor applies; once one
+            // notification has been delivered, a `Date` start is never sent
+            // again, and `GapGuard` expects the sequence after it.
+            let wire_from: Option<ResumeStart> =
+                super::last_delivered(pending_commit.as_ref(), commit_cursor)
+                    .map(ResumeStart::AfterSequence)
+                    .or_else(|| initial_cursor.clone());
 
             let session_started = tokio::time::Instant::now();
             let outcome = run_one_connection(
@@ -471,6 +434,22 @@ pub(crate) async fn run_supervisor(
                         reason = "unexpected_eof",
                         retry_attempt = retry_counter,
                         "connection ended without close frame; will reconnect with exponential backoff"
+                    );
+                    retry_counter = retry_counter.saturating_add(1);
+                    refreshed_for_current_attempt = false;
+                }
+                ConnectionOutcome::OpeningTimedOut(e) => {
+                    retry_cause = "no response within the opening deadline".into();
+                    let lost = state.transition(WatchEvent::ConnectionLost {
+                        reason: ConnectionLossReason::TransportError,
+                    });
+                    apply_outcome(&mut last_reconnect_policy, lost);
+                    tracing::debug!(
+                        event.name = "client.connection.lost",
+                        reason = "opening_timeout",
+                        error = %e,
+                        retry_attempt = retry_counter,
+                        "no opening within the deadline on a confirmed watch; will reconnect with exponential backoff"
                     );
                     retry_counter = retry_counter.saturating_add(1);
                     refreshed_for_current_attempt = false;

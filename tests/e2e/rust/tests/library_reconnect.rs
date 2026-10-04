@@ -82,13 +82,7 @@ async fn rust_listener_survives_max_duration_reached_cut() {
     }
 
     publish_task.await.unwrap();
-    let received_set: std::collections::HashSet<u64> = received.iter().copied().collect();
-    assert_eq!(
-        received_set, expected,
-        "all four items must arrive at least once"
-    );
-    assert!(
-        received.len() <= expected.len() + 1,
-        "at-least-once delivery should produce at most one duplicate per cut; got {received:?}"
-    );
+    // The reconnect resumes after the last notification delivered, so the
+    // cut neither loses nor repeats one.
+    assert_eq!(received, [1, 2, 3, 4], "expected each item once, in order");
 }

@@ -49,6 +49,8 @@ use crate::{ClientError, Notification};
 /// - `HeartbeatStarved` when the per-chunk `timeout(budget, ...)`
 ///   fired; the reducer has transitioned via
 ///   `WatchEvent::HeartbeatStarvation`.
+/// - `OpeningTimedOut(ClientError)` when the opening deadline expired on a
+///   watch that was confirmed before; see [`opening_expired`].
 /// - `Fatal(ClientError)` for terminal wire-level conditions surfaced
 ///   by [`drain_frames`] (malformed `CloudEvent` id, server `error`
 ///   event, unknown `connection-closing.reason`, decode failure,
@@ -131,7 +133,7 @@ pub(super) async fn run_one_connection(
         biased;
         _ = parent_cancel.changed() => return ConnectionOutcome::Cancelled,
         _ = &mut *cancel => return ConnectionOutcome::Cancelled,
-        () = tokio::time::sleep_until(opening_deadline) => return ConnectionOutcome::Fatal(opening::no_response()),
+        () = tokio::time::sleep_until(opening_deadline) => return opening_expired(ready, opening::no_response()),
         r = builder.send() => r,
     };
     let mut response = match send_result {
@@ -216,7 +218,7 @@ pub(super) async fn run_one_connection(
                 return ConnectionOutcome::Cancelled;
             }
             () = tokio::time::sleep_until(opening_deadline), if !confirmed => {
-                return ConnectionOutcome::Fatal(opening::protocol("Aviso opening deadline exceeded (10s)"));
+                return opening_expired(ready, opening::protocol("Aviso opening deadline exceeded (10s)"));
             }
             r = tokio::time::timeout(budget, response.chunk()) => r,
         };
@@ -331,5 +333,17 @@ pub(super) async fn run_one_connection(
             apply_outcome(last_reconnect_policy, lost);
             return ConnectionOutcome::UnexpectedEof;
         }
+    }
+}
+
+/// The outcome of an expired opening deadline. Fatal until the watch has
+/// been confirmed once (`ready` stays true after the first handshake), so a
+/// wrong address or a proxy holding the request fails fast; retried after
+/// that, like any other lost connection.
+fn opening_expired(ready: &watch::Sender<bool>, error: ClientError) -> ConnectionOutcome {
+    if *ready.borrow() {
+        ConnectionOutcome::OpeningTimedOut(error)
+    } else {
+        ConnectionOutcome::Fatal(error)
     }
 }

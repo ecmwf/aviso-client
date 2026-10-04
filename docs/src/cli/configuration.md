@@ -44,7 +44,9 @@ Use `--startup-timeout 0s` to disable the initial budget. This listen-only flag
 has no YAML key or environment variable. It stops applying after the first
 confirmed handshake and does not restart on reconnect. Each connection attempt
 still has a separate ten-second deadline for response headers and the Aviso
-opening event. Heartbeats and unrelated SSE events do not confirm startup.
+opening event. Missing it stops the listener only before the first confirmed
+handshake; after that, the reconnect is retried. Heartbeats and unrelated SSE
+events do not confirm startup.
 
 Retry status goes to stderr at INFO level, with a listener name, cause, and
 delay. Repeated retries are coalesced to at most one message every five seconds.

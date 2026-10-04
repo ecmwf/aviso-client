@@ -193,12 +193,12 @@ async fn check_session(
         .max()
         .unwrap()
         .max(6);
-    let expected = if flush {
-        sequences.iter().copied().max().unwrap().max(6)
-    } else {
-        committed
-    };
-    check_requests(&server, baseline, committed).await;
+    // The highest sequence delivered; backward items never lower it.
+    let delivered = sequences.iter().copied().max().unwrap().max(6);
+    let expected = if flush { delivered } else { committed };
+    // The reconnect resumes after the last delivered notification, while
+    // the saved checkpoint stays one behind unless the exit flush ran.
+    check_requests(&server, baseline, delivered).await;
     if let Some(store) = store {
         let expected = (!(baseline == "explicit" && expected == 6)).then_some(expected);
         check_stored_checkpoint(
@@ -211,7 +211,7 @@ async fn check_session(
     }
 }
 
-async fn check_requests(server: &MockServer, baseline: &str, committed: u64) {
+async fn check_requests(server: &MockServer, baseline: &str, delivered: u64) {
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
     let initial: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -221,7 +221,7 @@ async fn check_requests(server: &MockServer, baseline: &str, committed: u64) {
         assert_eq!(initial["from_id"], "7");
     }
     let reconnect: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
-    assert_eq!(reconnect["from_id"], (committed + 1).to_string());
+    assert_eq!(reconnect["from_id"], (delivered + 1).to_string());
 }
 
 fn session_body(sequences: &[u64]) -> String {
