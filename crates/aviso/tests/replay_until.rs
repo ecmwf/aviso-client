@@ -267,29 +267,20 @@ async fn a_date_end_is_resolved_once_and_sent_as_to_id_on_reconnect() {
 #[tokio::test]
 async fn a_drop_before_the_end_resumes_up_to_the_same_end() {
     let server = MockServer::start().await;
-    // As for any replay, the reconnect starts after the committed sequence,
-    // so the last delivered notification arrives again. Both requests have
-    // the same body: the first gets the dropped connection, the second the
-    // rest of the replay.
-    Mock::given(method("POST"))
-        .and(path("/api/v1/replay"))
-        .and(body_partial_json(json!({"from_id": "1", "to_id": "3"})))
-        .respond_with(stream_body(format!(
-            "{}{}",
-            replay_started(3),
-            notification(1)
-        )))
-        .up_to_n_times(1)
-        .with_priority(1)
-        .mount(&server)
-        .await;
+    // The first connection drops after notification 1. The reconnect starts
+    // after it, with the same end point, and delivers the rest.
     answer(
         &server,
         json!({"from_id": "1", "to_id": "3"}),
+        stream_body(format!("{}{}", replay_started(3), notification(1))),
+    )
+    .await;
+    answer(
+        &server,
+        json!({"from_id": "2", "to_id": "3"}),
         stream_body(format!(
-            "{}{}{}{}{}",
+            "{}{}{}{}",
             replay_started(3),
-            notification(1),
             notification(2),
             notification(3),
             completed()
@@ -305,7 +296,7 @@ async fn a_drop_before_the_end_resumes_up_to_the_same_end() {
     let client = client(&server);
     let stream = client.watch(request).unwrap();
 
-    assert_eq!(drain(stream).await, [1, 1, 2, 3]);
+    assert_eq!(drain(stream).await, [1, 2, 3]);
     let bodies = replay_bodies(&server).await;
     assert_eq!(bodies.len(), 2, "{bodies:?}");
     assert!(bodies.iter().all(|body| body["to_id"] == "3"), "{bodies:?}");

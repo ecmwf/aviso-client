@@ -89,9 +89,11 @@ recoverable failures and reports errors it cannot recover from.
 
 ## Resume after a reconnect
 
-After progress has been recorded, reconnecting requests notifications after
-that sequence. The running listener keeps this position in memory even without
-a state file. Saved state lets a later run use it too.
+A reconnect requests the notifications after the highest sequence already
+delivered to your code, so it does not deliver that notification again. The
+listener keeps this position in memory even without a state file. Saved state
+lets a later run resume too, from the saved position described in
+[Resume and state](./resume-and-state.md).
 
 Recovery depends on history still being available on the server. A saved
 position does not prove your application finished processing every notification

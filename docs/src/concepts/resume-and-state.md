@@ -37,6 +37,12 @@ if `flush_cursor_on_exit` is enabled. Python defaults to `False`.
 Saved positions only move forwards. Older notifications can still be delivered
 without moving the saved position backwards.
 
+The saved position can be one notification behind the last one delivered, so a
+later run may start with that notification again; it does not when the final
+position was saved on exit. A reconnect within the same run never asks for it
+again: it resumes after the highest sequence delivered, a notification that has
+already reached the queue and run its triggers.
+
 ## What at-least-once means for your triggers
 
 A trigger can run more than once if the process stops after the action but

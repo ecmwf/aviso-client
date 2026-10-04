@@ -305,25 +305,15 @@ pub(crate) async fn run_supervisor(
                 }
             }
 
-            // Build the wire-request cursor with this precedence:
-            //   1. The persisted commit cursor (`commit_cursor`), once any
-            //      notification has been committed.
-            //   2. The highest successfully sent sequence in
-            //      `pending_commit` (the supervisor sent it to the channel
-            //      but the commit-on-next-send promotion has not run yet).
-            //      Without this fallback, a `Date` initial cursor would be
-            //      reused on reconnect even after one notification had been
-            //      sent, contradicting the "from_date is bootstrap-only"
-            //      contract and weakening cross-reconnect gap detection
-            //      (the `GapGuard` would start without an expected next
-            //      sequence and tolerate any starting value).
-            //   3. The initial cursor (which may be a `Date`), used until
-            //      a sequence cursor is available.
-            let wire_from: Option<ResumeStart> = match (commit_cursor, pending_commit.as_ref()) {
-                (Some(n), _) => Some(ResumeStart::AfterSequence(n)),
-                (None, Some(p)) => Some(ResumeStart::AfterSequence(p.sequence)),
-                (None, None) => initial_cursor.clone(),
-            };
+            // Resume after the last notification delivered in this process
+            // (see `last_delivered`), so a reconnect delivers nothing twice.
+            // Before any delivery, the initial cursor applies; once one
+            // notification has been delivered, a `Date` start is never sent
+            // again, and `GapGuard` expects the sequence after it.
+            let wire_from: Option<ResumeStart> =
+                super::last_delivered(pending_commit.as_ref(), commit_cursor)
+                    .map(ResumeStart::AfterSequence)
+                    .or_else(|| initial_cursor.clone());
 
             let session_started = tokio::time::Instant::now();
             let outcome = run_one_connection(

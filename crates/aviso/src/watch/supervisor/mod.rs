@@ -51,6 +51,23 @@ pub(crate) struct PendingCommit {
     pub(crate) event_id: String,
 }
 
+/// The highest sequence handed to the consumer in this process: the pending
+/// notification, else the committed cursor. The pending sequence is never
+/// below the committed one, since a notification only becomes pending above
+/// the committed cursor and backward deliveries move neither.
+///
+/// This is where a reconnect resumes, so a reconnect does not ask for the
+/// last notification again: it has already reached the consumer's queue and
+/// run its triggers. The saved position (`commit_cursor` and the state store)
+/// can stay one notification behind until the next one arrives, so a restart
+/// may get that notification again; the exit flush saves it when enabled.
+pub(super) fn last_delivered(
+    pending: Option<&PendingCommit>,
+    committed: Option<u64>,
+) -> Option<u64> {
+    pending.map(|pending| pending.sequence).or(committed)
+}
+
 /// Outcome of one HTTP connection attempt.
 ///
 /// Returned by [`run_one_connection`] and consumed by [`run_supervisor`].
