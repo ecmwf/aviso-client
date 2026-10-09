@@ -7,8 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 aviso is ECMWF's notification system for data-driven workflows. It runs as a
 client-server pair: aviso-server is the source of truth for streams of events;
-the client connects, asks for the events you care about, and tells you when they
-arrive. This page is about the client.
+the client connects to the server, asks for the events you care about, and tells 
+you when they arrive. This page is about the client.
 
 ## The pieces
 
