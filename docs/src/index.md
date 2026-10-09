@@ -14,9 +14,13 @@ aviso is ECMWF's notification system for data-driven workflows. It runs as a
 client and a server: [aviso-server](https://github.com/ecmwf/aviso-server)
 tracks streams of events and pushes them out in close to real time; clients
 connect, subscribe to the streams they care about, and react when a dataset they
-were waiting for has landed.
+were waiting for has landed. Subscriptions describe the data with the same keys 
+used to identify it, such as class, stream, date and step, so you only hear about 
+the events that matter to you. This means there’s no need to poll for new data: 
+a notification can start a script, call a webhook or kick off the next step of a 
+pipeline the moment the data is ready.
 
-This site documents the **client** side. This repo holds three clients: a
+This site documents the **aviso client** side. This repo holds three clients: a
 command-line tool, a Rust library, and a Python package. Pick the one that fits
 how you work.
 
