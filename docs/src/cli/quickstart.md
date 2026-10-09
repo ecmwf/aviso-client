@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # CLI quickstart
 
-Consumers use Aviso to receive notifications from data providers. Start by
+Consumers use **aviso** to receive notifications from data providers. Start by
 discovering event types, then listen for new notifications or replay past ones.
 Providers publish notifications to announce data; the optional publishing
 section below is for them. You do not need to publish anything to listen.
