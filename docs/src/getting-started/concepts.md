@@ -5,26 +5,26 @@ SPDX-License-Identifier: Apache-2.0
 
 # Concepts in five minutes
 
-There are five basic concepts you need to get fluent with aviso client that are explained 
-in the following. Each of these sections links to a deeper page if you want to learn more
-in detail of the respective concept.
+Five ideas you need to use the aviso client. Each section links to a page with
+more detail.
 
 ## Notifications
 
 A notification is one event from the server. It has an event type, a set of
-unique identifiers, an optional JSON payload, and a sequence number that strictly
+identifiers, an optional JSON payload, and a sequence number that strictly
 increases.
 
-You can ask the aviso server (via your aviso client) "let me know when something of type `mars` arrives matching
-these identifiers", and the server streams the matching events to you.
+Through your client, you ask the aviso server "let me know when something of
+type `mars` arrives matching these identifiers", and the server streams the
+matching events to you.
 
 Read [Notifications](../concepts/notifications.md) for the wire format and the
 fields.
 
 ## Streams
 
-When you configured your client to listen, aviso opens a long-lived HTTP connection (an SSE stream) to the
-server. The server pushes events to you as they happen. The connection
+When you listen, the client opens a long-lived HTTP connection (an SSE stream)
+to the server. The server pushes events to you as they happen. The connection
 deliberately closes after a configured maximum duration; aviso reconnects
 automatically. Reconnects are normal, not an error.
 
